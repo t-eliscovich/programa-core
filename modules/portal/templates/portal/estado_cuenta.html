@@ -56,16 +56,21 @@
     {% endif %}
   </div>
 
-  <div class="acciones-cuenta">
-    <a class="btn-pr imprimir" href="/estado-de-cuenta/imprimir"
-       target="_blank" rel="noopener">Ver la hoja para imprimir</a>
-    {# ⚠ Sólo si el servidor tiene con qué generarlo. Un botón que contesta 503
-       enseña a no confiar en los botones. Misma regla que en la ficha del
-       vendedor, que usa el mismo `pdf_disponible()`. #}
-    {% if pdf_disponible() %}
-    <a class="btn-pr" href="/estado-de-cuenta.pdf">Descargar el archivo</a>
-    {% endif %}
-  </div>
+  {# ⭐ UN solo botón. Dueña, 24/08: *"ver hoja para imprimir y descargar
+     archivo es lo mismo"*. Y es cierto: los dos llevan al mismo documento, uno
+     en pantalla y el otro en archivo. Dos botones para lo mismo obligan a
+     elegir entre dos cosas que no se distinguen.
+
+     Queda el ARCHIVO, que es el que sirve en el celular —se guarda, se manda,
+     se imprime desde ahí—. Si el servidor no tiene con qué generarlo, en su
+     lugar aparece la hoja en pantalla: la acción no desaparece, cambia de
+     forma. #}
+  {% if pdf_disponible() %}
+  <a class="btn-pr accion" href="/estado-de-cuenta.pdf">Descargar mi estado de cuenta</a>
+  {% else %}
+  <a class="btn-pr accion" href="/estado-de-cuenta/imprimir"
+     target="_blank" rel="noopener">Ver la hoja para imprimir</a>
+  {% endif %}
 
   {% include "mi_cartera/_movimientos.html" %}
 
@@ -81,12 +86,29 @@
     mask:center/contain no-repeat var(--ico-salir)}
   :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
 
-  .acciones-cuenta{display:flex;gap:8px;margin-bottom:11px}
-  .acciones-cuenta .btn-pr{flex:1;justify-content:center;text-decoration:none;
-    text-align:center}
-  /* En un teléfono angosto los dos botones no entran uno al lado del otro sin
-     partir las palabras: se apilan. */
-  @media (max-width: 419px){ .acciones-cuenta{flex-direction:column} }
+  .accion{width:100%;justify-content:center;text-decoration:none;text-align:center;
+    margin-bottom:11px}
+
+  /* 🚨 LA TABLA EN UN TELÉFONO. Dueña: *"se ven feas las facturas"*.
+     Con retenciones Y abonos la tabla dibuja SEIS columnas de números que no
+     se pueden partir, y a 390 px se sale por la derecha: el saldo, que es el
+     dato, queda cortado.
+
+     Se esconde la columna ACUM. —el saldo acumulado leído de arriba hacia
+     abajo—, que es la que menos le dice al cliente: es una ayuda para seguir
+     la aritmética, y el total ya está abajo y arriba del todo. Las seis
+     columnas siguen enteras en la hoja para imprimir y en el archivo, que es
+     donde se compara contra el papel de la oficina.
+
+     ⚠ Va acá y no en el parcial compartido: la ficha del VENDEDOR no se toca.
+     Él sí usa el acumulado, y es su pantalla de trabajo. */
+  @media (max-width: 560px){
+    .ec th:last-child, .ec td:last-child{display:none}
+  }
+  /* Y si aun así no entra —un importe de siete cifras, un teléfono viejo—,
+     que la tabla se deslice adentro de su tarjeta en vez de empujar la
+     pantalla entera. */
+  .card:has(> .ec), .card:has(> .tabs){overflow-x:auto}
 
   /* ⭐ Dueña: *"también esto puede funcionar en web y en mobile"*. Los estilos
      compartidos están afinados para 390 px de ancho — la tabla baja a 11 px

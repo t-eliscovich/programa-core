@@ -290,3 +290,41 @@ def test_dentro_del_PDF_no_va_el_boton_de_imprimir():
     """Nadie va a tocar un botón adentro de un archivo."""
     assert "{% if not para_pdf|default(false) %}" in HOJA_PORTAL
     assert "para_pdf=True" in VISTAS
+
+
+def test_hay_UN_solo_boton_para_el_estado_de_cuenta():
+    """⭐ Dueña, 24/08: *"ver hoja para imprimir y descargar archivo es lo
+    mismo"*. Y tenía razón: los dos llevan al mismo documento, uno en pantalla
+    y el otro en archivo. Dos botones para lo mismo obligan a elegir entre dos
+    cosas que no se distinguen.
+
+    Queda el archivo, y la hoja en pantalla aparece EN SU LUGAR cuando el
+    servidor no puede generarlo: la acción no desaparece, cambia de forma."""
+    assert PANTALLA.count('href="/estado-de-cuenta.pdf"') == 1
+    assert PANTALLA.count('href="/estado-de-cuenta/imprimir"') == 1
+    assert "{% else %}" in PANTALLA[PANTALLA.index("pdf_disponible()"):
+                                    PANTALLA.index("/estado-de-cuenta/imprimir")]
+
+
+def test_en_el_celular_no_se_dibuja_la_columna_del_acumulado():
+    """🚨 Dueña: *"se ven feas las facturas"*. Con retenciones Y abonos la
+    tabla dibuja SEIS columnas de números que no se pueden partir, y a 390 px
+    se sale por la derecha: el saldo —el dato— queda cortado.
+
+    Se esconde `Acum.`, el saldo acumulado, que es la que menos le dice al
+    cliente: es una ayuda para seguir la aritmética y el total ya está arriba y
+    abajo. En la hoja para imprimir y en el archivo van las seis, porque ahí se
+    compara contra el papel de la oficina."""
+    assert "@media (max-width: 560px)" in PANTALLA
+    assert ".ec th:last-child, .ec td:last-child{display:none}" in PANTALLA
+
+
+def test_esconder_la_columna_NO_le_toca_la_pantalla_al_vendedor():
+    """Él sí usa el acumulado, y es su pantalla de trabajo. Por eso la regla
+    vive en el portal y no en el parcial compartido."""
+    compartido = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+                  / "_ficha_css.html").read_text(encoding="utf-8")
+    assert "last-child{display:none}" not in compartido
+    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+             / "cliente.html").read_text(encoding="utf-8")
+    assert "max-width: 560px" not in ficha
