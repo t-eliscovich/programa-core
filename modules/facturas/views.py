@@ -869,6 +869,29 @@ def detalle(id_factura: int):
     )
 
 
+@facturas_bp.route("/facturas/<int:id_factura>/que-se-llevo")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def que_se_llevo(id_factura: int):
+    """El bloque de mercadería de la ficha, pedido aparte.
+
+    TMT 2026-08-25 (dueña): *"cuando clickeen, les aparezca qué llevaron en ese
+    número de factura"*. La plata la sabe Programa Core; la mercadería la sabe
+    Asinfo. Se pide por separado para que la ficha no espere al ERP.
+
+    Devuelve SIEMPRE 200 con el parcial: si Asinfo no contesta, el parcial lo
+    dice. Un 500 acá dejaría la ficha con un agujero y sin explicación.
+    """
+    fact = queries.por_id(id_factura)
+    if not fact:
+        abort(404)
+    from modules.asinfo import factura_lineas
+    return render_template(
+        "facturas/_que_se_llevo.html",
+        det=factura_lineas.que_se_llevo(fact.get("numf_completo")),
+    )
+
+
 def _despachado_hoy(fecha) -> dict:
     """{kg, hora, fresco} de lo que SALIÓ hoy por la puerta (Asinfo).
 

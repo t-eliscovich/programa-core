@@ -1,0 +1,96 @@
+{# Qué se llevó el cliente en esta factura — la mercadería, que vive en Asinfo.
+
+   TMT 2026-08-25 (dueña). El bloque se pide APARTE (htmx) y no dentro de la
+   ficha: preguntarle a Asinfo tarda entre medio segundo y dos, y la ficha de
+   la factura tiene que abrir ya. Si el ERP no contesta, acá se dice; la ficha
+   no se entera.
+
+   ⚠ Este parcial viaja con las clases de Tailwind del ERP. El portal del
+   cliente tiene su propio CSS: allá va su propia hoja, con los mismos números
+   (`modules.asinfo.factura_lineas`). #}
+<div id="que-se-llevo">
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Qué se llevó
+    {% if det.estado == 'ok' %}
+      <span class="normal-case font-normal tracking-normal text-slate-400">
+        · {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }}
+        · {{ det.totales.kg | kg_es }} kg
+      </span>
+    {% endif %}
+  </h2>
+
+  {% if det.estado != 'ok' %}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-3 py-3 text-sm text-slate-500 mb-6">
+      {% if det.estado == 'sin-numero' %}
+        Esta factura no tiene número del SRI cargado, así que no se puede buscar el detalle en Asinfo.
+      {% elif det.estado == 'sin-datos' %}
+        Asinfo no tiene el detalle de esta factura.
+      {% elif det.estado == 'sin-puente' %}
+        El detalle sale de Asinfo y acá no hay conexión con el ERP.
+      {% else %}
+        Ahora no se pudo traer el detalle de Asinfo. Volvé a entrar en un rato.
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-6">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-3 py-3 text-left font-medium">Tela</th>
+            <th class="px-3 py-3 text-left font-medium">Código</th>
+            <th class="px-3 py-3 text-left font-medium">Color</th>
+            <th class="px-3 py-3 text-left font-medium">Calidad</th>
+            <th class="px-3 py-3 text-right font-medium">Rollos</th>
+            <th class="px-3 py-3 text-right font-medium">Kilos</th>
+            <th class="px-3 py-3 text-right font-medium">Precio</th>
+            <th class="px-3 py-3 text-right font-medium">Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for l in det.lineas %}
+          <tr class="border-t border-slate-100 dark:border-slate-800">
+            <td class="px-3 py-2">{{ l.tela }}</td>
+            <td class="px-3 py-2 text-mono">{{ l.codigo or '—' }}</td>
+            <td class="px-3 py-2">{{ l.color or '—' }}</td>
+            <td class="px-3 py-2">{{ l.calidad or '—' }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ l.rollos }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ l.kg | kg_es }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ l.precio | money_es }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ l.total | money_es }}</td>
+          </tr>
+          {% endfor %}
+          {% for s in det.servicios %}
+          <tr class="border-t border-slate-100 dark:border-slate-800 text-slate-500">
+            <td class="px-3 py-2" colspan="4">{{ s.nombre | capitalize }}</td>
+            <td class="px-3 py-2 text-right text-mono">—</td>
+            <td class="px-3 py-2 text-right text-mono">—</td>
+            <td class="px-3 py-2 text-right text-mono">—</td>
+            <td class="px-3 py-2 text-right text-mono">{{ s.total | money_es }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="border-t-2 border-slate-200 dark:border-slate-700 text-sm">
+          <tr>
+            <td class="px-3 py-2 text-slate-500" colspan="4">Bruto</td>
+            <td class="px-3 py-2 text-right text-mono">{{ det.totales.rollos }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ det.totales.kg | kg_es }}</td>
+            <td class="px-3 py-2"></td>
+            <td class="px-3 py-2 text-right text-mono">{{ det.totales.bruto | money_es }}</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-1 text-slate-500" colspan="7">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% endif %}</td>
+            <td class="px-3 py-1 text-right text-mono">−{{ det.totales.descuento | money_es }}</td>
+          </tr>
+          <tr>
+            <td class="px-3 py-1 text-slate-500" colspan="7">IVA 15%</td>
+            <td class="px-3 py-1 text-right text-mono">{{ det.totales.iva | money_es }}</td>
+          </tr>
+          <tr class="border-t border-slate-200 dark:border-slate-700">
+            <td class="px-3 py-2 font-semibold" colspan="7">Total</td>
+            <td class="px-3 py-2 text-right text-mono font-semibold">{{ det.totales.total | money_es }}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endif %}
+</div>
