@@ -117,12 +117,12 @@ def items(conn=None) -> list[dict]:
                WHERE UPPER(TRIM(tc.cod)) = UPPER(TRIM(c.color))
                  AND COALESCE(TRIM(tc.color), '') <> ''
                LIMIT 1) nom ON TRUE
-         -- ⭐ Las apagadas no se muestran. Son las que entraron a la cohorte
-         -- antes del 25/08 siendo tela RECIÉN HECHA: no vendieron nada en 12
-         -- meses porque recién se hicieron (`asinfo_parado.MESES_QUIETO`).
-         -- La fila no se borra —la
-         -- cohorte no borra nunca— pero no está en la lista ni en la
-         -- competencia, y vuelve sola el día que sus rollos cumplan los meses.
+         -- ⭐ Las apagadas no se muestran. Son las que no vendieron nada en 12
+         -- meses por un motivo que no es estar paradas: se hicieron hace menos
+         -- de `asinfo_parado.DIAS_QUIETO` días, o tienen un pedido esperando.
+         -- La fila no se borra —la cohorte no borra nunca— pero no está en la
+         -- lista ni en la competencia, y vuelve sola el día que la tela cumpla
+         -- los días o el pedido salga.
          WHERE NOT c.fuera
          ORDER BY COALESCE(f.stock_kg, 0) DESC, c.subcategoria, c.color
         """, conn=conn
@@ -666,8 +666,8 @@ def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
     antes de la migración 0212.
 
     ⚠ La única excepción la escribe el refresco: a un ítem de tela RECIÉN HECHA
-    se le corrige el motivo a `segunda` aunque ya estuviera congelado en
-    `parado` — sus kilos de primera nunca debieron contar. Y no vuelve a
+    o PEDIDA se le corrige el motivo a `segunda` aunque ya estuviera congelado
+    en `parado` — sus kilos de primera nunca debieron contar. Y no vuelve a
     `parado` cuando la tela cumple los meses: quedarse en la regla más
     exigente no le regala puntos a nadie, y volver sí.
     """
@@ -686,12 +686,25 @@ def actualizar() -> dict:
     todas = asinfo_parado.parados()
     lla = asinfo_parado.llamados()
 
-    # ⭐ LA TELA RECIÉN HECHA NO ES TELA PARADA (dueña 25/08/2026). Asinfo ya
-    # las viene marcando; acá se parten en dos y cada mitad tiene su destino:
-    # las que entran, a la lista; las que no, apagadas en la cohorte.
+    # ⭐ NI LA RECIÉN HECHA NI LA PEDIDA SON TELA PARADA (dueña 25/08/2026).
+    # Asinfo ya las viene marcando; acá se parten en dos y cada mitad tiene su
+    # destino: las que entran, a la lista; las que no, apagadas en la cohorte.
+    # Las dos razones se cuentan por separado — en la pantalla no significan lo
+    # mismo: una se arregla sola con el tiempo, la otra cuando salga el pedido.
     par = [p for p in todas if p.get("entra", True)]
-    fuera = [p for p in todas if not p.get("entra", True)]
-    kg_fuera = sum(float(p.get("stock_bodega") or 0) for p in fuera)
+    # ⚠ Se APAGA por la bandera, no por "no está en la lista de hoy". La tela
+    # que se vendió entera tampoco está en la lista —no le queda un kilo— y ésa
+    # tiene que quedarse: vender lo parado es exactamente lo que la competencia
+    # premia. La que se saca es la que no debió entrar nunca.
+    fuera = [p for p in todas
+             if not p.get("entra", True) and (p.get("nueva") or p.get("pedida"))]
+
+    def kg(fs) -> float:
+        """Los kilos que esas telas tienen HOY en la bodega."""
+        return round(sum(float(f.get("stock_bodega") or 0) for f in fs), 2)
+
+    nuevas = [p for p in fuera if p.get("nueva")]
+    pedidas = [p for p in fuera if p.get("pedida")]
 
     # ⭐ TODO se cuenta desde la LARGADA, no desde que cada fila entró a la
     # lista. Dueña 18/08/2026: "hace todo desde 25/08".
@@ -732,9 +745,10 @@ def actualizar() -> dict:
                       AND (motivo IS NULL
                            OR (%s AND motivo = 'parado'))""",
                 (p.get("motivo"), p["subcategoria"], p["color"],
-                 bool(p.get("nueva"))), conn=conn)
-            # ⭐ Y se vuelve a encender la que había quedado afuera por nueva:
-            # sus rollos ya cumplieron los meses, así que hoy sí está parada.
+                 bool(p.get("nueva") or p.get("pedida"))), conn=conn)
+            # ⭐ Y se vuelve a encender la que había quedado afuera: cumplió
+            # los días en bodega, o su pedido ya salió (o envejeció). Hoy sí
+            # está parada.
             # Vuelve con su `fecha_marcado` original — nunca se fue de la
             # cohorte, sólo estaba apagada.
             db.execute(
@@ -859,15 +873,17 @@ def actualizar() -> dict:
         db.execute(
             """UPDATE scintela.parado_refresh
                   SET actualizado = NOW(), items = %s, llamados = %s,
-                      ok = TRUE, detalle = %s, nuevas = %s, nuevas_kg = %s
+                      ok = TRUE, detalle = %s, nuevas = %s, nuevas_kg = %s,
+                      pedidas = %s, pedidas_kg = %s
                 WHERE id = 1""",
             (len(marcado), len(lla),
              f"{len(par)} parados hoy · {len(lla)} candidatos "
-             f"· {len(fuera)} afuera por recientes",
-             len(fuera), round(kg_fuera, 2)), conn=conn)
+             f"· {len(nuevas)} recientes y {len(pedidas)} pedidas afuera",
+             len(nuevas), kg(nuevas), len(pedidas), kg(pedidas)), conn=conn)
 
     return {"items": len(marcado), "llamados": len(lla), "parados_hoy": len(par),
-            "nuevas": len(fuera), "nuevas_kg": round(kg_fuera, 2)}
+            "nuevas": len(nuevas), "nuevas_kg": kg(nuevas),
+            "pedidas": len(pedidas), "pedidas_kg": kg(pedidas)}
 
 
 def _fecha(v):

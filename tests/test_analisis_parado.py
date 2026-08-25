@@ -1744,9 +1744,13 @@ def test_el_menu_dice_saldos():
 # ── Toda la segunda entra a la competencia ──────────────────────────────────
 
 def test_entra_toda_la_segunda_y_no_solo_la_parada():
-    """Dueña 18/08/2026: "agreguemos toda la tela de segunda a la competencia"."""
-    s = asinfo_parado.SQL_PARADOS
-    assert "OR ISNULL(cal.kg_segunda, 0) > 0" in s
+    """Dueña 18/08/2026: "agreguemos toda la tela de segunda a la competencia".
+
+    La consulta ya no filtra —contesta por toda la bodega—, así que la regla
+    vive en el `stock_kg`: la tela que no entra como `parado` entra con sus
+    kilos de SEGUNDA, y con 0 kg de segunda queda en 0 y no entra."""
+    s = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "ELSE ISNULL(cal.kg_segunda, 0) END AS stock_kg" in s
 
 
 def test_de_una_tela_que_se_vende_entran_SOLO_los_kilos_de_segunda():
@@ -2608,53 +2612,87 @@ def test_la_tela_recien_hecha_no_entra_como_parada():
     recientemente y no se movió"*.
 
     "No vendió un kilo en 12 meses" lo cumple sola la tela que salió de
-    producción el mes pasado: nunca tuvo la chance de venderse. Al filtro de
-    ventas le tiene que sumar el de ANTIGÜEDAD."""
+    producción el mes pasado: nunca tuvo la chance de venderse."""
     sql = " ".join(asinfo_parado.SQL_PARADOS.split())
-    # el corte, en la consulta y sobre la bodega de producto terminado
-    assert (f"WHERE id_bodega = {asinfo_parado.BODEGA_TERMINADO} AND saldo > 0 "
-            f"AND fecha < DATEADD(month, -{asinfo_parado.MESES_QUIETO}, "
+    assert (f"AND s.fecha <= DATEADD(day, -{asinfo_parado.DIAS_QUIETO}, "
             "GETDATE())") in sql
-    # y el motivo `parado` no se puede dar sin él
     assert asinfo_parado._QUIETO in asinfo_parado._ES_PARADO
     assert asinfo_parado._QUIETO not in asinfo_parado._SIN_VENTA
 
 
+def test_la_antiguedad_se_mide_por_el_saldo_y_no_por_los_rollos():
+    """⚠ El 11 y el 25/04/2026 un re-loteo de bodega le creó rollos NUEVOS a
+    tela vieja, sin una sola orden de fabricación detrás. Midiendo por rollo,
+    Rib Spun AMF —última venta 17/11/2022— daba producción fresca y se caía de
+    la lista: 12 ítems y 314 kg de la tela más clavada que hay, justo al revés
+    de lo que la regla busca.
+
+    Los rollos cambian de número; el saldo del producto no. Y es lo único que
+    se puede medir para la tela que ya se vendió entera, que no tiene rollos."""
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert "FROM a_corte u JOIN producto p" in sql
+    assert "kg_antes" in asinfo_parado._QUIETO
+    assert "id_lote" not in asinfo_parado._QUIETO, (
+        "la antigüedad no puede volver a salir del lote")
+
+
 def test_los_kilos_viejos_tienen_que_llegar_al_minimo():
-    """No alcanza con que haya UN rollo viejo: la tela tiene que tener parados
-    los mismos 20 kg que se le piden a cualquier otra. Si no, 3 kg de 2019
-    arrastrarían a la lista 800 kg hechos el mes pasado."""
-    assert (f"ISNULL(cal.kg_viejo, 0) >= {asinfo_parado.MIN_KG}"
+    """No alcanza con que hubiera algún kilo: la tela tiene que haber tenido
+    parados los mismos 20 kg que se le piden a cualquier otra."""
+    assert (f"ISNULL(antes.kg_antes, 0) >= {asinfo_parado.MIN_KG}"
             in asinfo_parado._QUIETO)
 
 
 def test_sin_foto_vieja_de_la_bodega_no_se_filtra_nada():
     """⚠ El filtro excluye sólo con PRUEBA de que la tela es reciente.
 
-    Si `saldo_producto_lote` no llega hasta el corte (Asinfo purgó historia),
-    NINGÚN rollo figuraría como viejo y la lista entera se vaciaría sola — y una
+    Si `saldo_producto` no llega hasta el corte (Asinfo purgó historia), ninguna
+    tela figuraría con saldo viejo y la lista entera se vaciaría sola — y una
     lista vacía se lee como "ya no queda nada parado", que es la peor manera de
-    romperse. Lo mismo con el ítem que no tiene ni un lote en la foto por rollo:
-    no se puede fechar, así que no se lo saca."""
+    romperse."""
     q = " ".join(asinfo_parado._QUIETO.split())
-    assert (f"hist.desde > DATEADD(month, -{asinfo_parado.MESES_QUIETO}, "
+    assert (f"hist.desde > DATEADD(day, -{asinfo_parado.DIAS_QUIETO}, "
             "GETDATE())") in q
-    assert "cal.subcategoria IS NULL" in q
     sql = " ".join(asinfo_parado.SQL_PARADOS.split())
-    assert "hist AS ( SELECT MIN(fecha) AS desde FROM saldo_producto_lote" in sql
+    assert "hist AS ( SELECT MIN(fecha) AS desde FROM saldo_producto" in sql
     assert "CROSS JOIN hist" in sql
 
 
-def test_la_segunda_entra_aunque_la_tela_sea_reciente():
-    """Dueña 25/08/2026: *"sí, la segunda siempre entra"*. La antigüedad decide
-    el motivo `parado`, no el `segunda`: el WHERE de la consulta sigue trayendo
-    todo lo que tenga kilos SEG, se haya hecho cuando se haya hecho."""
+def test_la_tela_pedida_no_compite():
+    """Dueña 25/08/2026: *"si la tela se produjo por un pedido, tiene que salir
+    de la competencia"*. Esa tela ya tiene dueño: darle puntos a quien la
+    facture es pagar por una venta que ya estaba hecha."""
+    assert "NOT " + asinfo_parado._PEDIDA in asinfo_parado._ES_PARADO
     sql = " ".join(asinfo_parado.SQL_PARADOS.split())
-    where = sql.split("WHERE")[-1]
-    assert "ISNULL(cal.kg_segunda, 0) > 0" in where
-    assert "kg_viejo" not in where, (
-        "el filtro de antigüedad no puede estar en el WHERE: sacaría del "
-        "resultado a la tela reciente que entra por su segunda")
+    assert "FROM v_saldos_comprometidos_detallado v" in sql, (
+        "los pedidos salen de la misma vista que la pantalla /pedidos")
+
+
+def test_un_pedido_viejo_no_salva_a_la_tela():
+    """*"Si es hace más de 90 días asumo que quedó estancada"*: ese pedido quedó
+    en la nada y la tela se estancó igual, así que vuelve a competir."""
+    assert (f"DATEADD(day, -{asinfo_parado.DIAS_PEDIDO}, GETDATE())"
+            in asinfo_parado._PEDIDA)
+    assert asinfo_parado.DIAS_PEDIDO == 90
+
+
+def test_la_tela_sin_pedido_sigue_siendo_tela_parada():
+    """⚠⚠ El bug que casi entra: `ped.ultimo_pedido` viene en NULL para toda
+    tela sin pedido —la enorme mayoría—, y `NOT (NULL >= fecha)` es NULL, no
+    TRUE. Sin el ISNULL el CASE se iba al ELSE y la lista se quedaba sin UN SOLO
+    ítem `parado`: la competencia entera pasaba a contar sólo segunda."""
+    assert "ISNULL(ped.ultimo_pedido, '19000101')" in asinfo_parado._PEDIDA
+
+
+def test_la_segunda_entra_aunque_la_tela_sea_reciente_o_pedida():
+    """Dueña 25/08/2026: *"sí, la segunda siempre entra"*. La antigüedad y el
+    pedido deciden el motivo `parado`, no el `segunda`: el pedido es de primera,
+    y esos kilos siguen siendo un saldo que alguien tiene que colocar."""
+    sql = " ".join(asinfo_parado.SQL_PARADOS.split())
+    # la antigüedad y el pedido deciden el MOTIVO; los kilos de segunda entran
+    # por el ELSE del mismo CASE, sin mirar ni una cosa ni la otra
+    assert "ELSE ISNULL(cal.kg_segunda, 0) END AS stock_kg" in sql
+    assert "ELSE 'segunda' END AS motivo" in sql
 
 
 def _asinfo(filas):
@@ -2817,15 +2855,90 @@ def test_la_meta_y_los_puntos_se_congelan_sobre_lo_que_se_acaba_de_escribir(
     assert vistas and all(c == "CONN" for c in vistas), vistas
 
 
-def test_la_pantalla_dice_cuanta_tela_quedo_afuera_por_reciente():
+def test_la_pantalla_dice_cuanta_tela_quedo_afuera_y_por_que():
     """Si la lista baja de 707 ítems a 600 sin una palabra, lo primero que se
-    piensa es que el programa se rompió. Y los meses los dice la constante, no
-    un número escrito a mano en el HTML."""
+    piensa es que el programa se rompió. Las dos razones van separadas —una se
+    arregla sola con el tiempo, la otra cuando salga el pedido— y los días los
+    dice la constante, no un número escrito a mano en el HTML."""
     import inspect as _i
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "{% if estado.nuevas %}" in html
+    assert "{% if estado.nuevas or estado.pedidas %}" in html
     assert "{{ estado.nuevas_kg | num_es(0) }}" in html
-    assert "{{ meses_quieto }} meses" in html
-    assert "meses_quieto=asinfo_parado.MESES_QUIETO" in _i.getsource(views.parado)
+    assert "{{ estado.pedidas_kg | num_es(0) }}" in html
+    assert "{{ dias_quieto }} días" in html
+    assert "dias_quieto=asinfo_parado.DIAS_QUIETO" in _i.getsource(views.parado)
+
+
+def test_el_refresco_cuenta_aparte_las_recientes_y_las_pedidas(monkeypatch):
+    """En la pantalla no significan lo mismo: la tela reciente vuelve sola
+    cuando cumpla los días, la pedida cuando el pedido salga. Un solo número
+    sumado no dejaría explicar ninguna de las dos."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[
+            {"subcategoria": "Toper", "color": "COA", "stock_kg": 0,
+             "stock_bodega": 257, "motivo": "segunda", "nueva": True,
+             "pedida": False, "entra": False},
+            {"subcategoria": "Pique Nido", "color": "CRO", "stock_kg": 0,
+             "stock_bodega": 195, "motivo": "segunda", "nueva": False,
+             "pedida": True, "entra": False},
+            {"subcategoria": "Fleece 102", "color": "AZU", "stock_kg": 300,
+             "stock_bodega": 300, "motivo": "parado", "nueva": False,
+             "pedida": False, "entra": True},
+        ],
+        cohorte=[{"subcategoria": "Fleece 102", "color": "AZU",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
+
+    assert (res["nuevas"], res["nuevas_kg"]) == (1, 257)
+    assert (res["pedidas"], res["pedidas_kg"]) == (1, 195)
+    apagadas = {p for _, p in db.sql_con("SET fuera = TRUE")}
+    assert apagadas == {("Toper", "COA"), ("Pique Nido", "CRO")}
+
+
+def test_la_pedida_tambien_pierde_el_motivo_congelado(monkeypatch):
+    """Un ítem que entró como `parado` el 13/08 y hoy resulta que está pedido no
+    puede seguir sumando sus kilos de PRIMERA: nunca debieron contar. Es la
+    misma corrección que para la tela reciente."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Jersey 115", "color": "ROJ", "stock_kg": 40,
+                  "stock_bodega": 130, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "entra": True}],
+        cohorte=[])
+    motivos = db.sql_con("SET motivo = %s")
+    assert motivos and motivos[0][1] == ("segunda", "Jersey 115", "ROJ", True)
+
+
+def test_la_tela_que_ya_se_vendio_no_pierde_su_lugar(monkeypatch):
+    """⭐ El invariante de la dueña: "si empezamos a venderlas, que no se nos
+    vayan de la lista". Vender lo parado es lo que la competencia premia, así
+    que la tela que se vendió entera —sin stock y sin banderas— se queda."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Fleece 102", "color": "AZU", "stock_kg": 0,
+                  "stock_bodega": 0, "motivo": "parado", "nueva": False,
+                  "pedida": False, "entra": False}],
+        cohorte=[{"subcategoria": "Fleece 102", "color": "AZU",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
+    assert not db.sql_con("SET fuera = TRUE"), (
+        "sin stock pero sin bandera: se vendió, y ésa es la que hay que premiar")
+
+
+def test_la_reciente_que_se_vendio_entera_igual_pierde_los_puntos(monkeypatch):
+    """El agujero que destapó la largada: Intela arrancó con 640 puntos y 554
+    eran UNA venta de Jersey 3 BLA. Apenas se vende, la tela pasa a tener ventas
+    en 12 meses y deja de figurar como parada — si el refresco sólo mirara la
+    lista de hoy, no la vería nunca más y los puntos quedarían puestos.
+
+    Por eso las banderas se calculan para toda la bodega, vendida o no."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Jersey 3", "color": "BLA", "stock_kg": 0,
+                  "stock_bodega": 0, "motivo": "segunda", "nueva": True,
+                  "pedida": False, "entra": False}],
+        cohorte=[{"subcategoria": "Jersey 3", "color": "BLA",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
+    assert [p for _, p in db.sql_con("SET fuera = TRUE")] == [("Jersey 3", "BLA")]
+    assert res["nuevas"] == 1

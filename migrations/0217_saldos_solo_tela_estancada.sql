@@ -9,10 +9,31 @@
 -- todavía no tuvo la chance. Entraba a la lista, sumaba kilos a la meta y le
 -- daba puntos a quien la vendiera, igual que una clavada desde 2019.
 --
--- Ahora hace falta además que sus rollos estén en la bodega desde hace más de 6
--- meses (`asinfo_parado.MESES_QUIETO`, elegido por la dueña entre 3, 6 y 12).
--- La de SEGUNDA entra igual, se haya hecho cuando se haya hecho: eso no cambia
--- ("sí, la segunda siempre entra").
+-- Medido sobre los 344 ítems parados del 25/08: 47 se habían hecho en los
+-- últimos 6 meses (4.406 kg). Nueve de ellos eran las 6 Pique Nido, las 2
+-- Jersey 115 y la Fleece 2.2 BHU: tejidas entre el 12 y el 24 de agosto contra
+-- ocho pedidos de VEGA LOGRO y uno de TEXTILES EL GRECO. Tela con dueño, no
+-- saldo.
+--
+-- Con eso la dueña cerró la regla. Un ítem que no vendió un kilo en 12 meses
+-- entra a la lista sólo si:
+--
+--   · la bodega YA TENÍA stock de esa tela × color hace 90 días
+--     (`asinfo_parado.DIAS_QUIETO`; probamos 6 meses y eligió 90 días: "así no
+--     sacamos tanto"), y
+--   · no tiene un pedido de menos de 90 días esperando
+--     (`DIAS_PEDIDO`): "si la tela se produjo por un pedido, tiene que salir de
+--     la competencia. si es hace más de 90 días asumo que quedó estancada".
+--
+-- La de SEGUNDA entra igual, se haya hecho cuando se haya hecho y esté pedida o
+-- no: el pedido es de primera, y esos kilos siguen siendo un saldo ("sí, la
+-- segunda siempre entra").
+--
+-- ⚠ La antigüedad se mide por el SALDO DEL PRODUCTO, no por la fecha de los
+-- rollos. El 11 y el 25/04/2026 un re-loteo de bodega le creó rollos nuevos a
+-- tela vieja sin una sola orden de fabricación detrás: midiendo por rollo, Rib
+-- Spun AMF —última venta 17/11/2022— figuraba como producción fresca. Eran 12
+-- ítems y 314 kg de la tela más clavada que hay.
 
 -- ── 1 · La que nunca debió entrar se APAGA, no se borra ─────────────────────
 -- La cohorte es deliberadamente inmutable ("si empezamos a venderlas, que no se
@@ -25,10 +46,16 @@ ALTER TABLE scintela.parado_cohorte
     ADD COLUMN IF NOT EXISTS fuera BOOLEAN NOT NULL DEFAULT FALSE;
 
 -- ── 2 · Cuántas quedaron afuera, para poder verlo en la pantalla ────────────
+-- Las dos razones van separadas: en la pantalla no significan lo mismo. La
+-- reciente se arregla sola con el tiempo; la pedida, cuando salga el pedido.
 ALTER TABLE scintela.parado_refresh
-    ADD COLUMN IF NOT EXISTS nuevas    INTEGER;
+    ADD COLUMN IF NOT EXISTS nuevas     INTEGER;
 ALTER TABLE scintela.parado_refresh
-    ADD COLUMN IF NOT EXISTS nuevas_kg NUMERIC(14,2);
+    ADD COLUMN IF NOT EXISTS nuevas_kg  NUMERIC(14,2);
+ALTER TABLE scintela.parado_refresh
+    ADD COLUMN IF NOT EXISTS pedidas    INTEGER;
+ALTER TABLE scintela.parado_refresh
+    ADD COLUMN IF NOT EXISTS pedidas_kg NUMERIC(14,2);
 
 -- ── 3 · La meta y los puntos se vuelven a congelar ─────────────────────────
 -- ⚠ Esto es lo ÚNICO de esta migración que no se puede repetir a la ligera. La
@@ -45,5 +72,5 @@ DELETE FROM scintela.parado_punto;
 -- fondo mira esta fecha para decidir si toca (`analisis.auto_refresco`).
 UPDATE scintela.parado_refresh
    SET actualizado = NULL,
-       detalle = 'esperando el refresco que saca la tela reciente'
+       detalle = 'esperando el refresco que saca la tela reciente y la pedida'
  WHERE id = 1;

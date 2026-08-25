@@ -61,15 +61,23 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% else %}
   Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
-{# ⭐ La tela que quedó afuera por RECIENTE se dice, no se esconde. Si no, el
-   día que la lista baje de 707 a 600 ítems nadie va a poder decir por qué, y
-   lo primero que se piensa es que el programa se rompió. #}
-{% if estado.nuevas %}
+{# ⭐ La tela que quedó afuera se dice, no se esconde. Si no, el día que la
+   lista baje de 707 a 600 ítems nadie va a poder decir por qué, y lo primero
+   que se piensa es que el programa se rompió.
+   ⚠ Las dos razones van separadas a propósito: la reciente se arregla sola con
+   el tiempo, la pedida cuando salga el pedido. #}
+{% if estado.nuevas or estado.pedidas %}
   <br>
-  {{ estado.nuevas }} tela{{ 's' if estado.nuevas != 1 }} × color
-  ({{ estado.nuevas_kg | num_es(0) }} kg) no está{{ 'n' if estado.nuevas != 1 }}
-  en la lista: se hicieron hace menos de {{ meses_quieto }} meses y todavía no
-  tuvieron tiempo de venderse.
+  Afuera de la lista:
+  {%- if estado.nuevas %}
+    {{ estado.nuevas }} tela{{ 's' if estado.nuevas != 1 }} × color
+    ({{ estado.nuevas_kg | num_es(0) }} kg) que se hicieron hace menos de
+    {{ dias_quieto }} días{{ ' · ' if estado.pedidas else '.' }}
+  {%- endif %}
+  {%- if estado.pedidas %}
+    {{ estado.pedidas }} ({{ estado.pedidas_kg | num_es(0) }} kg) con un pedido
+    esperando.
+  {%- endif %}
 {% endif %}
 </p>
 
