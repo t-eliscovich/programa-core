@@ -61,13 +61,17 @@ tr.vdet{display:none}
 tr.vdet.abierta{display:table-row}
 tr.vdet>td{background:#f8fafc;padding:0 10px 14px 40px}
 tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
-/* El renglón vendido cuelga de su grupo: sangría, letra chica y UNA sola
-   línea. Sin el `white-space` los `span` de adentro se apilaban y cada venta
-   ocupaba tres renglones de alto. */
-tr.linea>td{padding:2px 10px 2px 26px;font-size:12px;color:var(--g);
+/* El renglón vendido cuelga de su grupo: sangría, letra chica y UNA sola línea.
+   ⚠⚠ La clase se llama `vlinea` y NO `linea`: `.linea` ya existe en el CSS de
+   la sección —es el renglón de tarjetas del encabezado, un flex con `b` en
+   display:block y 19 px—, así que la fila se lo comía entero: las tres celdas
+   se acomodaban en una sola línea de texto y el color salía grande y aparte,
+   tres renglones de alto por venta. Segundo choque de nombres del día, después
+   de `tr.item` en la tabla de Vendidos. */
+tr.vlinea>td{padding:2px 10px 2px 26px;font-size:12px;color:var(--g);
   white-space:nowrap;line-height:1.5}
-tr.linea>td *{display:inline;font-size:12px}
-tr.linea>td b{color:var(--t);font-weight:600}
+tr.vlinea>td *{display:inline;font-size:12px}
+tr.vlinea>td b{color:var(--t);font-weight:600}
 .tope{font-size:11px;color:var(--g)}
 td.abrir{width:26px;text-align:center;padding-right:0}
 td.abrir .flecha{display:inline-block;width:18px;height:18px;line-height:17px;
@@ -205,7 +209,7 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
            ⚠ Y los puntos SÓLO si no son los kilos ("no me repitas info 64,
            64"): en una tela de 1 punto por kilo, el número es el mismo dos
            veces. En las de 4 y 10 sí dice algo, y ahí aparece. #}
-        <tr class="linea">
+        <tr class="vlinea">
           <td>{{ v.subcategoria }} · <b>{{ v.color }}</b> {{ v.calidad }} ·
             {{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>

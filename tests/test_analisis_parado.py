@@ -3284,8 +3284,15 @@ def test_el_renglon_vendido_cuelga_de_su_grupo():
     assert '"grupo": cat,' in fuente
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "tr.linea>td{padding:2px 10px 2px 26px" in t, (
+    assert "tr.vlinea>td{padding:2px 10px 2px 26px" in t, (
         "el renglón se lee colgado del grupo")
+    # ⚠⚠ NO puede llamarse `linea`: esa clase ya es el renglón de tarjetas del
+    # encabezado (un flex con `b` en 19 px) y se comía la fila entera.
+    assert '<tr class="linea">' not in t
+    base = (Path("modules/analisis/templates/analisis/base.html")
+            .read_text(encoding="utf-8"))
+    assert ".linea{display:flex" in base, "si esto cambia, revisar el choque"
+    assert "vlinea" not in base, "el nombre nuevo tiene que seguir libre"
 
 
 def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
@@ -3296,7 +3303,7 @@ def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
     from pathlib import Path
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "white-space:nowrap" in t and "tr.linea>td *{display:inline" in t
+    assert "white-space:nowrap" in t and "tr.vlinea>td *{display:inline" in t
     assert "{% if v.puntos | round(0) != v.kg | round(0) %}" in t, (
         "los puntos sólo cuando dicen algo distinto de los kilos")
 
