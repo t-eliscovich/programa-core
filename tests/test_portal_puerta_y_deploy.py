@@ -183,3 +183,19 @@ def test_el_script_no_usa_here_strings():
                         if not ln.strip().startswith("#"))
     assert '@"' not in codigo
     assert "'@" not in codigo
+
+
+def test_el_script_es_ASCII_puro():
+    """🚨 Windows PowerShell 5.1 lee un `.ps1` SIN BOM como Windows-1252, no
+    como UTF-8. Cada carácter acentuado se decodifica mal y el parser termina
+    cortando una cadena por la mitad — y el error que tira no dice "encoding",
+    dice `Unexpected token` en un renglón que está perfecto.
+
+    Pasó el 24/08 y costó dos corridas contra el server entenderlo. Acá no hay
+    forma de correr PowerShell antes de mandarlo, así que esto lo cuida el
+    test."""
+    crudo = (ROOT / "scripts" / "crear_servicio_portal.ps1").read_bytes()
+    fuera = [(i, b) for i, b in enumerate(crudo) if b > 127]
+    assert not fuera, (
+        f"{len(fuera)} byte(s) fuera de ASCII, el primero en la posición "
+        f"{fuera[0][0]}: ...{crudo[max(0, fuera[0][0] - 40):fuera[0][0] + 10]!r}")
