@@ -2466,6 +2466,33 @@ def _forma(**kg):
     return " ".join(tpl.render(f=kg).split())
 
 
+def test_la_hoja_abre_el_color_por_forma_Y_por_calidad():
+    """⭐ Dueña 25/08/2026: "idem con PRI y SEG como tubular y abierta, no es lo
+    mismo". Tubular y abierta se cortan distinto; primera y segunda se venden a
+    precios distintos. Un renglón de 171 kg que son 95 tubulares de segunda y 76
+    abiertas de primera promete cuatro cosas a la vez."""
+    out = queries.abrir_en_lineas([{
+        "subcategoria": "Jersey 3", "color": "JME", "stock_kg": 171,
+        "puntos": 4, "puntos_fila": 684,
+        "kg_tub_pri": 0, "kg_tub_seg": 95, "kg_abi_pri": 76, "kg_abi_seg": 0}])
+    assert [(f["forma_fila"], f["cal_fila"], f["stock_kg"]) for f in out] == [
+        ("TUB", "SEG", 95), ("ABI", "PRI", 76)]
+    assert sum(f["stock_kg"] for f in out) == 171, "las líneas cierran"
+    assert [f["puntos_fila"] for f in out] == [380, 304]
+    # cada línea lleva su propia calidad, para que la píldora no mienta
+    assert [(f["kg_segunda"], f["kg_primera"]) for f in out] == [(95, 0), (0, 76)]
+
+
+def test_un_color_de_una_sola_manera_no_se_abre():
+    """Si viene todo tubular y todo de primera, la fila ya lo dice: abrirla en
+    una sola línea sería el mismo renglón con una columna más."""
+    f = {"subcategoria": "X", "color": "BAN", "stock_kg": 127, "puntos": 4,
+         "puntos_fila": 508, "kg_tub_pri": 0, "kg_tub_seg": 127,
+         "kg_abi_pri": 0, "kg_abi_seg": 0}
+    out = queries.abrir_en_lineas([f])
+    assert out == [f] and "forma_fila" not in out[0]
+
+
 def test_la_hoja_abre_el_color_en_dos_lineas_cuando_hay_las_dos_formas():
     """⭐ Dueña 25/08/2026: "no, una cantidad por tubular. una cantidad por
     abierta… dos lineas para el color cuando hay ambas telas". Tubular y
@@ -2473,11 +2500,13 @@ def test_la_hoja_abre_el_color_en_dos_lineas_cuando_hay_las_dos_formas():
     otra."""
     filas = [
         {"subcategoria": "Jersey 3", "color": "ROB", "stock_kg": 129,
-         "kg_tubular": 90, "kg_abierta": 39, "puntos": 4, "puntos_fila": 516},
+         "kg_tub_pri": 90, "kg_tub_seg": 0, "kg_abi_pri": 39, "kg_abi_seg": 0,
+         "puntos": 4, "puntos_fila": 516},
         {"subcategoria": "Jersey 3", "color": "BAN", "stock_kg": 127,
-         "kg_tubular": 127, "kg_abierta": 0, "puntos": 4, "puntos_fila": 508},
+         "kg_tub_pri": 127, "kg_tub_seg": 0, "kg_abi_pri": 0, "kg_abi_seg": 0,
+         "puntos": 4, "puntos_fila": 508},
     ]
-    out = queries.abrir_por_forma(filas)
+    out = queries.abrir_en_lineas(filas)
     assert len(out) == 3, "la que tiene las dos formas se abre; la otra no"
     dos = [f for f in out if f["color"] == "ROB"]
     assert [f["forma_fila"] for f in dos] == ["TUB", "ABI"]
@@ -2494,15 +2523,17 @@ def test_lo_que_no_cuadra_entre_las_dos_tablas_va_en_su_propia_linea():
     cierran al 0,006% pero no son la misma consulta. Lo que sobra va en una
     línea SIN forma — un kilo inventado en la columna de la izquierda es peor
     que un renglón que dice "no sé de qué forma es"."""
-    out = queries.abrir_por_forma([
+    out = queries.abrir_en_lineas([
         {"subcategoria": "X", "color": "NEG", "stock_kg": 200,
-         "kg_tubular": 90, "kg_abierta": 39, "puntos": 1, "puntos_fila": 200}])
+         "kg_tub_pri": 90, "kg_tub_seg": 0, "kg_abi_pri": 39, "kg_abi_seg": 0,
+         "puntos": 1, "puntos_fila": 200}])
     assert [f["stock_kg"] for f in out] == [90, 39, 71]
     assert out[-1]["forma_fila"] == ""
     # y una diferencia de menos de un kilo no ensucia la hoja con un renglón
-    chico = queries.abrir_por_forma([
+    chico = queries.abrir_en_lineas([
         {"subcategoria": "X", "color": "NEG", "stock_kg": 129.4,
-         "kg_tubular": 90, "kg_abierta": 39, "puntos": 1, "puntos_fila": 129}])
+         "kg_tub_pri": 90, "kg_tub_seg": 0, "kg_abi_pri": 39, "kg_abi_seg": 0,
+         "puntos": 1, "puntos_fila": 129}])
     assert len(chico) == 2
 
 

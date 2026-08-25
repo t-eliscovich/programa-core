@@ -70,7 +70,13 @@ tbody.tela-bloque{break-inside:avoid;page-break-inside:avoid}
     <td><b>{{ f.color }}</b></td>
     <td class="g">{{ f.color_nombre }}</td>
     <td>{{ fm.forma(f) }}</td>
-    <td>{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span>
+    {# La calidad de ESTA línea. Cuando el color viene de las dos, la hoja lo
+       abrió en dos renglones y cada uno dice el suyo. #}
+    <td>{% if f.cal_fila is defined %}
+          {% if f.cal_fila == 'SEG' %}<span class="q seg">SEG</span>
+          {% elif f.cal_fila == 'PRI' %}<span class="q pri">PRI</span>
+          {% else %}<span class="g">—</span>{% endif %}
+        {% elif f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span>
         <span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>
         {% else %}<span class="q pri">PRI</span>{% endif %}</td>
     <td class="n">{{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>

@@ -273,6 +273,14 @@ SELECT stk.subcategoria, stk.color, stk.categoria,
        CASE WHEN {_ES_PARADO}
             THEN ISNULL(cal.kg_abi_pri, 0) + ISNULL(cal.kg_abi_seg, 0)
             ELSE ISNULL(cal.kg_abi_seg, 0) END      AS kg_abierta,
+       -- Las cuatro combinaciones, para que la hoja pueda abrir el color en
+       -- una línea por forma Y calidad. En un ítem que entró sólo por su
+       -- segunda las dos de primera dan 0 solas: esos kilos no están en la
+       -- lista.
+       CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_tub_pri, 0) ELSE 0 END AS kg_tub_pri,
+       ISNULL(cal.kg_tub_seg, 0)                    AS kg_tub_seg,
+       CASE WHEN {_ES_PARADO} THEN ISNULL(cal.kg_abi_pri, 0) ELSE 0 END AS kg_abi_pri,
+       ISNULL(cal.kg_abi_seg, 0)                    AS kg_abi_seg,
        CASE WHEN {_ES_PARADO} THEN 'parado' ELSE 'segunda' END AS motivo
 FROM stk LEFT JOIN ven
   ON ven.subcategoria = stk.subcategoria AND ven.color = stk.color

@@ -73,6 +73,10 @@ def items() -> list[dict]:
                COALESCE(f.kg_segunda, 0) AS kg_segunda,
                COALESCE(f.kg_tubular, 0) AS kg_tubular,
                COALESCE(f.kg_abierta, 0) AS kg_abierta,
+               COALESCE(f.kg_tub_pri, 0) AS kg_tub_pri,
+               COALESCE(f.kg_tub_seg, 0) AS kg_tub_seg,
+               COALESCE(f.kg_abi_pri, 0) AS kg_abi_pri,
+               COALESCE(f.kg_abi_seg, 0) AS kg_abi_seg,
                -- ⭐ La forma, ya resuelta acá: TUB, ABI, las dos, o vacío
                -- cuando el lote no lo dice. La pantalla y la hoja impresa
                -- muestran lo mismo sin repetir el `if` en dos plantillas.
@@ -345,50 +349,55 @@ def _puntos_provisorios() -> dict[str, dict]:
     return agg
 
 
-def abrir_por_forma(filas: list[dict]) -> list[dict]:
-    """Una fila por tela × color × FORMA, para la hoja que se sale a vender.
+def abrir_en_lineas(filas: list[dict]) -> list[dict]:
+    """Una línea por tela × color × FORMA × CALIDAD, para la hoja que se sale a
+    vender.
 
-    ⭐ Dueña 25/08/2026: *"no, una cantidad por tubular. una cantidad por
-    abierta… dos lineas para el color cuando hay ambas telas"*. Tubular y
-    abierta no son la misma tela: se cortan distinto y el cliente pide una o la
-    otra. Un renglón que dice 200 kg cuando son 90 tubulares y 110 abiertas
-    promete algo que puede no estar.
+    ⭐ Dueña 25/08/2026: *"dos lineas para el color cuando hay ambas telas"* y,
+    enseguida, *"idem con PRI y SEG como tubular y abierta, no es lo mismo"*.
+    Tubular y abierta se cortan distinto; primera y segunda se venden a precios
+    distintos. Un renglón de 171 kg que en realidad son 95 tubulares de segunda
+    y 76 abiertas de primera promete cuatro cosas a la vez.
 
-    ⚠ Los kilos por forma vienen del LOTE y el total de la fila de otra tabla
-    (`saldo_producto`); las dos cierran al 0,006% pero no son la misma
-    consulta. Si sobra o falta algo, va en una tercera línea SIN forma en vez
-    de repartirse a ojo: un kilo inventado en la columna de la izquierda es
-    peor que un renglón que dice "no sé de qué forma es".
+    Un color que viene de una sola manera NO se abre: queda como estaba y su
+    fila ya lo dice todo.
+
+    ⚠ Los kilos por forma y calidad salen del LOTE y el total de la fila de
+    otra tabla (`saldo_producto`): cierran al 0,006% pero no son la misma
+    consulta. Lo que sobre o falte va en una línea aparte SIN forma ni calidad,
+    y sólo si pasa de un kilo. Un kilo repartido a ojo en la columna de la
+    izquierda es peor que un renglón que dice "no sé de qué es".
     """
+    combos = (("TUB", "PRI", "kg_tub_pri"), ("TUB", "SEG", "kg_tub_seg"),
+              ("ABI", "PRI", "kg_abi_pri"), ("ABI", "SEG", "kg_abi_seg"))
     salida: list[dict] = []
     for f in filas:
-        tub = float(f.get("kg_tubular") or 0)
-        abi = float(f.get("kg_abierta") or 0)
         total = float(f.get("stock_kg") or 0)
-        if not tub or not abi:
+        partes = [(forma, cal, float(f.get(col) or 0)) for forma, cal, col in combos]
+        vivas = [p for p in partes if p[2] > 0]
+        if len(vivas) <= 1:
             salida.append(f)
             continue
-        for forma, kg in (("TUB", tub), ("ABI", abi)):
-            if kg <= 0:
-                continue
-            g = dict(f)
-            g["stock_kg"] = kg
-            g["forma_fila"] = forma
-            g["kg_tubular"] = kg if forma == "TUB" else 0
-            g["kg_abierta"] = kg if forma == "ABI" else 0
-            g["puntos_fila"] = kg * float(f.get("puntos") or 1)
-            salida.append(g)
-        resto = round(total - tub - abi, 2)
+        for forma, cal, kg in vivas:
+            salida.append(_linea(f, kg, forma, cal))
+        resto = round(total - sum(p[2] for p in vivas), 2)
         if abs(resto) >= 1:
-            g = dict(f)
-            g["stock_kg"] = resto
-            g["forma_fila"] = ""
-            g["kg_tubular"] = 0
-            g["kg_abierta"] = 0
-            g["puntos_fila"] = resto * float(f.get("puntos") or 1)
-            salida.append(g)
+            salida.append(_linea(f, resto, "", ""))
     return salida
 
+
+def _linea(f: dict, kg: float, forma: str, cal: str) -> dict:
+    """Una de las líneas en que se abre un color: sus kilos y sus puntos."""
+    g = dict(f)
+    g["stock_kg"] = kg
+    g["forma_fila"] = forma
+    g["cal_fila"] = cal
+    g["kg_tubular"] = kg if forma == "TUB" else 0
+    g["kg_abierta"] = kg if forma == "ABI" else 0
+    g["kg_primera"] = kg if cal == "PRI" else 0
+    g["kg_segunda"] = kg if cal == "SEG" else 0
+    g["puntos_fila"] = kg * float(f.get("puntos") or 1)
+    return g
 
 def bolsa_congelada(puntos: dict[str, dict] | None = None) -> float:
     """Los puntos que hay EN JUEGO en toda la competencia. Uno solo, y fijo.
@@ -736,8 +745,10 @@ def actualizar() -> dict:
                 """INSERT INTO scintela.parado_foto
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
                         clientes, anio_pista, kg_primera, kg_segunda, categoria,
-                        motivo, kg_tubular, kg_abierta)
-                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                        motivo, kg_tubular, kg_abierta,
+                        kg_tub_pri, kg_tub_seg, kg_abi_pri, kg_abi_seg)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                           %s, %s, %s, %s)""",
                 (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
                  (p or {}).get("ultima_venta"), total_cli.get(k[0], 0),
                  anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
@@ -745,7 +756,11 @@ def actualizar() -> dict:
                  (p or {}).get("categoria") or grupo_previo.get(k),
                  (p or {}).get("motivo"),
                  (p or {}).get("kg_tubular") or 0,
-                 (p or {}).get("kg_abierta") or 0), conn=conn)
+                 (p or {}).get("kg_abierta") or 0,
+                 (p or {}).get("kg_tub_pri") or 0,
+                 (p or {}).get("kg_tub_seg") or 0,
+                 (p or {}).get("kg_abi_pri") or 0,
+                 (p or {}).get("kg_abi_seg") or 0), conn=conn)
 
         # 4 · los llamados también
         db.execute("DELETE FROM scintela.parado_llamado", conn=conn)
