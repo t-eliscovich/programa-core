@@ -854,20 +854,45 @@ def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
     rutas = {r.rule for r in app.url_map.iter_rules()}
     assert "/analisis/metas" in rutas
     assert "/analisis/competencia/metas" not in rutas
-    assert not any(p.startswith("/analisis") for p in scope_vendedor.PREFIJOS_PERMITIDOS)
+    # ⚠ Con la competencia ya abierta, esto es lo que de verdad hay que probar:
+    # que la pantalla de metas NO caiga adentro del prefijo permitido.
+    assert not scope_vendedor._path_permitido(
+        "/analisis/metas", scope_vendedor.PREFIJOS_PERMITIDOS)
 
 
-def test_al_vendedor_todavia_no_se_le_habilito_la_competencia():
-    """La pantalla está hecha para ellos, pero la dueña la quiere ver primero:
-    "todavia igual no se las habilites". Cuando lo diga, se agrega
-    "/analisis/competencia" a PREFIJOS_PERMITIDOS y este test se da vuelta.
+def test_al_vendedor_ya_se_le_habilito_la_competencia():
+    """⭐ Dueña 24/08/2026: "habilitalo para los vendedores". Estuvo cerrada una
+    semana mientras la miraba.
 
-    ⚠ Lo que NO puede pasar nunca es que se abra /analisis a secas o
-    /analisis/parado: ahí está la cartera de TODOS los vendedores."""
+    ⚠ Lo único abierto de /analisis es la competencia: /analisis a secas o
+    /analisis/parado le darían la cartera de los otros cinco."""
     import scope_vendedor
     abiertos = [p for p in scope_vendedor.PREFIJOS_PERMITIDOS
                 if p.startswith("/analisis")]
-    assert abiertos == [], f"todavía no había que habilitar nada: {abiertos}"
+    assert abiertos == ["/analisis/competencia"], (
+        f"sólo la competencia, y nada más: {abiertos}")
+    for ruta in ("/analisis/competencia", "/analisis/competencia/telas",
+                 "/analisis/competencia/mi-hoja",
+                 "/analisis/competencia/mi-hoja.csv"):
+        assert scope_vendedor._path_permitido(
+            ruta, scope_vendedor.PREFIJOS_PERMITIDOS), ruta
+    for cerrada in ("/analisis", "/analisis/parado", "/analisis/parado/clientes",
+                    "/analisis/metas", "/facturas", "/posdat"):
+        assert not scope_vendedor._path_permitido(
+            cerrada, scope_vendedor.PREFIJOS_PERMITIDOS), cerrada
+
+
+def test_al_vendedor_todavia_no_se_le_pone_el_link():
+    """⭐ Dueña 24/08/2026: "habilita la pagina, todavia no pongas el link asi la
+    miro antes". La ruta anda para el que tenga la dirección, pero desde
+    /mi-cartera todavía no se llega sola. Cuando diga que sí, se agrega el link
+    y este test se da vuelta."""
+    from pathlib import Path
+    raiz = Path(__file__).resolve().parent.parent
+    for carpeta in (raiz / "modules" / "mi_cartera", raiz / "templates"):
+        for archivo in carpeta.rglob("*.html"):
+            assert "/analisis/competencia" not in archivo.read_text(encoding="utf-8"), (
+                f"{archivo.name} le pone el link antes de tiempo")
 
 
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():
