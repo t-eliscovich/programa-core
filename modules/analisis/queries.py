@@ -175,17 +175,38 @@ def llamados_por_tela(cartera_de: str | None = None) -> dict[str, list[dict]]:
     return dict(out)
 
 
-def resumen(filas: list[dict]) -> dict:
+def resumen(filas: list[dict], kg_base: float | None = None) -> dict:
     """Los números de las tarjetas. Se calculan sobre las filas ya leídas para
-    que la tarjeta y la tabla no puedan decir cosas distintas."""
+    que la tarjeta y la tabla no puedan decir cosas distintas.
+
+    ⭐ Las tres cifras se leen de corrido: AL ARRANCAR − VENDIDO = QUEDA (dueña
+    25/08/2026: *"si teníamos 54k, lo que se vendió no puede ser 1k. o
+    deberíamos tener meta inicial, vendido, cuánto queda actualmente"*). La
+    pantalla mostraba el stock de hoy y lo vendido, dos números que no se
+    tocaban entre sí, y no había manera de ver el movimiento.
+
+    `kg_base` son los kilos CONGELADOS de la largada, los mismos contra los que
+    corre la competencia. Sin ellos —antes de la largada— el arranque se
+    reconstruye como stock de hoy + lo vendido, que cierra por construcción.
+
+    ⚠ `kg_movido` es lo que la resta NO explica: la bodega se mueve por cosas
+    que no son estas ventas (ajustes, producción que entra a una tela de la
+    lista, tela que sale sin factura). Va a la vista y no escondido: la primera
+    vez que los tres números no cierren, la pregunta va a ser justamente ésa.
+    """
     # ⚠ La clave NO se puede llamar `items`: en Jinja `resumen.items` resuelve
     # primero el MÉTODO del diccionario, así que la tarjeta imprimía
     # "<built-in method items of dict object at 0x…>" en vez del número. No da
     # error — renderiza 200 y queda un texto absurdo donde va una cifra.
+    kg = sum(float(f["stock_kg"]) for f in filas)
+    vendido = sum(float(f["kg_vendidos"]) for f in filas)
+    inicial = float(kg_base) if kg_base else kg + vendido
     return {
         "n_items": len(filas),
-        "kg": sum(float(f["stock_kg"]) for f in filas),
-        "kg_vendidos": sum(float(f["kg_vendidos"]) for f in filas),
+        "kg": kg,
+        "kg_vendidos": vendido,
+        "kg_inicial": inicial,
+        "kg_movido": round(inicial - vendido - kg, 2),
         "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),
         "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
         "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
@@ -220,6 +241,19 @@ def _fijar_base(conn=None) -> dict[str, float] | None:
                ON CONFLICT (categoria) DO NOTHING""",
             (categoria, round(kg, 2), today_ec()), conn=conn)
     return dict(base)
+
+
+def kg_al_arrancar() -> float | None:
+    """Los kilos que había el día de la largada, los CONGELADOS.
+
+    Son los mismos que mide la competencia: si la pantalla de Saldos reconstruye
+    su propio "al arrancar" con la foto de hoy, los dos números se separan en
+    cuanto la bodega se mueva y nadie sabe cuál es el bueno. `None` mientras no
+    se hayan fijado (antes de la largada, o entre la migración que los rehace y
+    el primer refresco).
+    """
+    kg, _ = base_fijada()
+    return round(sum(kg.values()), 2) if kg else None
 
 
 def base_fijada() -> tuple[dict[str, float], date | None]:

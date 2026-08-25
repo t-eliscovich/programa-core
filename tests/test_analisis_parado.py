@@ -2942,3 +2942,34 @@ def test_la_reciente_que_se_vendio_entera_igual_pierde_los_puntos(monkeypatch):
                   "fecha_marcado": date(2026, 8, 13), "motivo": "parado"}])
     assert [p for _, p in db.sql_con("SET fuera = TRUE")] == [("Jersey 3", "BLA")]
     assert res["nuevas"] == 1
+
+
+def test_las_tarjetas_se_leen_de_corrido(monkeypatch):
+    """Dueña 25/08/2026: *"si teníamos 54k, lo que se vendió no puede ser 1k. o
+    deberíamos tener meta inicial, vendido, cuánto queda actualmente"*.
+
+    Al arrancar − vendido = queda. Y el arranque son los kilos CONGELADOS de la
+    largada, no una reconstrucción con la foto de hoy: si no, el número de esta
+    pantalla y el de la competencia se separan en cuanto la bodega se mueva."""
+    filas = [{"stock_kg": 53441, "kg_vendidos": 1281, "kg_segunda": 0}]
+    r = queries.resumen(filas, kg_base=54722)
+    assert (r["kg_inicial"], r["kg_vendidos"], r["kg"]) == (54722, 1281, 53441)
+    assert r["kg_movido"] == 0
+
+    # sin base congelada todavía, el arranque se reconstruye y cierra igual
+    r = queries.resumen(filas)
+    assert r["kg_inicial"] == 54722 and r["kg_movido"] == 0
+
+    # y lo que la resta no explica queda a la vista
+    r = queries.resumen(filas, kg_base=55000)
+    assert r["kg_movido"] == 278
+
+
+def test_la_pantalla_muestra_las_tres_cifras():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
+    for k in ("Al arrancar", "Vendido", "Queda"):
+        assert f'class="k">{k}</span>' in html
+    assert "{{ resumen.kg_inicial | num_es(0) }}" in html
+    assert "resumen.kg_movido" in html

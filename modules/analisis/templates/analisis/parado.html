@@ -85,9 +85,27 @@ th.ord.desc::after{content:" ↓";opacity:1}
    tabla. Van en UN renglón: se leen igual y la pantalla arranca en la lista,
    que es a lo que se entra. Mismo criterio que Guías del día. #}
 <div class="linea">
-  <span><span class="k">En saldo</span>
-    <b>{{ resumen.kg | num_es(0) }} kg</b>
+  {# ⭐ Las tres primeras se leen de corrido: al arrancar − vendido = queda.
+     Antes estaban el stock de hoy y lo vendido, dos números que no se tocaban:
+     con 53.441 kg en saldo y 1.281 vendidos no había dónde ver que se había
+     arrancado con 54.722. #}
+  <span><span class="k">Al arrancar</span>
+    <b>{{ resumen.kg_inicial | num_es(0) }} kg</b>
     <span class="mini">{{ resumen.n_items }} telas × color</span></span>
+  <span><span class="k">Vendido</span>
+    <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
+    <span class="mini">desde el 25/08 · {{ resumen.movidos }} ítems</span></span>
+  <span><span class="k">Queda</span>
+    <b>{{ resumen.kg | num_es(0) }} kg</b>
+    {# ⚠ Lo que la resta no explica se dice, no se tapa: la bodega se mueve por
+       cosas que no son estas ventas. #}
+    {% if resumen.kg_movido | abs >= 1 %}
+      <span class="mini">y {{ resumen.kg_movido | abs | num_es(0) }} kg
+        {{ 'que salieron' if resumen.kg_movido > 0 else 'que entraron' }}
+        por bodega</span>
+    {% else %}
+      <span class="mini">hoy en la bodega</span>
+    {% endif %}</span>
   {# ⚠ La bolsa CONGELADA, la misma que muestra la Competencia. Acá salía la
      suma de la foto de hoy, que se mueve con la bodega todos los días: dos
      números con el mismo nombre y ninguno igual al de la presentación
@@ -96,9 +114,6 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <span><span class="k">En juego</span>
     <b class="pts">{{ bolsa | num_es(0) }}</b>
     <span class="mini">puntos · un kilo vale 1, 4 o 10</span></span>
-  <span><span class="k">Vendido</span>
-    <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
-    <span class="mini">desde el 25/08 · {{ resumen.movidos }} ítems</span></span>
   <span><span class="k">{{ 'Sus clientes' if mia else 'Para llamar' }}</span>
     <b>{{ llamados.values() | map('length') | sum }}</b>
     <span class="mini">{{ 'de su cartera' if mia else 'clientes' }}</span></span>
