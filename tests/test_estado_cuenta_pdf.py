@@ -412,6 +412,30 @@ def test_sin_motor_el_servidor_explica_en_vez_de_dar_500(oficina, monkeypatch):
     assert "impresi" in r.data.decode().lower()
 
 
+def test_el_503_dice_QUE_paso_y_no_siempre_lo_mismo(oficina, monkeypatch):
+    """🐞 TMT 2026-08-25: el mensaje era SIEMPRE *"el servidor no tiene un
+    navegador instalado"*, y `SinMotor` se levanta por tres motivos distintos:
+    no hay navegador, el navegador tardó más que los 30 s de `TIMEOUT_S`, o no
+    devolvió ningún archivo.
+
+    Los dos últimos son los que le pasan al vendedor con un cliente grande —el
+    PDF tarda 3 a 10 s medidos en producción— y contestarle que falta instalar
+    algo manda a buscar el problema al lugar equivocado. Cada motivo dice lo
+    suyo.
+    """
+    from modules.informes import queries as iq
+
+    monkeypatch.setattr(iq, "estado_cuenta_cliente", lambda cod: _datos(cod))
+
+    def _tarda(_html):
+        raise pdf_motor.SinMotor("El navegador tardó demasiado en imprimir.")
+
+    monkeypatch.setattr(pdf_motor, "desde_html", _tarda)
+    texto = oficina.get("/informes/estado-cuenta/MWI/pdf").data.decode()
+    assert "tardó demasiado" in texto
+    assert "no tiene un navegador instalado" not in texto
+
+
 # ---------------------------------------------------------------------------
 # El botón: por dónde llega esto a WhatsApp en CADA aparato
 # ---------------------------------------------------------------------------
@@ -834,7 +858,7 @@ def test_en_el_telefono_no_se_comparte_DESPUES_de_esperar(app):
     """
     html = _boton(app)
     largo = html.split("function largo")[1].split("addEventListener('click'")[0]
-    assert "if (porMenu) { decir(btn, LISTO); return; }" in largo
+    assert "if (porMenu) { armado(btn, true); return; }" in largo
     assert "compartirYa" not in largo, "volvió a compartir después de esperar"
     clic = html.split("addEventListener('click'")[1]
     assert "if (porMenu && btn.__listo) { if (compartirYa(btn, btn.__listo)) return; }" in clic
@@ -847,3 +871,47 @@ def test_el_rotulo_del_segundo_toque_dice_QUE_HACER(app):
     html = _boton(app)
     assert "var LISTO = 'Tocá para enviar'" in html
     assert len("Tocá para enviar") <= 18
+
+
+# ---------------------------------------------------------------------------
+# 🚨 Tercera vuelta del 25/08: "no le sirve a ciertos vendedores"
+# ---------------------------------------------------------------------------
+
+
+def test_el_compartir_que_falla_NUNCA_termina_callado(app):
+    """⭐ TMT 2026-08-25: *"el botón enviar por WhatsApp no le sirve a ciertos
+    vendedores. Generando y luego no abre el pdf"*.
+
+    Con el PDF ya en memoria, `navigator.share` puede rechazar por algo que no
+    es el vendedor cerrando el menú: un teléfono que no comparte archivos, un
+    navegador que corre adentro de otra aplicación. Ahí el botón volvía a decir
+    *"Tocá para enviar"* y NADA MÁS — y el toque siguiente hacía lo mismo. Una
+    vuelta infinita sin un solo mensaje, que es el *"no abre el otro programa,
+    aunque esté generado"*.
+
+    El único rechazo que se traga es `AbortError`, que es el vendedor cerrando
+    el menú a propósito. Cualquier otro baja el PDF y lo explica.
+    """
+    html = _boton(app)
+    compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
+    fin = compartir.split(".catch(function (e)")[1]
+    assert "AbortError" in fin, "dejó de distinguir el cierre a propósito"
+    assert "bajarYExplicar(listo);" in fin, "el rechazo vuelve a terminar callado"
+
+
+def test_un_share_que_no_devuelve_promesa_no_mata_el_toque(app):
+    """Algunos navegadores de Android devuelven `undefined` en vez de una
+    promesa. Colgarle un `.catch` a eso TIRA, y el toque muere sin cambiar ni
+    el rótulo: el botón que "no hace nada" de los reportes."""
+    html = _boton(app)
+    compartir = html.split("function compartirYa")[1].split("\n  function ")[0]
+    assert "if (!p || !p.then) { bajarYExplicar(listo); return true; }" in compartir
+
+
+def test_el_estado_listo_se_VE_y_no_solo_se_lee(app):
+    """*"Generando y luego no abre el pdf"* es un vendedor que no registró que
+    el rótulo había cambiado. Además del texto se le marca `data-wa-listo` al
+    botón, que cada pantalla pinta en su propia hoja de estilos."""
+    html = _boton(app)
+    assert "btn.dataset.waListo = '1'" in html
+    assert "delete btn.dataset.waListo" in html, "el botón queda armado para siempre"

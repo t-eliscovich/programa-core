@@ -26,7 +26,7 @@ from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
 from modules._lib import pdf_motor
-from modules.informes import estado_cuenta_pdf
+from modules.informes import estado_cuenta_imagen, estado_cuenta_pdf
 
 from . import queries
 
@@ -3796,21 +3796,77 @@ def estado_cuenta_pdf_cliente(codigo_cli):
     return responder_pdf(data, codigo_up)
 
 
+@informes_bp.route("/estado-cuenta/<codigo_cli>/imagen")
+@requiere_login
+# Mismo criterio que el PDF de arriba y que la pantalla de la que cuelgan: no
+# muestra nada que esa pantalla no muestre.
+def estado_cuenta_imagen_cliente(codigo_cli):
+    """El estado de cuenta como IMAGEN, para mandarlo como foto.
+
+    TMT 2026-08-25, con Alex: *"desde el pdf q genera no permite enviar por
+    wsp"* → *"foto y compartir como imagen"*. En un teléfono, mandar una foto
+    lo sabe hacer cualquiera; mandar un documento, no.
+    """
+    codigo_up = (codigo_cli or "").upper()
+    data, error = _safe(lambda: queries.estado_cuenta_cliente(codigo_up), {})
+    if error or not data or not data.get("cliente"):
+        abort(404)
+    return responder_imagen(data, codigo_up)
+
+
+def responder_imagen(data: dict, codigo_up: str):
+    """La respuesta HTTP de la imagen. Compartida con el portal de vendedores.
+
+    Gemela de `responder_pdf`: mismo 503 con el motivo real, mismo nombre de
+    archivo, misma decisión de `inline`. Lo único distinto es el formato.
+    """
+    try:
+        blob = estado_cuenta_imagen.generar(data)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("Imagen de %s: %s", codigo_up, e)
+        return Response(
+            f"No se pudo generar la imagen. {e} "
+            "La pantalla de impresión sigue funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8",
+        )
+    nombre = estado_cuenta_imagen.nombre_archivo(
+        (data.get("cliente") or {}).get("nombre") or "", codigo_up)
+    return Response(
+        blob,
+        mimetype="image/png",
+        headers={
+            # ⭐ `inline` y no `attachment`, y acá importa MÁS que en el PDF: el
+            # camino bueno es que el vendedor VEA la imagen en la pantalla y la
+            # mantenga apretada para mandarla. Con `attachment` el teléfono la
+            # baja a una carpeta y volvemos al problema del PDF — un archivo
+            # que está en algún lado y que hay que ir a buscar.
+            "Content-Disposition": f'inline; filename="{nombre}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 def responder_pdf(data: dict, codigo_up: str):
     """La respuesta HTTP del PDF. Compartida con el portal de vendedores.
 
     El 503 no es decorativo: el front esconde el botón cuando no hay motor,
     pero alguien puede llegar por la URL. Un mensaje que dice qué falta es lo
     que evita el reporte de "no anda el botón".
+
+    🐞 TMT 2026-08-25: el mensaje era SIEMPRE el mismo — "el servidor no tiene
+    un navegador instalado"— y `SinMotor` se levanta por tres motivos
+    distintos: no hay navegador, el navegador tardó más que `TIMEOUT_S` (30 s),
+    o no devolvió ningún archivo. Los dos últimos son los que le pasan al
+    vendedor con un cliente grande, y contestarle que falta instalar algo manda
+    a buscar el problema al lugar equivocado. Ahora cada motivo dice lo suyo.
     """
     try:
         blob = estado_cuenta_pdf.generar(data)
     except pdf_motor.SinMotor as e:
         current_app.logger.error("PDF de %s: %s", codigo_up, e)
         return Response(
-            "No se puede generar el PDF: el servidor no tiene un navegador "
-            "instalado para imprimirlo. La pantalla de impresión sigue "
-            "funcionando normalmente.",
+            f"No se pudo generar el PDF. {e} "
+            "La pantalla de impresión sigue funcionando normalmente.",
             status=503, mimetype="text/plain; charset=utf-8",
         )
     nombre = estado_cuenta_pdf.nombre_archivo(

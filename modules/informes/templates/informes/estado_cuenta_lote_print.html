@@ -9,6 +9,47 @@
 {# Cada cliente se imprime con el MISMO cuerpo que la pantalla individual
    (_estado_cuenta_impreso.html) → "imprimir muchos" sale idéntico a "imprimir
    uno". Copiamos la MISMA CSS de impresión densa de estado_cuenta.html. #}
+{# ⭐ `imagen=True` — la hoja se está sacando como FOTO, no impresa.
+
+   TMT 2026-08-25, con Alex: *"desde el pdf q genera no permite enviar por
+   wsp"* → *"foto y compartir como imagen"*. En un teléfono mandar una foto lo
+   sabe hacer cualquiera; mandar un documento, no. Ver `imagen_motor` para el
+   razonamiento entero.
+
+   ⚠ POR QUÉ HACE FALTA UN FLAG. El PDF sale con `--print-to-pdf`, que
+   renderiza con `@media print`, y ahí `base.html` ya esconde solo el sidebar,
+   el encabezado y los botones. La imagen sale con `--screenshot`, que
+   renderiza con `@media screen`: nada de eso se esconde, y la foto que le
+   llega al cliente vendría con el menú del programa adentro. Se repite acá la
+   MISMA lista de selectores de `base.html` (línea 89) porque es la misma
+   decisión —qué es chrome y qué es la hoja— dicha para el otro medio.
+
+   Sigue siendo UNA sola plantilla: no hay un estado de cuenta "para imagen".
+   Si mañana se corrige la hoja, se corrigen los tres (papel, PDF e imagen). #}
+{% if imagen %}
+<style>
+  .no-print, aside, header, nav,
+  form, form button, form input,
+  a.no-print, [role="navigation"],
+  button, details > summary > div, summary { display: none !important; }
+  .print-only { display: inline !important; }
+  /* Las flechitas ↕ de ordenar tablas. `base.html` ya las saca del papel
+     ("no van en papel", 07/07); en una foto que va al cliente tampoco van:
+     ofrecen un gesto que en una imagen no existe. */
+  .sort-icon { display: none !important; }
+  /* La hoja ocupa el ancho entero de la foto: el margen lo pone la ventana. */
+  html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+  main, .max-w-6xl { max-width: none !important; width: auto !important;
+                     margin: 0 !important; padding: 20px 26px !important; }
+  /* El nombre del cliente y el saldo, que en pantalla son el encabezado del
+     bloque, acá son el encabezado de la foto: es lo primero que se lee. */
+  .cli-block .print-head { display: block !important;
+                           border-bottom: 2px solid #94a3b8 !important;
+                           padding-bottom: 6px !important; margin-bottom: 12px !important; }
+  .cli-block .ph-nombre { font-size: 20px !important; font-weight: 700 !important; }
+  .cli-block .ph-saldo { font-size: 15px !important; }
+</style>
+{% endif %}
 <style>
   .cli-block .print-head { display: none; }
   @media print {

@@ -95,3 +95,53 @@ def test_un_numf_roto_no_rompe_la_busqueda():
 
     data = {"facturas": [{"numf": "ochenta"}, {"numf": 5}]}
     assert views._factura_de(data, 5)["numf"] == 5
+
+
+# ---------------------------------------------------------------------------
+# 🚨 La hoja de la factura, para mandarla — TMT 2026-08-25: "si dale"
+# ---------------------------------------------------------------------------
+
+
+def test_la_factura_tambien_se_manda_como_FOTO():
+    """Esta pantalla nació el 25/08 con el botón de WhatsApp y el PDF, así que
+    arrastra el problema de Alex tal cual: *"desde el pdf q genera no permite
+    enviar por wsp"*.
+
+    Es el mismo teléfono, el mismo botón y el mismo archivo que no sabe
+    adjuntar. En un teléfono mandar una FOTO lo sabe hacer cualquiera; mandar
+    un DOCUMENTO hay que saber que existe Descargas.
+    """
+    t = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+         / "factura.html").read_text(encoding="utf-8")
+    assert "mi_cartera.factura_imagen" in t
+    assert "Mandar como imagen" in t
+    assert "Mantené apretada" in t, "no dice el gesto"
+    # El PDF no se saca: baja a un renglón.
+    assert "mi_cartera.factura_pdf" in t
+
+
+def test_la_fila_de_acciones_viaja_CON_SU_CSS():
+    """🐞 TMT 2026-08-25. `factura.html` usaba `.acciones`, `.btn-wa` y
+    `.btn-pr` sin incluir la hoja donde estaban definidos —vivían sólo en
+    `_ficha_css.html`, que esta pantalla no incluye— así que el botón verde
+    salía SIN ESTILO. Medido sobre la página renderizada.
+
+    Es exactamente lo que ya advertía `_que_se_llevo.html` el 24/08 —*"el
+    parcial viaja CON SU CSS; partirlo no avisa: renderiza sin estilo"*— y
+    volvió a pasar por el mismo motivo. Ahora la CSS vive en su propio parcial
+    y la incluyen LAS DOS pantallas que la usan.
+    """
+    tpl = ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+    acciones = (tpl / "_acciones_css.html").read_text(encoding="utf-8")
+    assert ".btn-wa{" in acciones and ".acciones{" in acciones
+    assert ".ver-img{" in acciones and ".ver-pdf{" in acciones
+
+    for pantalla in ("cliente.html", "factura.html"):
+        t = (tpl / pantalla).read_text(encoding="utf-8")
+        assert 'class="acciones"' in t, pantalla
+        assert '{% include "mi_cartera/_acciones_css.html" %}' in t, (
+            f"{pantalla} usa la fila de acciones sin traer su CSS")
+
+    # Y no quedó una copia vieja suelta: dos definiciones de lo mismo divergen.
+    ficha = (tpl / "_ficha_css.html").read_text(encoding="utf-8")
+    assert ".btn-wa{" not in ficha, "quedó la copia vieja en _ficha_css"

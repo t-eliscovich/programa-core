@@ -103,7 +103,34 @@
    toque prepara el PDF y el botón pasa a decir *"Tocá para enviar"*; el
    segundo encuentra el archivo hecho y abre el menú SIN una sola espera en el
    medio, que es el único caso en que el permiso del toque no se vence nunca.
-   El archivo ADJUNTO se mantiene — *"nunca el link que no sirve"*. #}
+   El archivo ADJUNTO se mantiene — *"nunca el link que no sirve"*.
+
+   🚨 TMT 2026-08-25, tercera vuelta: *"el botón enviar por WhatsApp no le
+   sirve a ciertos vendedores. Generando y luego no abre el pdf"*.
+
+   Dos cosas distintas, y las dos terminaban igual: en nada.
+
+   1. **El compartir fallaba CALLADO.** Cuando `navigator.share` rechazaba por
+      algo que no era el usuario cerrando el menú —un teléfono que no comparte
+      archivos, un navegador adentro de otra aplicación— el botón volvía a
+      decir *"Tocá para enviar"* y listo. El vendedor tocaba de nuevo, fallaba
+      de nuevo, volvía a decir lo mismo: una vuelta infinita sin un solo
+      mensaje. Y en los Android donde `share` devuelve `undefined` en vez de
+      una promesa, el `.catch` colgado de ese `undefined` TIRABA. Ahora
+      cualquier final que no sea el menú abierto baja el PDF y lo explica.
+
+   2. **El estado "listo" no se veía.** El primer toque cambiaba el rótulo y
+      nada más; un vendedor que no mira el texto del botón ve *"Generando…"* y
+      después la pantalla quieta — que es, palabra por palabra, *"generando y
+      luego no abre el pdf"*. Ahora además se le marca `data-wa-listo` al
+      botón y cada pantalla lo pinta.
+
+   ⭐ Y la salida que no depende de nada: la ficha del vendedor tiene abajo un
+   link **Ver el PDF** a la misma URL. Es una navegación común —sin permisos
+   de toque, sin menú del sistema, sin `fetch`— así que anda en TODOS los
+   teléfonos. Desde el visor de PDF, el botón de compartir del propio aparato
+   lo manda a WhatsApp. Para el que el camino corto no le sirve, ése es el
+   piso. #}
 {# Sin motor de PDF en el servidor no se dibuja: un botón que siempre falla
    es peor que no tenerlo. Quien llegue igual por la URL recibe un 503 que
    explica qué falta. #}
@@ -174,6 +201,16 @@
   // cortado por la mitad.
   var LISTO = 'Tocá para enviar';
 
+  // ⭐ El botón "armado" (el PDF ya está, falta el toque que abre WhatsApp).
+  // El rótulo solo no alcanzó: TMT 2026-08-25 *"generando y luego no abre el
+  // pdf"* es un vendedor que no registró que el texto había cambiado. Además
+  // del rótulo se marca el botón, y cada pantalla lo pinta con
+  // `[data-wa-listo]` en su propia hoja de estilos.
+  function armado(btn, si) {
+    if (si) { btn.dataset.waListo = '1'; decir(btn, LISTO); }
+    else { delete btn.dataset.waListo; decir(btn, rotulo(btn)); }
+  }
+
   // ⭐ El PDF se prepara UNA vez por botón y queda en memoria. Es lo que
   // permite que el compartir salga sin esperar nada: ver el comentario de
   // cabecera (Android, 20/08).
@@ -211,8 +248,25 @@
   // pasó. Nunca dejar el botón mudo — ver el bug del 25/08 en la cabecera.
   function bajarYExplicar(listo) {
     descargar(listo.blob, listo.nombre);
-    alert('Este teléfono no deja mandar el PDF directo desde el programa. '
-        + 'Se descargó "' + listo.nombre + '": adjuntalo desde WhatsApp.');
+    // 🚨 Alex Velastegui, 25/08, mirando el PDF ya generado en su teléfono:
+    // *"desde el pdf q genera no permite enviar por wsp"*. El mensaje decía
+    // "adjuntalo desde WhatsApp" y lo daba por obvio — y no lo es: el vendedor
+    // se queda parado con el archivo en la mano sin saber por dónde sigue.
+    // Ahora se nombran los PASOS, que son los mismos en todos los teléfonos:
+    // el archivo queda en Descargas y se manda con el botón de compartir del
+    // aparato, que no es el del programa y sí anda siempre.
+    //
+    // La ficha del vendedor tiene abajo el link "Ver el PDF"; la pantalla de
+    // la oficina, no. Se nombra sólo donde existe: mandar a buscar un botón
+    // que no está es la manera más rápida de que dejen de leer los mensajes.
+    var hayLink = !!document.querySelector('[data-wa-ver]');
+    alert('Este teléfono no deja mandar el PDF directo desde el programa.\n\n'
+        + 'Se descargó "' + listo.nombre + '".\n\n'
+        + 'Para mandarlo:\n'
+        + '1. Abrí Descargas en el teléfono.\n'
+        + '2. Tocá el archivo y después el botón de compartir.\n'
+        + '3. Elegí WhatsApp y el contacto.'
+        + (hayLink ? '\n\nTambién lo podés abrir con "Ver el PDF", acá abajo.' : ''));
   }
 
   // Devuelve `true` si se hizo cargo del toque (compartió, o bajó el archivo y
@@ -229,17 +283,25 @@
     } catch (e) { file = null; }
     if (!file) { bajarYExplicar(listo); return true; }
 
-    decir(btn, rotulo(btn));
+    armado(btn, false);
     try {
-      navigator.share({ files: [file], title: listo.nombre }).catch(function (e) {
+      var p = navigator.share({ files: [file], title: listo.nombre });
+      // 🚨 Algunos navegadores de Android devuelven `undefined` en vez de una
+      // promesa: `.catch` sobre eso TIRA y el toque muere sin decir nada.
+      if (!p || !p.then) { bajarYExplicar(listo); return true; }
+      p.then(function () { armado(btn, false); }).catch(function (e) {
         // Cerró el menú a propósito: no es un error y no hay que insistirle.
-        if (e && e.name === 'AbortError') return;
-        // Se venció el permiso del toque. El PDF YA está en memoria: el
-        // próximo toque abre el menú al instante.
-        decir(btn, LISTO);
+        // El PDF sigue en memoria, así que el botón queda pidiendo el toque.
+        if (e && e.name === 'AbortError') { armado(btn, true); return; }
+        // 🚨 TMT 2026-08-25: acá el botón volvía a decir "Tocá para enviar" y
+        // NADA MÁS — para siempre. El vendedor tocaba, tocaba y tocaba, y el
+        // programa fallaba callado en cada vuelta: es el *"no abre el otro
+        // programa, aunque esté generado"*. Este teléfono NO comparte
+        // archivos: se baja el PDF y se dice por qué, que es lo único cierto.
+        bajarYExplicar(listo);
       });
     } catch (e) {
-      // `share` explotó de entrada (no devolvió promesa): este aparato no
+      // `share` explotó de entrada, antes de devolver nada: este aparato no
       // comparte archivos. Se baja y se avisa, que es lo único cierto.
       bajarYExplicar(listo);
     }
@@ -278,7 +340,7 @@
       // sale NO SE VE NADA. Así que el primer toque prepara y el botón pasa a
       // pedir el segundo, que llega con el permiso fresco y el PDF ya hecho.
       // Dos toques que andan siempre, en vez de uno que anda a veces.
-      if (porMenu) { decir(btn, LISTO); return; }
+      if (porMenu) { armado(btn, true); return; }
 
       // Teléfono sin menú de compartir: el archivo a las descargas y una
       // frase que lo explique. Mandarlo a WhatsApp Web sería mandarlo a una
