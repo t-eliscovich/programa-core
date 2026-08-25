@@ -1960,7 +1960,7 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     # (dueña: "todo muy wordy") y un test pegado a la redacción obliga a elegir
     # entre el test y la copia. Lo que no puede faltar es que la bajada explique
     # por qué hay filas con una venta reciente: son los kilos SEG.
-    assert "dos motivos" in todo and "SEG</b>" in todo, (
+    assert "paradas" in todo and "SEG</b>" in todo, (
         "la bajada explica por qué hay filas con venta reciente")
 
 
@@ -2011,8 +2011,11 @@ def test_todo_se_cuenta_desde_la_largada_y_no_desde_que_entro_cada_fila():
 def test_la_pantalla_dice_desde_cuando_cuenta():
     """Un "vendido" sin fecha al lado invita justamente a la comparación que
     generó la confusión."""
-    html = _html_parado()
-    assert "Vendido desde el 25/08" in html
+    html = " ".join(_html_parado().split())
+    # ⚠ La IDEA, no la frase: el 24/08/2026 el resumen pasó de cinco tarjetas a
+    # un renglón y el rótulo quedó partido ("Vendido … · desde el 25/08"). Lo
+    # que no puede faltar es la fecha al lado del número.
+    assert "Vendido" in html and "desde el 25/08" in html
 
 
 # ── Intela como una cartera más ─────────────────────────────────────────────

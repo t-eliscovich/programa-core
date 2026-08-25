@@ -9,8 +9,10 @@
 #}
 <style>
 .cli{border:1px solid var(--l);border-radius:10px;padding:14px 18px;margin:0 0 12px}
-.cli h3{margin:0;font-size:15px;display:flex;gap:10px;align-items:baseline;flex-wrap:wrap}
-.cli h3 .cod{font-size:13px;color:var(--g);letter-spacing:.4px}
+.cli h3{margin:0;font-size:14px;font-weight:500;display:flex;gap:10px;
+align-items:baseline;flex-wrap:wrap}
+.cli h3 .cod{font-size:19px;font-weight:600;letter-spacing:.02em}
+.cli h3 .nom{color:var(--g)}
 .cli h3 .kg{margin-left:auto;font-weight:400;font-size:13px;color:var(--g)}
 .cli .meta{color:var(--g);font-size:12px;margin:2px 0 8px}
 /* ⚠ Sin `table-layout:fixed` cada ficha arma sus columnas según el largo de
@@ -34,8 +36,8 @@
   /* «y chiquito» (misma charla): con dos columnas la ficha entera se achica y
      entran varios clientes de un vistazo, que es como se usa la hoja. */
   .cli{padding:9px 12px;margin:0 0 8px}
-  .cli h3{font-size:13px;gap:6px}
-  .cli h3 .cod{font-size:11px}
+  .cli h3{font-size:12px;gap:6px}
+  .cli h3 .cod{font-size:16px}
   .cli h3 .kg{display:none}
   .cli .meta{font-size:11px;margin:1px 0 5px}
   .cli table{table-layout:auto;font-size:12px}
@@ -101,9 +103,13 @@
 
 {% macro ficha(c, dudoso=false) %}
 <div class="cli">
+  {# ⭐ El CÓDIGO primero y grande (dueña 24/08/2026: "codigo de cliemte mas
+     grande y antes que el nombre"). Es por el código que el vendedor busca al
+     cliente y por el que va ordenada la hoja; el nombre es para confirmar que
+     es ése. #}
   <h3>
-    <span>{{ c.nombre }}</span>
-    <span class="cod">{{ c.codigo }}{% if c.codigo in codigos_ambiguos %}
+    <span class="cod">{{ c.codigo }}</span>
+    <span class="nom">{{ c.nombre }}{% if c.codigo in codigos_ambiguos %}
       · ⚠ código repetido{% endif %}</span>
     <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle · {{ c.puntos_potencial | num_es(0) }} puntos</span>
   </h3>

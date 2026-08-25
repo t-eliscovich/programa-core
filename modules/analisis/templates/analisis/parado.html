@@ -19,6 +19,22 @@ td.col2 .g{font-size:12px;margin-left:6px}
 .p10{background:#fdf0d5;color:#8a5200}
 .p4{background:#e4eefb;color:#17538f}
 @media (max-width:560px){td.col2 .g{display:none}}
+/* ⚠ Anchos fijos SÓLO en escritorio. Sin esto el navegador estira cada columna
+   según su texto más largo y la tabla termina midiendo más que la columna de
+   la página —se desbordaba 140 px a la derecha—, que es lo que hacía que el
+   título arrancara en un lado y la tabla terminara en otro.
+   En el celular NO va: ahí la mitad de las columnas está escondida y los
+   porcentajes se reparten entre las que quedan, que es justo lo que se busca. */
+@media (min-width:781px){
+  #tabla{table-layout:fixed}
+  #tabla th:nth-child(1){width:9%}   #tabla th:nth-child(2){width:19%}
+  #tabla th:nth-child(3){width:16%}  #tabla th:nth-child(4){width:9%}
+  #tabla th:nth-child(5){width:11%}  #tabla th:nth-child(6){width:9%}
+  #tabla th:nth-child(7){width:9%}   #tabla th:nth-child(8){width:8%}
+  #tabla th:nth-child(9){width:10%}
+  /* Con ancho fijo, un nombre largo tiene que cortarse en vez de empujar. */
+  #tabla td.tela{overflow:hidden;text-overflow:ellipsis}
+}
 th.ord{cursor:pointer;user-select:none;white-space:nowrap}
 th.ord:hover{color:var(--t)}
 th.ord::after{content:" ⇅";opacity:.35;font-size:10px}
@@ -40,31 +56,34 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% endif %}
 </p>
 
-<div class="cards">
-  <div class="card"><p class="k">En saldo hoy</p>
-    <p class="v">{{ resumen.kg | num_es(0) }}</p>
-    <p class="s">kg en {{ resumen.n_items }} telas × color</p></div>
-  <div class="card"><p class="k">Puntos en juego</p>
-    <p class="v">{{ resumen.puntos | num_es(0) }}</p>
-    <p class="s">un kilo vale 1, 4 o 10</p></div>
-  <div class="card"><p class="k">Vendido desde el 25/08</p>
-    <p class="v">{{ resumen.kg_vendidos | num_es(0) }}</p>
-    <p class="s">{{ resumen.movidos }} ítems se movieron</p></div>
-  <div class="card"><p class="k">Clientes a llamar</p>
-    <p class="v">{{ llamados.values() | map('length') | sum }}</p>
-    <p class="s">en total</p></div>
-  <div class="card"><p class="k">Categoría SEG</p>
-  <p class="v">{{ resumen.kg_segunda | num_es(0) }}</p>
-  <p class="s">kg en {{ resumen.n_segunda }} ítems · el resto es PRI</p></div>
+{# ⭐ Cinco tarjetas grandes eran cinco cifras compitiendo entre sí y con la
+   tabla. Van en UN renglón: se leen igual y la pantalla arranca en la lista,
+   que es a lo que se entra. Mismo criterio que Guías del día. #}
+<div class="linea">
+  <span><span class="k">En saldo</span>
+    <b>{{ resumen.kg | num_es(0) }} kg</b>
+    <span class="mini">{{ resumen.n_items }} telas × color</span></span>
+  <span><span class="k">En juego</span>
+    <b class="pts">{{ resumen.puntos | num_es(0) }}</b>
+    <span class="mini">puntos · un kilo vale 1, 4 o 10</span></span>
+  <span><span class="k">Vendido</span>
+    <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
+    <span class="mini">desde el 25/08 · {{ resumen.movidos }} ítems</span></span>
+  <span><span class="k">{{ 'Sus clientes' if mia else 'Para llamar' }}</span>
+    <b>{{ llamados.values() | map('length') | sum }}</b>
+    <span class="mini">{{ 'de su cartera' if mia else 'clientes' }}</span></span>
+  <span><span class="k">Categoría SEG</span>
+    <b>{{ resumen.kg_segunda | num_es(0) }} kg</b>
+    <span class="mini">en {{ resumen.n_segunda }} ítems · el resto es PRI</span></span>
 </div>
 
-<div class="nota"><b>La lista no se depura sola.</b> Lo que se vende
-<b>se queda</b> en la lista: cambia lo vendido, no la fila. Si desapareciera, no
-habría forma de saber si funcionó.</div>
+{# Una línea, no un cuadro verde: es una aclaración, no una alarma. #}
+<p class="sub" style="margin:18px 0 0">Lo que se vende no desaparece de la
+lista — así se ve si funcionó.</p>
 
-<h2 style="margin-top:28px">Por grupo de producto</h2>
-<p class="sub">Los mismos kilos de abajo, agrupados.</p>
-<table class="resumen">
+<h2>Por grupo</h2>
+<p class="sub">Los mismos kilos, agrupados.</p>
+<div class="caja"><table class="resumen">
 <thead><tr><th>Grupo</th><th class="n">Subgrupos</th><th class="n">Ítems</th>
 <th class="n">Kg en saldo</th><th class="n">% del total</th>
 <th class="n">Puntos</th><th class="n">Kg SEG</th></tr></thead>
@@ -75,7 +94,7 @@ habría forma de saber si funcionó.</div>
   <td class="n g">{{ g.n_items }}</td>
   <td class="n">{{ g.kg | num_es(0) }}</td>
   <td class="n">{{ g.pct | num_es(1) }}%</td>
-  <td class="n">{{ g.puntos | num_es(0) }}</td>
+  <td class="n pts">{{ g.puntos | num_es(0) }}</td>
   <td class="n g">{% if g.kg_segunda %}{{ g.kg_segunda | num_es(0) }}{% else %}—{% endif %}</td></tr>
 {% endfor %}
 </tbody>
@@ -83,14 +102,16 @@ habría forma de saber si funcionó.</div>
 <td class="n"><b>{{ resumen.n_items }}</b></td>
 <td class="n"><b>{{ resumen.kg | num_es(0) }}</b></td>
 <td class="n"><b>100,0%</b></td>
-<td class="n"><b>{{ resumen.puntos | num_es(0) }}</b></td>
+<td class="n pts"><b>{{ resumen.puntos | num_es(0) }}</b></td>
 <td class="n"><b>{{ resumen.kg_segunda | num_es(0) }}</b></td></tr></tfoot>
-</table>
+</table></div>
 
 <h2>Tela por tela</h2>
-<p class="sub">Se entra por dos motivos: la tela entera parada, o kilos
-<b>SEG</b> de una que se vende bien. Se separan por Categoría.
-Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
+{# Cuatro frases largas eran un párrafo que nadie leía. Dos cortas: qué hay
+   adentro y qué hacer. El resto (que se separan por Categoría, que ordena por
+   puntos) se ve en los filtros y en la columna. #}
+<p class="sub">Telas paradas, más los kilos <b>SEG</b> de las que se venden
+bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 <b>Toque una fila</b> para ver a quién ofrecérsela.</p>
 
 <div class="barra">
@@ -135,7 +156,7 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
   {% endif %}
 </div>
 
-<table id="tabla">
+<div class="caja larga"><table id="tabla">
 <thead><tr>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
@@ -147,9 +168,12 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
    se puede sacar mirando los kilos de al lado. #}
 <th class="ord n" data-i="5" data-num="1">Vale</th>
 <th class="ord n opt" data-i="6" data-num="1">Puntos</th>
-<th class="ord n opt" data-i="7" data-num="1">% del saldo</th>
-<th class="ord n" data-i="8" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
-<th class="ord n opt" data-i="9" data-num="1">Última venta</th>
+{# El "% del saldo" de UNA fila entre 734 es siempre 0,x% y no decide nada;
+   el que sirve —el de la tela entera— ya está en el detalle que se abre al
+   tocar la fila. Se va del cuadro para que las diez columnas entren en la
+   caja en vez de desbordarse a la derecha. #}
+<th class="ord n" data-i="7" data-num="1">{{ 'Sus clientes' if mia else 'Clientes' }}</th>
+<th class="ord n opt" data-i="8" data-num="1">Última venta</th>
 </tr></thead>
 <tbody>
 {% for f in filas %}
@@ -198,13 +222,12 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
       {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
     <td class="n vale" data-v="{{ f.puntos }}">
       <span class="pt p{{ f.puntos }}">{{ f.puntos }} × kg</span></td>
-    <td class="n g opt" data-v="{{ f.puntos_fila }}">{{ f.puntos_fila | num_es(0) }}</td>
-    <td class="n g opt" data-v="{{ f.pct_total }}">{{ f.pct_total | num_es(1) }}%</td>
+    <td class="n pts opt" data-v="{{ f.puntos_fila }}">{{ f.puntos_fila | num_es(0) }}</td>
     <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
     <td class="g n opt" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
       {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
-  <tr class="det"><td colspan="10">
+  <tr class="det"><td colspan="9">
     <p class="sub" style="margin:10px 0 6px">
       <b>{{ f.subcategoria }}</b>: {{ f.kg_tela | num_es(0) }} kg en
       {{ f.colores_tela }} {{ 'color' if f.colores_tela == 1 else 'colores' }} ·
@@ -256,7 +279,7 @@ Va ordenada por <b>puntos</b>, que es lo que conviene ir a buscar.
   </td></tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 
 <footer>
 Saldo = tela terminada (bodega 53) quieta hace 12 meses o más con 20 kg o más,

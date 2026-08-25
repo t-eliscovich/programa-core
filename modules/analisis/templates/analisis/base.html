@@ -15,38 +15,104 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>{% block titulo %}Análisis{% endblock %} · Intela</title>
+{# ⭐ Inter (dueña 24/08/2026, "cambia un poco las fuentes"). Es letra de
+   pantalla de datos: los números salen todos del mismo ancho y se lee chica sin
+   cansar. Si Google no contesta —la fábrica se queda sin internet cada tanto—
+   cae en la del sistema y la pantalla sigue igual de usable: por eso la lista
+   de respaldo está completa y no se usa `font-display:block`. #}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap">
 <style>
-:root{--t:#111827;--g:#6b7280;--l:#e5e7eb;--az:#2563eb;--rj:#b91c1c;--vd:#15803d}
+:root{--t:#111827;--g:#6b7280;--l:#e5e7eb;--az:#2563eb;--rj:#b91c1c;--vd:#15803d;
+--l2:#f1f2f4}
 *{box-sizing:border-box}
-body{font:15px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
-color:var(--t);margin:0;background:#fff}
+body{font:15px/1.55 Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+color:var(--t);margin:0;background:#fff;-webkit-font-smoothing:antialiased}
 /* La barra de arriba también es sticky y mide 52 px: el encabezado de la tabla
    tiene que pegarse DEBAJO de ella, no atrás. Medido en vivo. */
 :root{--alto-barra:52px}
 header.top{border-bottom:1px solid var(--l);padding:14px 24px;display:flex;
 gap:22px;align-items:baseline;position:sticky;top:0;background:#fff;z-index:5;
 min-height:var(--alto-barra);box-sizing:border-box}
-header.top .marca{font-weight:600}
+header.top .marca{font-weight:600;letter-spacing:-.01em}
 header.top a{color:var(--g);text-decoration:none;font-size:14px}
 header.top a:hover,header.top a.act{color:var(--t)}
 header.top .der{margin-left:auto}
-main{max-width:1060px;margin:0 auto;padding:28px 24px 80px}
-h1{font-size:24px;margin:0 0 4px}
-h2{font-size:18px;margin:40px 0 4px}
-.sub{color:var(--g);font-size:13px;margin:0 0 14px}
-table{width:100%;border-collapse:collapse;font-size:14px}
-th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.5px;
-color:var(--g);border-bottom:2px solid var(--l);padding:8px 10px}
+/* ⚠ UNA sola columna para todo: título, bajada, filtros y tabla arrancan y
+   terminan en la misma línea. Antes la tabla medía 1.200 px adentro de una
+   columna de 1.060 y se desbordaba 140 px a la derecha: el título quedaba en
+   un lado y las últimas columnas en otro (medido en vivo el 24/08/2026, y es
+   lo que la dueña vio como "todo por todos lados"). Las tablas anchas se
+   arreglan sacando columnas, nunca dejándolas salir de la caja. */
+main{max-width:1120px;margin:0 auto;padding:32px 24px 80px}
+main>table,main>.tabla{max-width:100%}
+h1{font-size:30px;font-weight:600;letter-spacing:-.025em;margin:0 0 6px}
+/* Cada bloque arranca con una línea fina: se ve dónde termina uno y empieza el
+   otro sin necesidad de más cajas ni más colores. */
+/* ⚠ El título tiene que ganarle al cuadro que viene abajo. A 17 px contra un
+   cuerpo de 15 no se leía como título (dueña 24/08/2026: "los titulos no se
+   notan que son titulos"): la diferencia la hace el TAMAÑO, no la línea. */
+h2{font-size:21px;font-weight:600;letter-spacing:-.02em;
+margin:56px 0 6px;padding-top:22px;border-top:1px solid var(--l)}
+h2:first-of-type{border-top:0;padding-top:0;margin-top:38px}
+.sub{color:var(--g);font-size:13.5px;margin:0 0 18px;max-width:72ch}
+/* Más chicas (dueña 24/08/2026: "las tablas podras hacer mas chiquitas?").
+   13 px con renglones de 8 px entra un tercio más de filas por pantalla sin
+   que se lea peor: la letra es Inter y los números son de ancho fijo. */
+table{width:100%;border-collapse:collapse;font-size:13px}
+/* Encabezados en minúscula. En MAYÚSCULA y con letras separadas gritaban más
+   que los números, que son lo que se viene a mirar. */
+th{text-align:left;font-size:11.5px;font-weight:500;color:var(--g);
+border-bottom:1px solid var(--l);padding:0 10px 8px}
 th.n{text-align:right}
-td{padding:7px 10px;border-bottom:1px solid #f1f5f9}
+td{padding:8px 10px;border-bottom:1px solid var(--l2)}
 td.n{text-align:right;font-variant-numeric:tabular-nums}
-td.g{color:var(--g);font-size:13px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
-gap:12px;margin:20px 0}
-.card{background:#f8fafc;border-radius:8px;padding:14px 16px}
+td.g{color:var(--g);font-size:12.5px}
+/* ⭐ Un color con significado, no de adorno: los PUNTOS son la moneda de la
+   competencia y son la columna por la que se ordena todo. Pintarlos deja ver
+   de un saltito cuál conviene, sin leer los números uno por uno. */
+td.pts,.linea .pts{color:var(--az)}
+/* ⭐ Toda tabla adentro de una caja, con el encabezado sobre gris. Es el mismo
+   formato que Guías del día, que la dueña señaló el 24/08/2026 como el que se
+   ve mejor. La caja le pone principio y fin a la tabla: sin ella las filas
+   flotaban sueltas sobre el blanco de la página. */
+.caja{border:1px solid var(--l);border-radius:10px;overflow:hidden;background:#fff;
+margin-bottom:8px}
+.caja>table{margin:0}
+.caja thead th{background:#f8fafc;padding:8px 12px;border-bottom:1px solid var(--l)}
+.caja td{padding:8px 12px}
+.caja tbody tr:last-child td{border-bottom:0}
+/* ⚠ La tabla larga NO puede ir con `overflow:hidden`: mata el encabezado fijo
+   (un sticky muere si un ancestro recorta). Va sin recorte y las esquinas del
+   encabezado se redondean a mano. */
+.caja.larga{overflow:visible}
+.caja.larga thead th:first-child{border-top-left-radius:9px}
+.caja.larga thead th:last-child{border-top-right-radius:9px}
+/* ⚠ El resumen NO puede ser una sola frase corrida: pegados uno atrás del otro
+   los cinco datos se leían como un párrafo sin sentido (dueña 24/08/2026:
+   "esto esta raro asi… muy nada"). Van en columnas separadas por una línea
+   fina: cada uno con su rótulo arriba, su cifra y su aclaración. Ocupa lo
+   mismo que un renglón y se lee de un vistazo. */
+.linea{display:flex;flex-wrap:wrap;margin:18px 0 26px}
+.linea>span{display:block;padding:0 20px;border-left:1px solid var(--l)}
+.linea>span:first-child{padding-left:0;border-left:0}
+.linea .k{display:block;font-size:12px;color:var(--g);margin:0 0 3px}
+.linea b{display:block;font-size:19px;font-weight:600;letter-spacing:-.01em;
+font-variant-numeric:tabular-nums;line-height:1.15}
+.linea .mini{display:block;font-size:12px;color:#9aa3af;margin-top:2px}
+@media (max-width:780px){
+  .linea{gap:14px 0}
+  .linea>span{padding:0 14px 0 0;border-left:0}
+}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+gap:14px;margin:24px 0 8px}
+.card{background:#f8fafc;border-radius:10px;padding:16px 18px}
 .card .k{font-size:12px;color:var(--g);margin:0}
-.card .v{font-size:26px;font-weight:600;line-height:1.15;margin:4px 0 0}
-.card .s{font-size:12px;color:var(--g);margin:2px 0 0}
+.card .v{font-size:28px;font-weight:600;line-height:1.1;margin:6px 0 0;
+letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.card .s{font-size:12px;color:var(--g);margin:3px 0 0}
 .nota{background:#f0fdf4;border-left:4px solid var(--vd);padding:14px 18px;
 margin:16px 0;border-radius:0 8px 8px 0;font-size:14px}
 .alerta{background:#fffbeb;border-left:4px solid #d97706;padding:14px 18px;
@@ -190,7 +256,13 @@ font-size:12px;color:var(--g)}
   {% for m in menu_global %}
     <a href="{{ m.url }}" {% if request.path == m.url %}class="act"{% endif %}>{{ m.titulo }}</a>
   {% endfor %}
-  <a class="der" href="/">← Volver al programa</a>
+  {# El vendedor no vuelve "al programa": vuelve a su portal. Mandarlo a "/"
+     lo rebota por el allowlist y aterriza igual, pero el rótulo le mentía. #}
+  {% if (g.user or {}).get('vend') %}
+    <a class="der" href="/mi-cartera">← Mi Cartera</a>
+  {% else %}
+    <a class="der" href="/">← Volver al programa</a>
+  {% endif %}
 </header>
 <main>
 {% with mensajes = get_flashed_messages(with_categories=true) %}

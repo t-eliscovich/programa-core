@@ -26,14 +26,33 @@ td.vale{white-space:nowrap}
 .cl b{font-weight:600}
 .cl span{color:var(--gr,#6b7280);margin-left:4px}
 .mas{font-size:12px;color:#9aa0a6}
-.term{background:#f8fafc;border-radius:12px;padding:22px 24px;margin:18px 0}
-.term .tres{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:18px}
-.term .tres .k{font-size:12px;color:var(--g);margin:0}
-.term .tres .v{font-size:34px;font-weight:600;line-height:1.1;margin:2px 0 0}
-.term .tres .v.vd{color:var(--vd)}
+/* ⚠ Esto abría la pantalla con tres números de 34 px y ocupaba media
+   ventana antes de llegar al ranking, que es a lo que se entra (dueña
+   24/08/2026: "competencia mas chico"). Ahora es un renglón y la barra. */
+.term{background:#f8fafc;border-radius:10px;padding:16px 18px;margin:18px 0}
+.term-tope{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.term .k{font-size:12px;color:var(--g);margin:0}
+.term .v{margin:2px 0 0;font-size:15px;color:var(--g)}
+.term .v b{font-size:30px;font-weight:600;letter-spacing:-.02em;
+font-variant-numeric:tabular-nums;line-height:1}
+.term .v .de{margin-left:6px}
+.term .pct{margin:0;font-size:15px;font-weight:600;color:var(--g);
+font-variant-numeric:tabular-nums}
+.term .vd{color:var(--vd)}
 .term .tres .s{font-size:12px;color:var(--g);margin:2px 0 0}
 .mov{font-size:11px}.mov.sube{color:var(--vd)}.mov.baja{color:var(--rj)}
-.reglas{background:#f8fafc;border-radius:10px;padding:8px 24px 14px;margin:14px 0}
+.reglas{background:#f8fafc;border-radius:10px;padding:8px 24px 14px;margin:10px 0 0}
+/* ⭐ A la derecha y chiquito (dueña 24/08/2026: "reglas con flechita para ver
+   mas y quizas a la derecha?"). No es un capítulo de la pantalla: es una ayuda
+   que se abre cuando hace falta, así que no se lleva un título ni una fila
+   entera. */
+details.reglas-plegadas{margin:0 0 8px}
+details.reglas-plegadas>summary{cursor:pointer;list-style:none;text-align:right;
+font-size:13.5px;color:var(--az);padding:2px 0}
+details.reglas-plegadas>summary::-webkit-details-marker{display:none}
+details.reglas-plegadas>summary::after{content:" ▾"}
+details.reglas-plegadas[open]>summary::after{content:" ▴"}
+details.reglas-plegadas>summary:hover{text-decoration:underline}
 .reglas ol{margin:8px 0;padding-left:20px}
 .reglas li{margin:6px 0;font-size:14px}
 tr.vend{cursor:pointer}
@@ -50,7 +69,8 @@ transition:transform .12s}
 tr.vend:hover td.abrir .flecha{background:var(--az);color:#fff}
 tr.vend.abierta td.abrir .flecha{transform:rotate(180deg)}
 .term .chico{color:var(--g);font-size:13px;margin-top:4px}
-.barra-fondo{height:12px;background:#e2e8f0;border-radius:99px;overflow:hidden;margin-top:14px}
+.barra-fondo{height:8px;background:#e6e9ee;border-radius:99px;overflow:hidden;
+margin:14px 0 10px}
 .barra-fondo > div{height:100%;background:var(--vd);border-radius:99px}
 .mini{height:8px;background:#e2e8f0;border-radius:99px;overflow:hidden;min-width:90px}
 .mini > div{height:100%;background:var(--az);border-radius:99px}
@@ -61,45 +81,43 @@ tr.yo td{background:#f0fdf4}
 </style>
 
 <h1>Competencia</h1>
-<p class="sub">Quién saca más de lo que está quieto.
+{# "Sacar" es lo que hace bodega; el vendedor VENDE. Dueña 24/08/2026:
+   "saca no, vende mas". #}
+<p class="sub">Quién vende más de lo que está quieto.
 {% if dias_para_el_cierre > 0 %}Faltan <b>{{ dias_para_el_cierre }} días</b>:
 cierra el {{ cierre.strftime('%d/%m/%Y') }}.
 {% else %}Terminó el {{ cierre.strftime('%d/%m/%Y') }}.{% endif %}</p>
 
+{# ⭐ Un solo número grande y una barra. Antes había CINCO renglones que
+   repetían las mismas tres cifras —6.982 kg aparecía tres veces— y ninguno
+   mandaba (dueña 24/08/2026: "esto mas lindo un poco"). Ahora: arriba lo que
+   se vendió contra lo que había, la barra, y abajo el resto en gris.
+   ⚠ `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: salía
+   "17.284974824441832%". Los paréntesis y num_es no son cosmética. #}
+{% set avance = [100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min %}
 <div class="term">
-  <div class="tres">
-    {# ⚠ Hasta la largada esto es una PREVISUALIZACIÓN: la meta todavía se
-       mueve con los ajustes de bodega (el 18/08 bajó 753 kg sin una sola
-       venta). El día de la largada se congela y ya no se toca. Decirlo acá y
-       no en una nota al pie: es el número contra el que se van a medir. #}
-    <div><p class="k">Al arrancar</p>
-      <p class="v">{{ kg_al_largar | num_es(0) }}</p>
-      <p class="s">{% if meta_fijada_el %}kg, fijos desde el {{ meta_fijada_el.strftime('%d/%m') }}
-        {% else %}kg de hoy — se fija el {{ largada.strftime('%d/%m') }}{% endif %}</p></div>
-    <div><p class="k">Hay hoy</p>
-      <p class="v">{{ kg_parado | num_es(0) }}</p>
-      <p class="s">kg, al {{ hoy.strftime('%d/%m') }}</p></div>
-    <div><p class="k">Se vendió</p>
-      <p class="v vd">{{ liquidado | num_es(0) }}</p>
-      <p class="s">kg</p></div>
+  <div class="term-tope">
+    <div>
+      <p class="k">Se vendió</p>
+      <p class="v"><b class="vd">{{ liquidado | num_es(0) }}</b>
+        <span class="de">de {{ kg_al_largar | num_es(0) }} kg</span></p>
+    </div>
+    <p class="pct">{{ avance | num_es(1) }}%</p>
   </div>
-  {# ⭐ El termómetro es de la FÁBRICA y va en kilos: la pregunta de acá es
-     cuánta tela salió de la bodega, no quién va ganando. Los puntos en juego
-     se dicen al lado como referencia de tamaño, no como meta de nadie. #}
-  <div class="chico">Hay <b>{{ puntos_en_juego | num_es(0) }} puntos</b> en juego,
-    en {{ kg_al_largar | num_es(0) }} kg.</div>
-  <div class="barra-fondo">
-    <div style="width:{{ [100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min }}%"></div>
-  </div>
-  {# ⚠ `x if y else 0 | round(1)` aplica el filtro SÓLO al 0: salía
-     "17.284974824441832%", con punto decimal además. Los paréntesis y num_es
-     no son cosmética — un porcentaje con 15 decimales dice "esto no lo miró
-     nadie". #}
-  <div class="chico">Salieron <b>{{ liquidado | num_es(0) }} kg</b>
-    ({{ liquidado_pts | num_es(0) }} puntos).</div>
+  <div class="barra-fondo"><div style="width:{{ avance }}%"></div></div>
+  <div class="chico">{{ liquidado_pts | num_es(0) }} de
+    {{ puntos_en_juego | num_es(0) }} puntos · hay hoy
+    {{ kg_parado | num_es(0) }} kg · {% if meta_fijada_el %}la meta se fijó el
+    {{ meta_fijada_el.strftime('%d/%m') }}{% else %}la meta se fija el
+    {{ largada.strftime('%d/%m') }}{% endif %}</div>
+</div>
 </div>
 
-<h2>Las reglas</h2>
+{# ⚠ Ocho reglas siempre abiertas eran media pantalla de texto que se lee UNA
+   vez y después estorba todos los días. Plegadas: el que las necesita las
+   abre. #}
+<details class="reglas-plegadas">
+<summary>Las reglas</summary>
 <div class="reglas">
 <ol>
   <li>Se venden <b>los saldos</b>: la tela que hace 12 meses o más no sale.
@@ -125,10 +143,11 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       Agosto y septiembre cuentan juntos.</li>
 </ol>
 </div>
+</details>
 
 <h2>Quién va ganando</h2>
 <p class="sub"><b>Toque una fila</b> para ver su avance grupo por grupo.</p>
-<table>
+<div class="caja"><table>
 <thead><tr><th></th><th></th><th>Vendedor</th>
 <th class="n opt">Kilos</th><th class="n">Puntos</th><th class="opt">Avance</th>
 <th class="n opt">Esta semana</th><th class="n opt">Último</th></tr></thead>
@@ -144,7 +163,7 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       {% elif r.movimiento < 0 %}<span class="mov baja">▼{{ -r.movimiento }}</span>{% endif %}</td>
     <td class="tela">{{ r.vendedor }}{% if vend and r.vend_yo %} · usted{% endif %}</td>
     <td class="n g opt">{{ r.kg | num_es(0) }}</td>
-    <td class="n">{{ r.puntos | num_es(0) }}</td>
+    <td class="n pts" style="font-weight:600">{{ r.puntos | num_es(0) }}</td>
     {# La barrita mide contra el PRIMERO, no contra una meta: lo que se quiere
        ver de un vistazo es cuánto falta para alcanzarlo. #}
     <td class="opt"><div class="mini"><div style="width:{{ [100, r.pct_lider] | min }}%"></div></div></td>
@@ -159,18 +178,18 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {% for d in r.detalle %}
       <tr><td>{{ d.grupo }}</td>
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
-      <td class="n">{{ d.puntos | num_es(0) }}</td></tr>
+      <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
     {% endfor %}
     </tbody>
     </table>
   </td></tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 
 <h2>El premio del mes</h2>
 <p class="sub">La otra carrera: <b>kilos totales</b>, sin tope. Gana el que más
-saque, vaya donde vaya en el porcentaje.</p>
+venda, vaya donde vaya en el porcentaje.</p>
 {% if meses %}
 {# ⭐ Dueña 20/08/2026: "acá me gustaría tener a todos ordenados por kg". Antes
    era una fila por mes con el ganador y el podio de tres: la mitad de la tabla
@@ -182,7 +201,7 @@ saque, vaya donde vaya en el porcentaje.</p>
   {% if m.cerrado %}<span class="pill quieto">cerrado</span>
   {% else %}<span class="pill mov">en juego</span>{% endif %}
   <span class="mes-kg">{{ m.kg | num_es(0) }} kg entre todos</span></h3>
-<table>
+<div class="caja"><table>
 <thead><tr><th></th><th>Vendedor</th><th class="n">Kg del mes</th></tr></thead>
 <tbody>
 {% for r in m.ranking %}
@@ -193,7 +212,7 @@ saque, vaya donde vaya en el porcentaje.</p>
   </tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 {% endfor %}
 {% else %}
 <p class="sub">Todavía no se vendió nada. El primero se define a fin de
@@ -209,7 +228,7 @@ septiembre.</p>
 <h2>Por grupo</h2>
 <p class="sub">Dónde están los puntos. Un grupo puede tener pocos kilos y
 muchos puntos: depende de qué telas tenga adentro.</p>
-<table>
+<div class="caja"><table>
 <thead><tr><th>Grupo</th><th class="n">Kg parados</th>
 <th class="n">Puntos en juego</th><th class="n opt">Salió</th>
 <th class="n">Puntos hechos</th>
@@ -226,14 +245,14 @@ muchos puntos: depende de qué telas tenga adentro.</p>
   </tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 
 
 
 <h2>Los saldos</h2>
 <p class="sub">{{ telas | length }} telas.
 <a href="/analisis/competencia/telas">Verlas todas, con sus clientes →</a></p>
-<table>
+<div class="caja"><table>
 <thead><tr><th>Tela</th><th class="opt">Grupo</th><th class="n">Kg</th>
 <th class="n">Vale</th><th class="n opt">Puntos</th><th class="opt">Colores</th></tr></thead>
 <tbody>
@@ -241,14 +260,14 @@ muchos puntos: depende de qué telas tenga adentro.</p>
   <tr><td class="tela">{{ t.tela }}</td><td class="g opt">{{ t.grupo }}</td>
   <td class="n">{{ t.kg | num_es(0) }}</td>
   <td class="n vale"><span class="pt p{{ t.puntos }}">{{ t.puntos }} × kg</span></td>
-  <td class="n g opt">{{ t.puntos_total | num_es(0) }}</td>
+  <td class="n pts opt">{{ t.puntos_total | num_es(0) }}</td>
   {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. Van los seis primeros
      —los de más kilos— y el resto se cuenta: Microfibra tiene 26 y con todos
      la fila mide media pantalla. #}
   <td class="opt">{% for c in t.colores_lista[:6] %}<span class="cl"><b>{{ c.cod }}</b>{% if c.nombre %}<span>{{ c.nombre }}</span>{% endif %}</span>{% endfor %}{% if t.n_colores > 6 %}<span class="mas">y {{ t.n_colores - 6 }} más</span>{% endif %}</td></tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 <p class="sub">Las ocho que más puntos valen.
 <a href="/analisis/competencia/telas">Ver las {{ telas | length }} →</a></p>
 
@@ -257,7 +276,7 @@ muchos puntos: depende de qué telas tenga adentro.</p>
 <p class="sub">{{ mis_clientes | length }} de su cartera ya compraron estos
 saldos. <a href="/analisis/competencia/mi-hoja">Ver su hoja e imprimirla →</a></p>
 {% if mis_clientes %}
-<table>
+<div class="caja"><table>
 <thead><tr><th>Código</th><th>Cliente</th><th class="opt">Provincia</th>
 <th class="n">Telas</th><th class="opt">Cuáles</th><th class="n opt">Última compra</th></tr></thead>
 <tbody>
@@ -268,7 +287,7 @@ saldos. <a href="/analisis/competencia/mi-hoja">Ver su hoja e imprimirla →</a>
   <td class="n g opt">{{ c.ultima_compra.strftime('%d/%m/%y') if c.ultima_compra else '—' }}</td></tr>
 {% endfor %}
 </tbody>
-</table>
+</table></div>
 {% else %}
 <p class="sub">Ninguno de sus clientes los compró todavía.</p>
 {% endif %}
