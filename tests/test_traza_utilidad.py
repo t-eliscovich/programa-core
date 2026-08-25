@@ -252,3 +252,62 @@ def test_los_deltas_de_la_grilla_llevan_separador_de_miles():
             nombre).read_text(encoding="utf-8")
         assert "'%+d'" not in txt, f"{nombre} sigue con formato de C"
         assert "delta_es" in txt
+
+
+# ── El freno vive en la base, no en el proceso ────────────────────────
+#
+# 🚨 25/08: *"hay algo raro, la traza no se está moviendo"*. Cada foto se
+# guardaba DOS veces con segundos de diferencia —173 de las 357 del día— y la
+# segunda salía con Δ 0 y las columnas vacías, así que la grilla parecía
+# congelada. `_ultimo_ts` es una variable de PROCESO y hay más de un proceso.
+
+def test_una_foto_de_hace_segundos_frena_la_siguiente():
+    with patch.object(t.db, "fetch_one", return_value={"seg": 7.0}):
+        assert t._muy_reciente(None, 300) is True
+
+
+def test_pasado_el_intervalo_la_base_deja_sacar_la_foto():
+    with patch.object(t.db, "fetch_one", return_value={"seg": 301.0}):
+        assert t._muy_reciente(None, 300) is False
+
+
+def test_la_primera_foto_no_tiene_contra_que_frenarse():
+    """Tabla vacía: `MAX(creado_en)` es NULL y la foto tiene que entrar."""
+    with patch.object(t.db, "fetch_one", return_value={"seg": None}):
+        assert t._muy_reciente(None, 300) is False
+
+
+def test_el_ciclo_de_fondo_frena_contra_la_base_y_no_contra_su_reloj():
+    with patch.object(t, "registrar", return_value={"ok": True}) as reg:
+        t.registrar_si_toca()
+    assert reg.call_args.kwargs["min_gap_secs"] == t._intervalo()
+
+
+def test_la_foto_repetida_no_llega_a_escribirse():
+    """El freno se pregunta ADENTRO del lock y ANTES del INSERT."""
+    from contextlib import contextmanager
+
+    from modules.informes import foto as motor
+
+    @contextmanager
+    def _tx():
+        yield object()
+
+    def _fetch(sql, params=None, conn=None):
+        return {"ok": True} if "advisory" in sql else {"seg": 6.0}
+
+    with patch.object(t.db, "tx", _tx), \
+         patch.object(t.db, "fetch_one", side_effect=_fetch), \
+         patch.object(t.db, "execute_returning") as ins, \
+         patch.object(motor, "guardada", return_value={}), \
+         patch.object(motor, "detalle", return_value=[]), \
+         patch.object(motor, "hay_desfase", return_value=False), \
+         patch.object(motor, "es_primera", return_value=False), \
+         patch.object(motor, "diff", return_value=[]), \
+         patch.object(motor, "guardar_movimientos"), \
+         patch.object(motor, "aplicar"):
+        res = t.registrar(bal=BALANCE, min_gap_secs=300)
+
+    assert res["ok"] is False
+    assert "menos de un intervalo" in res["motivo"]
+    ins.assert_not_called()
