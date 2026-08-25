@@ -3456,3 +3456,18 @@ def test_vendidos_lleva_su_total_arriba():
     arriba = html[i:j]
     assert "vendidos | sum(attribute='kg')" in arriba, "el total no está, o está debajo de la tabla"
     assert "vendidos | sum(attribute='puntos_fila')" in arriba
+
+
+def test_el_detalle_no_lista_los_grupos_en_cero():
+    """Dueña 25/08/2026: *"si no vendió nada de las otras telas, no
+    mostrarlas"*. Los ocho grupos estaban siempre, así que el que vendió una
+    sola tela abría su fila y veía un renglón y siete ceros: la pantalla decía
+    siete veces "acá no hizo nada" y escondía lo único que sí hizo.
+
+    Se filtra en la CUENTA y no en el template: el total del grupo lo sigue
+    armando `competencia()`, así que si un grupo tuviera puntos sin kilos —una
+    devolución que deja el neto en cero— tampoco desaparece."""
+    import inspect as _i
+    fuente = _i.getsource(queries.competencia)
+    assert 'd["detalle"] = [g for g in d["detalle"]' in fuente
+    assert 'float(g.get("kg") or 0) or float(g.get("puntos") or 0)' in fuente

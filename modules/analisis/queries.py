@@ -1481,6 +1481,15 @@ def competencia() -> dict:
                 "kg": sum(float(x["kg"] or 0) for x in ls),
                 "puntos": sum(float(x["puntos"] or 0) for x in ls),
                 "lineas": ls})
+        # ⭐ EL GRUPO EN QUE NO VENDIÓ NADA NO SE MUESTRA (dueña 25/08/2026: "si
+        # no vendió nada de las otras telas, no mostrarlas"). Los ocho grupos
+        # siempre estaban, así que el que había vendido una sola tela abría su
+        # fila y veía un renglón y siete ceros: la pantalla decía siete veces lo
+        # mismo —"acá no hizo nada"— y escondía lo único que sí hizo. Los grupos
+        # están enteros arriba, en «Los saldos», que es donde se va a buscar
+        # dónde hay puntos.
+        d["detalle"] = [g for g in d["detalle"]
+                        if float(g.get("kg") or 0) or float(g.get("puntos") or 0)]
         d["vendido"] = lineas
 
     for g in grupos:

@@ -54,10 +54,15 @@ h1{font-size:30px;font-weight:600;letter-spacing:-.025em;margin:0 0 6px}
 /* ⚠ El título tiene que ganarle al cuadro que viene abajo. A 17 px contra un
    cuerpo de 15 no se leía como título (dueña 24/08/2026: "los titulos no se
    notan que son titulos"): la diferencia la hace el TAMAÑO, no la línea. */
+/* ⚠ El aire entre tabla y tabla se cortó a la mitad el 25/08/2026 (dueña:
+   "borra tanto espacio entre tablas"). Eran 56 px de margen MÁS 22 de padding
+   sobre la línea: entre una tabla y el título de la siguiente había casi una
+   pantalla de teléfono vacía. El título se sigue notando por el TAMAÑO, que es
+   lo que se arregló en su momento, no por la distancia. */
 h2{font-size:21px;font-weight:600;letter-spacing:-.02em;
-margin:56px 0 6px;padding-top:22px;border-top:1px solid var(--l)}
-h2:first-of-type{border-top:0;padding-top:0;margin-top:38px}
-.sub{color:var(--g);font-size:13.5px;margin:0 0 18px;max-width:72ch}
+margin:30px 0 6px;padding-top:14px;border-top:1px solid var(--l)}
+h2:first-of-type{border-top:0;padding-top:0;margin-top:24px}
+.sub{color:var(--g);font-size:13.5px;margin:0 0 12px;max-width:72ch}
 /* Más chicas (dueña 24/08/2026: "las tablas podras hacer mas chiquitas?").
    13 px con renglones de 8 px entra un tercio más de filas por pantalla sin
    que se lea peor: la letra es Inter y los números son de ancho fijo. */
