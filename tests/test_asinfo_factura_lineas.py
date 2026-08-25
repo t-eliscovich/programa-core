@@ -21,7 +21,7 @@ def _limpiar_cache():
 
 def _fila(tela, color, kg, precio, neto, categoria="TELAS", calidad="PRIMERA"):
     bruto = round(kg * precio, 4)
-    codigo = (tela[:4] + color[:3]).upper().replace(" ", "")
+    codigo = color[:3].upper()  # el código del COLOR: FRESA → FRE
     return {
         "tela": tela, "codigo": codigo, "producto": f"{tela} {color}",
         "categoria": categoria,
@@ -51,7 +51,8 @@ def test_numero_bueno_pasa_entero_al_sql():
     sql = fl._sql("001-099-000182419")
     assert "fc.numero = '001-099-000182419'" in sql
     assert "fc.estado <> 0" in sql
-    assert "pr.codigo" in sql  # el código de fábrica, AL12BLA
+    assert "col.codigo" in sql        # el código del COLOR (BLA)
+    assert "RIGHT(RTRIM(ISNULL(pr.codigo" in sql   # y su plan B
 
 
 def test_el_color_y_la_calidad_se_buscan_por_atributo_no_por_posicion():
@@ -110,7 +111,7 @@ def test_cuatro_rollos_de_la_misma_tela_son_una_fila_con_cuatro_rollos():
     assert l["rollos"] == 4
     assert l["kg"] == 85.60
     assert l["total"] == 646.90
-    assert l["codigo"] == "FLEEFRE"
+    assert l["codigo"] == "FRE"
     assert res["totales"]["rollos"] == 4
 
 

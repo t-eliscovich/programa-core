@@ -32,7 +32,14 @@ color, cuántos rollos. Eso vive en Asinfo y se trae por el puente de Metabase.
    2, pero eso es una coincidencia del maestro, no una garantía: se busca por
    el ID DEL ATRIBUTO (3 = Color, 2 = Calidad), no por la posición.
 
-5. **No todo renglón es tela.** El SERVICIO DE LOGISTICA entra como una línea
+5. **El "código" es el del COLOR, no el del producto.** TMT 25/08: *"código
+   solo es el código de color, no el conjunto"*. `producto.codigo` es el
+   conjunto (AL12BLA = Alemania 1.2 + BLAnco); el código suelto vive en
+   `valor_atributo.codigo` del atributo Color (BLA). Se usa ése, y si el
+   renglón no trae color se cae a las tres últimas letras del producto, que
+   es de donde lo saca `analisis/asinfo_parado`.
+
+6. **No todo renglón es tela.** El SERVICIO DE LOGISTICA entra como una línea
    más con `cantidad = 1` — que es una unidad, no un kilo. Sumarlo daría kilos
    de más (el mismo error que ya se pagó en `dia_despacho`). Acá va aparte,
    sin rollos y sin kilos.
@@ -98,7 +105,8 @@ def _slot(atributo: int) -> str:
 def _sql(numero: str) -> str:
     return f"""
 SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
-       LTRIM(RTRIM(ISNULL(pr.codigo, '')))                       AS codigo,
+       ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.codigo, ''))), ''),
+              RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3))            AS codigo,
        LTRIM(RTRIM(ISNULL(pr.nombre_comercial, '')))             AS producto,
        LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, '')))    AS categoria,
        LTRIM(RTRIM(ISNULL(col.nombre, '')))                      AS color,
@@ -189,8 +197,6 @@ def _agrupar(filas: list[dict]) -> dict:
         rollos += 1
 
     lineas = sorted(grupos.values(), key=lambda g: (-g["kg"], g["tela"], g["color"]))
-    # El código de Asinfo (AL12BLA) es tela + color en siete letras: es lo que
-    # la fábrica dice en voz alta, y por eso va antes del color. TMT 25/08.
     for g in lineas:
         g["kg"] = round(g["kg"], 2)
         g["total"] = round(g["total"], 2)
