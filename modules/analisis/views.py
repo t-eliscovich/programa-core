@@ -99,7 +99,13 @@ def inicio():
 @requiere_login
 @requiere_permiso("analisis.ver")
 def parado():
-    filas = queries.con_puntos(queries.items())
+    # ⚠ Dos listas y no una. `base` es una fila por tela × color: de ahí salen
+    # el resumen de arriba y el cuadro por grupo, que tienen que seguir
+    # contando ÍTEMS (734), no renglones. `filas` es lo que se dibuja, abierto
+    # por forma y calidad — ver `abrir_en_lineas`.
+    base = queries.con_puntos(queries.items())
+    filas = queries.abrir_en_lineas(base)
+    filas.sort(key=lambda f: -float(f.get("puntos_fila") or 0))
     # Los desplegables salen de las filas que se van a dibujar, no de una lista
     # aparte: si un grupo no tiene nada parado, no tiene por qué estar.
     grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
@@ -112,9 +118,9 @@ def parado():
         grupos=grupos,
         subgrupos=[{"sub": s, "cat": c} for s, c in subgrupos],
         llamados=queries.llamados_por_tela(),
-        resumen=queries.resumen(filas),
+        resumen=queries.resumen(base),
         bolsa=queries.bolsa_congelada(),
-        grupos_resumen=queries.por_grupo(filas),
+        grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
@@ -318,10 +324,12 @@ def mis_telas():
     diría "137 clientes" y al abrir la fila aparecerían tres.
     """
     vend = _vend_actual()
-    filas = queries.con_puntos(queries.items())
+    base = queries.con_puntos(queries.items())
     llamados = queries.llamados_por_tela(cartera_de=vend)
-    for f in filas:
+    for f in base:
         f["clientes"] = len(llamados.get(f["subcategoria"], []))
+    filas = queries.abrir_en_lineas(base)
+    filas.sort(key=lambda f: -float(f.get("puntos_fila") or 0))
     grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
     subgrupos = sorted({(f["subcategoria"], f["categoria"] or "") for f in filas},
                        key=lambda x: x[0])
@@ -330,9 +338,9 @@ def mis_telas():
         filas=filas, llamados=llamados, mia=True, vend=vend,
         grupos=grupos,
         subgrupos=[{"sub": x, "cat": c} for x, c in subgrupos],
-        resumen=queries.resumen(filas),
+        resumen=queries.resumen(base),
         bolsa=queries.bolsa_congelada(),
-        grupos_resumen=queries.por_grupo(filas),
+        grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,

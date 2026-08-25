@@ -1494,9 +1494,15 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert re.search(r'class="ord forma" data-i="\d+"', parado), (
         "y la Forma tiene la suya")
     assert '<span class="qm">{{ calidad }}</span></td>' in parado
-    # una sola vez se decide PRI/SEG: dos copias del if se despegan
-    assert parado.count('<span class="q seg">SEG</span>') == 2, (
+    # ⚠ Una sola vez se DECIDE PRI/SEG. Antes esto contaba las píldoras; desde
+    # el 25/08/2026 el bloque tiene una rama más (la línea abierta por calidad
+    # trae la suya), así que lo que se fija es lo de verdad: que la decisión
+    # viva en UN `{% set calidad %}` y que los dos lugares donde se dibuja la
+    # usen. Dos copias del if se despegan a la primera corrección.
+    assert parado.count("{% set calidad %}") == 1, (
         "las píldoras se arman en más de un lugar")
+    assert parado.count("{{ calidad }}") == 2, (
+        "la píldora se dibuja en la columna y, en el celular, pegada a la tela")
     # el orden y el Excel leen el texto sin la copia
     assert "c.querySelectorAll('.qm').forEach(e => e.remove())" in parado
     assert "return texto(td).trim().toLowerCase();" in parado
@@ -2545,8 +2551,12 @@ def test_cuando_hay_de_las_dos_formas_se_dicen_los_kilos_de_cada_una():
     ésa—; con las dos, el total de la fila no dice cuánto hay de cada una, y
     salir a ofrecer 200 kg "de las dos" es prometer algo que puede no estar.
     """
+    # ⚠ La sigla y NADA de kilos: los kilos de la línea están en su columna.
+    # "TUB 422" al lado de un renglón de 171 kg son dos números que no cierran
+    # — pasó en vivo el 25/08/2026 con los ítems que entran sólo por su segunda.
     con_dos = _forma(kg_tubular=120, kg_abierta=51)
-    assert "TUB 120" in con_dos and "ABI 51" in con_dos
+    assert "TUB" in con_dos and "ABI" in con_dos
+    assert "120" not in con_dos and "51" not in con_dos
 
     assert _forma(kg_tubular=200, kg_abierta=0) == '<span class="fm">TUB</span>'
     assert _forma(kg_tubular=0, kg_abierta=200) == '<span class="fm">ABI</span>'
@@ -2564,3 +2574,21 @@ def test_la_forma_se_dibuja_con_UN_macro_en_las_dos_pantallas():
         assert '{% import "analisis/_forma.html" as fm %}' in t, hoja
         assert "fm.forma(f)" in t, hoja
         assert "TUB" not in t, f"{hoja} dibuja la forma por su cuenta"
+
+
+def test_la_fila_del_vendedor_abre_QUE_vendio_no_solo_el_grupo():
+    """⭐ Dueña 25/08/2026: "esto me sigue sin abrir pique". El cuadro que se
+    abre decía el GRUPO —Pique, 102 kg— y ahí se terminaba: qué tela y qué
+    color no estaba en ninguna pantalla.
+
+    ⚠ Este test existe porque el bloque se perdió una vez: el commit lo
+    nombraba, la función de datos estaba, y la plantilla había quedado sin el
+    cambio. En vivo no se veía nada y el commit decía que sí."""
+    from pathlib import Path
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    assert "Qué vendió" in t
+    assert "{% for v in r.vendido %}" in t
+    assert "v.subcategoria" in t and "v.color" in t
+    # y los kilos que no puntúan, con el motivo
+    assert "nocuenta" in t and "no suma" in t

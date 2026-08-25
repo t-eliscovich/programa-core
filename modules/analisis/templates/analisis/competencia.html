@@ -78,6 +78,7 @@ td.puesto{font-weight:600;color:var(--g);width:34px}
 .mes-tit{font-size:15px;margin:18px 0 6px;display:flex;align-items:center;gap:8px}
 .mes-kg{font-weight:400;color:var(--g);font-size:13px}
 tr.yo td{background:#f0fdf4}
+tr.nocuenta td{color:#9aa0a6}
 </style>
 
 <h1>Competencia</h1>
@@ -185,6 +186,40 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {% endfor %}
     </tbody>
     </table>
+
+    {# ⭐ QUÉ vendió, renglón por renglón (dueña 25/08/2026: "intela ya tiene
+       65kg. quiero ver exacto que vendio" y "esto me sigue sin abrir pique").
+       El cuadro de arriba dice el GRUPO —Pique, 102 kg— y ahí se termina: qué
+       tela y qué color no estaba en ninguna pantalla.
+
+       ⭐ Van también los kilos que NO puntúan, en gris y con el motivo abajo.
+       Un vendedor que facturó 512 kg de una tela de la lista y ve 0 puntos
+       tiene que leer POR QUÉ acá, no preguntarlo la semana que viene. #}
+    {% if r.vendido %}
+    <p class="sub" style="margin:12px 0 4px">Qué vendió</p>
+    <table>
+    <thead><tr><th>Tela</th><th>Color</th><th class="opt">Día</th>
+      <th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
+    <tbody>
+    {% for v in r.vendido %}
+      <tr{% if not v.cuenta %} class="nocuenta"{% endif %}>
+        <td>{{ v.subcategoria }}</td>
+        <td><b>{{ v.color }}</b> <span class="g">{{ v.calidad }}</span></td>
+        <td class="g opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
+        <td class="n g">{{ v.kg | num_es(0) }}</td>
+        <td class="n {{ 'pts' if v.cuenta else 'g' }}">
+          {%- if v.cuenta %}{{ v.puntos | num_es(0) }}
+          {%- else %}no suma{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+    </table>
+    {% if r.vendido | rejectattr('cuenta') | list %}
+    <p class="sub" style="margin:6px 0 0;font-size:12px">Los que dicen
+      <b>no suma</b> son kilos de <b>primera</b> de una tela que entró a la
+      lista sólo por sus kilos de segunda: esa tela ya se vende sola.</p>
+    {% endif %}
+    {% endif %}
   </td></tr>
 {% endfor %}
 </tbody>

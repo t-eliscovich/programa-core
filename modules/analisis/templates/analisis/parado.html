@@ -205,7 +205,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   <tr class="item" onclick="abrir(this)"
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
-      data-cal="{% if f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
+      data-cal="{% if f.cal_fila is defined %}{{ f.cal_fila or 'PRI SEG' }}{% elif f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
       {# INTELA entra al filtro como uno más: sus clientes son los que no
          tienen vend_pc. Sin esto no había forma de aislar el mostrador, que es
          la mitad de las ventas de estas telas. #}
@@ -221,7 +221,10 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
        ver— quedaban cortados afuera. Abajo de 560 px la columna se esconde y
        la píldora viaja pegada al nombre de la tela. Se arma UNA sola vez: dos
        copias del mismo `if` se despegan a la primera corrección. #}
-    {% set calidad %}{% if f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
+    {# La calidad de ESTA línea: cuando un color viene de primera y de segunda
+       la fila se abrió en dos, y cada una dice la suya (dueña 25/08/2026: "pri
+       y seg las sigo viendo juntas. tienen que ser por separado"). #}
+    {% set calidad %}{% if f.cal_fila is defined %}{% if f.cal_fila == 'SEG' %}<span class="q seg">SEG</span>{% elif f.cal_fila == 'PRI' %}<span class="q pri">PRI</span>{% else %}<span class="g">—</span>{% endif %}{% elif f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span><span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>{% else %}<span class="q pri">PRI</span>{% endif %}{% endset %}
     <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}<span class="qm">{{ calidad }}</span></td>
     {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
        está en el producto y en Asinfo; el nombre es el que usa el cliente por
