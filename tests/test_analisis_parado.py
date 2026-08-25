@@ -2287,3 +2287,27 @@ def test_las_pantallas_respetan_la_bandera_cuenta():
     assert n == fuente.count("v.cuenta"), (
         f"{n} lecturas de parado_venta y sólo "
         f"{fuente.count('v.cuenta')} filtran por la bandera")
+
+
+def test_once_noventa_y_ocho_meses_es_doce():
+    """⭐ Dueña 24/08/2026: "11.98 es igual que 12". El corte entre 4 y 10
+    puntos está en 12 meses parados, y Jersey Forro Spun daba 11,98: sus
+    2.448 kg —el ítem más grande de la lista— valían 4 en vez de 10 por una
+    diferencia del 0,2%, menos que el error de medición de la bodega."""
+    nivel, meses = queries._nivel(2448.3, 2452.35)
+    assert round(meses, 2) == 11.98
+    assert nivel == 3 and queries.PUNTOS[nivel] == 10
+
+
+def test_el_redondeo_no_mueve_a_ninguna_otra_tela():
+    """El redondeo es de UN decimal a propósito: arregla el borde sin correr la
+    línea. Las cuatro telas que están cerca del otro corte (1 mes) se quedan
+    donde estaban."""
+    for kg_base, kg_12m in [(659.6, 7673.95),    # Jersey Lycra 3.3 — 1,03
+                            (191.25, 2023.4),    # Franela — 1,13
+                            (21.25, 223.1),      # Stefi — 1,14
+                            (204.0, 1974.0)]:    # WAFFER — 1,24
+        nivel, _ = queries._nivel(kg_base, kg_12m)
+        assert nivel == 2, (kg_base, kg_12m)
+    # y una que sí es fácil de verdad sigue siendo fácil
+    assert queries._nivel(100, 12000)[0] == 1

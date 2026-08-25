@@ -248,9 +248,15 @@ def _nivel(kg_base: float, kg_12m: float) -> tuple[int, float | None]:
     if kg_12m < 1:
         return 3, None
     meses = kg_base / (kg_12m / 12)
-    if meses < MESES_FACIL:
+    # ⭐ Se compara REDONDEADO a un decimal. Dueña 24/08/2026: *"11.98 es igual
+    # que 12"*. Jersey Forro Spun daba 11,98 meses y caía en 4 puntos por dos
+    # centésimas: sus 2.448 kg —el ítem más grande de la lista— valían 4 en vez
+    # de 10 por una diferencia del 0,2%, que es menos que el error de medición
+    # de la bodega. Ninguna otra tela cambia de nivel con esto.
+    corte = round(meses, 1)
+    if corte < MESES_FACIL:
         return 1, meses
-    if meses < MESES_MEDIO:
+    if corte < MESES_MEDIO:
         return 2, meses
     return 3, meses
 
