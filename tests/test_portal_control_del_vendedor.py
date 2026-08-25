@@ -94,3 +94,26 @@ def test_leer_el_estado_nunca_tumba_la_ficha():
 def test_sin_codigo_no_hace_nada():
     assert portal_cliente.estado("")["tiene"] is False
     assert portal_cliente.cortar("", "edg")[0] is False
+
+
+def test_los_textos_estan_bien_escritos():
+    """🚨 Se me escaparon los acentos escribiendo este bloque, porque venía de
+    escribir el script de PowerShell en ASCII puro (ahí los acentos rompen el
+    parseo). Salió "Ultima vez" y "todavia no eligio clave" en la pantalla de
+    los vendedores.
+
+    El ASCII es una regla de LOS `.ps1`, no de las pantallas: acá el castellano
+    se escribe como se escribe. Ver el skill `textos-de-pantalla-intela`."""
+    import re
+
+    bloque = FICHA[FICHA.index("portal-caja"):FICHA.index("portal-btn") + 400]
+    # Fuera los `{{ ... }}` y `{% ... %}`: adentro van NOMBRES DE VARIABLE, que
+    # sí van sin acento (`portal.eligio_clave`). Lo que se revisa es lo que el
+    # vendedor lee, no los identificadores.
+    texto = re.sub(r"\{\{.*?\}\}|\{%.*?%\}", "", bloque, flags=re.S)
+    for mal, bien in (("Ultima vez", "Última vez"),
+                      ("todavia", "todavía"),
+                      ("eligio clave", "eligió clave"),
+                      ("Se lo cerro", "Se lo cerró"),
+                      ("lo cambio el", "lo cambió él")):
+        assert mal not in texto, f"falta el acento: '{mal}' tendría que ser '{bien}'"
