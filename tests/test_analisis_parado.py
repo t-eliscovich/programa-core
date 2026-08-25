@@ -2605,8 +2605,13 @@ def test_la_fila_del_vendedor_abre_QUE_vendio_no_solo_el_grupo():
     from pathlib import Path
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "Qué vendió" in t
-    assert "{% for v in r.vendido %}" in t
+    # ⭐ Desde el 25/08/2026 los renglones van DENTRO de su grupo y no en una
+    # tabla aparte más abajo (dueña: "quería ver el pique especial de lo vendido
+    # dentro de pique"). Lo que este test cuida sigue siendo lo mismo: que al
+    # abrir un vendedor se vea QUÉ vendió y no sólo el grupo.
+    assert "{% for v in d.lineas %}" in t
+    assert "{% for v in r.vendido %}" not in t, (
+        "la tabla aparte volvió: los renglones van colgados de su grupo")
     assert "v.subcategoria" in t and "v.color" in t
     # ⚠ SÓLO lo que puntúa (dueña 25/08/2026: "lo que no cuenta para puntos ni
     # lo muestres"). La consulta ya filtra por la bandera; acá se fija que la
@@ -2780,6 +2785,8 @@ class _DBFalsa:
         # ⚠ Sólo la lectura del refresco. `items()` también sale de la
         # cohorte, pero devuelve otra cosa (la foto pegada al lado).
         if s.startswith("SELECT subcategoria, color, fecha_marcado, motivo"):
+            return self.cohorte
+        if s.startswith("SELECT subcategoria, color, motivo"):
             return self.cohorte
         return []
 
@@ -3230,3 +3237,45 @@ def test_el_renglon_vendido_lleva_a_su_tela_arriba():
     assert "fila.scrollIntoView" in html and "marcada" in html
     assert "tr.item.marcada>td{background:" in html, (
         "sin la marca, el salto deja buscando cuál de las 700 filas era")
+
+
+def test_lo_de_segunda_que_se_vendio_entero_no_se_apaga(monkeypatch):
+    """⚠⚠ El bug que dejó la tabla de Vendidos VACÍA el 25/08/2026.
+
+    Desde que las banderas se calculan para TODA la bodega —hizo falta para la
+    tela ya vendida—, contestan también por telas que nunca fueron un saldo
+    parado. Una tela que se vende bien y está en producción tiene `produciendo`
+    en 1 y, si vendió toda su segunda, `entra` en falso: quedaba marcada `fuera`
+    y con ella se borraban sus ventas y los puntos de quien la vendió.
+
+    Sólo se apaga lo que entró como `parado`. Un ítem de SEGUNDA entró por kilos
+    que son un saldo se venda la tela o no."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Pique Especial", "color": "BAZ",
+                  "stock_kg": 0, "stock_bodega": 900, "motivo": "segunda",
+                  "nueva": False, "pedida": False, "produciendo": True,
+                  "entra": False}],
+        cohorte=[{"subcategoria": "Pique Especial", "color": "BAZ",
+                  "fecha_marcado": date(2026, 8, 13), "motivo": "segunda"}])
+    assert not db.sql_con("SET fuera = TRUE"), (
+        "vendió toda su segunda: eso es lo que la competencia premia")
+    assert res["produciendo"] == 0
+
+
+def test_el_renglon_vendido_cuelga_de_su_grupo():
+    """Dueña 25/08/2026: *"quería ver el pique especial de lo vendido dentro de
+    pique, no una tabla aparte"*. El cuadro decía "Pique · 38 kg" y la tela
+    estaba en otra tabla más abajo: había que adivinar de cuál de los ocho
+    grupos salía cada renglón."""
+    import inspect as _i
+    from pathlib import Path
+    fuente = _i.getsource(queries.competencia)
+    assert 'g["lineas"] = lineas_por_grupo.pop(g["grupo"], [])' in fuente
+    # ⚠ lo que no cae en ningún grupo del cuadro no se pierde: sin esto, un
+    # renglón desaparecería y los puntos del ranking no cerrarían con lo que se
+    # ve en pantalla
+    assert '"grupo": cat,' in fuente
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    assert "tr.linea>td{padding-left:" in t, "el renglón se lee colgado del grupo"

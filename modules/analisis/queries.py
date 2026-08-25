@@ -738,13 +738,6 @@ def actualizar() -> dict:
     # Las dos razones se cuentan por separado — en la pantalla no significan lo
     # mismo: una se arregla sola con el tiempo, la otra cuando salga el pedido.
     par = [p for p in todas if p.get("entra", True)]
-    # ⚠ Se APAGA por la bandera, no por "no está en la lista de hoy". La tela
-    # que se vendió entera tampoco está en la lista —no le queda un kilo— y ésa
-    # tiene que quedarse: vender lo parado es exactamente lo que la competencia
-    # premia. La que se saca es la que no debió entrar nunca.
-    fuera = [p for p in todas
-             if not p.get("entra", True)
-             and (p.get("nueva") or p.get("pedida") or p.get("produciendo"))]
 
     def kg_en_bodega(fs) -> float:
         """Los kilos que esas telas tienen HOY en la bodega.
@@ -755,9 +748,6 @@ def actualizar() -> dict:
         """
         return round(sum(float(f.get("stock_bodega") or 0) for f in fs), 2)
 
-    nuevas = [p for p in fuera if p.get("nueva")]
-    pedidas = [p for p in fuera if p.get("pedida")]
-    produciendo = [p for p in fuera if p.get("produciendo")]
 
     # ⭐ TODO se cuenta desde la LARGADA, no desde que cada fila entró a la
     # lista. Dueña 18/08/2026: "hace todo desde 25/08".
@@ -777,6 +767,37 @@ def actualizar() -> dict:
         anio_de[f["subcategoria"]] = f.get("anio")
 
     with db.tx() as conn:
+        # ⚠⚠ QUÉ SE PUEDE APAGAR. Las banderas hablan de la tela, no del motivo
+        # por el que el ítem entró a la lista, y desde que se calculan para TODA
+        # la bodega —hizo falta para la tela ya vendida— contestan también por
+        # telas que nunca fueron un saldo parado. Sin este filtro, cualquier
+        # tela que se venda bien y esté en producción quedaba marcada `fuera`, y
+        # con ella se borraban sus ventas: el 25/08/2026 la tabla de Vendidos
+        # apareció VACÍA y los vendedores perdieron sus puntos.
+        #
+        # Sólo se apaga lo que entró como `parado`. Un ítem de SEGUNDA entró por
+        # kilos que son un saldo se venda la tela o no, así que ninguna de las
+        # tres banderas lo descalifica — y si vendió toda su segunda, eso es
+        # justo lo que hay que premiar.
+        motivo_previo = {
+            (c["subcategoria"], c["color"]): c.get("motivo")
+            for c in db.fetch_all(
+                "SELECT subcategoria, color, motivo FROM scintela.parado_cohorte",
+                conn=conn)}
+
+        # ⚠ Se APAGA por la bandera, no por "no está en la lista de hoy". La
+        # tela que se vendió entera tampoco está en la lista —no le queda un
+        # kilo— y ésa tiene que quedarse: vender lo parado es exactamente lo que
+        # la competencia premia. La que se saca es la que no debió entrar nunca.
+        fuera = [p for p in todas
+                 if not p.get("entra", True)
+                 and (p.get("nueva") or p.get("pedida") or p.get("produciendo"))
+                 and (motivo_previo.get((p["subcategoria"], p["color"]))
+                      or "parado") == "parado"]
+        nuevas = [p for p in fuera if p.get("nueva")]
+        pedidas = [p for p in fuera if p.get("pedida")]
+        produciendo = [p for p in fuera if p.get("produciendo")]
+
         # 1 · la cohorte SÓLO crece
         for p in par:
             db.execute(
@@ -1316,7 +1337,31 @@ def competencia() -> dict:
         # va cuarto.
         d["pct_lider"] = 100 * d["puntos"] / lider if lider else 0
         d["detalle"] = sorted(d["grupos"].values(), key=lambda x: -x["puntos"])
-        d["vendido"] = detalle_vendido.get(d["vendedor"], [])
+        # ⭐ Cada renglón vendido va DENTRO de su grupo (dueña 25/08/2026:
+        # "quería ver el pique especial de lo vendido dentro de pique, no una
+        # tabla aparte"). El cuadro decía "Pique · 38 kg" y la tela estaba en
+        # otra tabla más abajo: había que buscar a mano de cuál de los ocho
+        # grupos salía cada renglón.
+        # ⚠ `lineas_por_grupo` y no `por_grupo`: ese nombre ya es una función
+        # de este módulo, y asignarlo acá adentro la convierte en variable local
+        # para TODA la función — la llamada de más arriba explotaba con
+        # UnboundLocalError. Es el segundo shadowing de la tarde.
+        lineas = detalle_vendido.get(d["vendedor"], [])
+        lineas_por_grupo: dict[str, list] = defaultdict(list)
+        for ln in lineas:
+            lineas_por_grupo[cat_de.get(ln["subcategoria"], "(sin grupo)")].append(ln)
+        for g in d["detalle"]:
+            g["lineas"] = lineas_por_grupo.pop(g["grupo"], [])
+        # ⚠ Lo que no cae en ninguno de los grupos del cuadro NO se pierde: se
+        # muestra como un grupo más. Si no, un renglón vendido desaparecería de
+        # la pantalla y los puntos del ranking no cerrarían con lo que se ve.
+        for cat, ls in sorted(lineas_por_grupo.items()):
+            d["detalle"].append({
+                "grupo": cat,
+                "kg": sum(float(x["kg"] or 0) for x in ls),
+                "puntos": sum(float(x["puntos"] or 0) for x in ls),
+                "lineas": ls})
+        d["vendido"] = lineas
 
     for g in grupos:
         g["liquidado"] = liq_kg.get(g["grupo"], 0.0)

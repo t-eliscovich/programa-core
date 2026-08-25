@@ -61,6 +61,10 @@ tr.vdet{display:none}
 tr.vdet.abierta{display:table-row}
 tr.vdet>td{background:#f8fafc;padding:0 10px 14px 40px}
 tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
+/* El renglón vendido cuelga de su grupo: sangría y letra chica, para que se
+   lea como parte del grupo de arriba y no como una fila más del cuadro. */
+tr.linea>td{padding-left:26px;font-size:12px;color:var(--g)}
+tr.linea>td b{color:var(--t)}
 .tope{font-size:11px;color:var(--g)}
 td.abrir{width:26px;text-align:center;padding-right:0}
 td.abrir .flecha{display:inline-block;width:18px;height:18px;line-height:17px;
@@ -178,41 +182,31 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     <thead><tr><th>Tipo de tela</th><th class="n">Vendió</th>
     <th class="n">Puntos</th></tr></thead>
     <tbody>
-    {% for d in r.detalle %}
-      <tr><td>{{ d.grupo }}</td>
-      <td class="n g">{{ d.kg | num_es(0) }} kg</td>
-      <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
-    {% endfor %}
-    </tbody>
-    </table>
-
-    {# ⭐ QUÉ vendió, renglón por renglón (dueña 25/08/2026: "intela ya tiene
-       65kg. quiero ver exacto que vendio" y "esto me sigue sin abrir pique").
-       El cuadro de arriba dice el GRUPO —Pique, 102 kg— y ahí se termina: qué
-       tela y qué color no estaba en ninguna pantalla.
+    {# ⭐ Cada venta va DENTRO de su grupo (dueña 25/08/2026: "quería ver el
+       pique especial de lo vendido dentro de pique, no una tabla aparte"). El
+       cuadro decía "Pique · 38 kg" y la tela estaba en otra tabla más abajo:
+       había que adivinar de cuál de los ocho grupos salía cada renglón.
 
        ⚠ SÓLO lo que puntúa (dueña 25/08/2026: "lo que no cuenta para puntos ni
        lo muestres"). Antes iban también los kilos que no suman, en gris: en una
        pantalla de competencia una lista donde la mayoría de los renglones no
        cuenta se lee como un error del programa. #}
-    {% if r.vendido %}
-    <p class="sub" style="margin:12px 0 4px">Qué vendió</p>
-    <table>
-    <thead><tr><th>Tela</th><th>Color</th><th class="opt">Día</th>
-      <th class="n">Kg</th><th class="n">Puntos</th></tr></thead>
-    <tbody>
-    {% for v in r.vendido %}
-      <tr>
-        <td>{{ v.subcategoria }}</td>
-        <td><b>{{ v.color }}</b> <span class="g">{{ v.calidad }}</span></td>
-        <td class="g opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
-        <td class="n g">{{ v.kg | num_es(0) }}</td>
-        <td class="n pts">{{ v.puntos | num_es(0) }}</td>
-      </tr>
+    {% for d in r.detalle %}
+      <tr><td>{{ d.grupo }}</td>
+      <td class="n g">{{ d.kg | num_es(0) }} kg</td>
+      <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
+      {% for v in d.lineas %}
+        <tr class="linea">
+          <td>{{ v.subcategoria }} <b>{{ v.color }}</b>
+            <span class="g">{{ v.calidad }}</span>
+            <span class="g">· {{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</span></td>
+          <td class="n g">{{ v.kg | num_es(0) }} kg</td>
+          <td class="n pts">{{ v.puntos | num_es(0) }}</td>
+        </tr>
+      {% endfor %}
     {% endfor %}
     </tbody>
     </table>
-    {% endif %}
   </td></tr>
 {% endfor %}
 </tbody>
