@@ -40,6 +40,13 @@ _INTERVALO_SECS = 60
 _started = False
 
 
+def _precargar_facturas() -> int:
+    """El detalle de las facturas de los últimos días, en la base."""
+    from modules.asinfo import factura_lineas
+
+    return factura_lineas.precargar()
+
+
 def _warm_once() -> None:
     import calendar as _cal_mod
     from datetime import date
@@ -86,6 +93,11 @@ def _warm_once() -> None:
          lambda: asvc.facturas_periodo(
              date(2025, 1, 1),
              date(yy, mm, _cal_mod.monthrange(yy, mm)[1]))),
+        # TMT 2026-08-25 (dueña): *"el que se llevó carga lento"*. El detalle
+        # de una factura cuesta 650 ms fijos de puente, así que se traen las de
+        # los últimos días DE UNA y quedan guardadas en la base. La función se
+        # limita sola a una corrida cada media hora.
+        ("factura_detalle_recientes", lambda: _precargar_facturas()),
         ("stock_lote_totales", lambda: asvc.stock_asinfo_lote_totales()),
         ("fabricacion_proceso_52", lambda: asvc.fabricacion_proceso(52)),
         ("fabricacion_proceso_53", lambda: asvc.fabricacion_proceso(53)),
