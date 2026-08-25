@@ -29,7 +29,6 @@ import pytest
 from modules.asinfo import service as sv
 from modules.importaciones import service as isv
 
-
 # ── El dato: kg_con_costo ──────────────────────────────────────────────────
 
 def _cruce(filas):

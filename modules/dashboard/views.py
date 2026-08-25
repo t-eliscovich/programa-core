@@ -9,11 +9,10 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from flask import Blueprint, g, redirect, render_template, request, session, url_for
+from flask import Blueprint, redirect, request, session, url_for
 
 from auth import requiere_login
 
-from . import queries
 
 _log = logging.getLogger("programa_core.dashboard")
 _tim = logging.getLogger("programa_core.dashboard.timings")

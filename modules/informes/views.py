@@ -25,7 +25,6 @@ from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
-
 from modules._lib import pdf_motor
 from modules.informes import estado_cuenta_pdf
 
@@ -434,6 +433,8 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     try:
         from modules.informes.quimicos_flujo import (
             color_familias_valuadas as _q_familias,
+        )
+        from modules.informes.quimicos_flujo import (
             color_movimiento_mes as _q_color_mov,
         )
         _fams = _q_familias()
@@ -531,16 +532,25 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             from datetime import timedelta as _td3
 
             from filters import today_ec as _today_ec3
-            from modules.tintura import service as _tsvc3
-
             from modules.informes.quimicos_flujo import (
                 ajustes_inventario_mes as _q_ajustes,
+            )
+            from modules.informes.quimicos_flujo import (
                 consumo_quimico_desglose as _q_desglose,
+            )
+            from modules.informes.quimicos_flujo import (
                 consumo_terminadas_mes as _q_cons_term,
+            )
+            from modules.informes.quimicos_flujo import (
                 entradas_bodega_mes as _q_entradas,
+            )
+            from modules.informes.quimicos_flujo import (
                 fisico_colorante_al_dia as _q_fisico,
+            )
+            from modules.informes.quimicos_flujo import (
                 fisico_total_al_dia as _q_fisico_total,
             )
+            from modules.tintura import service as _tsvc3
 
             _corte_ini = _date3(int(anio), int(mes), 1) - _td3(days=1)
             _last = _date3(int(anio), int(mes),
@@ -970,6 +980,7 @@ def balance():
             # kg editable de la columna Kg (la meta manual del mes).
             try:
                 from calendar import monthrange
+
                 from modules.informes.feriados import dias_habiles_ec
 
                 _hoy = today_ec()

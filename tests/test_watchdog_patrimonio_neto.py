@@ -19,7 +19,6 @@ import pytest
 
 from modules.admin_dbase import health_audit_view as hv
 
-
 SNAP = {
     "fecha": "2026-07-30",
     "fecha_crea": "2026-07-30 23:05:00",
@@ -106,6 +105,7 @@ def test_sin_uret_en_los_componentes_no_rompe(_app_ctx):
 def test_el_snapshot_diario_guarda_el_patrimonio_NETO():
     """La otra pata de la comparación — si esto cambia, el fix se rompe."""
     import inspect
+
     from modules.informes import queries as iq
     src = inspect.getsource(iq.crear_snapshot_diario)
     assert '- float(bal.get("uret")' in src or "- float(bal.get('uret')" in src

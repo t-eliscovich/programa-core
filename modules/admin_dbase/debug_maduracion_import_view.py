@@ -27,7 +27,6 @@ SOLO LECTURA.
 from __future__ import annotations
 
 import json
-import re
 from datetime import date, timedelta
 
 from flask import Blueprint, Response, request

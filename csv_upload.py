@@ -20,7 +20,7 @@ import io
 import re
 from dataclasses import dataclass, field
 from datetime import date
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal
 
 
 @dataclass

@@ -35,7 +35,7 @@ from __future__ import annotations
 
 from datetime import date, datetime
 
-from flask import Blueprint, flash, redirect, render_template_string, request, url_for
+from flask import Blueprint, flash, redirect, render_template_string, url_for
 
 from auth import requiere_login, requiere_permiso
 
@@ -238,8 +238,9 @@ def preview():
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def aplicar():
-    import db
     from flask import g
+
+    import db
 
     pc_rows, dbf_rows, _mtime, err = _cargar_lados()
     if err:

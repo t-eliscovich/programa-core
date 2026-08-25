@@ -221,6 +221,7 @@ def test_ninguna_pantalla_muestra_lo_viejo():
     que la alarma diría hoy y nada más. El parámetro sigue existiendo para los
     tests; si alguna vista lo vuelve a exponer, esto se cae."""
     import inspect
+
     from modules.admin_dbase import import_sin_plata_view as v
     src = inspect.getsource(v.run)
     assert 'request.args.get("techo")' not in src

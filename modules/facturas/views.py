@@ -2565,8 +2565,10 @@ def lista():
     #     entre las 19:00 y medianoche EC del último día del mes `now()` ya
     #     está en el mes siguiente. Mismo criterio que _periodo_actual_ec().
     if not request.args:
-        from datetime import datetime as _dt, timedelta as _td, timezone as _tz
         import calendar as _cal
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+        from datetime import timezone as _tz
         _hoy_ec = (_dt.now(_tz.utc) - _td(hours=5)).date()
         vista = "facturado"
         desde = _hoy_ec.replace(day=1).isoformat()

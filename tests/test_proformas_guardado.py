@@ -142,7 +142,6 @@ def test_reabrir_deja_las_dos_y_la_nueva_apunta_a_la_vieja(cliente_prueba):
 def test_origen_borrado_no_deja_un_link_roto(cliente_prueba):
     """Si el barrido se llevó la anterior, la ficha lo dice en vez de linkear."""
     import db
-
     from modules.proformas import queries as Q
 
     primera = _crear()
@@ -159,7 +158,6 @@ def test_origen_borrado_no_deja_un_link_roto(cliente_prueba):
 def test_regrabar_la_misma_no_deja_dos(cliente_prueba):
     """Alex ve un error en el papel, lo corrige y vuelve a apretar Imprimir."""
     import db
-
     from modules.proformas import queries as Q
 
     res = _crear()
@@ -200,7 +198,6 @@ def test_el_barrido_borra_por_EDAD_y_se_lleva_el_detalle(cliente_prueba):
     """Se prueba MOVIENDO EL RELOJ (envejeciendo la fila), no esperando una
     semana: la de 8 días se va, la de hoy queda."""
     import db
-
     from modules.proformas import queries as Q
 
     vieja = _crear()
@@ -226,7 +223,6 @@ def test_el_barrido_borra_por_EDAD_y_se_lleva_el_detalle(cliente_prueba):
 def test_el_barrido_no_toca_las_de_justo_7_dias(cliente_prueba):
     """El corte es 'más de 7 días', no 'de 7 días o más'."""
     import db
-
     from modules.proformas import queries as Q
 
     justa = _crear()
@@ -359,7 +355,6 @@ def test_el_barrido_no_depende_del_CASCADE(cliente_prueba):
     tiene que seguir funcionando igual, porque borra el detalle él mismo.
     """
     import db
-
     from modules.proformas import queries as Q
 
     vieja = _crear()
