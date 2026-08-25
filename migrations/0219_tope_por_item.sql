@@ -1,4 +1,9 @@
--- 0218 · La meta y el puntaje, otra vez, con el tope por ítem
+-- 0219 · La meta y el puntaje, otra vez, con el tope por ítem
+--
+-- ⚠ Nació como 0218 y se renumeró: otra sesión del mismo día ya había usado ese
+-- número (`0218_cache_detalle_factura_asinfo`). El runner corta y NO aplica
+-- nada cuando dos archivos comparten número, así que el CI se puso rojo y el
+-- guard del deploy frenó la salida — que es exactamente para lo que están.
 --
 -- Dueña 25/08/2026, mirando el tablero después del primer deploy: "está mal que
 -- sigue contando una tela que había 0 en saldo". Intela tenía 595 puntos y 554
