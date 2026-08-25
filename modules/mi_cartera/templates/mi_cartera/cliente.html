@@ -483,6 +483,52 @@
 </div>
 {% endif %}
 
+
+{# ---------------------------------------------------------------------------
+   EL PORTAL DEL CLIENTE — el control del vendedor.
+
+   TMT 2026-08-24. El cliente entra al portal con su codigo de 3 letras y su
+   RUC, que son los dos publicos (el RUC esta impreso en cada factura y se
+   consulta gratis en el SRI). Se eligio a proposito NO ponerle un chequeo
+   previo: le cargaria friccion al 100% de los clientes para atajar un caso
+   raro.
+
+   ⭐ Este bloque es la otra mitad de esa decision. El vendedor conoce a sus
+   clientes uno por uno: es quien de verdad puede darse cuenta de que quien
+   entro no es quien deberia. Por eso el boton vive ACA, donde el vendedor ya
+   esta parado, y no en una pantalla nueva que nadie abre.
+
+   Si el cliente nunca entro, el bloque NO se dibuja: "todavia no entro" en
+   400 fichas es ruido. --------------------------------------------------- #}
+{% if portal is defined and portal.tiene %}
+<div class="portal-caja {{ 'cortado' if not portal.activo }}">
+  <div class="portal-tit">
+    {% if portal.activo %}Entra al portal{% else %}Sin acceso al portal{% endif %}
+  </div>
+  <div class="portal-detalle">
+    {% if portal.activo %}
+      {% if portal.ultimo_ingreso %}Ultima vez: {{ portal.ultimo_ingreso|fecha_hora_ec }}{% endif %}
+      {% if not portal.eligio_clave %} · todavia no eligio clave{% endif %}
+      {% if portal.mail %}<br>Su correo: {{ portal.mail }}{% if portal.mail_cambiado %} (lo cambio el){% endif %}{% endif %}
+    {% else %}
+      Se lo cerro {{ portal.cortado_por or 'la oficina' }}.
+    {% endif %}
+  </div>
+  <form method="post"
+        action="{{ url_for('mi_cartera.portal_acceso', codigo_cli=cliente.codigo_cli) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if portal.activo %}
+      <input type="hidden" name="accion" value="cortar">
+      <button type="submit" class="portal-btn cortar">Cortar el acceso</button>
+    {% else %}
+      <input type="hidden" name="accion" value="reabrir">
+      <button type="submit" class="portal-btn">Abrirle el acceso de nuevo</button>
+    {% endif %}
+  </form>
+</div>
+{% endif %}
+
+
 <style>
   /* Tabla de estado de cuenta. Las columnas entran en 390 px sin
      scroll horizontal: los números van con `tabular-nums` para que se lean
@@ -617,6 +663,20 @@
   .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
           border:1px solid var(--line);border-radius:12px;padding:11px 14px;
           font-size:14.5px;font-weight:600;color:var(--ink)}
+
+
+  /* El portal del cliente. Discreto a proposito: es informacion de fondo,
+     no lo que el vendedor vino a mirar. Se pone rojo solo cuando esta
+     cortado, que es el unico estado que pide algo. */
+  .portal-caja{background:#fff;border:1px solid var(--line);border-radius:14px;
+    padding:13px 15px;margin:10px 0}
+  .portal-caja.cortado{border-color:#e3a0a0;background:#fff8f8}
+  .portal-tit{font-size:13.5px;font-weight:700}
+  .portal-detalle{font-size:12.5px;color:#6b7280;margin:3px 0 10px;line-height:1.5}
+  .portal-btn{width:100%;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:10px;font:inherit;font-size:14px;font-weight:600;
+    color:var(--ink);cursor:pointer}
+  .portal-btn.cortar{color:#b91c1c;border-color:#e3a0a0}
 
   /* iPhone SE y compañía: 320-374 px. Un punto menos y sigue sin cortarse. */
   @media (max-width: 374px){
