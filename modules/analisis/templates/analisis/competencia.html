@@ -61,10 +61,13 @@ tr.vdet{display:none}
 tr.vdet.abierta{display:table-row}
 tr.vdet>td{background:#f8fafc;padding:0 10px 14px 40px}
 tr.vdet table{font-size:13px;background:#fff;border:1px solid var(--l);border-radius:6px}
-/* El renglón vendido cuelga de su grupo: sangría y letra chica, para que se
-   lea como parte del grupo de arriba y no como una fila más del cuadro. */
-tr.linea>td{padding-left:26px;font-size:12px;color:var(--g)}
-tr.linea>td b{color:var(--t)}
+/* El renglón vendido cuelga de su grupo: sangría, letra chica y UNA sola
+   línea. Sin el `white-space` los `span` de adentro se apilaban y cada venta
+   ocupaba tres renglones de alto. */
+tr.linea>td{padding:2px 10px 2px 26px;font-size:12px;color:var(--g);
+  white-space:nowrap;line-height:1.5}
+tr.linea>td *{display:inline;font-size:12px}
+tr.linea>td b{color:var(--t);font-weight:600}
 .tope{font-size:11px;color:var(--g)}
 td.abrir{width:26px;text-align:center;padding-right:0}
 td.abrir .flecha{display:inline-block;width:18px;height:18px;line-height:17px;
@@ -196,12 +199,18 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
       <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
       {% for v in d.lineas %}
+        {# ⚠ UNA línea y fina (dueña 25/08/2026: "muy finito tiene que ser").
+           Todo el renglón en una sola celda de texto corrido; en tres celdas
+           con el color en negrita cada venta ocupaba tres renglones de alto.
+           ⚠ Y los puntos SÓLO si no son los kilos ("no me repitas info 64,
+           64"): en una tela de 1 punto por kilo, el número es el mismo dos
+           veces. En las de 4 y 10 sí dice algo, y ahí aparece. #}
         <tr class="linea">
-          <td>{{ v.subcategoria }} <b>{{ v.color }}</b>
-            <span class="g">{{ v.calidad }}</span>
-            <span class="g">· {{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</span></td>
-          <td class="n g">{{ v.kg | num_es(0) }} kg</td>
-          <td class="n pts">{{ v.puntos | num_es(0) }}</td>
+          <td>{{ v.subcategoria }} · <b>{{ v.color }}</b> {{ v.calidad }} ·
+            {{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
+          <td class="n">{{ v.kg | num_es(0) }} kg</td>
+          <td class="n pts">{% if v.puntos | round(0) != v.kg | round(0) %}
+            {{- v.puntos | num_es(0) }}{% endif %}</td>
         </tr>
       {% endfor %}
     {% endfor %}

@@ -45,7 +45,7 @@ td.forma{white-space:nowrap}
 /* La fila a la que se acaba de saltar: se apaga sola en dos segundos. Sin
    esto, el salto deja al que mira buscando cuál de las 700 filas era. */
 tr.item.marcada>td{background:#fef3c7;transition:background .5s}
-#vendidos tr.item{cursor:pointer}
+#vendidos tr.vfila{cursor:pointer}
 th.ord{cursor:pointer;user-select:none;white-space:nowrap}
 th.ord:hover{color:var(--t)}
 th.ord::after{content:" ⇅";opacity:.35;font-size:10px}
@@ -373,7 +373,7 @@ lo que suma puntos. Toque una fila para ver esa tela arriba.</p>
 </tr></thead>
 <tbody>
 {% for v in vendidos %}
-  <tr class="item" onclick="verTela(this)"
+  <tr class="vfila" onclick="verTela(this)"
       data-sub="{{ v.subcategoria }}" data-color="{{ v.color }}">
     <td class="g opt">{{ v.categoria or '—' }}</td>
     <td class="tela">{{ v.subcategoria }}<span class="qm">{{ fm.cal(v) }}</span></td>
@@ -414,7 +414,12 @@ function filtrar(){
   const sg = document.getElementById('subgrupo').value;
   const cal = document.getElementById('calidad').value;
   let vistos = 0, kg = 0;
-  document.querySelectorAll('tr.item').forEach(tr => {
+  // ⚠⚠ `#tabla tr.item` y NO `tr.item`: el 25/08/2026 la tabla de Vendidos
+  // nació con la misma clase y este filtro se la comió — filas sin `data-grupo`
+  // daban `ok = false` y quedaban escondidas, así que la tabla salía VACÍA
+  // aunque tuviera renglones. El filtro es de la lista de arriba; que se note
+  // en el selector.
+  document.querySelectorAll('#tabla tr.item').forEach(tr => {
     const det = tr.nextElementSibling;
     const ok = (!q || tr.dataset.buscar.includes(q)) &&
                (!v || tr.dataset.vend.split(' ').includes(v)) &&

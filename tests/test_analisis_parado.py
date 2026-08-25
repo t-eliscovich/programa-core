@@ -3228,6 +3228,12 @@ def test_el_renglon_vendido_lleva_a_su_tela_arriba():
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
     assert 'onclick="verTela(this)"' in html
+    # ⚠⚠ La fila de Vendidos NO puede llamarse `item`: el filtro de la lista
+    # recorría `tr.item` de toda la pantalla y, sin `data-grupo`, las escondía
+    # todas — la tabla salía vacía teniendo renglones (25/08/2026).
+    assert '<tr class="vfila"' in html
+    assert "document.querySelectorAll('#tabla tr.item')" in html
+    assert "document.querySelectorAll('tr.item')" not in html
     assert "function verTela(tr){" in html
     # busca por tela Y color: la tela sola llevaría al primer color de la lista
     assert "x.dataset.sub === tr.dataset.sub && x.dataset.color === tr.dataset.color" in html
@@ -3278,4 +3284,18 @@ def test_el_renglon_vendido_cuelga_de_su_grupo():
     assert '"grupo": cat,' in fuente
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "tr.linea>td{padding-left:" in t, "el renglón se lee colgado del grupo"
+    assert "tr.linea>td{padding:2px 10px 2px 26px" in t, (
+        "el renglón se lee colgado del grupo")
+
+
+def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
+    """Dueña 25/08/2026: *"muy finito tiene que ser, y no me repitas info 64,
+    64"*. Con el color en negrita en su propia celda, cada venta ocupaba tres
+    renglones de alto; y en una tela de 1 punto por kilo, kg y puntos son el
+    mismo número escrito dos veces."""
+    from pathlib import Path
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    assert "white-space:nowrap" in t and "tr.linea>td *{display:inline" in t
+    assert "{% if v.puntos | round(0) != v.kg | round(0) %}" in t, (
+        "los puntos sólo cuando dicen algo distinto de los kilos")
