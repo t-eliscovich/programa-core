@@ -15,7 +15,17 @@ jobs:
     # públicos como éste, y son bastante más rápidos que los x86 estándar.
     # Si algún día el repo se hace privado, esto hay que volverlo a
     # `ubuntu-latest` o el workflow falla.
-    runs-on: ubuntu-24.04-arm
+    #
+    # 🚨 26/08/2026, incidente de Actions (GitHub: "degraded availability for
+    # Actions", failover de una base primaria, tráfico de entrada limitado).
+    # Medido en el mismo repo y a la misma hora, que es lo único que separa
+    # "está todo caído" de "está caído el ARM":
+    #     · CI #2421 y #2424, ARM → 50 minutos encolados, job nunca arrancó;
+    #     · CI #2425, x64      → verde en 12m 36s.
+    # Con eso: x64 hasta que se acomode, y VOLVER al ARM después (es gratis y
+    # más rápido). Primero lo revertí con 8 minutos de cola como única prueba
+    # — poca: 8 minutos de cola no distinguen una cosa de la otra.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
