@@ -2081,9 +2081,11 @@ def test_la_ficha_manda_el_estado_de_cuenta_como_FOTO(app, vendedor_logueado, mo
     # hacer cualquiera; mandar un DOCUMENTO, no.
     assert ">Imagen<" in ficha
     assert '/mi-cartera/cliente/TDV/imagen"' in ficha, "no apunta a la imagen"
-    # Y dice el gesto, que es el que el vendedor ya usa todos los días. Desde
-    # el 26/08 va UNA vez abajo de la fila, no como bajada de un botón.
-    assert "mantenela apretada y elegí WhatsApp" in ficha
+    # ⭐ Y NADA de instrucciones debajo: TMT 26/08 mandó borrar el renglón que
+    # explicaba el gesto. El botón se llama "Imagen" y el gesto se aprende una
+    # vez; el cartelito se leía todos los días.
+    assert "mantenela apretada" not in ficha
+    assert 'class="acc4-nota"' not in ficha
     # El PDF no se saca —el que lo prefiere lo tiene— pero es el más chico.
     assert '/mi-cartera/cliente/TDV/pdf"' in ficha
 
