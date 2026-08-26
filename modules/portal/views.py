@@ -393,6 +393,55 @@ def factura_papel_cliente(numf: int):
     abort(404)
 
 
+@portal_bp.route("/despachos", methods=["GET"])
+def despachos():
+    """Qué le mandamos y cuándo. La mercadería, al lado de su saldo.
+
+    Los datos salen de Asinfo por el puente de siempre — Programa Core guarda
+    la plata de la factura, no la mercadería. Si Asinfo no contesta, la
+    pantalla lo dice y no se cae: ver `despachos_cliente`.
+    """
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+
+    from modules.asinfo import despachos_cliente
+
+    try:
+        meses = int(request.args.get("meses") or despachos_cliente.MESES_DEFAULT)
+    except (TypeError, ValueError):
+        meses = despachos_cliente.MESES_DEFAULT
+    # ⭐ El RUC va con el código: hay `nombre_comercial` repetidos en dos
+    # empresas que son contribuyentes DISTINTOS (PRE, MCS). Ver la auditoría
+    # del 26/08 en `despachos_cliente`.
+    ruc = (acceso.cliente(cod) or {}).get("ruc") or ""
+    return render_template("portal/despachos.html", codigo=cod,
+                           d=despachos_cliente.de_cliente(cod, ruc, meses))
+
+
+@portal_bp.route("/despacho/<numero>", methods=["GET"])
+def despacho(numero: str):
+    """Los rollos de UNA guía suya, agrupados por tela.
+
+    ⚠ El código del cliente va adentro de la consulta, no se chequea después:
+    los números de guía van uno atrás del otro, así que cambiarle un dígito a
+    la URL tiene que dar 404 y no el despacho del vecino.
+    """
+    from flask import abort
+
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+
+    from modules.asinfo import despachos_cliente
+
+    ruc = (acceso.cliente(cod) or {}).get("ruc") or ""
+    g = despachos_cliente.guia(cod, ruc, numero)
+    if g["ok"] and not g["existe"]:
+        abort(404)
+    return render_template("portal/despacho.html", g=g, codigo=cod)
+
+
 @portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])
 def estado_cuenta_imprimir():
     """La hoja para imprimir — la MISMA que sale de la oficina.

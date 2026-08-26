@@ -73,6 +73,10 @@
      target="_blank" rel="noopener">Ver la hoja para imprimir</a>
   {% endif %}
 
+  {# La mercadería, al lado de la plata. No lleva el ícono de imprimir del
+     `.btn-pr`: no imprime nada, abre otra pantalla. #}
+  <a class="accion accion-2" href="/despachos">Ver mis despachos</a>
+
   {% include "mi_cartera/_movimientos.html" %}
 
   <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
@@ -89,6 +93,11 @@
 
   .accion{width:100%;justify-content:center;text-decoration:none;text-align:center;
     margin-bottom:11px}
+  /* El segundo botón: mismo cuerpo que el de arriba pero sin el ícono de la
+     impresora, que es de `.btn-pr` y acá mentiría. */
+  .accion-2{display:flex;align-items:center;background:#fff;
+    border:1px solid var(--line);border-radius:12px;padding:11px 14px;
+    font-size:14.5px;font-weight:600;color:var(--ink)}
 
   /* 🚨 LA TABLA EN UN TELÉFONO. Dueña: *"se ven feas las facturas"*.
      Con retenciones Y abonos la tabla dibuja SEIS columnas de números que no

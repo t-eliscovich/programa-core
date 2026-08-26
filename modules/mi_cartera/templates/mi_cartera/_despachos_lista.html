@@ -1,0 +1,114 @@
+{# LOS DESPACHOS DE UN CLIENTE — el cuerpo, compartido.
+
+   ⭐ Lo miran DOS pantallas: el cliente en su portal y el vendedor en la ficha
+   de ese cliente. Es el mismo dato y tiene que decir lo mismo: si el vendedor
+   y el cliente vieran dos listas distintas, la discusión no se puede tener.
+   Misma razón por la que `_movimientos.html` y `_que_se_llevo.html` viven acá.
+
+   El portal resuelve esta carpeta porque `registro_portal.py` se la presta a
+   Jinja. Prestar una carpeta no abre ni una ruta.
+
+   Quien incluye pasa:
+     d          los datos de `asinfo.despachos_cliente.de_cliente`
+     url_base   a dónde van los períodos  ("/despachos")
+     url_guia   con qué empieza el link de cada guía  ("/despacho/")
+
+   ⚠ La CSS va ACÁ ADENTRO a propósito: un parcial viaja CON su CSS. Ya pasó
+   que se llevó el HTML de una tabla y no sus reglas, y la tabla salió cruda. #}
+
+{% if d.sin_ruc %}
+  {# Sin RUC en la ficha no se puede probar de quién es la mercadería, y el
+     código de 3 letras solo no alcanza: hay dos empresas distintas que
+     comparten uno. Son 11 clientes de 3.986. #}
+  <div class="card vacio">
+    <b>Todavía no podemos mostrar los despachos.</b>
+    <p>Falta el RUC en la ficha del cliente. Cargándolo, aparecen solos.</p>
+  </div>
+{% elif not d.ok %}
+  <div class="card vacio">
+    <b>No pudimos traer los despachos en este momento.</b>
+    <p>Es un problema nuestro. Probá de nuevo en un rato — el estado de cuenta
+       sigue funcionando.</p>
+  </div>
+{% else %}
+  <div class="hero">
+    <div class="lbl">Kilos despachados</div>
+    <div class="val">{{ d.kg|num_es(2) }} kg</div>
+    <div class="sub">
+      {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }} ·
+      {{ d.rollos }} rollo{{ '' if d.rollos == 1 else 's' }} ·
+      desde el {{ d.desde|fecha_es }}
+      {# Los kilos son los mismos que factura la oficina: lo devuelto se
+         NOMBRA, no se resta, porque la devolución se corrige con otro
+         documento y la factura cobra el bruto. #}
+      {% if d.devuelto %}<br>Incluye {{ d.devuelto|num_es(2) }} kg devueltos{% endif %}
+    </div>
+  </div>
+
+  {# Los períodos. Tres meses es lo que se pregunta; el año entero está a un
+     toque para el que busca una guía vieja. #}
+  <div class="periodos">
+    {% for m, rotulo in [(3, '3 meses'), (6, '6 meses'), (12, '1 año')] %}
+      <a class="chip {{ 'on' if d.meses == m }}"
+         href="{{ url_base }}?meses={{ m }}">{{ rotulo }}</a>
+    {% endfor %}
+  </div>
+
+  {% if not d.guias %}
+    <div class="card vacio">
+      <b>No hay despachos en este período.</b>
+      <p>Probá con un período más largo.</p>
+    </div>
+  {% else %}
+    <div class="card">
+      <table class="ec desp">
+        <thead>
+          <tr>
+            <th>Fecha</th>
+            <th>Despacho</th>
+            <th class="der">Kilos</th>
+            <th>Factura</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for g in d.guias %}
+          <tr>
+            <td class="nowrap">{{ g.dia|fecha_es }}</td>
+            {# ⭐ TMT 26/08: *"pongamos de todo los últimos números, así ocupa
+               menos"*. El rótulo son los últimos 6 dígitos sin ceros —como se
+               nombra un papel al hablar—; el número ENTERO sigue en el link y
+               en el `title`, que es lo que se compara contra la guía de papel.
+               Es la misma forma que ya usa la ficha de la factura. #}
+            <td class="fac">
+              <a href="{{ url_guia }}{{ g.numero }}" title="{{ g.numero }}"><b>{{ g.corto }}</b></a>
+              <small>{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}{%
+                if g.devuelto %} · <span class="dev">devolvió {{ g.devuelto|num_es(2) }} kg</span>{% endif %}</small>
+            </td>
+            <td class="der nowrap">{{ g.kg|num_es(2) }}</td>
+            {# Sin factura NO es un error: la mercadería va adelante del papel,
+               y al día siguiente ya está. #}
+            <td class="nowrap chico" title="{{ g.factura }}">{{ g.factura_corta or 'todavía no' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  {% endif %}
+{% endif %}
+
+<style>
+  .periodos{display:flex;gap:8px;margin:0 0 12px}
+  .chip{flex:1;text-align:center;padding:9px 6px;font-size:13.5px;font-weight:600;
+    text-decoration:none;color:var(--ink);background:var(--surface);
+    border:1px solid var(--line);border-radius:11px}
+  .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+
+  .vacio{padding:18px 16px;font-size:14px;line-height:1.5}
+  .vacio p{margin:6px 0 0;color:var(--ink-2)}
+
+  .desp .der{text-align:right}
+  .desp .chico{font-size:12px;color:var(--ink-2)}
+  .desp .dev{color:var(--bad);font-weight:700}
+  .desp td.fac small{display:block;color:var(--ink-3);font-size:11.5px}
+  .card:has(> .ec){overflow-x:auto}
+</style>

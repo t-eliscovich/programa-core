@@ -1,0 +1,25 @@
+{# Los despachos de un cliente, en la ficha del VENDEDOR.
+
+   El cuerpo es el parcial compartido con el portal del cliente: los dos miran
+   la misma lista. Lo propio de acá es el encabezado con el "‹ Volver". #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'clientes' %}
+{% block title %}Despachos · {{ cliente.nombre }}{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <a class="back" href="{{ url_for('mi_cartera.cliente', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ {{ cliente.nombre }}</a>
+      <h1 style="margin-top:3px">Despachos</h1>
+      <div class="sub">{{ cliente.codigo_cli }}</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% with url_base = url_for('mi_cartera.despachos', codigo_cli=cliente.codigo_cli),
+        url_guia = url_for('mi_cartera.despacho', codigo_cli=cliente.codigo_cli, numero='') %}
+  {% include "mi_cartera/_despachos_lista.html" %}
+{% endwith %}
+{% include "mi_cartera/_ficha_css.html" %}
+{% endblock %}

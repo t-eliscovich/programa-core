@@ -1,0 +1,47 @@
+{# Qué le mandamos al cliente y cuándo.
+
+   El CUERPO es el parcial compartido `mi_cartera/_despachos_lista.html`, el
+   mismo que ve su vendedor: si los dos vieran listas distintas, la discusión
+   no se puede tener. Lo propio de acá es el encabezado y el ancho. #}
+{% extends "portal/base.html" %}
+{% block titulo %}Mis despachos — Intela{% endblock %}
+{% block cuerpo %}
+
+<header class="appbar">
+  <div class="row">
+    <div>
+      <h1>Mis despachos</h1>
+      <div class="sub">Cliente {{ codigo }} · <a href="/">Ver mi cuenta</a></div>
+    </div>
+    <a class="iconbtn salir" href="/salir" title="Salir" aria-label="Salir"></a>
+  </div>
+</header>
+
+<main>
+  {% with url_base = '/despachos', url_guia = '/despacho/' %}
+    {% include "mi_cartera/_despachos_lista.html" %}
+  {% endwith %}
+
+  <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
+</main>
+
+<style>
+  .iconbtn.salir::before{
+    content:'';width:18px;height:18px;display:block;background:var(--accent);
+    -webkit-mask:center/contain no-repeat var(--ico-salir);
+    mask:center/contain no-repeat var(--ico-salir)}
+  :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
+
+  /* En una pantalla grande, el mismo ensanche que el estado de cuenta: es la
+     misma pantalla vista de otro lado y no puede tener otro ancho. */
+  @media (min-width: 700px){
+    main{max-width:860px;padding:22px 24px 34px}
+    .appbar{padding:16px 24px 14px}
+    .appbar h1{font-size:22px}
+    .hero{padding:20px 22px 18px}
+    .hero .val{font-size:34px}
+    .ec{font-size:14px}
+    .ec td,.ec th{padding-top:9px;padding-bottom:9px}
+  }
+</style>
+{% endblock %}

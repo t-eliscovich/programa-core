@@ -309,6 +309,54 @@ def cliente(codigo_cli: str):
     )
 
 
+def _ficha_del_cliente(vend: str, codigo_cli: str) -> dict:
+    """La ficha del cliente, DESPUÉS del guard que verifica que sea suyo.
+
+    ⭐ `_cargar_cliente` es ese guard: si se llamara después de traer los
+    datos, tipear el código de un cliente ajeno mostraría su mercadería.
+    """
+    return _cargar_cliente(vend, codigo_cli).get("cliente") or {}
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/despachos")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def despachos(codigo_cli: str):
+    """Qué le mandamos al cliente y cuándo, desde la ficha del vendedor.
+
+    Es el MISMO módulo y el MISMO parcial que ve el cliente en su portal: si
+    los dos vieran listas distintas, la discusión no se puede tener.
+    """
+    from modules.asinfo import despachos_cliente as dsp
+
+    vend = _vend_actual()
+    try:
+        meses = int(request.args.get("meses") or dsp.MESES_DEFAULT)
+    except (TypeError, ValueError):
+        meses = dsp.MESES_DEFAULT
+    ficha = _ficha_del_cliente(vend, codigo_cli)
+    return render_template(
+        "mi_cartera/despachos.html", cliente=ficha,
+        d=dsp.de_cliente(codigo_cli, ficha.get("ruc") or "", meses),
+        **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/despacho/<numero>")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def despacho(codigo_cli: str, numero: str):
+    """Los rollos de UNA guía de ese cliente, agrupados por tela."""
+    from modules.asinfo import despachos_cliente as dsp
+
+    vend = _vend_actual()
+    ficha = _ficha_del_cliente(vend, codigo_cli)
+    guia = dsp.guia(codigo_cli, ficha.get("ruc") or "", numero)
+    if guia["ok"] and not guia["existe"]:
+        abort(404)
+    return render_template("mi_cartera/despacho.html", cliente=ficha, g=guia,
+                           **_ctx_base(vend))
+
+
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/portal", methods=["POST"])
 @requiere_login
 @requiere_permiso("micartera.ver")

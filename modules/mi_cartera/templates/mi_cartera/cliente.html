@@ -146,6 +146,20 @@
      href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
 </div>
 
+{# LA MERCADERÍA, al lado de la plata. Va como renglón propio y no como tercer
+   botón de la fila de arriba: a 390 px no entra un tercero, y esto no es una
+   acción sobre el estado de cuenta sino otra pantalla.
+
+   Es la MISMA lista que ve el cliente en su portal. Sin rótulo no existiría:
+   un ícono suelto es un botón que nadie encuentra. #}
+<a class="verdesp"
+   href="{{ url_for('mi_cartera.despachos', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">Ver los despachos</a>
+<style>
+  .verdesp{display:block;text-align:center;background:#fff;border:1px solid var(--line);
+    border-radius:12px;padding:11px 14px;margin-bottom:12px;font-size:14.5px;
+    font-weight:600;color:var(--ink);text-decoration:none}
+</style>
+
 {# ⭐ EL PISO: mandarlo como FOTO.
 
    TMT 2026-08-25, por WhatsApp con Alex Velastegui:

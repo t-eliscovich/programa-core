@@ -1,0 +1,20 @@
+{# Una guía de despacho, en la ficha del VENDEDOR. El cuerpo es el parcial
+   compartido con el portal del cliente. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'clientes' %}
+{% block title %}Despacho {{ g.corto }} · {{ cliente.nombre }}{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <a class="back" href="{{ url_for('mi_cartera.despachos', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ Despachos</a>
+      <h1 style="margin-top:3px">Despacho {{ g.corto }}</h1>
+      <div class="sub">{{ cliente.codigo_cli }} · {{ g.numero }}{% if g.dia %} · {{ g.dia|fecha_es }}{% endif %}</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% include "mi_cartera/_despachos_guia.html" %}
+{% include "mi_cartera/_ficha_css.html" %}
+{% endblock %}

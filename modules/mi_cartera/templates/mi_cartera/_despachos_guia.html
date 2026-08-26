@@ -1,0 +1,79 @@
+{# UNA GUÍA DE DESPACHO — el cuerpo, compartido por el cliente y el vendedor.
+
+   ⭐ Agrupado por tela y no crudo: hay un renglón por ROLLO, y una guía de 20
+   rollos son 20 renglones que repiten cuatro veces la misma tela. "Qué se
+   llevó" se contesta con las telas y la cuenta de rollos, igual que el bloque
+   de la factura.
+
+   Quien incluye pasa `g`, lo que devuelve `asinfo.despachos_cliente.guia`.
+   ⚠ La CSS va acá adentro: un parcial viaja CON su CSS. #}
+
+{% if not g.ok %}
+  <div class="card vacio">
+    <b>No pudimos traer este despacho en este momento.</b>
+    <p>Es un problema nuestro. Probá de nuevo en un rato.</p>
+  </div>
+{% else %}
+  <div class="hero">
+    <div class="lbl">Kilos de este despacho</div>
+    <div class="val">{{ g.kg|num_es(2) }} kg</div>
+    <div class="sub">
+      {{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }} ·
+      {{ g.telas|length }} tela{{ '' if g.telas|length == 1 else 's' }} ·
+      {% if g.factura %}factura <span title="{{ g.factura }}">{{ g.factura_corta }}</span>{% else %}todavía sin factura{% endif %}
+      {% if g.devuelto %}<br>Incluye {{ g.devuelto|num_es(2) }} kg devueltos{% endif %}
+    </div>
+  </div>
+
+  <div class="card">
+    <table class="ec desp">
+      <thead>
+        <tr>
+          <th>Tela</th>
+          <th class="der">Rollos</th>
+          <th class="der">Kilos</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for t in g.telas %}
+        <tr>
+          <td class="fac">
+            <b>{{ t.producto }}</b>
+            {# Los lotes: es lo que está impreso en la etiqueta de cada rollo,
+               y por lo que el cliente llama cuando algo no coincide. #}
+            {% if t.lotes %}<small title="{{ t.lotes|join(' · ') }}">Lote{{ '' if t.lotes|length == 1 else 's' }}:
+              {{ t.lotes_cortos|join(' · ') }}</small>{% endif %}
+            {# Lo devuelto se NOMBRA y no se resta: la factura cobra el bruto y
+               la devolución se corrige con otro documento. Si acá se restara,
+               esta pantalla diría kilos distintos de los de la factura. #}
+            {% if t.devuelto %}<small class="dev">Devolvió
+              {{ t.rollos_devueltos }} rollo{{ '' if t.rollos_devueltos == 1 else 's' }} ·
+              {{ t.devuelto|num_es(2) }} kg</small>{% endif %}
+          </td>
+          <td class="der nowrap">{{ t.rollos }}</td>
+          <td class="der nowrap">{{ t.kg|num_es(2) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr class="tot">
+          <td>Total</td>
+          <td class="der">{{ g.rollos }}</td>
+          <td class="der">{{ g.kg|num_es(2) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+{% endif %}
+
+<style>
+  .vacio{padding:18px 16px;font-size:14px;line-height:1.5}
+  .vacio p{margin:6px 0 0;color:var(--ink-2)}
+
+  .desp .der{text-align:right}
+  .desp td.fac small{display:block;color:var(--ink-3);font-size:11.5px;
+    margin-top:2px;line-height:1.45}
+  .desp td.fac small.dev{color:var(--bad);font-weight:700}
+  .desp tfoot .tot td{font-weight:800;border-top:1px solid var(--line)}
+  .card:has(> .ec){overflow-x:auto}
+</style>
