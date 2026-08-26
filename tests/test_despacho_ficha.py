@@ -23,10 +23,12 @@ GUIA = "DES-000096542"
 FACTURA = "001-099-000182675"
 
 
-def _fila(tela, producto, lote, kg, factura=FACTURA, kg_factura=None, codigo="BLA"):
+def _fila(tela, producto, lote, kg, factura=FACTURA, kg_factura=None,
+          codigo="BLA", color="BLANCO"):
     return {"guia": GUIA, "fecha": "2026-08-26", "cliente": "RRV",
             "cliente_fiscal": "VERA VARGAS RAMON RODOLFO",
-            "tela": tela, "producto": producto, "codigo": codigo, "lote": lote,
+            "tela": tela, "producto": producto, "codigo": codigo,
+            "color": color, "lote": lote,
             "kg": kg, "factura": factura,
             "kg_factura": kg if kg_factura is None else kg_factura}
 
@@ -34,7 +36,8 @@ def _fila(tela, producto, lote, kg, factura=FACTURA, kg_factura=None, codigo="BL
 def _guia_normal():
     return [_fila("Cuellos T28", "Cuellos T28 BLANCO", "44/1-0004212199", 1.90),
             _fila("Cuellos T30", "Cuellos T30 BLANCO", "0004151011", 2.55),
-            _fila("Jersey 3", "Jersey 3 CELESTE", "0004212301", 21.80, codigo="CEL")]
+            _fila("Jersey 3", "Jersey 3 CELESTE", "0004212301", 21.80,
+                  codigo="CEL", color="CELESTE")]
 
 
 # --- los números ------------------------------------------------------------
@@ -84,18 +87,63 @@ def test_una_guia_puede_terminar_en_dos_facturas():
     assert dl.armar(filas)["cabecera"]["facturas"] == [FACTURA, "001-099-000182699"]
 
 
-# --- el color, que el despacho no guarda ------------------------------------
+# --- el color, que el renglón del despacho no guarda -------------------------
 
-def test_el_color_sale_del_nombre_del_producto():
-    """El renglón del despacho NO tiene atributos: *Jersey 3 CELESTE* menos
-    *Jersey 3* es CELESTE."""
-    assert dl._color("Jersey 3 CELESTE", "Jersey 3") == "CELESTE"
-    assert dl._color("Rib BLANCO-AZU", "Rib") == "BLANCO-AZU"
+def test_el_color_sale_del_atributo_del_producto():
+    """El renglón del despacho no tiene atributos, pero el PRODUCTO sí: el
+    mismo atributo Color (3) que usa la factura."""
+    assert dl._color({"color": "BLANCO MATE",
+                      "producto": "Rib BLANCO MATE", "tela": "Rib Normal"}) == "BLANCO MATE"
 
 
-def test_si_el_nombre_no_empieza_con_la_tela_no_se_corta_a_ciegas():
-    assert dl._color("Otra cosa", "Jersey 3") == ""
-    assert dl._color("", "") == ""
+def test_el_atributo_le_gana_a_restar_el_nombre():
+    """TMT 2026-08-26 (dueña): *"por qué algunos no tienen color?"*. El color
+    se calculaba restando la subcategoría al nombre del producto, y *Rib
+    BLANCO MATE* no arranca con *Rib Normal* → la celda salía vacía. Con el
+    atributo, sale."""
+    fila = {"color": "BLANCO MATE", "producto": "Rib BLANCO MATE",
+            "tela": "Rib Normal"}
+    assert dl._color(fila) == "BLANCO MATE"
+    del fila["color"]
+    assert dl._color(fila) == ""          # esto es lo que se veía antes
+
+
+def test_sin_atributo_todavia_se_intenta_restar_el_nombre():
+    """138 productos de los últimos 60 días no tienen el Color cargado en el
+    maestro de Asinfo. Para ésos vale el viejo truco, que rescata la mayoría:
+    *Rib Acanalado NAVY* menos *Rib Acanalado* = NAVY."""
+    assert dl._color({"color": "", "producto": "Rib Acanalado NAVY",
+                      "tela": "Rib Acanalado"}) == "NAVY"
+    assert dl._color({"producto": "Jersey 3 CELESTE",
+                      "tela": "Jersey 3"}) == "CELESTE"
+
+
+def test_si_no_hay_atributo_ni_el_nombre_empieza_con_la_tela_queda_vacio():
+    assert dl._color({"producto": "Otra cosa", "tela": "Jersey 3"}) == ""
+    assert dl._color({}) == ""
+
+
+def test_el_color_lo_trae_la_consulta_del_atributo_de_la_factura():
+    """No se inventa un atributo propio: es el 3, el mismo de
+    `factura_lineas`."""
+    from modules.asinfo import factura_lineas
+
+    assert dl.ATRIBUTO_COLOR == factura_lineas.ATRIBUTO_COLOR
+    sql = dl._sql(GUIA)
+    assert f"pat.id_atributo = {dl.ATRIBUTO_COLOR}" in sql
+    assert "producto_atributo pat" in sql
+    assert "col.nombre" in sql and "col.codigo" in sql
+
+
+def test_los_renglones_van_en_el_orden_de_la_factura_de_asinfo():
+    """TMT 2026-08-26 (dueña): *"fijate qué orden pone Asinfo en la factura y
+    pongamos el mismo"*. Asinfo imprime por `producto.codigo` DESCENDENTE
+    (RICEL, RIBAZ, RAVIN, RACRU…) — lo mismo que ya hace la hoja de la
+    factura. Entre rollos del mismo producto desempata el número de rollo."""
+    from modules.asinfo import factura_papel
+
+    assert "ORDER BY pr.codigo DESC, ddc.codigo_lote" in dl._sql(GUIA)
+    assert "ORDER BY pr.codigo DESC" in factura_papel._sql(FACTURA)
 
 
 def test_la_calidad_no_se_inventa():

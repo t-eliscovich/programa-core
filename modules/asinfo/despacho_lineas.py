@@ -18,13 +18,35 @@ ahí se ve CUÁL rollo no coincide.
    decir, rollo por rollo, con cuántos kilos se facturó cada uno.
 3. **El lote es el número del rollo** (`codigo_lote`). Es el dato con el que
    se va a buscar la tela a la bodega cuando el cliente reclama.
-4. **El renglón del despacho NO tiene atributos.** La factura los trae en
-   cinco pares `id_atributo_N`; el despacho no tiene ninguno, así que el
-   color sale del nombre del producto —*Pique Especial TOPACIO* menos su
-   subcategoría *Pique Especial*— y el código, de las tres últimas letras del
-   código del producto, que es de donde ya lo saca `analisis/asinfo_parado`.
+4. **El renglón del despacho NO tiene atributos, pero el PRODUCTO sí.** La
+   factura trae el color en cinco pares `id_atributo_N` del renglón; el
+   renglón del despacho no tiene ninguno. El color igual está en Asinfo: en
+   `producto_atributo`, colgado del producto, con el mismo atributo Color
+   (3) que usa la factura. De ahí salen el nombre (*BLANCO MATE*) y el
+   código de color (*BMT*).
+
+   TMT 2026-08-26 (dueña): *"por qué algunos no tienen color?"*. Antes el
+   color se calculaba RESTANDO: nombre del producto menos nombre de la
+   subcategoría (*Pique Especial TOPACIO* − *Pique Especial* = TOPACIO). Eso
+   se cae en toda tela cuyo producto no arranca con el nombre de su
+   subcategoría —*Rib Normal* vs "Rib BLANCO MATE", *Jersey 2.1* vs "Jersey
+   1.2x2.1 BLANCO"—, y eran 3.970 de 39.305 renglones (10%) de los últimos
+   60 días. Con el atributo quedan 138 sin color (0,35%): productos a los
+   que en el maestro de Asinfo nunca les cargaron el Color. Para ésos se
+   sigue intentando la resta como último recurso —*Rib Acanalado NAVY*
+   menos *Rib Acanalado* sí da NAVY— y recién ahí queda vacío: 49 en 60
+   días (0,12%).
+
    La CALIDAD no está en ninguna parte del despacho: no se muestra, en vez de
    ponerle "Primera" a todo.
+
+5. **Los renglones van en el orden de la factura de Asinfo**: `producto.codigo`
+   DESCENDENTE (RICEL, RIBAZ, RAVIN, RACRU…), el mismo que documenta e imprime
+   `factura_papel`. TMT 2026-08-26 (dueña): *"fijate qué orden pone Asinfo en
+   la factura y pongamos el mismo"* — la guía y la factura se leen una al lado
+   de la otra, así que las telas tienen que caer en la misma secuencia. Entre
+   rollos del MISMO producto (que en la factura son un renglón solo) desempata
+   el número de rollo, que es con lo que se va a la bodega a buscarlo.
 
 Fail-soft, como todo lo que cuelga de Asinfo: si el ERP no contesta, la
 pantalla lo dice y no levanta.
@@ -42,6 +64,9 @@ DB_ASINFO = 2
 #: entero: tres letras, guion y nueve dígitos.
 _NUMERO_RE = re.compile(r"^[A-Z]{2,4}-\d{9}$")
 
+#: El atributo Color en Asinfo. El MISMO que usa la factura (`factura_lineas`).
+ATRIBUTO_COLOR = 3
+
 #: La bodega de producto terminado. La MISMA que cuenta `dia_despacho`.
 BODEGA_PT = 53
 
@@ -57,7 +82,9 @@ SELECT LTRIM(RTRIM(ISNULL(dc.numero, '')))                       AS guia,
        LTRIM(RTRIM(ISNULL(em.nombre_comercial, '')))             AS cliente,
        LTRIM(RTRIM(ISNULL(em.nombre_fiscal, '')))                AS cliente_fiscal,
        LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
-       RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3)                    AS codigo,
+       ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.codigo, ''))), ''),
+              RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3))            AS codigo,
+       LTRIM(RTRIM(ISNULL(col.nombre, '')))                      AS color,
        LTRIM(RTRIM(ISNULL(pr.nombre_comercial, '')))             AS producto,
        LTRIM(RTRIM(ISNULL(ddc.codigo_lote, '')))                 AS lote,
        ddc.cantidad                                              AS kg,
@@ -67,6 +94,10 @@ SELECT LTRIM(RTRIM(ISNULL(dc.numero, '')))                       AS guia,
   JOIN detalle_despacho_cliente ddc
     ON ddc.id_despacho_cliente = dc.id_despacho_cliente
   JOIN producto pr ON pr.id_producto = ddc.id_producto
+  LEFT JOIN producto_atributo pat
+    ON pat.id_producto = pr.id_producto AND pat.id_atributo = {ATRIBUTO_COLOR}
+  LEFT JOIN valor_atributo col
+    ON col.id_valor_atributo = pat.id_valor_atributo
   LEFT JOIN empresa em ON em.id_empresa = dc.id_empresa
   LEFT JOIN detalle_factura_cliente dfc
     ON dfc.id_detalle_despacho_cliente = ddc.id_detalle_despacho_cliente
@@ -75,7 +106,7 @@ SELECT LTRIM(RTRIM(ISNULL(dc.numero, '')))                       AS guia,
  WHERE dc.numero = '{numero}'
    AND dc.fecha_anulacion IS NULL
    AND ddc.id_bodega = {BODEGA_PT}
- ORDER BY pr.nombre_subcategoria_producto, pr.nombre_comercial, ddc.codigo_lote
+ ORDER BY pr.codigo DESC, ddc.codigo_lote
 """
 
 
@@ -86,16 +117,20 @@ def _num(v) -> float:
         return 0.0
 
 
-def _color(producto: str, tela: str) -> str:
-    """*Pique Especial TOPACIO* menos *Pique Especial* = TOPACIO.
+def _color(fila: dict) -> str:
+    """El color del rollo: el atributo del producto y, si no está, la resta.
 
-    El despacho no guarda el color: lo único que hay es el nombre del
-    producto, que es la tela y el color pegados. Si el nombre no empieza con
-    la subcategoría —pasa cuando el maestro está escrito raro— se devuelve
-    vacío en vez de un pedazo cortado a ciegas.
+    Lo que manda es el atributo Color del producto (punto 4). Sólo cuando el
+    maestro de Asinfo no lo tiene cargado se intenta el viejo truco de restar
+    la subcategoría al nombre —*Pique Especial TOPACIO* menos *Pique Especial*
+    = TOPACIO—, y si el nombre tampoco arranca con la subcategoría se devuelve
+    vacío, en vez de un pedazo cortado a ciegas.
     """
-    p = (producto or "").strip()
-    t = (tela or "").strip()
+    del_atributo = (fila.get("color") or "").strip()
+    if del_atributo:
+        return del_atributo
+    p = (fila.get("producto") or "").strip()
+    t = (fila.get("tela") or "").strip()
     if t and p.upper().startswith(t.upper()):
         return p[len(t):].strip()
     return ""
@@ -120,7 +155,7 @@ def armar(filas: list[dict]) -> dict:
         lineas.append({
             "tela": (f.get("tela") or "").strip() or (f.get("producto") or "").strip(),
             "codigo": (f.get("codigo") or "").strip(),
-            "color": _color(f.get("producto"), f.get("tela")),
+            "color": _color(f),
             "lote": (f.get("lote") or "").strip(),
             "kg": salieron,
             "factura": factura,
