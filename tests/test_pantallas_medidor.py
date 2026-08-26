@@ -1,0 +1,255 @@
+"""El termómetro de las pantallas — `modules/_lib/medidor.py` y /admin/pantallas.
+
+TMT 2026-08-26 (dueña): *"cómo se podría evaluar las pantallas del programa y
+hacerlas más rápido"*.
+
+Nació de un error propio, y por eso el módulo existe: pasé una sesión midiendo
+en una base local sembrada a ojo y le dije a la dueña que comisiones estaba
+lento cuando ya se había arreglado en agosto. El programa ya medía cada request
+y cada consulta, pero lo escribía en un log del servidor Windows que no lee
+nadie.
+
+Lo que protegen estos tests, en orden de qué tan caro sería que se rompa:
+
+  1. Que MEDIR NUNCA rompa nada. Un contador que puede tirar una excepción
+     adentro de `db._t` se lleva puesta una consulta de cobranza.
+  2. Que agrupe por la REGLA (`/facturas/<numf>`) y no por la URL: si agrupara
+     por URL, cada factura sería una pantalla distinta y la tabla no sumaría.
+  3. Que no crezca sin techo ni guarde datos de nadie.
+"""
+from __future__ import annotations
+
+import pytest
+
+from modules._lib import medidor
+
+
+@pytest.fixture(autouse=True)
+def _limpio():
+    medidor.limpiar()
+    yield
+    medidor.limpiar()
+
+
+def _visita(ruta, ms, consultas=(), metodo="GET", codigo=200):
+    medidor.arrancar()
+    for q_ms, sql in consultas:
+        medidor.anotar_consulta(q_ms, sql)
+    medidor.cerrar(ruta, metodo, ms, codigo)
+
+
+# ---------------------------------------------------------------------------
+# 1. Medir no puede romper nada
+# ---------------------------------------------------------------------------
+
+
+def test_una_consulta_de_un_hilo_de_fondo_no_se_cuenta():
+    """`db._t` también corre desde el calentador y la auto-carga de facturas,
+    donde no hay request. Ahí esto no cuenta nada — y sobre todo, no explota."""
+    medidor.anotar_consulta(50, "SELECT 1")     # sin arrancar()
+    medidor.cerrar("/x", "GET", 10)             # cerrar sin arrancar tampoco
+    assert medidor.resumen() == []
+
+
+def test_el_observador_de_db_no_puede_tirar_una_consulta(monkeypatch):
+    """⭐ El más importante. `db._t` llama al medidor en CADA consulta: si el
+    medidor tira, se lleva puesta la consulta de un usuario. Por eso la llamada
+    va adentro de un try — y este test es el que lo sostiene."""
+    import db
+
+    def _explota(ms, sql):
+        raise RuntimeError("me rompí")
+
+    monkeypatch.setattr(db, "OBSERVADOR", _explota)
+    db._t("SELECT 1", None, 0.0)                # no tira: eso es todo el test
+
+
+def test_db_le_avisa_al_medidor_de_cada_consulta(monkeypatch):
+    """Y que el cable esté enchufado: si nadie llama al observador, la pantalla
+    muestra 0 consultas para siempre y nadie se entera."""
+    import db
+
+    vistas = []
+    monkeypatch.setattr(db, "OBSERVADOR", lambda ms, sql: vistas.append(sql))
+    db._t("SELECT 42", None, 0.0)
+    assert vistas == ["SELECT 42"]
+
+
+def test_sin_observador_db_sigue_andando(monkeypatch):
+    import db
+
+    monkeypatch.setattr(db, "OBSERVADOR", None)
+    db._t("SELECT 1", None, 0.0)
+
+
+# ---------------------------------------------------------------------------
+# 2. Lo que mide
+# ---------------------------------------------------------------------------
+
+
+def test_cuenta_visitas_consultas_y_tiempo():
+    _visita("/cheques", 100, [(10, "SELECT a"), (20, "SELECT b")])
+    _visita("/cheques", 300, [(5, "SELECT a")])
+
+    f = medidor.resumen()[0]
+    assert f["ruta"] == "/cheques"
+    assert f["visitas"] == 2
+    assert f["mediana_ms"] == 200          # mediana de 100 y 300
+    assert f["ms_max"] == 300
+    assert f["consultas_prom"] == 1.5
+    assert f["consultas_max"] == 2
+
+
+def test_ordena_por_lo_que_SE_LLEVA_y_no_por_la_mas_lenta():
+    """⭐ La decisión de la pantalla. Una de 3 s que se abre una vez molesta
+    menos que una de 400 ms que se abre 200 veces, y la segunda es la que
+    conviene arreglar."""
+    _visita("/rara-vez", 3000)
+    for _ in range(20):
+        _visita("/todo-el-dia", 400)
+
+    filas = medidor.resumen()
+    assert filas[0]["ruta"] == "/todo-el-dia"     # 20 × 400 ms = 8 s
+    assert filas[1]["ruta"] == "/rara-vez"        # 3 s
+    assert filas[1]["ms_max"] == 3000             # y su pico se sigue viendo
+
+
+def test_se_queda_con_la_consulta_mas_lenta_de_la_pantalla():
+    """Los milisegundos dicen QUE duele; la peor consulta, DÓNDE."""
+    _visita("/x", 500, [(5, "SELECT rapida"), (400, "SELECT lenta")])
+    _visita("/x", 100, [(9, "SELECT otra")])
+
+    f = medidor.resumen()[0]
+    assert f["peor_sql"] == "SELECT lenta"
+    assert f["peor_sql_ms"] == 400
+
+
+def test_el_sql_se_guarda_en_una_linea_y_cortado():
+    """Entra en una pantalla y no se lleva un `WITH` de 200 líneas a memoria."""
+    _visita("/x", 10, [(50, "SELECT\n   uno,\n   dos" + " x" * 400)])
+    guardado = medidor.resumen()[0]["peor_sql"]
+    assert "\n" not in guardado
+    assert len(guardado) <= 300
+
+
+def test_las_visitas_lentas_se_guardan_una_por_una(monkeypatch):
+    """La misma pantalla puede andar bien todo el día y tardar con UN cliente
+    grande. El promedio se lo come; la lista de lentas, no."""
+    monkeypatch.setattr(medidor, "LENTA_MS", 500.0)
+    _visita("/facturas/<numf>", 120)
+    _visita("/facturas/<numf>", 900, [(700, "SELECT gorda")])
+
+    lentas = medidor.lentas()
+    assert len(lentas) == 1
+    assert lentas[0]["ms"] == 900
+    assert lentas[0]["peor_sql"] == "SELECT gorda"
+
+
+def test_de_las_lentas_se_recuerdan_las_ULTIMAS(monkeypatch):
+    monkeypatch.setattr(medidor, "MAX_LENTAS", 3)
+    for i in range(6):
+        _visita(f"/p{i}", 1000)
+    assert [v["ruta"] for v in medidor.lentas()] == ["/p5", "/p4", "/p3"]
+
+
+# ---------------------------------------------------------------------------
+# 3. Que no crezca sin techo
+# ---------------------------------------------------------------------------
+
+
+def test_hay_un_techo_de_pantallas(monkeypatch):
+    """Un bicho que genere rutas infinitas no se puede comer la memoria del
+    servidor que atiende la app."""
+    monkeypatch.setattr(medidor, "MAX_RUTAS", 3)
+    for i in range(10):
+        _visita(f"/p{i}", 10)
+    assert len(medidor.resumen()) == 3
+
+
+def test_solo_se_guardan_las_ultimas_muestras_de_cada_pantalla(monkeypatch):
+    monkeypatch.setattr(medidor, "MUESTRAS_POR_RUTA", 5)
+    for ms in range(1, 21):
+        _visita("/x", ms * 10)
+    f = medidor.resumen()[0]
+    assert f["visitas"] == 20                 # las visitas se cuentan todas
+    assert f["mediana_ms"] == 180             # la mediana, de las últimas 5
+
+def test_empezar_de_cero_deja_todo_en_cero():
+    _visita("/x", 900)
+    medidor.limpiar()
+    assert medidor.resumen() == [] and medidor.lentas() == []
+    assert medidor.estado()["visitas"] == 0
+
+
+# ---------------------------------------------------------------------------
+# 4. La pantalla
+# ---------------------------------------------------------------------------
+
+
+def _login(app, fake_db, perms=("admin_dbase.ver",)):
+    rid = fake_db.add_role("Tester", list(perms))
+    uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def test_la_pantalla_muestra_lo_medido(app, fake_db):
+    _visita("/informes/estado-cuenta/<codigo_cli>", 250,
+            [(200, "SELECT * FROM scintela.factura")])
+    html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
+
+    assert "/informes/estado-cuenta/&lt;codigo_cli&gt;" in html
+    assert "250 ms" in html
+    assert "scintela.factura" in html
+
+
+def test_la_pantalla_sin_nada_medido_lo_explica(app, fake_db):
+    html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
+    assert "Todavía no hay nada medido" in html
+
+
+def test_la_pantalla_es_de_admin(app, fake_db):
+    """Muestra el SQL del programa: no es para cualquiera.
+
+    Sin el permiso contesta 404 y no 403 — decisión de la dueña del 22/05: que
+    quien no puede entrar no se entere de que la sección existe."""
+    r = _login(app, fake_db, perms=("informes.ver",)).get("/admin/pantallas")
+    assert r.status_code == 404, r.status_code
+
+
+def test_el_boton_de_empezar_de_cero_borra(app, fake_db):
+    _visita("/x", 900)
+    c = _login(app, fake_db)
+    r = c.post("/admin/pantallas/reiniciar")
+    assert r.status_code in (302, 303)
+    # Lo medido antes se fue. (El propio POST sí queda: se mide como cualquier
+    # otro request, después de que la vista limpió.)
+    assert "/x" not in [f["ruta"] for f in medidor.resumen()]
+
+
+def test_la_app_mide_por_la_REGLA_y_no_por_la_URL(app, fake_db):
+    """⭐ Si agrupara por URL, cada factura sería una pantalla distinta y la
+    tabla no podría sumar nada. Se mide `/informes/estado-cuenta/<codigo_cli>`,
+    no `/informes/estado-cuenta/ATE`."""
+    c = _login(app, fake_db, perms=("informes.ver", "admin_dbase.ver"))
+    medidor.limpiar()
+    c.get("/informes/estado-cuenta/ATE")
+    c.get("/informes/estado-cuenta/BED")
+
+    rutas = [f["ruta"] for f in medidor.resumen()]
+    assert "/informes/estado-cuenta/<codigo_cli>" in rutas, rutas
+    assert "/informes/estado-cuenta/ATE" not in rutas
+    fila = next(f for f in medidor.resumen()
+                if f["ruta"] == "/informes/estado-cuenta/<codigo_cli>")
+    assert fila["visitas"] == 2
+
+
+def test_una_url_que_no_existe_no_es_una_pantalla(app, fake_db):
+    """Un 404 no tiene regla: guardarlo sería llenar la tabla con la basura que
+    tire cualquier bot."""
+    c = _login(app, fake_db)
+    medidor.limpiar()
+    c.get("/esto-no-existe-en-el-programa")
+    assert medidor.resumen() == []

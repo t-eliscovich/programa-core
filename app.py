@@ -246,9 +246,24 @@ def create_app() -> Flask:
     # bitácora para ver exactamente qué intentó hacer y con qué payload.
     _req_log = logging.getLogger("programa_core.req")
 
+    # ⭐ El termómetro de las pantallas (TMT 2026-08-26: *"cómo se podría
+    # evaluar las pantallas del programa y hacerlas más rápido"*). Los dos
+    # números ya se medían —los ms del request acá abajo y los de cada consulta
+    # en `db._t`— y terminaban en un log que vive en el servidor Windows y que
+    # no lee nadie. `medidor` los junta en memoria y los muestra en
+    # /admin/pantallas. No escribe en la base ni guarda datos de nadie.
+    try:
+        from modules._lib import medidor as _medidor
+
+        db.OBSERVADOR = _medidor.anotar_consulta
+    except Exception:  # noqa: BLE001 -- medir jamás frena el arranque
+        _medidor = None
+
     @app.before_request
     def _start_timer():
         g._t0 = time.perf_counter()
+        if _medidor is not None:
+            _medidor.arrancar()
         # Respetar un X-Request-Id entrante sólo si viene bien formado (36
         # chars, formato UUID). Evita que un cliente inyecte un valor raro
         # o que un proxy intermedio envíe basura.
@@ -275,6 +290,12 @@ def create_app() -> Flask:
             _req_log.warning("slow %.0fms %s %s %s", ms, tag, request.method, request.full_path.rstrip("?"))
         else:
             _req_log.info("  %.0fms %s %s %s", ms, tag, request.method, request.full_path.rstrip("?"))
+        # ⚠ La REGLA (`/facturas/<numf>`) y no la URL: si fuera la URL, cada
+        # factura sería una pantalla distinta y no se podría sumar nada. Y sin
+        # regla —un 404— no se guarda: no es una pantalla del programa.
+        if _medidor is not None and request.url_rule is not None:
+            _medidor.cerrar(request.url_rule.rule, request.method, ms,
+                            response.status_code)
         return response
 
     # Make sure our loggers write to wherever Flask's does.
