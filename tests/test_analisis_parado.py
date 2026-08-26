@@ -3677,3 +3677,40 @@ def test_la_pantalla_de_metas_no_vuelve():
 def _i_src(mod):
     import inspect
     return inspect.getsource(mod)
+
+
+def test_el_item_que_asinfo_ya_no_devuelve_igual_recibe_motivo(monkeypatch):
+    """El UPDATE del motivo corre sobre lo que HOY está parado. El ítem que
+    dejó de calificar —se movió, o se vendió antes de la largada— no aparece
+    más en esa consulta y su motivo se quedaba en NULL para siempre.
+
+    Y sin motivo, `cuenta_el_kilo()` cuenta TODO, primera incluida: el día que
+    ese ítem vuelva a tener stock y se venda, paga kilos que nunca fueron un
+    saldo. Medidos el 25/08/2026: 9 ítems de la cohorte del 17/08, 1.129 kg.
+
+    Se les escribe `segunda`, la regla más exigente: quedarse en la más
+    exigente no le regala puntos a nadie, volver sí."""
+    escritos = []
+    db = _DBFalsa([])
+    real = db.execute
+
+    def espiar(sql, params=None, conn=None):
+        escritos.append(" ".join(sql.split()))
+        return real(sql, params, conn)
+
+    db.execute = espiar
+    monkeypatch.setattr(queries, "db", db)
+    monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 25))
+    monkeypatch.setattr(asinfo_parado, "parados", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "llamados", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "vendido_desde", lambda d: [])
+    monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
+    monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
+    queries.actualizar()
+    barrido = [s for s in escritos
+               if "parado_cohorte SET motivo = 'segunda'" in s]
+    assert barrido, "el ítem que ya no aparece se queda sin motivo para siempre"
+    assert "WHERE motivo IS NULL" in barrido[0], (
+        "no puede pisar el motivo de los que ya lo tienen: la regla de un ítem "
+        "no cambia en la mitad de la carrera")

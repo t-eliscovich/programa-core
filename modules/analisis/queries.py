@@ -937,6 +937,27 @@ def actualizar() -> dict:
                     WHERE subcategoria = %s AND color = %s""",
                 (p["subcategoria"], p["color"]), conn=conn)
 
+        # ⚠⚠ EL ÍTEM QUE ASINFO YA NO DEVUELVE TAMBIÉN NECESITA MOTIVO.
+        #
+        # El UPDATE de arriba corre sobre `par`, o sea sobre lo que HOY está
+        # parado. El ítem que dejó de calificar —se movió, o se vendió antes de
+        # la largada— no aparece más en esa consulta, así que su motivo se
+        # queda en NULL para siempre. Y sin motivo, `cuenta_el_kilo()` cuenta
+        # TODO, primera incluida: el día que ese ítem vuelva a tener stock y se
+        # venda, paga kilos que nunca fueron un saldo.
+        #
+        # Medidos el 25/08/2026: 9 ítems de la cohorte original del 17/08 —antes
+        # de que la columna existiera— con 1.129 kg al marcar. Tres de ellos
+        # tienen kilos de verdad en la bodega hoy (Fleece Lycra ELE 243, Alemania
+        # BAN 216, Jersey 3.5 POS 141).
+        #
+        # Se les escribe `segunda`, la regla MÁS EXIGENTE: quedarse en la más
+        # exigente no le regala puntos a nadie, y volver sí. Es la misma
+        # decisión que ya se tomó para la tela recién hecha.
+        db.execute(
+            "UPDATE scintela.parado_cohorte SET motivo = 'segunda' "
+            " WHERE motivo IS NULL", conn=conn)
+
         cohorte = db.fetch_all(
             "SELECT subcategoria, color, fecha_marcado, kg_al_marcar, motivo "
             "FROM scintela.parado_cohorte WHERE NOT fuera", conn=conn)
