@@ -129,9 +129,14 @@ th.ord.desc::after{content:" ↓";opacity:1}
 <p class="sub" style="margin:18px 0 0">Lo que se vende no desaparece de la
 lista — así se ve si funcionó.</p>
 
-<h2>Por grupo</h2>
-<p class="sub">Los mismos kilos, agrupados.</p>
-<div class="caja"><table class="resumen">
+{# ⭐ SE PLIEGA (dueña 25/08/2026: "en saldos por grupo dejame hide así no es
+   tan grande"). Son ocho renglones que se miran una vez y después estorban:
+   entre el encabezado y la tabla que sí se usa había media pantalla de
+   subtotales. Cerrada por defecto — el que la quiere, la abre. #}
+<details class="plegable">
+<summary><h2 style="display:inline;border:0;padding:0;margin:0">Por grupo</h2>
+<span class="sub" style="margin:0 0 0 8px">los mismos kilos, agrupados</span></summary>
+<div class="caja" style="margin-top:10px"><table class="resumen">
 <thead><tr><th>Grupo</th><th class="n">Subgrupos</th><th class="n">Ítems</th>
 <th class="n">Kg en saldo</th><th class="n">% del total</th>
 <th class="n">Puntos</th><th class="n">Kg SEG</th></tr></thead>
@@ -153,6 +158,7 @@ lista — así se ve si funcionó.</p>
 <td class="n pts"><b>{{ resumen.puntos | num_es(0) }}</b></td>
 <td class="n"><b>{{ resumen.kg_segunda | num_es(0) }}</b></td></tr></tfoot>
 </table></div>
+</details>
 
 <h2>Tela por tela</h2>
 {# Cuatro frases largas eran un párrafo que nadie leía. Dos cortas: qué hay
@@ -162,16 +168,25 @@ lista — así se ve si funcionó.</p>
 bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 <b>Toque una fila</b> para ver a quién ofrecérsela.</p>
 
-<div class="barra">
-  <input id="q" placeholder="Buscar tela, color, cliente, provincia…" oninput="filtrar()">
+{# ⭐ LOS FILTROS, EN SU PROPIO CUADRO Y CON RÓTULO (dueña 25/08/2026:
+   "filtros mucho más definidos para filtrar tabla abajo"). Antes eran seis
+   controles sueltos mezclados con los botones de Excel, Imprimir y PDF, todos
+   del mismo tamaño y sin nombre: no se veía cuáles filtraban la tabla de abajo
+   y cuáles hacían algo. Ahora los filtros van en una caja gris, cada uno con
+   su rótulo arriba, y las acciones en su propio renglón. #}
+<div class="filtros">
+<div class="ff"><label for="q">Buscar</label>
+  <input id="q" placeholder="Tela, color, cliente, provincia…" oninput="filtrar()"></div>
+<div class="ff"><label for="grupo">Grupo</label>
   <select id="grupo" onchange="grupoCambio()">
-    <option value="">Todos los grupos</option>
+    <option value="">Todos</option>
     {% for g in grupos %}<option value="{{ g }}">{{ g }}</option>{% endfor %}
-  </select>
+  </select></div>
+<div class="ff"><label for="subgrupo">Tela</label>
   <select id="subgrupo" onchange="filtrar()">
-    <option value="">Todos los subgrupos</option>
+    <option value="">Todas</option>
     {% for s in subgrupos %}<option value="{{ s.sub }}" data-g="{{ s.cat }}">{{ s.sub }}</option>{% endfor %}
-  </select>
+  </select></div>
   {# El filtro por vendedor no va en la copia del vendedor: serían las
      carteras de los otros seis en un desplegable, y adentro no hay ninguna. #}
   {# Dueña 18/08/2026: "porque hay cosas que se vendieron recien?". Porque 305
@@ -181,17 +196,22 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   {# ⚠ Una sola palabra para esto en toda la pantalla: CATEGORÍA, con PRI y
      SEG. Antes convivían "calidad", "segunda", "de 2ª" y "SEG" para la misma
      cosa — dueña 18/08/2026: "no repetir con segunda". #}
+  <div class="ff"><label for="calidad">Categoría</label>
   <select id="calidad" onchange="filtrar()">
-    <option value="">Toda categoría</option>
+    <option value="">Toda</option>
     <option value="PRI">Sólo PRI</option>
     <option value="SEG">Sólo SEG</option>
-  </select>
+  </select></div>
+  <div class="ff" {% if mia %}hidden{% endif %}><label for="vend">Vendedor</label>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
-    <option value="">Todos los vendedores</option>
+    <option value="">Todos</option>
     {% if not mia %}<option value="INTELA">Intela (mostrador)</option>
     {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
-  </select>
-  <span class="sub" id="cuenta" style="margin:0"></span>
+  </select></div>
+  <span class="sub cuenta" id="cuenta">&nbsp;</span>
+</div>
+
+<div class="barra">
   <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
   {# La lista entera para imprimir o bajar en PDF. Es la MISMA hoja: el PDF
      sale de ese HTML, no de una segunda plantilla. #}

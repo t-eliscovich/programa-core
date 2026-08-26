@@ -305,27 +305,15 @@ septiembre.</p>
    se sigue haciendo —de ahí sale el detalle que se abre en el ranking—, así
    que `grupos` sigue viniendo en el contexto. #}
 
-<h2>Los saldos</h2>
-<p class="sub">{{ telas | length }} telas.
-<a href="/analisis/competencia/telas">Verlas todas, con sus clientes →</a></p>
-<div class="caja"><table>
-<thead><tr><th>Tela</th><th class="opt">Grupo</th><th class="n">Kg</th>
-<th class="n">Vale</th><th class="n opt">Puntos</th><th class="opt">Colores</th></tr></thead>
-<tbody>
-{% for t in telas[:8] %}
-  <tr><td class="tela">{{ t.tela }}</td><td class="g opt">{{ t.grupo }}</td>
-  <td class="n">{{ t.kg | num_es(0) }}</td>
-  <td class="n vale"><span class="pt p{{ t.puntos }}">{{ t.puntos }} × kg</span></td>
-  <td class="n pts opt">{{ t.puntos_total | num_es(0) }}</td>
-  {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. Van los seis primeros
-     —los de más kilos— y el resto se cuenta: Microfibra tiene 26 y con todos
-     la fila mide media pantalla. #}
-  <td class="opt">{% for c in t.colores_lista[:6] %}<span class="cl"><b>{{ c.cod }}</b>{% if c.nombre %}<span>{{ c.nombre }}</span>{% endif %}</span>{% endfor %}{% if t.n_colores > 6 %}<span class="mas">y {{ t.n_colores - 6 }} más</span>{% endif %}</td></tr>
-{% endfor %}
-</tbody>
-</table></div>
-<p class="sub">Las ocho que más puntos valen.
-<a href="/analisis/competencia/telas">Ver las {{ telas | length }} →</a></p>
+{# ⚠ La tabla «Los saldos» se sacó el 25/08/2026 (dueña: "toda esta tabla
+   borrar también de competencia, ya existe en saldos"). Era una copia de las
+   ocho telas que más puntos valen, con sus colores: la misma información que
+   la pantalla de Saldos, que está a un click en el menú de arriba. Dos tablas
+   con los mismos números en dos pantallas se despegan a la primera corrección.
+   `telas` sigue viniendo en el contexto — de ahí sale el link a la lista
+   completa. #}
+<p class="sub"><a href="/analisis/competencia/telas">Ver los saldos, tela por
+tela, con sus clientes →</a></p>
 
 {% if vend %}
 <h2>Sus clientes</h2>

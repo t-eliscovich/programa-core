@@ -3471,3 +3471,57 @@ def test_el_detalle_no_lista_los_grupos_en_cero():
     fuente = _i.getsource(queries.competencia)
     assert 'd["detalle"] = [g for g in d["detalle"]' in fuente
     assert 'float(g.get("kg") or 0) or float(g.get("puntos") or 0)' in fuente
+
+
+def test_la_competencia_no_repite_la_tabla_de_saldos():
+    """Dueña 25/08/2026: *"toda esta tabla borrar también de competencia, ya
+    existe en saldos"*. Era una copia de las ocho telas que más puntos valen:
+    los mismos números en dos pantallas se despegan a la primera corrección.
+    Queda el link, que es lo que hacía falta."""
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "competencia.html")
+            .read_text(encoding="utf-8"))
+    import re
+    texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+    assert "<h2>Los saldos</h2>" not in texto
+    assert "telas[:8]" not in texto
+    assert "/analisis/competencia/telas" in texto, "se fue también el link"
+    # ⚠ La sección del vendedor NO se toca: el primer intento de borrar la
+    # tabla se llevó puesto «Sus clientes», que está abajo en el mismo archivo.
+    assert "<h2>Sus clientes</h2>" in texto
+
+
+def test_por_grupo_se_pliega_y_los_filtros_tienen_su_cuadro():
+    """Dueña 25/08/2026: *"en saldos por grupo dejame hide así no es tan
+    grande. filtros mucho más definidos para filtrar tabla abajo"*.
+
+    Los ocho subtotales se miran una vez; los filtros se usan siempre y estaban
+    mezclados con los botones de Excel, Imprimir y PDF, todos del mismo tamaño
+    y sin rótulo."""
+    html = _html_parado()
+    i = html.index("Por grupo")
+    assert '<details class="plegable">' in html[:i], "«Por grupo» no se pliega"
+    assert "open" not in html[i - 60:i], "arranca abierta: sigue ocupando lo mismo"
+    assert '<div class="filtros">' in html
+    for campo in ("q", "grupo", "subgrupo", "calidad", "vend"):
+        assert f'<label for="{campo}">' in html, f"el filtro {campo} no tiene rótulo"
+    # Los botones se van a su propio renglón: no son filtros.
+    assert html.index('<div class="filtros">') < html.index('id="excel"')
+    assert html.index('id="cuenta"') < html.index('id="excel"')
+
+
+def test_los_filtros_entran_en_un_telefono():
+    """Seis controles a lo ancho no entran en 390 px. Van de a dos por renglón
+    y el buscador ocupa el renglón entero: es el que más se usa.
+
+    ⚠ Y los controles miden 16 px en el celular a propósito: abajo de eso iOS
+    hace zoom solo al tocar el campo y la pantalla queda corrida."""
+    from pathlib import Path
+    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
+    i = base.index("@media (max-width: 780px)")
+    movil = base[i:]
+    assert ".filtros .ff{min-width:0;flex:1 1 calc(50% - 4px)}" in movil
+    assert ".filtros .ff:first-child{flex:1 1 100%}" in movil
+    assert ".filtros input,.filtros select{font-size:16px" in movil
