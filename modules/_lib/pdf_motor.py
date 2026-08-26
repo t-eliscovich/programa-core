@@ -40,6 +40,8 @@ import tempfile
 import time
 from pathlib import Path
 
+from modules._lib import cache_hojas
+
 _LOG = logging.getLogger("programa_core.pdf")
 
 #: Escape hatch: si el binario está en un lugar raro, se setea por entorno y
@@ -148,7 +150,30 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
 
     Se imprime lo mismo que saldría de la impresora de la oficina porque es
     literalmente el mismo HTML pasado por el mismo motor de impresión.
+
+    ⭐ TMT 2026-08-26 (*"tarda mucho tiempo"*): antes de llegar al `subprocess`
+    de más abajo se prueban los dos atajos, en este orden:
+
+      1. **La caché** — si este MISMO HTML ya se imprimió hace poco, el archivo
+         sale de memoria. Es el caso del botón de WhatsApp, que prepara la hoja
+         al apoyar el dedo y la vuelve a pedir al tocar.
+      2. **El navegador ya prendido** — la misma hoja, en una pestaña de un
+         Chromium que no hay que levantar. Medido: 0,1 s contra 0,4 s acá,
+         contra los 3,5-5,2 s que tarda en el servidor de Windows.
+
+    Si los dos fallan queda el camino de siempre, intacto: un navegador por
+    hoja. Este módulo NO puede salir más lento que ayer.
     """
+    # ⚠ La importación va acá adentro y no arriba: `navegador` necesita a este
+    # módulo para saber CUÁL es el navegador (`binario()`) y cómo dejar el HTML
+    # listo para abrirse del disco, así que arriba sería un círculo.
+    from modules._lib import navegador
+
+    k = cache_hojas.clave("pdf", html)
+    guardado = cache_hojas.obtener(k)
+    if guardado:
+        return guardado
+
     exe = binario()
     if not exe:
         raise SinMotor(
@@ -156,6 +181,12 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
         )
 
     static = Path(static_dir) if static_dir else Path(__file__).resolve().parents[2] / "static"
+
+    rapido = navegador.pdf(html, static)
+    if rapido:
+        cache_hojas.guardar(k, rapido)
+        return rapido
+
     with tempfile.TemporaryDirectory(prefix="pc-pdf-") as tmp:
         tmpd = Path(tmp)
         entrada = tmpd / "hoja.html"
@@ -193,9 +224,13 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
             # este bloque de flags NO se vuelve a tocar a ciegas. Lo que sí
             # está medido es DÓNDE está el tiempo: traer los datos y armar el
             # HTML son 170 ms de los 3,5-5,2 s, todo el resto es levantar y
-            # matar un navegador por cada PDF. El camino que queda es tener
-            # UNO prendido y hablarle por CDP, no afinarle los argumentos al
-            # que arranca de cero.
+            # matar un navegador por cada PDF.
+            #
+            # ⭐ Ese camino —tener UNO prendido y hablarle por CDP, en vez de
+            # afinarle los argumentos al que arranca de cero— se hizo el
+            # 2026-08-26 y vive en `modules/_lib/navegador.py`. Este bloque de
+            # abajo es el que corre cuando aquél no está: sigue siendo el piso
+            # y por eso sigue intacto.
             "--virtual-time-budget=5000",
             f"--print-to-pdf={salida}",
             entrada.resolve().as_uri(),
@@ -208,4 +243,6 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
 
         if not salida.exists() or salida.stat().st_size == 0:
             raise SinMotor("El navegador no devolvió ningún PDF.")
-        return salida.read_bytes()
+        datos = salida.read_bytes()
+        cache_hojas.guardar(k, datos)
+        return datos

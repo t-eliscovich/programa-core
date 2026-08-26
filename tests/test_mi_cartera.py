@@ -3175,3 +3175,25 @@ def test_la_pantalla_de_prueba_prueba_los_DOS_formatos(app, vendedor_logueado, m
     # Lo que hace falta de esa pantalla es el ERROR EXACTO, no un sí/no.
     assert "comoFalla" in p
     assert "NO se abrió" in p
+
+
+def test_la_ficha_prepara_la_hoja_mientras_el_vendedor_la_lee(
+        app, vendedor_logueado, monkeypatch):
+    """⭐ TMT 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar
+    imagen, pdf y whatsapp desde vendedor. tarda mucho tiempo"*.
+
+    Ésta es la pantalla desde la que el vendedor manda, así que el archivo se
+    va a pedir casi seguro: se empieza a preparar al ABRIR la ficha y no cuando
+    el dedo toca el botón. Cuando toca —tres, cinco segundos después— la hoja
+    ya está, y en el teléfono el PRIMER toque abre WhatsApp.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    boton = ficha.split("<button", 1)[1].split(">", 1)[0]
+    assert "data-wa-pdf" in boton and "data-precargar" in boton

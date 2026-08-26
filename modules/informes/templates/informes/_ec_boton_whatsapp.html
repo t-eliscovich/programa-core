@@ -15,6 +15,11 @@
      · `wa_label_cargando` — opcional; lo que dice mientras genera. El ancho
                      del botón queda CLAVADO durante la espera, así que en un
                      botón-ícono este texto tiene que ser corto o se corta
+     · `wa_precargar` — opcional; el archivo se empieza a preparar al ABRIR la
+                     pantalla, sin esperar el toque. Lo pone la ficha del
+                     vendedor, que es desde donde se manda; la pantalla de la
+                     oficina no, porque ahí el estado de cuenta se abre todo el
+                     día para mirarlo. Ver el comentario del final.
 
    ⭐ TMT 2026-08-05 (dueña): *"¿podés solucionar que enviar por WhatsApp me
    deje seleccionar a quién?"* → *"a quien yo quiera de mis contactos"*,
@@ -136,6 +141,7 @@
    explica qué falta. #}
 {% if pdf_disponible() %}
 <button type="button" class="{{ wa_clase }}" data-wa-pdf
+        {% if wa_precargar | default(false) %}data-precargar{% endif %}
         data-url="{{ pdf_url }}"
         {% if img_url is defined and img_url %}data-img="{{ img_url }}"{% endif %}
         data-nombre="{{ wa_nombre }}"
@@ -430,6 +436,43 @@
     if (porMenu && btn.__listo) { if (compartirYa(btn, btn.__listo)) return; }
     largo(btn, porMenu, esTelefono());
   });
+
+  // ⭐ TMT 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar imagen,
+  // pdf y whatsapp desde vendedor. tarda mucho tiempo"*.
+  //
+  // El archivo se empezaba a preparar cuando el dedo APOYA sobre el botón. Eso
+  // arregló el permiso del toque (20/08) pero no le sacó un segundo a la
+  // espera: el vendedor sigue mirando "Generando…" desde que toca.
+  //
+  // Acá se corre el arranque más atrás todavía: la hoja se prepara SOLA al
+  // abrir la ficha del cliente, mientras él la lee. Cuando toca —tres, cinco
+  // segundos después— el archivo ya está, así que en el teléfono el PRIMER
+  // toque abre WhatsApp (`btn.__listo` ya tiene el archivo y el camino corto
+  // no espera nada) y en la computadora la descarga sale al instante.
+  //
+  // ⚠ Va SÓLO donde la pantalla lo pide (`data-precargar`, que hoy pone la
+  // ficha del vendedor): en la pantalla de la oficina el estado de cuenta se
+  // abre todo el día para mirarlo, y preparar un PDF que nadie va a mandar es
+  // regalarle trabajo al servidor.
+  //
+  // ⚠ Y NO se toca el rótulo: dejarlo en "Tocá para enviar" sin que nadie haya
+  // tocado nada es un botón que pide algo que no hace falta. El vendedor ve
+  // "WhatsApp" y con un toque se manda; que el archivo ya estuviera listo es
+  // asunto del programa.
+  function precargar() {
+    var botones = document.querySelectorAll('[data-wa-pdf][data-precargar]');
+    for (var i = 0; i < botones.length; i++) {
+      // El `.catch` vacío es a propósito: si la precarga falla no se le dice
+      // nada a nadie —no pidió nada todavía— y el toque reintenta solo.
+      prepararPdf(botones[i]).catch(function () {});
+    }
+  }
+  // Después de que la pantalla terminó de dibujarse: el vendedor primero
+  // quiere VER el saldo. Los 300 ms son para no pelearle el ancho de banda a
+  // lo que se está bajando en ese momento.
+  function alRato() { setTimeout(precargar, 300); }
+  if (document.readyState === 'complete') { alRato(); }
+  else { window.addEventListener('load', alRato); }
 })();
 </script>
 {% endif %}

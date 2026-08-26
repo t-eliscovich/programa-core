@@ -151,6 +151,26 @@ def create_app() -> Flask:
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
 
+    # ⭐ El navegador de los PDFs y las fotos, prendido de entrada. TMT
+    # 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar imagen, pdf y
+    # whatsapp desde vendedor. tarda mucho tiempo"*. De los 3,5-5,2 s medidos
+    # en producción, casi todo era levantar y matar un navegador por archivo.
+    # Ahora hay UNO prendido y cada hoja es una pestaña suya.
+    #
+    # Corre en los DOS procesos —la oficina y el portal del cliente— porque los
+    # dos mandan hojas. A diferencia del calentador de Asinfo, esto no le
+    # escribe nada a nadie: es un proceso local que se apaga solo a los 15
+    # minutos sin uso.
+    #
+    # ⚠ El hilo NO frena el arranque ni un request: si el navegador no levanta,
+    # las hojas siguen saliendo como salían (un navegador por archivo). Ver
+    # `modules/_lib/navegador.py`.
+    try:
+        from modules._lib import navegador
+        navegador.arrancar_en_segundo_plano()
+    except Exception:  # noqa: BLE001 -- jamás frena el arranque
+        pass
+
     # 🚨 TMT 2026-08-25: el ciclo de fondo corre SÓLO en el programa de la
     # oficina. `run_portal.py` levanta ESTE MISMO código en otro proceso
     # (puerto 5004, misma base), y hasta hoy los dos arrancaban los mismos

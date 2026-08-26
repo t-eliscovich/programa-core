@@ -28,7 +28,7 @@ from datetime import datetime, timezone
 from flask import Blueprint, jsonify
 
 import db
-from modules._lib import formulas_db, metabase_client
+from modules._lib import cache_hojas, formulas_db, metabase_client, navegador
 
 _LOG = logging.getLogger("programa_core.healthz")
 _UTC = timezone.utc  # noqa: UP017
@@ -159,5 +159,16 @@ def integraciones():
             ok = False
         out["metabase"]["reachable"] = ok
         out["metabase"]["latency_ms"] = round((time.perf_counter() - t0) * 1000, 1)
+
+    # ------ el navegador que imprime los PDFs y saca las fotos ------
+    # TMT 2026-08-26: desde hoy hay UNO prendido y las hojas son pestañas suyas
+    # (ver modules/_lib/navegador.py). Si en el servidor no levanta, todo sigue
+    # andando —sale un navegador por hoja, como antes— y la única señal sería
+    # un renglón en el log. Acá se ve de un vistazo, que es lo que hace la
+    # diferencia entre "está lento" y "está lento POR ESTO".
+    #
+    # No toca red ni levanta nada: son variables del proceso.
+    out["navegador"] = dict(navegador.estado(),
+                            hojas_guardadas=cache_hojas.estado()["hojas"])
 
     return jsonify(out), 200

@@ -186,6 +186,24 @@ class FakeDB:
 
 
 @pytest.fixture(autouse=True)
+def _vaciar_cache_de_hojas():
+    """La caché de PDFs/fotos ya dibujados no se hereda entre tests.
+
+    TMT 2026-08-26: `cache_hojas` guarda el archivo indexado por el hash del
+    HTML, así que dos tests que le pasan el mismo `"<html></html>"` al motor se
+    pisan — el segundo recibiría los bytes que dibujó el primero y no llamaría
+    al navegador falso que está contando llamadas. Es el mismo caso que el
+    `_ULTIMA_TARIFA_HILADO` de acá abajo: un global de proceso que en producción
+    está bien y adentro de la suite hay que aislar.
+    """
+    from modules._lib import cache_hojas
+
+    cache_hojas.limpiar()
+    yield
+    cache_hojas.limpiar()
+
+
+@pytest.fixture(autouse=True)
 def _reset_tarifa_hilado_global():
     """Aislar el $/kg de hilado que `modules.asinfo.service` cachea EN EL PROCESO.
 

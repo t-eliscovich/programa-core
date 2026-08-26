@@ -31,7 +31,11 @@
 #}
 {% if pdf_disponible() %}
 <div class="acc4{{ ' flojo' if flojo|default(false) }}">
-  {% with wa_clase = 'a4 wa', wa_label = 'WhatsApp', wa_label_cargando = 'Un toque…' %}
+  {# `wa_precargar`: la hoja se empieza a preparar al ABRIR la ficha, no al
+     tocar el botón. Es la pantalla desde la que el vendedor manda, así que
+     acá el archivo se va a pedir casi seguro. TMT 2026-08-26. #}
+  {% with wa_clase = 'a4 wa', wa_label = 'WhatsApp',
+          wa_label_cargando = 'Un toque…', wa_precargar = true %}
     {% include "informes/_ec_boton_whatsapp.html" %}
   {% endwith %}
   <a class="a4 img" data-wa-img target="_blank" rel="noopener" href="{{ img_url }}"

@@ -1021,3 +1021,43 @@ def test_sin_img_url_el_boton_sigue_andando_como_antes(app):
     html = _boton(app)
     assert "data-img=" not in html
     assert 'data-url="/x/pdf"' in html
+
+
+# ---------------------------------------------------------------------------
+# La hoja se empieza a preparar al ABRIR la pantalla (TMT 2026-08-26)
+# ---------------------------------------------------------------------------
+
+
+def _etiqueta_del_boton(html: str) -> str:
+    """Sólo el `<button …>`: el `data-precargar` aparece también adentro del
+    script (es el selector que lo busca) y ahí no dice nada."""
+    return html.split("<button", 1)[1].split(">", 1)[0]
+
+
+def test_la_pantalla_que_manda_prepara_la_hoja_sin_esperar_el_toque(app):
+    """TMT 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar imagen,
+    pdf y whatsapp desde vendedor. tarda mucho tiempo"*.
+
+    Antes el archivo empezaba a prepararse cuando el dedo APOYA sobre el botón
+    (el arreglo del 20/08). Eso salvó el permiso del toque pero no le sacó un
+    segundo a la espera. Ahora el arranque se corre más atrás todavía: la hoja
+    se prepara mientras el vendedor LEE la ficha, así que cuando toca ya está.
+    """
+    html = _boton(app, wa_precargar="1")
+    assert "data-precargar" in _etiqueta_del_boton(html)
+    assert "[data-wa-pdf][data-precargar]" in html, "nadie dispara la precarga"
+
+
+def test_la_precarga_NO_corre_donde_la_pantalla_no_la_pide(app):
+    """En la oficina el estado de cuenta se abre todo el día para mirarlo:
+    preparar un PDF que nadie va a mandar es regalarle trabajo al servidor."""
+    assert "data-precargar" not in _etiqueta_del_boton(_boton(app))
+
+
+def test_la_precarga_no_toca_el_rotulo_del_boton(app):
+    """Dejar el botón en "Tocá para enviar" sin que nadie haya tocado nada es
+    pedirle al vendedor un paso que no hace falta: el archivo ya está listo y
+    con UN toque se manda."""
+    html = _boton(app, wa_precargar="1")
+    precarga = html.split("function precargar()")[1].split("}")[0]
+    assert "armado(" not in precarga and "decir(" not in precarga
