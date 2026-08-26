@@ -66,8 +66,17 @@ def items(conn=None) -> list[dict]:
                -- para decir casi nada. Se unen ACÁ, en la lectura, y no en el
                -- refresh: así el dato crudo de Asinfo queda intacto y el día
                -- que uno crezca se separa cambiando una línea.
-               CASE WHEN f.categoria IN ('Franela', 'Cuellos', 'Puños')
-                    THEN 'FCP' ELSE f.categoria END AS categoria,
+               -- ⚠ El grupo cae al PUNTAJE cuando la foto no lo tiene. La
+               -- tela que se vendió entera ya no viene en la consulta de
+               -- parados, así que su fila de la foto se escribe sin grupo y la
+               -- lista mostraba "—" justo en los renglones que hay que mirar
+               -- —los vendidos— (dueña 25/08/2026: "¿por qué a los vendidos se
+               -- nos fue grupo y forma?"). `parado_punto` lo guarda por tela y
+               -- está congelado desde la largada.
+               CASE WHEN COALESCE(f.categoria, pp.categoria)
+                         IN ('Franela', 'Cuellos', 'Puños')
+                    THEN 'FCP' ELSE COALESCE(f.categoria, pp.categoria)
+               END                                    AS categoria,
                c.fecha_marcado, c.kg_al_marcar,
                COALESCE(f.stock_kg, 0)    AS stock_kg,
                COALESCE(f.kg_vendidos, 0) AS kg_vendidos,
@@ -116,6 +125,8 @@ def items(conn=None) -> list[dict]:
           FROM scintela.parado_cohorte c
           LEFT JOIN scintela.parado_foto f
                  ON f.subcategoria = c.subcategoria AND f.color = c.color
+          LEFT JOIN scintela.parado_punto pp
+                 ON pp.subcategoria = c.subcategoria
           -- ⚠ LATERAL con LIMIT 1: el catálogo tiene el mismo código repetido
           -- (una fila por clase de color) y sin el tope la fila se duplicaría.
           LEFT JOIN LATERAL (

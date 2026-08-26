@@ -65,7 +65,14 @@ th.ord.desc::after{content:" ↓";opacity:1}
    que se piensa es que el programa se rompió.
    ⚠ Las dos razones van separadas a propósito: la reciente se arregla sola con
    el tiempo, la pedida cuando salga el pedido. #}
-{% if estado.nuevas or estado.produciendo or estado.pedidas %}
+{# ⭐ Y se dice SÓLO A LA DUEÑA (25/08/2026: "esto es información para mí, no
+   para todos los que consultan la pantalla"). Es la explicación de por qué la
+   lista tiene 707 ítems y no 4.200: le sirve a quien tiene que confiar en el
+   número, no al vendedor que entra a ver qué ofrecer. `usuarios.admin` lo
+   tienen sólo los roles wildcard —ella y Andrés—; `analisis.ver` ya lo tiene
+   también la oficina. #}
+{% if tiene_permiso('usuarios.admin')
+      and (estado.nuevas or estado.produciendo or estado.pedidas) %}
   <br>
   Afuera de la lista:
   {%- if estado.nuevas %}
@@ -174,20 +181,24 @@ lista — así se ve si funcionó.</p>
 </table></div>
 </details>
 
-<h2 id="tela-por-tela">Tela por tela</h2>
-{# Cuatro frases largas eran un párrafo que nadie leía. Dos cortas: qué hay
-   adentro y qué hacer. El resto (que se separan por Categoría, que ordena por
-   puntos) se ve en los filtros y en la columna. #}
-<p class="sub">Telas paradas, más los kilos <b>SEG</b> de las que se venden
-bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
-<b>Toque una fila</b> para ver a quién ofrecérsela.</p>
+{# ⭐ EL TÍTULO Y LAS ACCIONES, EN UN RENGLÓN (dueña 25/08/2026: "esto ocupa un
+   montón de renglones"). Entre el título, tres líneas de bajada y una barra de
+   botones se iban seis renglones antes de la primera tela.
+   · La bajada se fue entera: lo que decía —que van los saldos más la SEG, y
+     que se ordena por puntos— ya lo dicen las columnas Categoría y Puntos.
+   · «Ver por cliente» también ("ya está en otro lado"): es la pestaña
+     «A quién ofrecerle qué» del menú de arriba.
+   · Imprimir y PDF pasan al lado del título, chiquitos: se usan una vez cada
+     tanto y ocupaban un renglón entero al lado del buscador. #}
+<div class="titulo-fila">
+  <h2 id="tela-por-tela">Tela por tela</h2>
+  <span class="acciones">
+    <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
+    <a href="/analisis/competencia/telas/imprimir" target="_blank">Imprimir</a>
+    <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank">PDF</a>
+  </span>
+</div>
 
-{# ⭐ LOS FILTROS, EN SU PROPIO CUADRO Y CON RÓTULO (dueña 25/08/2026:
-   "filtros mucho más definidos para filtrar tabla abajo"). Antes eran seis
-   controles sueltos mezclados con los botones de Excel, Imprimir y PDF, todos
-   del mismo tamaño y sin nombre: no se veía cuáles filtraban la tabla de abajo
-   y cuáles hacían algo. Ahora los filtros van en una caja gris, cada uno con
-   su rótulo arriba, y las acciones en su propio renglón. #}
 <div class="filtros">
 <div class="ff"><label for="q">Buscar</label>
   <input id="q" placeholder="Tela, color, cliente, provincia…" oninput="filtrar()"></div>
@@ -225,28 +236,14 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   <span class="sub cuenta" id="cuenta">&nbsp;</span>
 </div>
 
-<div class="barra">
-  <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
-  {# La lista entera para imprimir o bajar en PDF. Es la MISMA hoja: el PDF
-     sale de ese HTML, no de una segunda plantilla. #}
-  <a href="/analisis/competencia/telas/imprimir" target="_blank"
-     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">Imprimir la lista</a>
-  <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank"
-     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">PDF</a>
-  <a href="{{ '/analisis/competencia/mi-hoja' if mia else '/analisis/parado/clientes' }}"
-     style="margin-left:auto;align-self:center;
-     color:var(--az);font-size:14px;text-decoration:none">Ver por cliente / imprimir →</a>
-  {# ⭐ El botón «Actualizar desde Asinfo» se fue (dueña 25/08/2026: "borra
-     tambien el boton de actualizar desde asinfo"). No hace falta: el hilo de
-     fondo la refresca sola cada 3 horas (ver `auto_refresco.py`), y la bajada
-     de arriba dice de cuándo son los datos. Un botón que casi nadie tiene que
-     apretar, al lado de los filtros, se aprieta sin querer y se lleva 40
-     segundos de espera contra Asinfo.
-     ⚠ La RUTA sigue viva a propósito (/analisis/parado/actualizar): es la
-     salida de emergencia si Asinfo estuvo caído y no se puede esperar tres
-     horas. #}
-</div>
-
+{# ⭐ El botón «Actualizar desde Asinfo» se fue (dueña 25/08/2026: "borra
+   tambien el boton de actualizar desde asinfo"). No hace falta: el hilo de
+   fondo la refresca sola cada 3 horas (ver `auto_refresco.py`), y la bajada de
+   arriba dice de cuándo son los datos.
+   ⚠ La RUTA sigue viva a propósito (/analisis/parado/actualizar): es la salida
+   de emergencia si Asinfo estuvo caído y no se puede esperar tres horas.
+   ⚠ Y la barra entera se fue con ella: Excel, Imprimir y PDF subieron al lado
+   del título, y «Ver por cliente» salió porque ya es una pestaña del menú. #}
 <div class="caja larga"><table id="tabla">
 <thead><tr>
 <th class="ord opt" data-i="0">Grupo</th>
@@ -299,9 +296,11 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
     {# La calidad de ESTA línea: cuando un color viene de primera y de segunda
        la fila se abrió en dos, y cada una dice la suya (dueña 25/08/2026: "pri
        y seg las sigo viendo juntas. tienen que ser por separado"). #}
-    {% set calidad %}{{ fm.cal(f) }}{% endset %}
-    <td class="tela"><span class="flecha">▸</span> <span class="nom">{{ f.subcategoria }}</span>{% if vendida %}
-      <span class="pill vend">vendido</span>{% endif %}<span class="qm">{{ calidad }}</span></td>
+    {# ⚠ Sin un kilo en bodega no hay lote que mirar, así que no se inventa una
+       categoría: el macro cae a PRI por defecto y la fila vendida decía PRI sin
+       que nadie lo supiera. #}
+    {% set calidad %}{% if vendida %}<span class="g">—</span>{% else %}{{ fm.cal(f) }}{% endif %}{% endset %}
+    <td class="tela"><span class="flecha">▸</span> <span class="nom">{{ f.subcategoria }}</span><span class="qm">{{ calidad }}</span></td>
     {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
        está en el producto y en Asinfo; el nombre es el que usa el cliente por
        teléfono. Los dos, no uno en vez del otro. El que no está en el catálogo
@@ -322,8 +321,13 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
        18/08/2026: "que quiere decir x vendidos? deja de ponerme cosas raras".
        Lo vendido se cuenta igual y se muestra al abrir la fila, con la frase
        entera. En la celda va UN número: los kilos que hay. #}
-    <td class="n" data-v="{{ f.stock_kg }}">
-      {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
+    {# ⭐ La palabra VENDIDO va donde iba el cero (dueña 25/08/2026: "no hay
+       que ponerlo en 0"). Al lado del nombre no entraba —la columna Tela tiene
+       ancho fijo y la píldora tapaba la mitad del nombre—, y además el cero
+       era justo lo que molestaba. #}
+    <td class="n" data-v="{{ f.stock_kg }}">{% if vendida %}<span
+      class="pill vend">vendido</span>{% else %}
+      {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}{% endif %}</td>
     <td class="n vale" data-v="{{ f.puntos }}">
       <span class="pt p{{ f.puntos }}">{{ f.puntos }} × kg</span></td>
     <td class="n pts opt" data-v="{{ f.puntos_fila }}">{{ f.puntos_fila | num_es(0) }}</td>

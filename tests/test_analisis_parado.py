@@ -721,7 +721,11 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             return semanas or []
         if "date_trunc('month'" in s:
             return meses or []
-        if "parado_punto" in s:
+        # ⚠ `FROM` y no sólo el nombre: desde que `items()` joinea el puntaje
+        # para sacar el grupo de la tela vendida entera, su consulta también
+        # nombra `parado_punto` y esta rama se la comía —devolvía las filas del
+        # puntaje y la lista se quedaba sin `stock_kg`.
+        if "FROM scintela.parado_punto" in s:
             return pfilas
         if "parado_venta" in s:
             return _con_tela(vendido)
@@ -2011,17 +2015,23 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     # ⚠ Desde el 25/08/2026 la píldora se dibuja en el macro compartido —la usan
     # la lista, los vendidos y la hoja impresa—, así que el markup se chequea
     # ahí; en la tabla lo que tiene que estar es la COLUMNA que la muestra.
-    assert "{% set calidad %}{{ fm.cal(f) }}{% endset %}" in html
+    # ⚠ La fila vendida entera no tiene lote que mirar, así que no se inventa
+    # una categoría: por eso el `set` viene con su `if`.
+    assert "{% set calidad %}" in html and "fm.cal(f)" in html
     assert 'class="cal">{{ calidad }}' in html
     macro = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "_forma.html").read_text(encoding="utf-8")
     assert 'class="q pri">PRI' in macro and 'class="q seg">SEG' in macro
     # ⚠ Se chequea la IDEA, no la frase: los textos se acortaron el 20/08/2026
     # (dueña: "todo muy wordy") y un test pegado a la redacción obliga a elegir
-    # entre el test y la copia. Lo que no puede faltar es que la bajada explique
-    # por qué hay filas con una venta reciente: son los kilos SEG.
-    assert "paradas" in todo and "SEG</b>" in todo, (
-        "la bajada explica por qué hay filas con venta reciente")
+    # entre el test y la copia. Lo que no puede faltar es que la pantalla
+    # explique por qué hay filas con una venta reciente: son los kilos SEG.
+    # ⚠ El 25/08/2026 la BAJADA se fue entera ("esto ocupa un montón de
+    # renglones"), así que la explicación vive en el pie — que es donde va la
+    # letra chica. Sigue estando; cambió de lugar.
+    pie = todo[todo.index("<footer>"):]
+    assert "SEG" in pie and "quieta" in pie, (
+        "el pie explica por qué hay filas con venta reciente")
 
 
 def test_los_filtros_viven_en_la_direccion_y_se_recuerdan():
@@ -2932,7 +2942,7 @@ def test_la_pantalla_dice_cuanta_tela_quedo_afuera_y_por_que():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert ("{% if estado.nuevas or estado.produciendo or estado.pedidas %}"
+    assert ("estado.nuevas or estado.produciendo or estado.pedidas"
             in html)
     assert "{{ estado.nuevas_kg | num_es(0) }}" in html
     assert "{{ estado.pedidas_kg | num_es(0) }}" in html
@@ -3204,7 +3214,12 @@ def test_la_pantalla_cuenta_los_tres_motivos_por_separado():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "{% if estado.nuevas or estado.produciendo or estado.pedidas %}" in html
+    # ⚠ Desde el 25/08/2026 la línea va SÓLO para la dueña ("esto es información
+    # para mí, no para todos los que consultan la pantalla"), así que el `if`
+    # arranca con el permiso.
+    assert "estado.nuevas or estado.produciendo or estado.pedidas" in html
+    assert "tiene_permiso('usuarios.admin')" in html, (
+        "la línea de lo que quedó afuera es sólo para la dueña")
     assert "{{ estado.produciendo_kg | num_es(0) }}" in html
     assert "que se\n    siguen tejiendo" in html
 
@@ -3551,8 +3566,19 @@ def test_por_grupo_se_pliega_y_los_filtros_tienen_su_cuadro():
     for campo in ("q", "grupo", "subgrupo", "calidad", "vend"):
         assert f'<label for="{campo}">' in html, f"el filtro {campo} no tiene rótulo"
     # Los botones se van a su propio renglón: no son filtros.
-    assert html.index('<div class="filtros">') < html.index('id="excel"')
-    assert html.index('id="cuenta"') < html.index('id="excel"')
+    # ⚠ Desde el 25/08/2026 Excel, Imprimir y PDF viven al lado del TÍTULO
+    # ("esto ocupa un montón de renglones"), o sea ANTES de los filtros. Lo que
+    # el test cuida sigue siendo lo mismo: que los botones no estén mezclados
+    # adentro del cuadro de filtros.
+    import re
+    ini = html.index('<div class="filtros">')
+    fin = html.index("</div>", html.index('id="cuenta"'))
+    assert 'id="excel"' not in html[ini:fin], (
+        "los botones volvieron adentro del cuadro de filtros")
+    assert '<div class="titulo-fila">' in html
+    sin_comentarios = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+    assert "Ver por cliente" not in sin_comentarios, (
+        "ya es una pestaña del menú de arriba (dueña 25/08/2026)")
 
 
 def test_los_filtros_entran_en_un_telefono():
@@ -3631,7 +3657,11 @@ def test_la_tela_vendida_entera_se_queda_tachada():
         "la tela vendida entera volvió a desaparecer de la lista")
     html = _html_parado()
     assert "{% set vendida = not f.stock_kg and f.kg_vendidos %}" in html
-    assert '<span class="pill vend">vendido</span>' in html
+    # ⚠ La palabra va en la columna KG, donde iba el cero: al lado del nombre no
+    # entraba —la columna Tela tiene ancho fijo y tapaba medio nombre— y además
+    # el cero era justo lo que molestaba.
+    i = html.index('<td class="n" data-v="{{ f.stock_kg }}">')
+    assert '<span\n      class="pill vend">vendido</span>' in html[i:i + 260]
     from pathlib import Path
     base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))

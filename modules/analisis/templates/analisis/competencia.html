@@ -155,32 +155,34 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
 </div>
 </div>
 
-{# ⚠ Ocho reglas siempre abiertas eran media pantalla de texto que se lee UNA
-   vez y después estorba todos los días. Plegadas: el que las necesita las
-   abre. #}
+{# ⚠ Las reglas van plegadas: son un texto que se lee UNA vez y después
+   estorba todos los días. El que las necesita las abre. #}
 <details class="reglas-plegadas">
 <summary>Las reglas</summary>
 <div class="reglas">
+{# ⭐ CINCO reglas, no ocho (dueña 25/08/2026: "reglas eran solo 5, hay un
+   montón acá"). Las tres que sobraban no eran reglas nuevas: eran la letra
+   chica de otra. Cómo se mide "difícil" es parte de cuánto vale un kilo; que
+   se mire semana a semana es parte de cómo se gana. Cada una se metió adentro
+   de la suya y no se perdió nada. #}
 <ol>
   <li>Se venden <b>los saldos</b>: la tela que hace 12 meses o más no sale.
       Del <b>{{ largada.strftime('%d/%m/%Y') }}</b> al
       <b>{{ cierre.strftime('%d/%m/%Y') }}</b>.</li>
   <li>⭐ <b>No todos los kilos valen igual</b>: un kilo vale
       {{ puntos_valor[1] }}, {{ puntos_valor[2] }} o {{ puntos_valor[3] }} puntos
-      según lo difícil que sea colocar esa tela.</li>
-  <li>Difícil se mide con un solo número: <b>cuántos meses de venta hay
-      parados</b>. Menos de uno, {{ puntos_valor[1] }} punto; hasta doce,
-      {{ puntos_valor[2] }}; más de un año o cero venta, {{ puntos_valor[3] }}.</li>
+      según cuántos meses de venta haya parados. Menos de uno,
+      {{ puntos_valor[1] }} punto; hasta doce, {{ puntos_valor[2] }}; más de un
+      año o cero venta, {{ puntos_valor[3] }}.</li>
+  <li>El puntaje es <b>de la tela, no del color</b>: sale de lo que la fábrica
+      vende de esa tela, y se fija el {{ largada.strftime('%d/%m') }}.</li>
   {# ⚠ NO volver a poner una meta. Dueña 24/08/2026: "ya que es por puntos,
      saquemos la meta, ideal es + puntos gana". Y además la meta no decidía
      nada: los siete tenían la misma, así que el % de la meta ordenaba igual
      que los puntos pelados. #}
-  <li><b>Gana el que más puntos hace.</b> No hay meta.</li>
-  <li>El puntaje es <b>de la tela, no del color</b>: sale de lo que la fábrica
-      vende de esa tela, y se fija el {{ largada.strftime('%d/%m') }}.</li>
-  <li>El kilo es del <b>vendedor de la factura</b>. Intela compite como uno
-      más.</li>
-  <li>Se mide <b>por semana</b>, de lunes a domingo.</li>
+  <li><b>Gana el que más puntos hace.</b> No hay meta. El kilo es del vendedor
+      de la factura e Intela compite como uno más; se mira semana a semana, de
+      lunes a domingo.</li>
   <li>Aparte hay un <b>premio del mes</b>, ése sí por kilos y sin puntaje.
       Agosto y septiembre cuentan juntos.</li>
 </ol>

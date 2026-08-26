@@ -142,6 +142,12 @@ letter-spacing:.02em;text-transform:uppercase}
 /* ⭐ EL ÍNDICE DE LA PANTALLA. Por defecto es una tira pegajosa arriba: no le
    saca un pixel de ancho a la tabla, que fue el problema de la primera versión
    ("horrible esto, me achico la tabla"). */
+/* El título y sus acciones en el mismo renglón: los botones que se usan una vez
+   cada tanto no merecen una barra propia. */
+.titulo-fila{display:flex;align-items:baseline;justify-content:space-between;
+gap:12px;flex-wrap:wrap}
+.titulo-fila .acciones{display:flex;align-items:center;gap:12px}
+.titulo-fila .acciones a{color:var(--az);font-size:13px;text-decoration:none}
 .secciones{position:sticky;top:0;z-index:5;display:flex;gap:6px;flex-wrap:wrap;
 padding:8px 0;margin:0 0 4px;background:#fff}
 .secciones a{padding:5px 11px;border:1px solid var(--l);border-radius:20px;
