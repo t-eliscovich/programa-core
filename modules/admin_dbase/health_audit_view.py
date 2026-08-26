@@ -639,6 +639,26 @@ def cron_status():
     })
 
 
+def se_puede_comparar_la_foto(hoy) -> bool:
+    """¿El Δ contra la foto guardada dice algo, o hay que callarlo?
+
+    Sólo el ÚLTIMO DÍA DEL MES. Ese día el mes que cierra es el mes en curso, y
+    `crear_snapshot_historia` lo calcula con el balance VIVO. Cualquier otro día
+    cierra un mes pasado y lo reconstruye con `informe_balance_as_of`, que
+    devuelve una CARTERA que no cierra: medido el 26/08/2026 contra julio, daba
+    4.090.093 cuando la foto guardada —y los cinco meses de la serie— dicen
+    7.593.520. Stock, químicos y retiros daban idénticos; se desvía la cartera y
+    arrastra patrimonio (−5,88 M) y utilidad (−5,67 M).
+
+    Con ese Δ en pantalla y una nota que invita a rehacer la foto, alguien puede
+    romper un cierre bueno con un número inventado. El día 1 —cuando uno abre
+    esto justamente para ver si el cierre salió bien— es el primer día en que el
+    número miente.
+    """
+    import calendar as _cal
+    return hoy.day == _cal.monthrange(hoy.year, hoy.month)[1]
+
+
 @bp.route("/simulacro-cierre", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -699,6 +719,8 @@ def simulacro_cierre():
     else:
         _a_cerrar = (_hoy_real.year, _hoy_real.month - 1)
 
+    # El Δ sólo se muestra cuando dice algo — ver `se_puede_comparar_la_foto`.
+    _vivo = se_puede_comparar_la_foto(_hoy_real)
     try:
         foto = crear_snapshot_historia(_a_cerrar[0], _a_cerrar[1], dry_run=True)
     except Exception as e:  # el dry-run nunca debe tumbar el simulacro
@@ -719,7 +741,7 @@ def simulacro_cierre():
 
     _row = (foto.get("row") or {}) if not foto.get("error") else {}
     delta = None
-    if guardada and _row:
+    if guardada and _row and _vivo:
         delta = {
             k: round(float(_row.get(k) or 0) - float(guardada.get(k) or 0), 2)
             for k in ("patrimonio", "usret", "usuti")
@@ -741,10 +763,17 @@ def simulacro_cierre():
                             "banco", "cart", "deuda", "ustock", "uqui")},
             "delta_vs_guardada": delta,
             "error": foto.get("error"),
+            "se_puede_comparar": _vivo,
             "nota": ("`patrimonio` va NETO de retiros (patr − usret), igual que "
                      "el dBase (REPLA PATRIMONIO WITH PATR-URET) y que la foto "
                      "diaria. El Δ es lo que se corrige al rehacer la foto — "
-                     "acá no se escribió nada."),
+                     "acá no se escribió nada."
+                     if _vivo else
+                     "SIN Δ: el mes que cierra ya pasó, y por ese camino la "
+                     "cartera reconstruida no cierra (26/08/2026: daba 4.090.093 "
+                     "contra los 7.593.520 de la foto de julio, que es la que "
+                     "sigue la serie). NO rehagas la foto con este número. La "
+                     "comparación sirve el último día del mes."),
         },
         "apertura_que_usaria_el_balance": {
             "hilado": hi0, "tejido": tj0, "terminado": pf0, "vq": vq0, "um": um0,

@@ -585,3 +585,41 @@ def test_forzar_rehace_la_foto_pisando_la_anterior(monkeypatch):
     assert any("delete from scintela.historia where fecha" in s for s in sqls)
     # y lo que reescribe sigue siendo NETO de retiros
     assert con_forzar["patrimonio"] == 800.0
+
+
+# ---------------------------------------------------------------------------
+# El Δ del simulacro sólo se muestra cuando dice algo (26/08/2026).
+#
+# `crear_snapshot_historia` tiene dos caminos. Por el del mes EN CURSO usa el
+# balance vivo y el Δ sirve. Por el de un mes PASADO reconstruye con
+# `informe_balance_as_of`, y esa rama devuelve una cartera que no cierra: el
+# 26/08/2026, comparando el cierre de julio, daba 4.090.093 contra los
+# 7.593.520 guardados —que son los que siguen la serie de cinco meses—, y de
+# ahí salían un Δ de −5,88 M en patrimonio y −5,67 M en utilidad.
+#
+# La pantalla decía "el Δ es lo que se corrige al rehacer la foto". Con ese
+# número, rehacerla rompe un cierre que estaba bien.
+# ---------------------------------------------------------------------------
+
+def test_el_delta_se_muestra_el_ultimo_dia_del_mes():
+    """Ese día el mes que cierra es el mes en curso → balance vivo → sirve."""
+    from modules.admin_dbase.health_audit_view import se_puede_comparar_la_foto
+    assert se_puede_comparar_la_foto(date(2026, 8, 31)) is True
+    assert se_puede_comparar_la_foto(date(2026, 9, 30)) is True
+    assert se_puede_comparar_la_foto(date(2026, 2, 28)) is True
+    # bisiesto: el último día de febrero 2028 es el 29, no el 28
+    assert se_puede_comparar_la_foto(date(2028, 2, 29)) is True
+    assert se_puede_comparar_la_foto(date(2028, 2, 28)) is False
+
+
+def test_el_dia_1_no_muestra_delta():
+    """El día que uno abre esto para ver si el cierre salió bien es, justamente,
+    el primero en que el número miente."""
+    from modules.admin_dbase.health_audit_view import se_puede_comparar_la_foto
+    assert se_puede_comparar_la_foto(date(2026, 9, 1)) is False
+
+
+def test_ningun_dia_del_medio_muestra_delta():
+    from modules.admin_dbase.health_audit_view import se_puede_comparar_la_foto
+    for d in (2, 10, 15, 26, 30):
+        assert se_puede_comparar_la_foto(date(2026, 8, d)) is False, d

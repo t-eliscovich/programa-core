@@ -56,9 +56,17 @@ del nombre** (`from auth import load_logged_in_user`). O sea que las rutas
 contestan 302 al login — que no es 500 y pasa el assert.
 
 Medido: si se le pisan las DOS copias, el smoke entra de verdad… y
-**`/admin/health/simulacro-cierre` devuelve 500**. Hay que (a) mirar ese 500,
-(b) decidir si el smoke debe entrar logueado —ojo que `/admin/health/all` ES el
-cron y hacer GET tiene efectos—, y (c) recién ahí endurecerlo.
+**`/admin/health/simulacro-cierre` devuelve 500**.
+
+⚠ **Ese 500 es del ENTORNO DE TESTS, no de producción** (verificado 26/08/2026).
+En producción la ruta devuelve 200 y su veredicto es OK. Local revienta con
+`relation "scintela.iniciales" does not exist`: la tabla no está en
+`tests/fixtures/legacy_minimal_dump.sql`. Real, pero de fixture — no hay que
+correr a arreglar la pantalla del cierre.
+
+Queda: (a) meter `iniciales` en el dump de prueba, (b) decidir si el smoke debe
+entrar logueado —ojo que `/admin/health/all` ES el cron y hacer GET tiene
+efectos—, y (c) recién ahí endurecerlo.
 No se tocó en el mismo commit que el arreglo de flakiness a propósito.
 
 
@@ -104,6 +112,35 @@ callándose. Pistas concretas todavía sin mirar:
 ---
 
 ## Urgente / destapado por el retiro del dBase
+
+### [M] La CARTERA de `informe_balance_as_of` no cierra
+
+Encontrado el 26/08/2026 mirando el simulacro de cierre. `crear_snapshot_historia`
+tiene dos caminos: mes en curso → balance VIVO; mes pasado → reconstruido con
+`informe_balance_as_of`. **El segundo devuelve una cartera 3,5 M más baja.**
+
+Contra el cierre de julio, el dry-run daba **4.090.093** cuando la foto guardada
+dice **7.593.520**. La guardada es la buena: la serie no tiene un solo salto —
+6.472.510 (31/03) · 6.902.089 · 7.055.192 · 7.249.666 · **7.593.520** (31/07) ·
+7,77-7,79 M (20 al 26/08). Una cartera de 4 M en julio sería caerse a la mitad y
+volver sola en agosto.
+
+Y se desvía **sólo la cartera**: stock, químicos y retiros dan idénticos entre la
+foto guardada y el dry-run. De la cartera se contagian patrimonio (−5,88 M) y
+utilidad (−5,67 M).
+
+Pista, sin confirmar: el número se parece a "lo que sigue abierto HOY" —
+facturas de julio o antes todavía abiertas (3.035.886) + cheques en cartera
+(688.296) = 3.724.182. Está cerca de 4.090.093 pero **no da igual**: sobran
+366 mil. La dirección parece ésa; el mecanismo exacto no está probado.
+
+⚠ Importa más allá del simulacro: `informe_balance_as_of` es lo que alimenta
+**cualquier lectura de un mes pasado**.
+
+🔒 Mientras tanto (26/08) el simulacro **no muestra el Δ** salvo el último día
+del mes, que es cuando toma el camino vivo (`se_puede_comparar_la_foto`). El
+freno está porque la pantalla decía *"el Δ es lo que se corrige al rehacer la
+foto"*, y con ese número rehacerla rompe un cierre que estaba bien.
 
 ### [S] Primer cierre 100% PC (31/08/2026)
 El FoxPro ya no corre su devengo POSDAT ni su cuota de amortización ni la fila
