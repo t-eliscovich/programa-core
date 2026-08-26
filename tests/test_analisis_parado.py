@@ -795,10 +795,19 @@ def test_intela_compite_como_uno_mas(monkeypatch):
     assert len(c["ranking"]) == 7
 
 
-def test_un_vendedor_que_ya_no_esta_suma_al_grupo_pero_no_al_ranking(monkeypatch):
+def test_un_vendedor_que_ya_no_esta_no_entra_al_ranking(monkeypatch):
+    """Un kilo firmado por alguien que no está entre los siete no le suma a
+    nadie en el ranking, pero salió de la bodega igual: cuenta para el grupo.
+
+    ⚠ Ya NO puede pasar en producción: `_quien_vendio()` manda a Intela todo lo
+    que no firma uno de los siete, y lo hace al ESCRIBIR `parado_venta`. La
+    pantalla decía "152 kg los vendió alguien que ya no compite" y esa frase se
+    fue el 25/08/2026 con el caso. El `continue` queda como red y, si volviera
+    a pasar, lo avisa la alarma `competencia_vendedor_ajeno` del health."""
     c = _competencia_falsa(monkeypatch, vendido=[
         {"vendedor": "Bedon Hector", "categoria": "Jersey", "kg": 80, "ultima": None}])
-    assert c["kg_fuera_del_ranking"] == 80
+    assert "kg_fuera_del_ranking" not in c, (
+        "volvió el número que sostenía una frase de un caso ya arreglado")
     assert all(r["kg"] == 0 for r in c["ranking"])
     jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
     assert jersey["liquidado"] == 80, (

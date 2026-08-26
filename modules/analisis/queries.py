@@ -1454,7 +1454,6 @@ def competencia() -> dict:
                 "grupo": g["grupo"], "kg": 0.0, "puntos": 0.0}
 
     detalle_vendido = vendido_detalle(largada)
-    fuera = 0.0
     liq_kg: dict[str, float] = defaultdict(float)
     liq_pts: dict[str, float] = defaultdict(float)
     for r in vendido:
@@ -1466,7 +1465,13 @@ def competencia() -> dict:
         liq_kg[cat] += kg
         liq_pts[cat] += pts
         if v not in tabla:
-            fuera += kg          # bajas históricas: suman al grupo, no al ranking
+            # ⚠ No puede pasar: `_quien_vendio()` manda a Intela todo lo que no
+            # firma uno de los siete, y se normaliza al ESCRIBIR `parado_venta`.
+            # El `continue` queda como red —un kilo de un desconocido no puede
+            # entrar al ranking— pero ya no se cuenta ni se muestra: la pantalla
+            # decía "152 kg los vendió alguien que ya no compite" y esa frase
+            # sostenía un caso que se arregló. Si volviera a pasar, lo avisa la
+            # alarma `competencia_vendedor_ajeno` de /admin/health/competencia.
             continue
         tabla[v]["kg"] += kg
         tabla[v]["puntos"] += pts
@@ -1578,10 +1583,10 @@ def competencia() -> dict:
         "liquidado": liquidado,
         "liquidado_pts": sum(g["liquidado_pts"] for g in grupos),
         "puntos_valor": PUNTOS,
-        "kg_fuera_del_ranking": fuera,
         "semanas": semanas["filas"],
         "meses": meses,
-        "competidores": COMPETIDORES,
+        # ⚠ `competidores` se sacó del contexto el 25/08/2026: la pantalla
+        # nunca lo usó. La lista sigue viva como constante del módulo.
     }
 
 
