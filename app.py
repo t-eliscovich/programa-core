@@ -363,6 +363,18 @@ def create_app() -> Flask:
     # blueprints so any of them can be the audited target.
     app.after_request(registrar_bitacora_after_request)
 
+    # Uso de la app — el hook hermano del de arriba, pero para lo que un
+    # vendedor MIRA (los GET). TMT 2026-08-26 (dueña): "¿podríamos medir
+    # cuánto usa cada vendedor la aplicación, y qué movimientos hace?". La
+    # bitácora contesta la segunda mitad y audita sólo escrituras a propósito;
+    # las visitas van a su propia tabla. Ver modules/uso/registro.py.
+    #
+    # Se registra en los dos modos: sin un usuario con `vend` en la sesión es
+    # un no-op exacto, y en modo portal no hay ninguno.
+    from modules.uso.registro import registrar_uso_after_request
+
+    app.after_request(registrar_uso_after_request)
+
 
     # `g.now` — datetime local de inicio del request, accesible desde
     # cualquier template (saludo del dashboard, etc).

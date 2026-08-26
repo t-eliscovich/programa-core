@@ -1499,7 +1499,7 @@
             {% endif %}
 
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
-            {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') %}
+            {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') or tiene_permiso('bitacora.ver') %}
             <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
             <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Administración</div>
             {% if tiene_permiso('periodo.cerrar') %}
@@ -1511,6 +1511,13 @@
                  nuevo por cada pregunta. Sólo lectura, garantizado por
                  Postgres (`SET TRANSACTION READ ONLY`), no por un filtro. #}
               <a href="{{ url_for('sql_console.consola') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Consola SQL <span class="text-[10px] text-slate-400">sólo lectura</span></a>
+            {% endif %}
+            {# TMT 2026-08-26 (dueña): "¿podríamos medir cuánto usa cada
+               vendedor la aplicación, y qué movimientos hace?". Sí va al menú
+               —la bitácora no está a propósito, pero ésta es una pantalla que
+               se mira, no un registro de fondo—. Mismo permiso que ella. #}
+            {% if tiene_permiso('bitacora.ver') %}
+              <a href="{{ url_for('uso.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Uso de la app</a>
             {% endif %}
             {% endif %}
 

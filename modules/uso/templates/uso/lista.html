@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero, filtros_fecha %}
+{% block title %}Uso de la app{% endblock %}
+{% block breadcrumb %}<strong>Uso de la app</strong>{% endblock %}
+{% block content %}
+{# Las fechas y horas ya vienen en hora de Ecuador desde la consulta
+   (ver modules/uso/queries.py), así que acá va `fecha_hora_es` y NO
+   `fecha_hora_ec`: ese filtro les restaría cinco horas de nuevo. #}
+<div class="max-w-7xl">
+  {{ page_hero('Uso de la app',
+               descripcion='Cuánto entra cada vendedor, qué mira y qué cambia. ' ~ dias ~ ' días.') }}
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% set boton_csv %}<a href="{{ url_for('uso.lista', desde=desde, hasta=hasta, export='csv') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>{% endset %}
+  {{ filtros_fecha(q=none, desde=desde, hasta=hasta, extras_html=boton_csv) }}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Vendedor</th>
+          <th class="px-3 py-2 text-right">Días</th>
+          <th class="px-3 py-2 text-right">Veces que entró</th>
+          <th class="px-3 py-2 text-right">Pantallas</th>
+          <th class="px-3 py-2 text-right">Clientes</th>
+          <th class="px-3 py-2 text-right">Impresiones</th>
+          <th class="px-3 py-2 text-right">Cambios</th>
+          <th class="px-3 py-2 text-right">Del teléfono</th>
+          <th class="px-3 py-2">Última vez</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for f in filas %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 {% if not f.activo %}opacity-50{% endif %}">
+          <td class="px-3 py-2">
+            <a class="font-semibold text-slate-900 dark:text-slate-100 hover:underline"
+               href="{{ url_for('uso.detalle', usuario=f.usuario, desde=desde, hasta=hasta) }}">{{ f.vend }}</a>
+            <div class="text-xs text-slate-500">{{ f.usuario }}{% if not f.activo %} · inactivo{% endif %}</div>
+          </td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.dias }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.entradas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.visitas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.clientes }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.papeles }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ f.movimientos }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-500">
+            {% if f.visitas %}{{ (100 * f.celular / f.visitas) | round | int }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500">
+            {% if f.ultima %}{{ f.ultima | fecha_hora_es }}{% else %}
+              <span class="text-amber-600 dark:text-amber-400">no entró</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+          {{ empty_row(9, 'Todavía no hay vendedores cargados.',
+                       'Un usuario cuenta como vendedor cuando tiene su código en la ficha.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="mt-3 text-xs text-slate-500">
+    <strong>Veces que entró</strong>: cada vez que abrió la app después de
+    media hora sin tocarla. <strong>Cambios</strong>: lo que guardó, sale de la
+    bitácora. Las visitas se anotan desde el 26/08/2026 — antes no hay nada.
+  </div>
+
+  {% if top %}
+  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Las pantallas más abiertas</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Pantalla</th>
+          <th class="px-3 py-2 text-right">Veces</th>
+          <th class="px-3 py-2 text-right">Vendedores</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for p in top %}
+        <tr>
+          <td class="px-3 py-2">{{ nombre_de(p.pantalla) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ p.visitas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ p.usuarios }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

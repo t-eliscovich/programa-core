@@ -192,6 +192,12 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(bitacora_bp)
 
+    # Uso de la app — cuánto la usa cada vendedor y qué hace adentro.
+    # TMT 2026-08-26 (dueña). Va con el mismo permiso que la bitácora.
+    from modules.uso.views import uso_bp
+
+    app.register_blueprint(uso_bp)
+
     from modules.periodos.views import periodos_bp
 
     app.register_blueprint(periodos_bp)

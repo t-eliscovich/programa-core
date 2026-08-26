@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero, filtros_fecha %}
+{% block title %}Uso · {{ usuario }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('uso.lista') }}">Uso de la app</a> / <strong>{{ usuario }}</strong>{% endblock %}
+{% block content %}
+{# Las horas ya vienen en hora de Ecuador desde la consulta: `fecha_hora_es`,
+   nunca `fecha_hora_ec` (restaría cinco horas de nuevo). #}
+<div class="max-w-7xl">
+  {{ page_hero(usuario, descripcion='Día por día, sus clientes, y todo lo que hizo.') }}
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {% set boton_csv %}<a href="{{ url_for('uso.detalle', usuario=usuario, desde=desde, hasta=hasta, export='csv') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>{% endset %}
+  {{ filtros_fecha(q=none, desde=desde, hasta=hasta, extras_html=boton_csv) }}
+
+  <div class="grid gap-6 md:grid-cols-2">
+    <div>
+      <h2 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Día por día</h2>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Día</th>
+              <th class="px-3 py-2">Desde</th>
+              <th class="px-3 py-2">Hasta</th>
+              <th class="px-3 py-2 text-right">Pantallas</th>
+              <th class="px-3 py-2 text-right">Clientes</th>
+              <th class="px-3 py-2 text-right">Impresiones</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {% for d in dias %}
+            <tr>
+              <td class="px-3 py-2">{{ d.dia | fecha_es }}</td>
+              <td class="px-3 py-2 text-slate-500 tabular-nums">{{ d.primera.strftime('%H:%M') }}</td>
+              <td class="px-3 py-2 text-slate-500 tabular-nums">{{ d.ultima.strftime('%H:%M') }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ d.visitas }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ d.clientes }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ d.papeles }}</td>
+            </tr>
+            {% else %}
+              {{ empty_row(6, 'No abrió la app en estos días.') }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Los clientes que abrió</h2>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Cliente</th>
+              <th class="px-3 py-2 text-right">Veces</th>
+              <th class="px-3 py-2">Última vez</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {% for c in fichas %}
+            <tr>
+              <td class="px-3 py-2">
+                <span class="font-semibold">{{ c.codigo_cli }}</span>
+                <span class="text-slate-500">{{ c.nombre }}</span>
+              </td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ c.veces }}</td>
+              <td class="px-3 py-2 text-slate-500">{{ c.ultima | fecha_hora_es }}</td>
+            </tr>
+            {% else %}
+              {{ empty_row(3, 'No abrió la ficha de ningún cliente.') }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% if top %}
+      <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Sus pantallas</h2>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+        <table class="min-w-full text-sm">
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {% for p in top %}
+            <tr>
+              <td class="px-3 py-2">{{ nombre_de(p.pantalla) }}</td>
+              <td class="px-3 py-2 text-right tabular-nums">{{ p.visitas }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% endif %}
+    </div>
+
+    <div>
+      <h2 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Todo lo que hizo</h2>
+      <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+        <table class="min-w-full text-sm">
+          <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+            <tr>
+              <th class="px-3 py-2">Cuándo</th>
+              <th class="px-3 py-2">Qué</th>
+              <th class="px-3 py-2">Cliente</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+            {% for m in movs %}
+            <tr class="{% if m.tipo == 'hizo' %}bg-amber-50 dark:bg-amber-900/20{% endif %}">
+              <td class="px-3 py-2 text-slate-500 whitespace-nowrap">{{ m.cuando | fecha_hora_es }}</td>
+              <td class="px-3 py-2">
+                {% if m.tipo == 'hizo' %}
+                  <span class="text-xs font-semibold text-amber-700 dark:text-amber-300">Cambió:</span>
+                  {{ m.detalle or m.pantalla }}
+                {% else %}
+                  {{ nombre_de(m.pantalla) }}
+                  {% if es_papel(m.pantalla) %}
+                    <span class="text-xs text-slate-400">· papel</span>
+                  {% endif %}
+                {% endif %}
+                <div class="text-xs text-slate-400 font-mono">{{ m.ruta }}</div>
+              </td>
+              <td class="px-3 py-2">{{ m.codigo_cli or '' }}</td>
+            </tr>
+            {% else %}
+              {{ empty_row(3, 'No hay nada en estos días.') }}
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
