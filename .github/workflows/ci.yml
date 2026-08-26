@@ -15,7 +15,13 @@ jobs:
     # públicos como éste, y son bastante más rápidos que los x86 estándar.
     # Si algún día el repo se hace privado, esto hay que volverlo a
     # `ubuntu-latest` o el workflow falla.
-    runs-on: ubuntu-24.04-arm
+    # TMT 2026-08-26 — los runners ARM de GitHub se quedaron sin atender:
+    # 40 minutos de cola con CERO jobs corriendo y dos runs que murieron
+    # en 7 segundos sin arrancar. El deploy (que corre en x64) andaba
+    # perfecto, así que era el ARM y no el repo. Se pasa a x64 para
+    # destrabar; cuando GitHub se acomode se puede volver al ARM, que es
+    # más barato y más rápido.
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     services:
       postgres:
