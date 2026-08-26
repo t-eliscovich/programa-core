@@ -83,11 +83,14 @@
             {% if g.docs %}
               {# 🚨 El `numf` de una NOTA DE ENTREGA se repite: el 10879 es una
                  NTEN de BED del 19/08 y también una factura vieja de otro
-                 cliente, así que `/facturas/10879` abre la que no es. La NTEN
-                 se linkea al listado del día filtrado por su cliente, que
-                 siempre da bien. Y lo que todavía NO está acá no se linkea:
-                 un link a una factura que no existe es un 404 servido. #}
-              {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{% if doc.upper().startswith('NTEN') %}<a href="/facturas?desde={{ d.fecha }}&hasta={{ d.fecha }}&cliente={{ g.cliente }}" class="hover:underline">{{ doc }}</a>{% elif d.numf_por_doc.get(doc) %}<a href="/facturas/{{ d.numf_por_doc[doc] }}" class="hover:underline">{{ doc }}</a>{% else %}{{ doc }}{% endif %}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+                 cliente, así que `/facturas/10879` a secas abre la que no es.
+                 Por eso el link lleva `?doc=`, el número completo, que sí es
+                 único: la ficha resuelve por ahí y no hay forma de errarle.
+                 TMT 2026-08-26: *"las notas de entrega tienen mal el link"* —
+                 antes iban a parar al listado del día, que no es la factura.
+                 Lo que todavía NO está acá no se linkea: un link a una
+                 factura que no existe es un 404 servido. #}
+              {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{% if d.numf_por_doc.get(doc) %}<a href="/facturas/{{ d.numf_por_doc[doc] }}?doc={{ doc }}" class="hover:underline">{{ doc }}</a>{% else %}{{ doc }}{% endif %}</span>{% if not loop.last %}, {% endif %}{% endfor %}
               {# TMT 2026-08-24 (dueña): *"me suena raro porque van más de 5
                  mins"*. Decían las dos cosas "falta cargarla", pero son
                  distintas: una entra sola en dos minutos y la otra no va a
@@ -177,7 +180,7 @@
           {% for f in d.sin_guia['items'] %}
           <tr class="border-t border-slate-100">
             <td class="px-3 py-1.5"><a class="text-sky-700"
-               href="{% if f.doc.upper().startswith('NTEN') %}/facturas?desde={{ d.fecha }}&hasta={{ d.fecha }}&cliente={{ f.cliente }}{% else %}/facturas/{{ f.numf }}{% endif %}">{{ f.doc }}</a></td>
+               href="/facturas/{{ f.numf }}?doc={{ f.doc }}">{{ f.doc }}</a></td>
             <td class="px-3 py-1.5">{{ f.cliente }}</td>
             <td class="px-3 py-1.5 text-right">{{ f.kg_sin_guia | kg_es }}</td>
           </tr>

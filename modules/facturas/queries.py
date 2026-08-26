@@ -822,6 +822,37 @@ def por_id(id_factura: int) -> dict | None:
     )
 
 
+def por_numf_completo(numf_completo: str) -> dict | None:
+    """Cabecera de factura por su número VISIBLE completo, sin ambigüedad.
+
+    ⭐ Para qué existe. `por_id` acepta numf O id interno y prioriza el numf,
+    que es el número que la dueña conoce — pero el `numf` de una NOTA DE
+    ENTREGA se repite con el de una factura vieja de otro cliente (el 10879 es
+    una NTEN de BED del 19/08 y también una factura de 2022), así que un link
+    por número abría la que no era. El `numf_completo` (NTEN-10909,
+    001-099-000182675) sí es único: cuando el que linkea lo tiene, se usa éste
+    y no hay forma de errarle.
+    """
+    n = (numf_completo or "").strip()
+    if not n:
+        return None
+    return db.fetch_one(
+        """
+        SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
+               f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
+               f.stat, f.condic, f.tipo, f.pase, f.clave,
+               COALESCE(c.nombre, '')    AS cliente,
+               c.ruc, c.telefono, c.pago
+          FROM scintela.factura f
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+         WHERE f.numf_completo = %s
+         ORDER BY f.id_factura ASC
+         LIMIT 1
+        """,
+        (n,),
+    )
+
+
 def cheques_aplicados(id_factura: int) -> list[dict]:
     """Aplicaciones de cheques a esta factura vía chequesxfact."""
     return db.fetch_all(

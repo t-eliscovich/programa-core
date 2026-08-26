@@ -27,6 +27,7 @@ from tests.test_factura_papel import CLAVE, _filas
 from tests.test_mi_cartera import _ec_con_facturas
 
 PLANTILLA = "informes/factura_papel.html"
+FACTURA = "001-099-000182675"
 
 
 @pytest.fixture(autouse=True)
@@ -199,3 +200,126 @@ def test_las_tres_pantallas_dibujan_la_misma_plantilla():
     assert PLANTILLA in inspect.getsource(fv.papel)
     assert PLANTILLA in inspect.getsource(mv._hoja_html)
     assert PLANTILLA in inspect.getsource(pv.factura_papel_cliente)
+
+
+# --- la oficina se la baja en PDF -------------------------------------------
+#
+# TMT 2026-08-26 (dueña): *"que desde la factura en el programa se pueda
+# descargar pdf también para los de la oficina"*.
+
+@pytest.fixture()
+def oficina_facturas(app, fake_db):
+    import bcrypt
+    rid = fake_db.add_role("Oficina facturas", ["facturas.ver"])
+    uid = fake_db.add_user("ofi", bcrypt.hashpw(b"x", bcrypt.gensalt(rounds=4)), rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def _factura_pc(**cambios):
+    f = {"id_factura": 1, "numf": 182675, "numf_completo": FACTURA,
+         "codigo_cli": "RRV", "cliente": "VERA VARGAS RAMON RODOLFO",
+         "fecha": None, "vencimiento": None, "kg": 300.25, "importe": 2620.30,
+         "abono": 0, "retencion": 0, "saldo": 2620.30, "stat": "A",
+         "condic": "", "tipo": "F", "pase": "", "clave": ""}
+    f.update(cambios)
+    return f
+
+
+def test_la_oficina_baja_el_pdf_de_la_hoja(oficina_facturas, monkeypatch):
+    """El PDF sale de IMPRIMIR la misma hoja: si la hoja cambia, el archivo
+    cambia solo. Acá se mira el html que recibe el motor."""
+    from modules.facturas import queries as fq
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fq, "por_id", lambda n: _factura_pc())
+    monkeypatch.setattr(fv.queries, "por_id", lambda n: _factura_pc())
+    _asinfo_contesta(monkeypatch)
+    visto = {}
+
+    def _capturar(html, **kw):
+        visto["html"] = html
+        return b"%PDF-1.4"
+
+    monkeypatch.setattr(pdf_motor, "desde_html", _capturar)
+    r = oficina_facturas.get("/facturas/182675/papel.pdf")
+    assert r.status_code == 200
+    assert r.mimetype == "application/pdf"
+    cd = r.headers["Content-Disposition"]
+    assert cd.startswith("inline;") and "182675" in cd and "RRV" in cd
+    assert "FACTURA: 001-099-000182675" in visto["html"]
+    assert CLAVE in visto["html"]
+
+
+def test_sin_motor_el_pdf_dice_por_que(oficina_facturas, monkeypatch):
+    """El botón se esconde sin motor, pero alguien puede llegar por la URL."""
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv.queries, "por_id", lambda n: _factura_pc())
+    _asinfo_contesta(monkeypatch)
+
+    def _explota(html, **kw):
+        raise pdf_motor.SinMotor("El navegador tardó demasiado.")
+
+    monkeypatch.setattr(pdf_motor, "desde_html", _explota)
+    r = oficina_facturas.get("/facturas/182675/papel.pdf")
+    assert r.status_code == 503
+    assert "tardó demasiado" in r.data.decode()
+
+
+def test_sin_la_factura_de_asinfo_no_se_arma_un_pdf_vacio(oficina_facturas, monkeypatch):
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv.queries, "por_id",
+                        lambda n: _factura_pc(numf_completo=None))
+    r = oficina_facturas.get("/facturas/182675/papel.pdf")
+    assert r.status_code == 409
+    assert "sin-numero" in r.data.decode()
+
+
+def test_los_botones_estan_en_la_ficha():
+    """Sin número del SRI no hay factura de Asinfo que copiar: no aparecen."""
+    from pathlib import Path
+
+    t = Path("modules/facturas/templates/facturas/detalle.html").read_text(
+        encoding="utf-8")
+    assert "{% if fact.numf_completo %}" in t
+    assert "facturas.papel'" in t or 'facturas.papel"' in t
+    assert "facturas.papel_pdf" in t
+
+
+# --- el desempate de la nota de entrega -------------------------------------
+
+def test_la_ficha_desempata_por_el_numero_completo(oficina_facturas, monkeypatch):
+    """🚨 El `numf` de una NTEN se repite con el de una factura vieja de otro
+    cliente. Con `?doc=` la ficha resuelve por el número COMPLETO, que es
+    único, y abre la que corresponde."""
+    from modules.facturas import views as fv
+
+    nten = _factura_pc(id_factura=99, numf=10909, numf_completo="NTEN-10909",
+                       codigo_cli="BED", tipo="N")
+    monkeypatch.setattr(fv.queries, "por_numf_completo",
+                        lambda n: nten if n == "NTEN-10909" else None)
+    monkeypatch.setattr(fv.queries, "por_id",
+                        lambda n: _factura_pc(numf=10909, codigo_cli="OTRO"))
+    monkeypatch.setattr(fv.queries, "cheques_aplicados", lambda *a: [])
+    monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
+    html = oficina_facturas.get("/facturas/10909?doc=NTEN-10909").data.decode()
+    assert "BED" in html
+    assert "OTRO" not in html
+
+
+def test_sin_desempate_la_ficha_sigue_resolviendo_como_siempre(
+        oficina_facturas, monkeypatch):
+    from modules.facturas import views as fv
+
+    llamadas = []
+    monkeypatch.setattr(fv.queries, "por_numf_completo",
+                        lambda n: llamadas.append(n))
+    monkeypatch.setattr(fv.queries, "por_id", lambda n: _factura_pc())
+    monkeypatch.setattr(fv.queries, "cheques_aplicados", lambda *a: [])
+    monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
+    assert oficina_facturas.get("/facturas/182675").status_code == 200
+    assert llamadas == []          # sin `?doc=` ni se pregunta

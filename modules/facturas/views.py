@@ -830,7 +830,15 @@ def anuladas_asinfo_correr():
 @requiere_login
 @requiere_permiso("facturas.ver")
 def detalle(id_factura: int):
-    fact = queries.por_id(id_factura)
+    # ⭐ `?doc=` es el desempate. El `numf` de una NOTA DE ENTREGA se repite
+    #    con el de una factura vieja de otro cliente, así que un link por
+    #    número solo abría la que no era. Quien linkea y tiene el número
+    #    completo lo manda por acá y no hay forma de errarle. TMT 2026-08-26:
+    #    *"las notas de entrega tienen mal el link"*.
+    doc = (request.args.get("doc") or "").strip()
+    fact = queries.por_numf_completo(doc) if doc else None
+    if not fact:
+        fact = queries.por_id(id_factura)
     if not fact:
         abort(404)
     # TMT 2026-06-07 dueña: "la factura tiene UN solo número, el del dBase
@@ -838,7 +846,10 @@ def detalle(id_factura: int):
     # si entraron por el id interno, redirigimos para que la barra de
     # direcciones muestre el número real de la factura, no el id.
     if fact.get("numf") and int(id_factura) != int(fact["numf"]):
-        return redirect(url_for("facturas.detalle", id_factura=fact["numf"]))
+        # El desempate viaja con el redirect: sin él la URL canónica volvería
+        # a ser ambigua y abriría la otra factura del mismo número.
+        return redirect(url_for("facturas.detalle", id_factura=fact["numf"],
+                                **({"doc": doc} if doc else {})))
     # TMT 2026-06-07: el param de la URL puede venir como numf (el número del
     # dBase, el ÚNICO visible) y `por_id` lo resuelve a la fila real. Las
     # aplicaciones de cheques se buscan por el id_factura INTERNO resuelto
@@ -1013,6 +1024,61 @@ def dia_despacho_view():
     except ValueError:
         datos = cuadre(today_ec())
     return render_template("facturas/dia_despacho.html", d=datos)
+
+
+@facturas_bp.route("/facturas/<int:id_factura>/papel.pdf")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def papel_pdf(id_factura: int):
+    """La misma hoja, como archivo, para mandarla o guardarla.
+
+    TMT 2026-08-26 (dueña): *"que desde la factura en el programa se pueda
+    descargar pdf también para los de la oficina"*. El vendedor ya la bajaba
+    desde su pantalla; acá es el mismo HTML impreso por el navegador del
+    servidor, así que las dos salen iguales por construcción.
+
+    El 503 no es decorativo: el botón se esconde cuando no hay motor, pero
+    alguien puede llegar por la URL, y un mensaje que dice qué falta es lo que
+    evita el reporte de "no anda el botón".
+    """
+    import re
+
+    from flask import Response, current_app
+
+    from modules._lib import pdf_motor
+    from modules.asinfo import factura_papel
+
+    fact = queries.por_id(id_factura)
+    if not fact:
+        abort(404)
+    ctx = factura_papel.hoja(fact.get("numf_completo"))
+    numero = fact.get("numf_completo") or fact.get("numf")
+    if ctx["p"].get("estado") != "ok":
+        # Sin la factura de Asinfo no hay hoja que imprimir. Se dice por qué,
+        # que es lo que la pantalla ya dice cuando se abre a mano.
+        return Response(
+            f"No se pudo armar la factura {numero}: "
+            f"{ctx['p'].get('estado')}. Abrila en pantalla para ver el detalle.",
+            status=409, mimetype="text/plain; charset=utf-8")
+    html = render_template("informes/factura_papel.html", **ctx,
+                           numero=fact.get("numf"))
+    try:
+        blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor as e:
+        current_app.logger.error("Factura %s (pdf): %s", numero, e)
+        return Response(
+            f"No se pudo generar el PDF. {e} La pantalla de impresión sigue "
+            "funcionando normalmente.",
+            status=503, mimetype="text/plain; charset=utf-8")
+    # Mismo criterio que el estado de cuenta y que la hoja del vendedor: el
+    # número y el cliente, sin barras ni tildes. Quien lo recibe junta varios
+    # en el chat y los ordena solos.
+    cod = re.sub(r"[^A-Za-z0-9]", "", (fact.get("codigo_cli") or "")).upper()
+    nombre = f"Factura {fact.get('numf')} {cod or 'CLIENTE'}.pdf"
+    return Response(blob, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="{nombre}"',
+        "Cache-Control": "no-store",
+    })
 
 
 @facturas_bp.route("/despachos/<numero>")

@@ -38,6 +38,16 @@
     <div class="flex items-center gap-2 no-print flex-wrap justify-end">
       <a href="{{ volver_a(url_for('facturas.lista')) }}" style="white-space:nowrap" class="{{ _btn }}">{{ volver_texto(url_for('facturas.lista'), '← Volver') }}</a>
       <button onclick="window.print()" style="white-space:nowrap" class="{{ _btn }}">Imprimir</button>
+      {# TMT 2026-08-26 (dueña): *"que desde la factura en el programa se pueda
+         descargar pdf también para los de la oficina"*. Es la MISMA hoja que
+         manda el vendedor y que ve el cliente en su portal. Sin número del SRI
+         no hay factura de Asinfo que copiar, así que los botones no aparecen. #}
+      {% if fact.numf_completo %}
+        <a href="{{ url_for('facturas.papel', id_factura=fact.id_factura) }}"
+           style="white-space:nowrap" class="{{ _btn }}">Ver la factura</a>
+        <a href="{{ url_for('facturas.papel_pdf', id_factura=fact.id_factura) }}"
+           style="white-space:nowrap" class="{{ _btn }}">Bajar PDF</a>
+      {% endif %}
       {% if tiene_permiso('sri.emitir') and fact.stat and fact.stat != 'X' %}
         <form method="post" action="{{ url_for('sri.generar', id_factura=fact.id_factura) }}" class="inline"
               onsubmit="return confirm('Generar XML SRI para la factura {{ fact.numf_completo or fact.numf }}? Se creará un comprobante electrónico en estado borrador (aún sin firmar ni enviar al SRI).');">

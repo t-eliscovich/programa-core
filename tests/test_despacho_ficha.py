@@ -238,18 +238,23 @@ def test_la_guia_linkea_a_lo_que_salio(app):
     assert f'href="/despachos/{GUIA}"' in html
 
 
-def test_la_factura_linkea_a_su_ficha_por_el_numf(app):
+def test_la_factura_linkea_a_su_ficha_con_el_desempate(app):
     html = _render(app, "facturas/dia_despacho.html", d=_dia())
-    assert 'href="/facturas/182675"' in html
+    assert f'href="/facturas/182675?doc={FACTURA}"' in html
 
 
-def test_la_nota_de_entrega_NO_linkea_por_su_numero(app):
+def test_la_nota_de_entrega_abre_SU_ficha_y_no_el_listado(app):
     """🚨 El `numf` de una NTEN se repite con el de una factura vieja de otro
-    cliente: `/facturas/10909` abriría la que no es. Va al listado del día
-    filtrado por su cliente, que siempre da bien."""
+    cliente: `/facturas/10909` a secas abriría la que no es. Por eso el link
+    lleva `?doc=NTEN-10909`, que sí es único.
+
+    TMT 2026-08-26: *"las notas de entrega tienen mal el link"* — antes iban a
+    parar al listado del día, que no es la factura.
+    """
     html = _render(app, "facturas/dia_despacho.html", d=_dia())
+    assert 'href="/facturas/10909?doc=NTEN-10909"' in html
     assert 'href="/facturas/10909"' not in html
-    assert "cliente=BED" in html
+    assert "cliente=BED" not in html
 
 
 def test_lo_que_todavia_no_esta_cargado_no_se_linkea(app):
