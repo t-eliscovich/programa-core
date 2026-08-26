@@ -29,6 +29,8 @@ Comisión = cobranzas_mes * (pct_comision / 100). El dBase no calculaba
 esto (la dueña lo hacía a mano); acá lo automatizamos.
 """
 
+from datetime import date
+
 import db
 from filters import today_ec
 
@@ -165,6 +167,64 @@ _CAJA_COBRO_FROM = """
 # Los cheques de las dos empresas ya vienen mezclados bajo un solo
 # `cheque.codigo_cli`: separarlos requiere limpiar los códigos repetidos
 # en `scintela.cliente`. Hasta entonces esto es lo correcto.
+# ─────────────────────────────────────────────────────────────────────
+# ⭐ EL MES, COMO RANGO DE FECHAS Y NO COMO `EXTRACT`
+#
+# TMT 2026-08-26 (dueña): *"algo más que dure mucho tiempo y podamos bajar"*.
+#
+# Todas estas consultas filtraban el mes así:
+#
+#     WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
+#       AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+#
+# Envolver la columna en una función tiene dos costos, y el segundo es el caro:
+#
+#   1. Ningún índice se puede usar — y `scintela.cheque` ni siquiera tenía uno
+#      sobre `fechad`, que es la fecha con la que se cuenta TODA la cobranza
+#      (migración 0230). Se recorrían los 60.000 cheques enteros en cada carga
+#      del Inicio del vendedor.
+#   2. El planificador queda CIEGO: no sabe estimar cuántas filas caen en un
+#      mes, calcula 1 donde hay 379, y con esa cuenta elige un nested loop
+#      contra el CTE de clientes — 1,5 millones de comparaciones.
+#
+# Medido el 26/08 contra una base sembrada a escala de producción (3.986
+# clientes, 84.000 facturas, 60.000 cheques), el detalle de cobranza de un
+# vendedor pasó de **549 ms a 5 ms**, con el resultado igual fila por fila. Lo
+# único que cambió es la forma de preguntar por el mes.
+#
+# ⚠ El rango va `>= primero del mes` y `< primero del mes SIGUIENTE`, nunca
+# `BETWEEN` con el último día: si alguna de estas columnas algún día guarda una
+# hora, el `BETWEEN` se come el último día del mes y no lo nota nadie hasta que
+# la comisión no cierra.
+
+
+def _rango_mes(anio: int, mes: int) -> tuple[date, date]:
+    """El primer día del mes y el primero del siguiente."""
+    return date(int(anio), int(mes), 1), _primero_del_siguiente(int(anio), int(mes))
+
+
+def _rango_hasta_mes(anio: int, hasta_mes: int) -> tuple[date, date]:
+    """De enero a `hasta_mes` INCLUSIVE, del mismo año."""
+    return date(int(anio), 1, 1), _primero_del_siguiente(int(anio), int(hasta_mes))
+
+
+def _params_mes(anio: int, mes: int) -> dict:
+    """El mes, listo para pegar en el diccionario de parámetros del SQL."""
+    desde, hasta = _rango_mes(anio, mes)
+    return {"f_desde": desde, "f_hasta": hasta}
+
+
+def _params_hasta_mes(anio: int, hasta_mes: int) -> dict:
+    """Lo mismo, para las consultas que van de enero a un mes."""
+    desde, hasta = _rango_hasta_mes(anio, hasta_mes)
+    return {"f_desde": desde, "f_hasta": hasta}
+
+
+def _primero_del_siguiente(anio: int, mes: int) -> date:
+    """Diciembre rueda al año que viene: sin esto, el mes 13 revienta."""
+    return date(anio + 1, 1, 1) if int(mes) >= 12 else date(anio, int(mes) + 1, 1)
+
+
 _CTE_CLI = """
         cli AS (
             SELECT DISTINCT ON (codigo_cli)
@@ -203,8 +263,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    ch.codigo_cli              AS codigo_cli
               FROM scintela.cheque ch
               JOIN cli c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+             WHERE ch.fechad >= %(f_desde)s
+               AND ch.fechad < %(f_hasta)s
                AND ch.stat IN ({_IN_COBRADO})
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
@@ -212,16 +272,16 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    co.codigo_cli              AS codigo_cli
               FROM scintela.cobro co
               JOIN cli c ON c.codigo_cli = co.codigo_cli
-             WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
+             WHERE co.fecha >= %(f_desde)s
+               AND co.fecha < %(f_hasta)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
             UNION
             SELECT UPPER(TRIM(c.vend))        AS codigo,
                    c.codigo_cli               AS codigo_cli
             {_CAJA_COBRO_FROM}
-               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
+               AND k.fecha >= %(f_desde)s
+               AND k.fecha < %(f_hasta)s
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
         ),
         clientes_por_vend AS (
@@ -245,8 +305,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(ch.importe), 0)   AS total
               FROM scintela.cheque ch
               JOIN cli c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-               AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+             WHERE ch.fechad >= %(f_desde)s
+               AND ch.fechad < %(f_hasta)s
                AND ch.stat IN ({_IN_COBRADO})
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
@@ -258,8 +318,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(co.valor), 0)     AS total
               FROM scintela.cobro co
               JOIN cli c ON c.codigo_cli = co.codigo_cli
-             WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
+             WHERE co.fecha >= %(f_desde)s
+               AND co.fecha < %(f_hasta)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
@@ -270,8 +330,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
             SELECT UPPER(TRIM(c.vend))            AS codigo,
                    COALESCE(SUM(k.importe), 0)    AS total
             {_CAJA_COBRO_FROM}
-               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
+               AND k.fecha >= %(f_desde)s
+               AND k.fecha < %(f_hasta)s
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
         ),
@@ -307,8 +367,8 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
                    COALESCE(SUM(f.kg), 0)         AS kg
               FROM scintela.factura f
               JOIN cli c ON c.codigo_cli = f.codigo_cli
-             WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
+             WHERE f.fecha >= %(f_desde)s
+               AND f.fecha < %(f_hasta)s
                AND (f.stat IS NULL OR f.stat <> 'X')
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
@@ -331,7 +391,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
          WHERE v.codigo IN ({_IN_VENDEDORES})
          ORDER BY comision_mes DESC, cobranzas_mes DESC, v.codigo
         """,
-        {"yy": yy, "mm": mm},
+        _params_mes(yy, mm),
     ) or []
 
 
@@ -398,8 +458,8 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
           FROM scintela.cheque ch
           JOIN cli c  ON c.codigo_cli = ch.codigo_cli
           LEFT JOIN scintela.banco b ON b.no_banco = ch.no_banco
-         WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-           AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
+         WHERE ch.fechad >= %(f_desde)s
+           AND ch.fechad < %(f_hasta)s
            AND ch.stat IN ({_IN_COBRADO})
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         UNION ALL
@@ -415,8 +475,8 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
                ''                                 AS stat
           FROM scintela.cobro co
           JOIN cli c ON c.codigo_cli = co.codigo_cli
-         WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
-           AND EXTRACT(MONTH FROM co.fecha) = %(mm)s
+         WHERE co.fecha >= %(f_desde)s
+           AND co.fecha < %(f_hasta)s
            AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         UNION ALL
@@ -434,12 +494,12 @@ def cobranzas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
                'CAJA'                         AS banco,
                'C'                            AS stat
         {_CAJA_COBRO_FROM}
-           AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
-           AND EXTRACT(MONTH FROM k.fecha) = %(mm)s
+           AND k.fecha >= %(f_desde)s
+           AND k.fecha < %(f_hasta)s
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
          ORDER BY fecha, id_origen
         """,
-        {"codigo": codigo, "yy": int(anio), "mm": int(mes)},
+        {"codigo": codigo, **_params_mes(anio, mes)},
     ) or []
 
 
@@ -473,8 +533,8 @@ def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
                    ch.importe                         AS importe
               FROM scintela.cheque ch
               JOIN cli c ON c.codigo_cli = ch.codigo_cli
-             WHERE EXTRACT(YEAR FROM ch.fechad)  = %(yy)s
-               AND EXTRACT(MONTH FROM ch.fechad) <= %(hasta)s
+             WHERE ch.fechad >= %(f_desde)s
+               AND ch.fechad < %(f_hasta)s
                AND ch.stat IN ({_IN_COBRADO})
                AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
             UNION ALL
@@ -483,8 +543,8 @@ def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
                    co.valor                          AS importe
               FROM scintela.cobro co
               JOIN cli c ON c.codigo_cli = co.codigo_cli
-             WHERE EXTRACT(YEAR FROM co.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM co.fecha) <= %(hasta)s
+             WHERE co.fecha >= %(f_desde)s
+               AND co.fecha < %(f_hasta)s
                AND UPPER(COALESCE(co.tipo_doc, '')) NOT LIKE '%%CHE%%'
                AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
             UNION ALL
@@ -492,8 +552,8 @@ def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
                    TRIM(c.codigo_cli)                AS codigo_cli,
                    k.importe                         AS importe
             {_CAJA_COBRO_FROM}
-               AND EXTRACT(YEAR FROM k.fecha)  = %(yy)s
-               AND EXTRACT(MONTH FROM k.fecha) <= %(hasta)s
+               AND k.fecha >= %(f_desde)s
+               AND k.fecha < %(f_hasta)s
                AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
         )
         SELECT mes, codigo_cli, COALESCE(SUM(importe), 0) AS cobrado
@@ -501,7 +561,7 @@ def cobranzas_por_cliente_anio(codigo: str, *, anio: int,
          GROUP BY mes, codigo_cli
          ORDER BY mes DESC, cobrado DESC
         """,
-        {"codigo": codigo, "yy": int(anio), "hasta": int(hasta_mes)},
+        {"codigo": codigo, **_params_hasta_mes(anio, hasta_mes)},
     ) or []
 
 
@@ -516,13 +576,13 @@ def ventas_detalle(codigo: str, *, anio: int, mes: int) -> list[dict]:
                COALESCE(c.nombre, '')   AS cliente
           FROM scintela.factura f
           JOIN cli c ON c.codigo_cli = f.codigo_cli
-         WHERE EXTRACT(YEAR FROM f.fecha)  = %(yy)s
-           AND EXTRACT(MONTH FROM f.fecha) = %(mm)s
+         WHERE f.fecha >= %(f_desde)s
+           AND f.fecha < %(f_hasta)s
            AND (f.stat IS NULL OR f.stat <> 'X')
            AND UPPER(TRIM(c.vend)) = UPPER(TRIM(%(codigo)s))
          ORDER BY f.fecha, f.id_factura
         """,
-        {"codigo": codigo, "yy": int(anio), "mm": int(mes)},
+        {"codigo": codigo, **_params_mes(anio, mes)},
     ) or []
 
 

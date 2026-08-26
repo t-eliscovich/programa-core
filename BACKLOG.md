@@ -225,39 +225,16 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
-### [M] `cheque.fechad` no tiene índice, y el SQL igual no lo podría usar
+### [S] `/comisiones/debug` sigue preguntando el mes con EXTRACT
 
-Medido el 26/08 contra una base local sembrada a escala de producción (3.986
-clientes, 84.000 facturas, 60.000 cheques), mientras se buscaba qué más tarda.
-
-`comisiones.queries.cobranzas_detalle` —la consulta del Inicio del vendedor y
-de la pantalla de comisiones— filtra el mes así:
-
-    WHERE EXTRACT(YEAR FROM ch.fechad) = %(yy)s
-      AND EXTRACT(MONTH FROM ch.fechad) = %(mm)s
-
-Envolver la columna en una función tiene dos costos, y el segundo es el caro:
-
-1. **Ningún índice se puede usar** — y de hecho `scintela.cheque` no tiene
-   ninguno sobre `fechad`, que es la fecha con la que se cuenta TODA la
-   cobranza. Se recorren los 60.000 cheques enteros en cada carga.
-2. **El planificador queda ciego**: estima 1 fila donde hay 379, elige un
-   nested loop contra el CTE de clientes y compara 1,5 millones de pares.
-
-Reescrito a un rango de fechas —`fechad >= '2026-08-01' AND fechad <
-'2026-09-01'`, que es exactamente lo mismo— con el mismo resultado fila por
-fila (57 de 57):
-
-| | ms |
-|---|---|
-| como está hoy | **549** |
-| con el rango | **5** |
-
-Falta: la migración con el índice `cheque(fechad)` y pasar a rango los
-`EXTRACT(YEAR/MONTH)` de `modules/comisiones` (14 en queries.py, 8 en
-views.py). El patrón está en otros 60 lugares (`informes/queries.py` tiene 40),
-pero ahí hay que medir uno por uno antes de tocar: varios son sobre tablas
-chicas donde no cambia nada.
+El 26/08 se pasaron a rango de fechas las 14 consultas de
+`modules/comisiones/queries.py` (ver la migración 0230 y el comentario de
+`_rango_mes`). Las 8 de `modules/comisiones/views.py` quedaron como estaban a
+propósito: son el endpoint `/comisiones/debug`, que existe para comparar cuántos
+cheques caen en el mes según `fechad`, `fecha`, `fechaing` y `fechaout` — cuatro
+columnas de la misma tabla, con `COUNT(*) FILTER`. Eso recorre la tabla entera
+por definición y ningún índice lo cambia. Si algún día ese endpoint molesta, lo
+que hay que revisar es si sigue haciendo falta, no cómo filtra.
 
 ### [M] El piso de /facturas ahora es el SERVIDOR, no el HTML
 
