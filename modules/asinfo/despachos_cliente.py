@@ -182,6 +182,24 @@ def _limpio(valor) -> str:
 #: todo los últimos números, así ocupa menos"*.
 DIGITOS_A_LA_VISTA = 6
 
+#: Las categorías de Asinfo que NO se cuentan por rollos. TMT 26/08: *"cuando
+#: sea cuellos o RIB ponele una u"*.
+#:
+#: Medido el 26/08 sobre 3 meses, y el corte no deja dudas: Puños pesa 2,40 kg
+#: por renglón, Cuellos 2,72 y Rib 6,09, contra las diez telas que están todas
+#: entre 18 y 21,3 — o sea, un rollo. Se va por la CATEGORÍA de Asinfo
+#: (`nombre_categoria_producto`) y no por el nombre del producto: el nombre lo
+#: escribe una persona y la categoría es la del maestro.
+POR_UNIDAD = {"PUNOS", "CUELLOS", "RIB"}
+
+
+def _por_unidad(categoria: str) -> bool:
+    """¿Esto se cuenta en unidades y no en rollos?"""
+    limpia = (categoria or "").strip().upper()
+    limpia = limpia.replace("Ñ", "N").replace("Á", "A").replace("É", "E") \
+                   .replace("Í", "I").replace("Ó", "O").replace("Ú", "U")
+    return limpia in POR_UNIDAD
+
 
 def corto(valor) -> str:
     """El número como lo dice una persona: los últimos dígitos, sin ceros.
@@ -251,7 +269,8 @@ def de_cliente(codigo: str, ruc: str, meses: int = MESES_DEFAULT) -> dict:
     """
     meses = MESES_DEFAULT if not meses else max(1, min(int(meses), MESES_MAX))
     vacio = {"ok": False, "sin_ruc": False, "guias": [], "kg": 0.0,
-             "devuelto": 0.0, "rollos": 0, "desde": _hoy_ec(), "meses": meses}
+             "devueltos": 0, "rollos": 0, "unidades": 0,
+             "desde": _hoy_ec(), "meses": meses}
     cod, r10 = _quien(codigo, ruc)
     if not cod:
         return vacio
@@ -263,17 +282,23 @@ def de_cliente(codigo: str, ruc: str, meses: int = MESES_DEFAULT) -> dict:
         return guardado
 
     desde = _hoy_ec() - timedelta(days=int(meses * 30.5))
+    # ⚠ Un renglón por GUÍA y por CATEGORÍA: la categoría es la que decide si
+    # eso se cuenta en rollos o en unidades, y una guía puede traer las dos
+    # cosas (telas y cuellos en el mismo viaje). Se junta acá abajo.
     sql = f"""
         SELECT dc.numero                                      AS guia,
                CONVERT(varchar(10), dc.fecha, 120)            AS dia,
+               ISNULL(p.nombre_categoria_producto, '')        AS categoria,
                ROUND(SUM(ISNULL(dd.cantidad, 0)), 2)          AS kg,
-               ROUND(SUM(ISNULL(dd.cantidad_devuelta, 0)), 2) AS devuelto,
-               COUNT(*)                                       AS rollos,
+               SUM(CASE WHEN ISNULL(dd.cantidad_devuelta, 0) <> 0
+                        THEN 1 ELSE 0 END)                    AS devueltos,
+               COUNT(*)                                       AS cuantos,
                MAX(ISNULL(fc.numero, ''))                     AS factura
           FROM despacho_cliente dc
           JOIN detalle_despacho_cliente dd
             ON dd.id_despacho_cliente = dc.id_despacho_cliente
           JOIN empresa e ON e.id_empresa = dc.id_empresa
+          LEFT JOIN producto p ON p.id_producto = dd.id_producto
           LEFT JOIN detalle_factura_cliente dfc
             ON dfc.id_detalle_despacho_cliente = dd.id_detalle_despacho_cliente
           LEFT JOIN factura_cliente fc
@@ -282,36 +307,48 @@ def de_cliente(codigo: str, ruc: str, meses: int = MESES_DEFAULT) -> dict:
          WHERE {_filtro_del_cliente(cod, r10)}
            AND dc.fecha_anulacion IS NULL
            AND dc.fecha >= '{desde.isoformat()}'
-         GROUP BY dc.numero, CONVERT(varchar(10), dc.fecha, 120)
+         GROUP BY dc.numero, CONVERT(varchar(10), dc.fecha, 120),
+                  p.nombre_categoria_producto
          ORDER BY 2 DESC, 1 DESC
     """
-    filas = _consultar(sql, TOPE_GUIAS)
+    filas = _consultar(sql, TOPE_GUIAS * 3)
     if filas is None:
         return vacio
 
-    guias = []
+    juntas: dict[str, dict] = {}
     for f in filas:
         numero = _limpio(f.get("guia"))
         kg = _num(f.get("kg"))
-        if not numero or kg <= 0:
+        cuantos = int(_num(f.get("cuantos"), 0))
+        if not numero or kg <= 0 or cuantos <= 0:
             continue
         factura = _limpio(f.get("factura"))
-        guias.append({
-            "numero": numero,
-            "corto": corto(numero),
-            "dia": _limpio(f.get("dia")),
-            "kg": kg,
-            "devuelto": _num(f.get("devuelto")),
-            "rollos": int(_num(f.get("rollos"), 0)),
-            "factura": factura,
-            "factura_corta": corto(factura),
+        g = juntas.setdefault(numero, {
+            "numero": numero, "corto": corto(numero),
+            "dia": _limpio(f.get("dia")), "kg": 0.0,
+            "rollos": 0, "unidades": 0, "devueltos": 0,
+            "factura": factura, "factura_corta": corto(factura),
         })
+        if factura and not g["factura"]:
+            g["factura"], g["factura_corta"] = factura, corto(factura)
+        # Los kilos NO se muestran (TMT 26/08: *"nada de kilos"*), pero se
+        # siguen trayendo: son los que tienen que dar iguales a
+        # `scintela.factura.kg`, que es la red de esta consulta.
+        g["kg"] = round(g["kg"] + kg, 2)
+        g["devueltos"] += int(_num(f.get("devueltos"), 0))
+        if _por_unidad(f.get("categoria")):
+            g["unidades"] += cuantos
+        else:
+            g["rollos"] += cuantos
+
+    guias = list(juntas.values())
     salida = {
         "ok": True, "sin_ruc": False, "guias": guias, "meses": meses,
         "desde": desde,
         "kg": round(sum(g["kg"] for g in guias), 2),
-        "devuelto": round(sum(g["devuelto"] for g in guias), 2),
+        "devueltos": sum(g["devueltos"] for g in guias),
         "rollos": sum(g["rollos"] for g in guias),
+        "unidades": sum(g["unidades"] for g in guias),
     }
     _guardar(("lista", cod, r10, meses), salida)
     return salida
@@ -332,8 +369,8 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
     """
     num = (numero or "").strip().upper()
     vacio = {"ok": False, "existe": False, "dia": "", "factura": "",
-             "factura_corta": "", "kg": 0.0, "devuelto": 0.0, "rollos": 0,
-             "telas": [], "numero": num, "corto": corto(num)}
+             "factura_corta": "", "kg": 0.0, "devueltos": 0, "rollos": 0,
+             "unidades": 0, "telas": [], "numero": num, "corto": corto(num)}
     cod, r10 = _quien(codigo, ruc)
     if not cod or not r10 or not _GUIA_RE.match(num):
         return vacio
@@ -346,6 +383,7 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
         SELECT CONVERT(varchar(10), dc.fecha, 120)          AS dia,
                ISNULL(p.nombre, '')                         AS producto,
                ISNULL(p.codigo, '')                         AS pcod,
+               ISNULL(p.nombre_categoria_producto, '')      AS categoria,
                ISNULL(dd.codigo_lote, '')                   AS lote,
                ROUND(ISNULL(dd.cantidad, 0), 2)             AS kg,
                ROUND(ISNULL(dd.cantidad_devuelta, 0), 2)    AS devuelto,
@@ -377,17 +415,17 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
         dia = dia or _limpio(f.get("dia"))
         factura = factura or _limpio(f.get("factura"))
         nombre = _limpio(f.get("producto")) or _limpio(f.get("pcod")) or "(sin nombre)"
-        t = telas.setdefault(nombre, {"producto": nombre,
-                                      "codigo": _limpio(f.get("pcod")),
-                                      "rollos": 0, "kg": 0.0,
-                                      "devuelto": 0.0, "rollos_devueltos": 0,
-                                      "lotes": [], "lotes_cortos": []})
-        t["rollos"] += 1
+        t = telas.setdefault(nombre, {
+            "producto": nombre, "codigo": _limpio(f.get("pcod")),
+            # Cuellos, Rib y Puños se cuentan en unidades; las telas, en
+            # rollos. Lo dice la categoría del maestro de Asinfo.
+            "por_unidad": _por_unidad(f.get("categoria")),
+            "cuantos": 0, "kg": 0.0, "devueltos": 0,
+            "lotes": [], "lotes_cortos": []})
+        t["cuantos"] += 1
         t["kg"] = round(t["kg"] + _num(f.get("kg")), 2)
-        devuelto = _num(f.get("devuelto"))
-        if devuelto:
-            t["devuelto"] = round(t["devuelto"] + devuelto, 2)
-            t["rollos_devueltos"] += 1
+        if _num(f.get("devuelto")):
+            t["devueltos"] += 1
         lote = _limpio(f.get("lote"))
         if lote and lote not in t["lotes"]:
             t["lotes"].append(lote)
@@ -401,8 +439,9 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
         "dia": dia, "factura": factura, "factura_corta": corto(factura),
         "telas": orden,
         "kg": round(sum(t["kg"] for t in orden), 2),
-        "devuelto": round(sum(t["devuelto"] for t in orden), 2),
-        "rollos": sum(t["rollos"] for t in orden),
+        "devueltos": sum(t["devueltos"] for t in orden),
+        "rollos": sum(t["cuantos"] for t in orden if not t["por_unidad"]),
+        "unidades": sum(t["cuantos"] for t in orden if t["por_unidad"]),
     }
     _guardar(("guia", cod, r10, num), salida)
     return salida

@@ -82,18 +82,43 @@ def _asinfo(monkeypatch, falso):
 #: El RUC de AJO. Va en cada llamada porque el código solo no identifica.
 RUC = "1793217341001"
 
-UNA_GUIA = [{"guia": "DES-000096562", "dia": "2026-08-26", "kg": 354.25,
-             "rollos": 20, "devuelto": 0, "factura": "001-099-000182687"}]
+UNA_GUIA = [{"guia": "DES-000096562", "dia": "2026-08-26", "categoria": "Fleece",
+             "kg": 354.25, "cuantos": 20, "devueltos": 0,
+             "factura": "001-099-000182687"}]
+
+#: La misma guía, con las dos cosas que viajan juntas en un camión: telas
+#: (rollos) y cuellos (unidades). Asinfo las devuelve en renglones separados
+#: porque la consulta agrupa por categoría.
+GUIA_MIXTA = UNA_GUIA + [{"guia": "DES-000096562", "dia": "2026-08-26",
+                          "categoria": "Cuellos", "kg": 8.4, "cuantos": 3,
+                          "devueltos": 0, "factura": "001-099-000182687"}]
 
 ROLLOS = [
     {"dia": "2026-08-26", "producto": "Fleece 96 Perchado JFP", "pcod": "FE96JFP",
-     "lote": "2/8-0004177689", "kg": 21.4, "factura": "001-099-000182687"},
+     "categoria": "Fleece", "lote": "2/8-0004177689", "kg": 21.4, "devuelto": 0,
+     "factura": "001-099-000182687"},
     {"dia": "2026-08-26", "producto": "Fleece 96 Perchado JFP", "pcod": "FE96JFP",
-     "lote": "2/8-0004177690", "kg": 21.1, "factura": "001-099-000182687"},
+     "categoria": "Fleece", "lote": "2/8-0004177690", "kg": 21.1, "devuelto": 0,
+     "factura": "001-099-000182687"},
     {"dia": "2026-08-26", "producto": "Fleece 96 Perchado JFP", "pcod": "FE96JFP",
-     "lote": "2/8-0004177690", "kg": 20.5, "factura": "001-099-000182687"},
+     "categoria": "Fleece", "lote": "2/8-0004177690", "kg": 20.5, "devuelto": 0,
+     "factura": "001-099-000182687"},
     {"dia": "2026-08-26", "producto": "Kiana 415x90 BOT", "pcod": "KI41BOT",
-     "lote": "4/4-0003973799", "kg": 22.0, "factura": "001-099-000182687"},
+     "categoria": "Poliester", "lote": "4/4-0003973799", "kg": 22.0, "devuelto": 0,
+     "factura": "001-099-000182687"},
+]
+
+#: Cuellos, Rib y Puños NO son rollos: van en unidades. Ver `POR_UNIDAD`.
+ACCESORIOS = [
+    {"dia": "2026-08-26", "producto": "Cuellos T40 MAR", "pcod": "C40MAR",
+     "categoria": "Cuellos", "lote": "0004212300", "kg": 3.55, "devuelto": 0,
+     "factura": "001-099-000182687"},
+    {"dia": "2026-08-26", "producto": "Rib Acanalado JOS", "pcod": "RAJOS",
+     "categoria": "Rib", "lote": "0004212311", "kg": 4.85, "devuelto": 0,
+     "factura": "001-099-000182687"},
+    {"dia": "2026-08-26", "producto": "Puños MAR", "pcod": "PUMAR",
+     "categoria": "Puños", "lote": "0004212306", "kg": 2.40, "devuelto": 0,
+     "factura": "001-099-000182687"},
 ]
 
 
@@ -264,10 +289,60 @@ def test_la_guia_se_agrupa_por_tela_y_cuenta_los_rollos(monkeypatch):
     assert [t["producto"] for t in r["telas"]] == ["Fleece 96 Perchado JFP",
                                                    "Kiana 415x90 BOT"]
     fleece = r["telas"][0]
-    assert fleece["rollos"] == 3
-    assert fleece["kg"] == 63.0
-    assert r["rollos"] == 4
-    assert r["kg"] == 85.0
+    assert fleece["cuantos"] == 3
+    assert fleece["por_unidad"] is False
+    assert r["rollos"] == 4 and r["unidades"] == 0
+
+
+def test_cuellos_rib_y_punos_van_en_UNIDADES(monkeypatch):
+    """⭐ TMT 26/08: *"cuando sea cuellos o RIB ponele una u"*. Y el dato le da
+    la razón: medido sobre 3 meses, Puños pesa 2,40 kg por renglón, Cuellos
+    2,72 y Rib 6,09, contra las diez telas que están todas entre 18 y 21,3 —
+    o sea, un rollo. No son rollos, son piezas."""
+    _asinfo(monkeypatch, Falso(ACCESORIOS))
+    r = dsp.guia("AJO", RUC, "DES-000096562")
+    assert r["unidades"] == 3
+    assert r["rollos"] == 0
+    assert all(t["por_unidad"] for t in r["telas"])
+
+
+def test_la_categoria_manda_aunque_venga_con_enie_o_en_minuscula():
+    """`Puños` viene del maestro de Asinfo tal como lo escribieron. Si la
+    comparación fuera literal, los puños se contarían como rollos."""
+    assert dsp._por_unidad("Puños") is True
+    assert dsp._por_unidad("PUNOS") is True
+    assert dsp._por_unidad(" rib ") is True
+    assert dsp._por_unidad("Cuellos") is True
+    assert dsp._por_unidad("Fleece") is False
+    assert dsp._por_unidad("") is False
+
+
+def test_una_guia_con_telas_y_cuellos_cuenta_las_dos_cosas(monkeypatch):
+    """Viajan juntas en el mismo camión: la lista tiene que decir las dos."""
+    _asinfo(monkeypatch, Falso(GUIA_MIXTA))
+    g = dsp.de_cliente("AJO", RUC)["guias"]
+    assert len(g) == 1, "las dos categorías son UNA guía, no dos"
+    assert g[0]["rollos"] == 20 and g[0]["unidades"] == 3
+
+
+def test_la_pantalla_NO_muestra_kilos():
+    """⭐ TMT 26/08: *"o sea nada de kilos, reemplazalo por rollos"*. El cliente
+    cuenta bultos cuando le llega el camión. Los kilos siguen en el estado de
+    cuenta y en la factura, que es donde se discute la plata."""
+    for texto in (LISTA_COMPARTIDA, GUIA_COMPARTIDA):
+        sin_comentarios = re.sub(r"\{#.*?#\}", "", texto, flags=re.S)
+        # 🚨 `kg` suelto y no `"kg" in ...`: la palabra "background" lo trae
+        # adentro, y el test pasaba a rojo por la hoja de estilos.
+        assert not re.search(r"\bkg\b", sin_comentarios)
+        assert "num_es" not in sin_comentarios, "no quedó ni un número con decimales"
+        assert "rollo" in sin_comentarios.lower()
+
+
+def test_los_kilos_igual_se_traen(monkeypatch):
+    """No se muestran, pero se siguen trayendo: son los que tienen que dar
+    iguales a `scintela.factura.kg` — la red de toda esta consulta."""
+    _asinfo(monkeypatch, Falso(UNA_GUIA))
+    assert dsp.de_cliente("AJO", RUC)["kg"] == 354.25
 
 
 def test_el_lote_repetido_se_nombra_UNA_vez(monkeypatch):
@@ -284,34 +359,33 @@ def test_las_telas_van_de_mayor_a_menor(monkeypatch):
     assert kilos == sorted(kilos, reverse=True)
 
 
-def test_lo_devuelto_se_MARCA_pero_no_se_resta(monkeypatch):
+def test_lo_devuelto_se_MARCA_pero_no_se_descuenta(monkeypatch):
     """🚨 El segundo hallazgo del 26/08. `cantidad_devuelta` sí es mercadería
-    que volvió —875 líneas y 15.033 kg en 3 meses—, pero la factura cobra el
-    BRUTO: la devolución se corrige con otro documento (medido en MTR, guía
+    que volvió —875 líneas y 15.033 kg en 3 meses—, pero la factura cobra lo
+    que SALIÓ: la devolución se corrige con otro documento (medido en MTR, guía
     DES-000096186: factura por $354,99 y devolución por los mismos $354,99 al
     día siguiente).
 
-    Cruzado contra `scintela.factura.kg`: los kilos del bruto coinciden en 515
-    de 515 facturas. Si acá se restara, esta pantalla diría kilos distintos de
-    los de la factura que el cliente tiene en la mano."""
+    Cruzado contra `scintela.factura.kg`: los kilos coinciden en 515 de 515
+    facturas. Si acá se descontara, esta pantalla diría algo distinto de la
+    factura que el cliente tiene en la mano."""
     rollos = [{**ROLLOS[0], "devuelto": 21.4},
               {**ROLLOS[1], "devuelto": 0},
               {**ROLLOS[3], "devuelto": 22.0}]
     _asinfo(monkeypatch, Falso(rollos))
     r = dsp.guia("AJO", RUC, "DES-000096562")
-    assert r["kg"] == 64.5, "los kilos son los del papel, sin restar"
-    assert r["devuelto"] == 43.4
+    assert r["rollos"] == 3, "los rollos son los que salieron, sin descontar"
+    assert r["devueltos"] == 2
     fleece = next(t for t in r["telas"] if t["producto"].startswith("Fleece"))
-    assert fleece["rollos"] == 2 and fleece["kg"] == 42.5
-    assert fleece["devuelto"] == 21.4 and fleece["rollos_devueltos"] == 1
+    assert fleece["cuantos"] == 2 and fleece["devueltos"] == 1
 
 
-def test_la_lista_tambien_dice_cuanto_volvio(monkeypatch):
-    _asinfo(monkeypatch, Falso([{**UNA_GUIA[0], "devuelto": 40.85}]))
+def test_la_lista_tambien_dice_cuantos_volvieron(monkeypatch):
+    _asinfo(monkeypatch, Falso([{**UNA_GUIA[0], "devueltos": 2}]))
     r = dsp.de_cliente("AJO", RUC)
-    assert r["guias"][0]["kg"] == 354.25
-    assert r["guias"][0]["devuelto"] == 40.85
-    assert r["devuelto"] == 40.85
+    assert r["guias"][0]["rollos"] == 20
+    assert r["guias"][0]["devueltos"] == 2
+    assert r["devueltos"] == 2
 
 
 def test_la_pantalla_nombra_lo_devuelto():
@@ -414,11 +488,11 @@ def test_el_estado_de_cuenta_linkea_los_despachos():
     assert '"/despachos"' in sin_comentarios
 
 
-def test_la_pantalla_muestra_lote_kilos_y_factura():
-    """Lo que el plan pidió mostrar: es lo que el cliente tiene impreso en la
-    etiqueta de cada rollo y en su guía."""
-    assert "Factura" in LISTA_COMPARTIDA and "Kilos" in LISTA_COMPARTIDA
-    assert "Lote" in GUIA_COMPARTIDA and "Rollos" in GUIA_COMPARTIDA
+def test_la_pantalla_muestra_lote_rollos_y_factura():
+    """Lo que el plan pidió mostrar, ya sin kilos: es lo que el cliente tiene
+    impreso en la etiqueta de cada rollo y en su guía."""
+    assert "Factura" in LISTA_COMPARTIDA and "Rollos" in LISTA_COMPARTIDA
+    assert "Lote" in GUIA_COMPARTIDA and "rollo" in GUIA_COMPARTIDA
 
 
 # ---------------------------------------------------------------------------

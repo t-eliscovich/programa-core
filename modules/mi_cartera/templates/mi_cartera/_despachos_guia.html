@@ -5,6 +5,10 @@
    llevó" se contesta con las telas y la cuenta de rollos, igual que el bloque
    de la factura.
 
+   ⭐ ACÁ NO HAY KILOS (TMT 26/08). Se cuenta en rollos, y Cuellos, Rib y Puños
+   en **u**: no son rollos —pesan 2,4 · 2,7 · 6,1 kg contra los ~21 de un rollo
+   de tela— y lo dice la categoría del maestro de Asinfo.
+
    Quien incluye pasa `g`, lo que devuelve `asinfo.despachos_cliente.guia`.
    ⚠ La CSS va acá adentro: un parcial viaja CON su CSS. #}
 
@@ -15,13 +19,13 @@
   </div>
 {% else %}
   <div class="hero">
-    <div class="lbl">Kilos de este despacho</div>
-    <div class="val">{{ g.kg|num_es(2) }} kg</div>
+    <div class="lbl">Lo que salió en este despacho</div>
+    <div class="val">{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}{%
+      if g.unidades %} <span class="chico">+ {{ g.unidades }} u</span>{% endif %}</div>
     <div class="sub">
-      {{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }} ·
       {{ g.telas|length }} tela{{ '' if g.telas|length == 1 else 's' }} ·
       {% if g.factura %}factura <span title="{{ g.factura }}">{{ g.factura_corta }}</span>{% else %}todavía sin factura{% endif %}
-      {% if g.devuelto %}<br>Incluye {{ g.devuelto|num_es(2) }} kg devueltos{% endif %}
+      {% if g.devueltos %}<br>Incluye {{ g.devueltos }} que devolvió{% endif %}
     </div>
   </div>
 
@@ -30,8 +34,7 @@
       <thead>
         <tr>
           <th>Tela</th>
-          <th class="der">Rollos</th>
-          <th class="der">Kilos</th>
+          <th class="der">Cuántos</th>
         </tr>
       </thead>
       <tbody>
@@ -40,26 +43,26 @@
           <td class="fac">
             <b>{{ t.producto }}</b>
             {# Los lotes: es lo que está impreso en la etiqueta de cada rollo,
-               y por lo que el cliente llama cuando algo no coincide. #}
+               y por lo que el cliente llama cuando algo no coincide. Cortos
+               en pantalla, enteros en el `title`. #}
             {% if t.lotes %}<small title="{{ t.lotes|join(' · ') }}">Lote{{ '' if t.lotes|length == 1 else 's' }}:
               {{ t.lotes_cortos|join(' · ') }}</small>{% endif %}
-            {# Lo devuelto se NOMBRA y no se resta: la factura cobra el bruto y
-               la devolución se corrige con otro documento. Si acá se restara,
-               esta pantalla diría kilos distintos de los de la factura. #}
-            {% if t.devuelto %}<small class="dev">Devolvió
-              {{ t.rollos_devueltos }} rollo{{ '' if t.rollos_devueltos == 1 else 's' }} ·
-              {{ t.devuelto|num_es(2) }} kg</small>{% endif %}
+            {# Lo devuelto se NOMBRA y no se descuenta: la factura cobra lo que
+               salió y la devolución se corrige con otro documento. Si acá se
+               restara, esta pantalla diría algo distinto de la factura. #}
+            {% if t.devueltos %}<small class="dev">Devolvió {{ t.devueltos }}</small>{% endif %}
           </td>
-          <td class="der nowrap">{{ t.rollos }}</td>
-          <td class="der nowrap">{{ t.kg|num_es(2) }}</td>
+          <td class="der nowrap">
+            {{ t.cuantos }}{% if t.por_unidad %} u{% else %} rollo{{ '' if t.cuantos == 1 else 's' }}{% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="tot">
           <td>Total</td>
-          <td class="der">{{ g.rollos }}</td>
-          <td class="der">{{ g.kg|num_es(2) }}</td>
+          <td class="der">{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}{%
+            if g.unidades %} · {{ g.unidades }} u{% endif %}</td>
         </tr>
       </tfoot>
     </table>
@@ -69,6 +72,8 @@
 <style>
   .vacio{padding:18px 16px;font-size:14px;line-height:1.5}
   .vacio p{margin:6px 0 0;color:var(--ink-2)}
+
+  .hero .val .chico{font-size:.55em;font-weight:600;color:var(--ink-2)}
 
   .desp .der{text-align:right}
   .desp td.fac small{display:block;color:var(--ink-3);font-size:11.5px;
