@@ -87,6 +87,11 @@
   .sri td{padding:2.5pt 4pt;border:.6pt solid #000}
   .sri td.v{text-align:right;width:78pt}
   .sri tr.grande td{font-size:8pt}
+  .cuadro{width:240pt;margin-bottom:6pt}
+  .cuadro td{padding:2.5pt 4pt;border:.6pt solid #000}
+  .cuadro td.v{text-align:right;width:70pt}
+  .cuadro td.p{text-align:right;width:34pt}
+  .cuadro tr.fin td{font-weight:700}
   .arts td{padding:1.5pt 3pt;border-bottom:.35pt solid #d4d4d4}
   .arts td.v{text-align:right;width:36pt}
   .cierre{margin-top:8pt;font-size:6.5pt;color:#444;
@@ -151,7 +156,10 @@
     <div class="fila"><span class="k">Dirección:</span><span>{{ p.cliente.direccion }}{% if p.cliente.ciudad %}, {{ p.cliente.ciudad }}{% endif %}</span></div>
     <div class="fila">
       <span class="k">Emisión:</span><span style="width:110pt;flex:none">{{ p.cabecera.fecha }}</span>
-      <span class="k2">Teléfono:</span><span>{{ p.cliente.telefono }}</span>
+      <span class="k2">Guía Remisión SRI:</span><span>{{ p.cabecera.guia }}</span>
+    </div>
+    <div class="fila">
+      <span class="k">Teléfono:</span><span>{{ p.cliente.telefono }}</span>
     </div>
     <div class="fila"><span class="k">Correo E.:</span><span>{{ p.cliente.email }}</span></div>
   </div>
@@ -197,7 +205,19 @@
         <div style="margin-bottom:5pt">Forma de Pago SRI: {{ p.cabecera.forma_pago }}
           {{ p.cabecera.forma_pago_texto }}</div>
       {% endif %}
-      <div style="margin-bottom:2pt"><b>Total Artículos</b></div>
+      {% if p.totales.desc_contado %}
+      <table class="cuadro">
+        <tr><td>Valor Factura</td><td class="v">{{ p.totales.valor_factura | num_es(2) }}</td></tr>
+        <tr><td>Descuento Contado</td><td class="p">{{ p.totales.pct1 | num_es(0) }} %</td>
+            <td class="v">{{ p.totales.desc_contado | num_es(2) }}</td></tr>
+        {% if p.totales.desc_volumen %}
+        <tr><td>Descuento Volumen</td><td class="p">{{ p.totales.pct2 | num_es(0) }} %</td>
+            <td class="v">{{ p.totales.desc_volumen | num_es(2) }}</td></tr>
+        {% endif %}
+        <tr class="fin"><td>Total</td><td></td><td class="v">{{ p.totales.total | num_es(2) }}</td></tr>
+      </table>
+      {% endif %}
+      <div style="margin:6pt 0 2pt"><b>Total Artículos</b></div>
       <table class="arts">
         {% for nombre, cuantos in p.articulos %}
         <tr><td>{{ nombre }}</td><td class="v">{{ cuantos }}</td></tr>

@@ -37,7 +37,25 @@ Este módulo devuelve todo lo que el papel necesita. La plantilla sólo dibuja.
 5. **El "Total" de kilos sale de `dfc.cantidad`** — y no todo renglón es un
    kilo: el flete entra como una unidad (categoría SERVICIOS). Se suma aparte,
    igual que en `factura_lineas`.
-6. **Hay facturas de 192 renglones.** El 6,5% pasa de 26, que es lo que entra
+6. **El cuadro de descuentos del papel NO resta.** Abajo a la izquierda,
+   Asinfo imprime *Valor Factura − Descuento Contado − Descuento Volumen =
+   Total*, y esa resta no da: en la 001-099-000182675 dice 3.207,19 − 146,42 −
+   389,47, que son 2.671,30, contra los 2.620,30 de la factura. La cuenta que
+   hace es ésta, sacada de comparar DOS papeles con segundos tramos distintos
+   (14% y 8%):
+
+       Valor Factura     = Σ redondear(precio_linea × 1,15)
+       Descuento Contado = redondear(bruto × pct1% × 1,05)
+       Descuento Volumen = redondear((bruto − bruto × pct1%) × pct2% × 1,05)
+
+   El 1,05 es el error: donde va el IVA, Asinfo pone 5%. Se copia igual —el
+   cliente ya tiene ese papel y un número distinto lo hace dudar de si es la
+   misma factura—, y el *Total* del cuadro es el total de verdad, así que la
+   hoja nunca miente en el número que importa. ⚠ El 1,05 podría ser
+   `1 + pct1/100` en vez de una constante: en las dos facturas medidas el
+   contado era 5%, como en 299.425 de los 313.000 renglones de 2025-2026.
+
+7. **Hay facturas de 192 renglones.** El 6,5% pasa de 26, que es lo que entra
    en una carilla: la hoja PAGINA sola y repite el encabezado de la tabla.
 
 Fail-soft, como todo lo que cuelga de Asinfo: si el ERP no contesta, la hoja
@@ -74,6 +92,11 @@ DIRECCION_INTELA = "DUCHICELA N2-150 9 DE AGOSTO CALDERON"
 
 #: Las formas de pago del SRI. El papel imprime el código Y el texto, y el
 #: código que guarda Asinfo es el del SRI, no el suyo propio.
+#: El factor con el que Asinfo arma el cuadro de descuentos de abajo a la
+#: izquierda. Donde tendría que ir el IVA (1,15) pone 1,05, y por eso ese
+#: cuadro no resta. Se copia tal cual: ver el punto 6.
+FACTOR_CUADRO = 1.05
+
 FORMAS_PAGO = {
     "01": "Sin utilización del sistema financiero",
     "15": "Compensación de deudas",
@@ -130,6 +153,7 @@ SELECT LTRIM(RTRIM(ISNULL(fc.numero, '')))                    AS numero,
        sri.ambiente                                           AS ambiente,
        sri.tipo_emision                                       AS tipo_emision,
        sri.fecha_autorizacion                                 AS fecha_autorizacion,
+       LTRIM(RTRIM(ISNULL(gui.numero, '')))                   AS guia,
        LTRIM(RTRIM(ISNULL(sri.direccion_matriz, '')))         AS emi_matriz,
        LTRIM(RTRIM(ISNULL(sri.direccion_sucursal, '')))       AS emi_sucursal,
        sri.base_imponible_diferente_cero                      AS base,
@@ -161,6 +185,8 @@ SELECT LTRIM(RTRIM(ISNULL(fc.numero, '')))                    AS numero,
   JOIN producto pr ON pr.id_producto = dfc.id_producto
   LEFT JOIN factura_clienteSRI sri
     ON sri.id_factura_cliente = fc.id_factura_cliente
+  LEFT JOIN guia_remision gui
+    ON gui.id_factura_cliente = fc.id_factura_cliente
   LEFT JOIN empresa em ON em.id_empresa = fc.id_empresa
   LEFT JOIN direccion_empresa dir
     ON dir.id_direccion_empresa = fc.id_direccion_empresa
@@ -196,7 +222,8 @@ def armar(filas: list[dict]) -> dict:
     renglones: list[dict] = []
     articulos: dict[str, int] = {}
     kilos = 0.0
-    bruto = 0.0
+    bruto = 0.0            # Σ precio_linea CON IVA — el "Valor Factura"
+    neto_sin_iva = 0.0     # Σ precio_linea sin IVA — la base del cuadro
     descuento = 0.0
     total = 0.0
     pcts: list[tuple[float, float]] = []
@@ -223,6 +250,7 @@ def armar(filas: list[dict]) -> dict:
             "servicio": servicio,
         })
         bruto += round(b * (1 + IVA), 2)
+        neto_sin_iva += b
         descuento += fila_desc
         total += fila_total
         if not servicio:
@@ -236,7 +264,7 @@ def armar(filas: list[dict]) -> dict:
             if par not in pcts:
                 pcts.append(par)
 
-    bruto = round(bruto, 2)
+    valor_factura = round(bruto, 2)
     descuento = round(descuento, 2)
     # ⭐ El pie del SRI, tal cual lo arma Asinfo:
     #      SUBTOTAL PRECIO        = suma de la columna Total
@@ -254,6 +282,15 @@ def armar(filas: list[dict]) -> dict:
         iva = round(subtotal_precio - subtotal_precio / (1 + IVA), 2)
     total_general = round(base + iva, 2) if base else subtotal_precio
     neto = round(subtotal_precio - iva, 2)
+    # El cuadro de abajo a la izquierda, con la cuenta rara de Asinfo (punto 6).
+    pct1 = pcts[0][0] if len(pcts) == 1 else None
+    pct2 = pcts[0][1] if len(pcts) == 1 else None
+    contado = volumen = 0.0
+    if pct1:
+        contado = round(neto_sin_iva * pct1 / 100 * FACTOR_CUADRO, 2)
+        if pct2:
+            resto = neto_sin_iva - neto_sin_iva * pct1 / 100
+            volumen = round(resto * pct2 / 100 * FACTOR_CUADRO, 2)
     clave = ((cab.get("clave") or "").strip()
              or (cab.get("autorizacion") or "").strip())
     forma = (cab.get("forma_pago") or "").strip()
@@ -277,6 +314,7 @@ def armar(filas: list[dict]) -> dict:
             "ambiente": "PRODUCCION" if str(cab.get("ambiente")) == "2" else "PRUEBAS",
             "emision": "NORMAL" if str(cab.get("tipo_emision")) == "1" else "INDISPONIBILIDAD",
             "fecha_autorizacion": _fecha(cab.get("fecha_autorizacion")),
+            "guia": (cab.get("guia") or "").strip(),
             "forma_pago": forma,
             "forma_pago_texto": FORMAS_PAGO.get(forma, ""),
         },
@@ -299,8 +337,11 @@ def armar(filas: list[dict]) -> dict:
             "neto": neto,
             "iva": iva,
             "total": total_general,
-            "pct1": pcts[0][0] if len(pcts) == 1 else None,
-            "pct2": pcts[0][1] if len(pcts) == 1 else None,
+            "pct1": pct1,
+            "pct2": pct2,
+            "valor_factura": valor_factura,
+            "desc_contado": contado,
+            "desc_volumen": volumen,
         },
     }
 

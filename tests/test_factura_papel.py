@@ -384,3 +384,88 @@ def test_una_factura_de_192_renglones_no_rompe_la_hoja(app):
     assert html.count("<tr>") >= 192
     assert "<thead>" in html
     assert "page-break-inside:avoid" in html
+
+
+# --- una SEGUNDA factura, con otro tramo de descuento ------------------------
+#
+# La 001-099-000182678 (CACHUPUD CUJI JOSE EFRAIN, 26/08/2026) se bajó de
+# Asinfo a propósito: tiene 5% y **8%** donde la otra tiene 5% y 14%. Sirve
+# para dos cosas — confirmar que la cuenta del pie no dependía del 14%, y
+# poder copiar el cuadro de descuentos, que con un solo papel era adivinar.
+
+#: (código, cantidad, precio_linea, descuento_linea | precio, descuento, total)
+RENGLONES_182678 = [
+    ("RSBLA", 1.20, 9.648, 1.215648, 9.25, 1.40, 9.70),
+    ("JSBLA", 22.10, 168.623, 21.246498, 8.77, 24.43, 169.49),
+]
+CLAVE_182678 = "2608202601179112576200120010990001826780017717415"
+
+
+def _filas_182678():
+    filas = []
+    for cod, cant, bruto, descu, _p, _d, _t in RENGLONES_182678:
+        filas.append({
+            "numero": "001-099-000182678", "fecha": "2026-08-26T00:00:00Z",
+            "doc": 7, "autorizacion": CLAVE_182678, "clave": CLAVE_182678,
+            "ambiente": 2, "tipo_emision": 1, "fecha_autorizacion": "2026-08-26",
+            "forma_pago": "20", "base": 155.81, "iva_sri": 23.37,
+            "guia": "001-099-000170016", "referencia": "riobamba",
+            "cli_razon": "CACHUPUD CUJI JOSE EFRAIN", "cli_comercial": "CJE",
+            "cli_ruc": "0603985516001", "codigo": cod, "descripcion": cod,
+            "categoria": "TELAS", "acabado": "TUB", "color": "BLANCO",
+            "calidad": "PRI", "cantidad": cant, "precio": bruto / cant,
+            "bruto": bruto, "descuento": descu, "pct1": 5, "pct2": 8,
+        })
+    return filas
+
+
+def test_la_segunda_factura_tambien_da_renglon_por_renglon():
+    hoja = fp.armar(_filas_182678())
+    for r, esperado in zip(hoja["renglones"], RENGLONES_182678, strict=False):
+        cod, _c, _b, _d, precio, descu, total = esperado
+        assert (cod, r["precio"], r["descuento"], r["total"]) == \
+               (cod, precio, descu, total)
+
+
+def test_el_pie_de_la_segunda_factura():
+    t = fp.armar(_filas_182678())["totales"]
+    assert (t["bruto"], t["descuento"], t["neto"], t["iva"], t["total"]) == \
+           (179.19, 25.83, 155.82, 23.37, 179.18)
+    assert t["kilos"] == 23.30
+
+
+def test_el_cuadro_de_descuentos_copia_la_cuenta_rara_de_asinfo():
+    """Abajo a la izquierda Asinfo imprime una resta que NO da:
+    3.207,19 − 146,42 − 389,47 son 2.671,30, y la factura es de 2.620,30.
+    Donde va el IVA pone 5%. Se copia igual, porque el cliente ya tiene ese
+    papel y un número distinto lo hace dudar de si es la misma factura."""
+    t675 = fp.armar(_filas())["totales"]
+    assert (t675["valor_factura"], t675["desc_contado"], t675["desc_volumen"]) == \
+           (3207.19, 146.42, 389.47)
+    t678 = fp.armar(_filas_182678())["totales"]
+    assert (t678["valor_factura"], t678["desc_contado"], t678["desc_volumen"]) == \
+           (205.02, 9.36, 14.23)
+
+
+def test_el_total_del_cuadro_es_el_total_de_verdad():
+    """La resta del cuadro no da, pero el número de abajo sí: la hoja nunca
+    miente en el que importa."""
+    t = fp.armar(_filas_182678())["totales"]
+    assert t["total"] == 179.18
+    assert round(t["valor_factura"] - t["desc_contado"] - t["desc_volumen"], 2) \
+        != t["total"]
+
+
+def test_sin_descuento_no_se_dibuja_el_cuadro():
+    filas = _filas_182678()
+    for f in filas:
+        f["pct1"] = f["pct2"] = 0
+        f["descuento"] = 0
+    t = fp.armar(filas)["totales"]
+    assert t["desc_contado"] == 0 and t["desc_volumen"] == 0
+
+
+def test_la_guia_de_remision_sale_en_la_hoja(app):
+    """Una factura la trae y la otra no: la 182675 va con el campo vacío."""
+    assert fp.armar(_filas_182678())["cabecera"]["guia"] == "001-099-000170016"
+    assert fp.armar(_filas())["cabecera"]["guia"] == ""
