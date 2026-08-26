@@ -112,11 +112,17 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <span><span class="k">Queda</span>
     <b>{{ resumen.kg | num_es(0) }} kg</b>
     {# ⚠ Lo que la resta no explica se dice, no se tapa: la bodega se mueve por
-       cosas que no son estas ventas. #}
+       cosas que no son estas ventas.
+       ⭐ Y se dice DE DÓNDE salen (dueña 25/08/2026: "acá aclarar que los de
+       segunda siguen entrando"). No es un ajuste raro: la SEGUNDA que sale del
+       telar todos los días cae sola en la lista, porque un saldo es también
+       "los kilos SEG de cualquier tela, se venda o no", sin pedirle antigüedad.
+       Sin la aclaración, el número parece un descuadre. #}
     {% if resumen.kg_movido | abs >= 1 %}
       <span class="mini">y {{ resumen.kg_movido | abs | num_es(0) }} kg
         {{ 'que salieron' if resumen.kg_movido > 0 else 'que entraron' }}
-        por bodega</span>
+        por bodega{% if resumen.kg_movido < 0 %}: la segunda nueva entra
+        sola{% endif %}</span>
     {% else %}
       <span class="mini">hoy en la bodega</span>
     {% endif %}</span>

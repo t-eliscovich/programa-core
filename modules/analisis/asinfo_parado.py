@@ -671,6 +671,32 @@ GROUP BY pr.nombre_categoria_producto, {_VENDEDOR}
 # gana la mayoría y la fila muestra UNA sigla. Con la bandera, un solo lote mal
 # marcado entre 24.000 alcanzaba para que la pantalla dijera "TUB ABI" —y salir
 # a ofrecer "de las dos" es prometer algo que no está.
+# ⭐ LA ÚLTIMA VENTA ANTERIOR A LA LARGADA. Es la columna que justifica que el
+# ítem sea un saldo: cuánto hace que nadie lo pedía. Tiene que salir de Asinfo
+# con el corte adentro y no de "la última venta a secas", porque el primer kilo
+# que se vende en la competencia la pisaría con la fecha de hoy y la fila
+# borraría sola la prueba de que estaba clavada.
+#
+# ⚠ El primer intento fue conservar la que ya tenía la foto. No alcanza: el día
+# de la largada la foto YA se había refrescado con la fecha de hoy, así que las
+# ocho telas que se vendieron ese día se quedaron con la columna en "—" y no
+# había de dónde sacarla (dueña 25/08/2026: "¿por qué cuellos no tiene última?").
+# El dato está en Asinfo; hay que ir a buscarlo con la fecha de corte.
+def _sql_ultima_antes(desde: str) -> str:
+    return f"""
+SELECT pr.nombre_subcategoria_producto AS subcategoria,
+       RIGHT(RTRIM(pr.codigo), 3)      AS color,
+       MAX(CAST(fc.fecha AS date))     AS ultima
+FROM factura_cliente fc
+JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
+JOIN producto pr ON pr.id_producto = dfc.id_producto
+WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
+  AND dfc.cantidad > 0 AND CAST(fc.fecha AS date) < '{desde}'
+  AND pr.nombre_categoria_producto NOT IN ({CATS})
+GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3)
+"""
+
+
 SQL_FORMA = f"""
 SELECT p.nombre_subcategoria_producto AS subcategoria,
        RIGHT(RTRIM(p.codigo), 3)      AS color,
@@ -735,6 +761,20 @@ def vendido_desde(desde: str) -> list[dict]:
     for f in filas:
         f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
     return filas
+
+
+def ultima_venta_antes(desde: str) -> dict[tuple[str, str], object]:
+    """`{(tela, color): fecha}` — la última venta ANTERIOR a `desde`.
+
+    La que no vendió nunca antes del corte no entra al diccionario: la fila
+    muestra "—", que es la verdad y no una fecha inventada.
+    """
+    out: dict[tuple[str, str], object] = {}
+    for f in _filas(_sql_ultima_antes(desde)):
+        clave = (f.get("subcategoria"), f.get("color"))
+        if clave[0] and f.get("ultima"):
+            out[clave] = f["ultima"]
+    return out
 
 
 def formas() -> dict[tuple[str, str], str]:

@@ -2817,6 +2817,7 @@ def _refresco(monkeypatch, parados, cohorte):
     monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
     monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
     monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "ultima_venta_antes", lambda d: {})
     return db, queries.actualizar()
 
 
@@ -3019,6 +3020,7 @@ def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas):
     monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
     monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
     monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "ultima_venta_antes", lambda d: {})
     queries.actualizar()
     return [(p[1], p[5], p[7]) for sql, p in db.escrito
             if "INSERT INTO scintela.parado_venta" in sql]
@@ -3727,6 +3729,7 @@ def test_el_item_que_asinfo_ya_no_devuelve_igual_recibe_motivo(monkeypatch):
     monkeypatch.setattr(asinfo_parado, "share_por_grupo", lambda: [])
     monkeypatch.setattr(asinfo_parado, "venta_por_tela", lambda: {})
     monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
+    monkeypatch.setattr(asinfo_parado, "ultima_venta_antes", lambda d: {})
     queries.actualizar()
     barrido = [s for s in escritos
                if "parado_cohorte SET motivo = 'segunda'" in s]
@@ -3790,3 +3793,40 @@ def test_la_fila_vendida_no_tiene_huecos():
         "la categoría de la fila vendida sale de lo que se vendió")
     assert "{% set pts = (f.kg_vendidos * f.puntos) if vendida else f.puntos_fila %}" in html
     assert 'data-v="{{ pts }}">{{ pts | num_es(0) }}' in html
+
+
+def test_la_ultima_venta_se_le_pide_a_asinfo_con_el_corte_adentro():
+    """Es la columna que justifica que el ítem sea un saldo: cuánto hace que
+    nadie lo pedía. Con "la última venta a secas", el primer kilo que se vende
+    en la competencia la pisa con la fecha de HOY y la fila borra sola la prueba
+    de que estaba clavada — encima con la venta que se acaba de premiar.
+
+    ⚠ El primer intento fue conservar la que ya tenía la foto. NO alcanza: el
+    día de la largada la foto ya se había refrescado con la fecha de hoy, así
+    que las ocho telas que se vendieron ese día quedaron con la columna en "—"
+    y no había de dónde sacarla (dueña 25/08/2026: "¿por qué cuellos no tiene
+    última?"). El dato está en Asinfo: hay que ir con la fecha de corte."""
+    sql = asinfo_parado._sql_ultima_antes("2026-08-25")
+    plano = " ".join(sql.split())
+    assert "MAX(CAST(fc.fecha AS date))" in plano
+    assert "CAST(fc.fecha AS date) < '2026-08-25'" in plano, (
+        "sin el corte, la venta de la competencia pisa la fecha")
+    assert "fc.id_documento IN (7, 251)" in plano
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    assert "asinfo_parado.ultima_venta_antes(" in fuente
+    assert "ultima_antes_de.get(k)" in fuente
+    assert "def ultima_antes(" not in fuente, (
+        "volvió el intento de reconstruirla desde la foto anterior")
+
+
+def test_los_kilos_que_entran_por_bodega_dicen_de_donde_salen():
+    """Dueña 25/08/2026: *"acá aclarar que los de segunda siguen entrando"*. El
+    número parecía un descuadre: no es un ajuste raro, es la SEGUNDA que sale
+    del telar todos los días y cae sola en la lista, porque un saldo es también
+    "los kilos SEG de cualquier tela, se venda o no", sin pedirle antigüedad."""
+    html = _html_parado()
+    i = html.index("por bodega")
+    assert "la segunda nueva entra" in html[i:i + 200]
+    assert "resumen.kg_movido < 0" in html[i:i + 120], (
+        "sólo cuando ENTRAN kilos: si salieron, la segunda no explica nada")
