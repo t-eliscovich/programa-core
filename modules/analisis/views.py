@@ -240,13 +240,14 @@ def _forma(f) -> str:
 
 
 def _categoria(f) -> str:
-    """PRI, SEG o las dos: lo mismo que muestra la píldora de la fila."""
-    if f.get("cal_fila"):
-        return f["cal_fila"]
-    pri, seg = f.get("kg_primera") or 0, f.get("kg_segunda") or 0
-    if pri and seg:
-        return "PRI SEG"
-    return "SEG" if seg else "PRI"
+    """PRI, SEG o las dos: lo MISMO que muestra la píldora de la fila.
+
+    ⚠ Esta función tenía su propia copia de la regla y le faltaba el caso de la
+    fila vendida: sin kilos en bodega caía al `else` y escribía PRI. El Excel
+    decía "PRI" en diez telas que habían entrado por su SEGUNDA. Ahora la regla
+    vive en un solo lugar (`queries.categoria_de`) y acá no se repite.
+    """
+    return queries.categoria_de(f)
 
 
 @analisis_bp.route("/analisis/parado/clientes")

@@ -1730,9 +1730,14 @@ def test_cada_fila_guarda_por_que_entro():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    # el motivo se ve por la columna "De 2ª": si tiene kilos ahí, entró por
-    # segunda. La píldora que lo decía se fue con la columna Estado.
-    assert "f.kg_segunda" in html
+    # ⚠ Se chequea la IDEA, no la palabra. Antes esto pedía "f.kg_segunda" en
+    # el template: era un proxy de la columna "De 2ª", que ya no existe. Hoy el
+    # motivo se ve por la CATEGORÍA, y la categoría se calcula en un solo lugar
+    # (`queries.categoria_de`) — el template la lee resuelta. Lo que no puede
+    # faltar es que la fila la muestre.
+    assert "f.cat" in html
+    assert queries.categoria_de({"kg_segunda": 300}) == "SEG"
+    assert queries.categoria_de({"kg_primera": 300}) == "PRI"
 
 
 # ── El premio del mes ───────────────────────────────────────────────────────
@@ -1975,7 +1980,9 @@ def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     # ahí; en la tabla lo que tiene que estar es la COLUMNA que la muestra.
     # ⚠ La fila vendida entera no tiene lote que mirar, así que no se inventa
     # una categoría: por eso el `set` viene con su `if`.
-    assert "{% set calidad %}" in html and "fm.cal(f)" in html
+    # ⚠ La píldora sale del macro compartido — cómo se le pasan los datos es
+    # asunto del template. Lo que se chequea es que la use, no la firma.
+    assert "{% set calidad %}" in html and "fm.cal(" in html
     assert 'class="cal">{{ calidad }}' in html
     macro = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "_forma.html").read_text(encoding="utf-8")
@@ -3807,8 +3814,16 @@ def test_la_fila_vendida_no_tiene_huecos():
       salía de multiplicar el stock —que es 0— por el valor del kilo, y en una
       fila tachada leer "0 puntos" es exactamente al revés de lo que pasó."""
     html = _html_parado()
-    assert "f.kg_vend_seg and not f.kg_vend_pri" in html, (
+    # ⚠ Antes esto miraba la frase textual del template. La regla se mudó a
+    # `queries.categoria_de` —vivía repetida en cuatro lugares y sólo el
+    # template tenía el caso de la fila vendida; el Excel y la hoja impresa
+    # decían PRI (dueña 26/08/2026)—. Ahora se chequea el COMPORTAMIENTO, que
+    # es lo que importaba desde el principio.
+    vendida_seg = {"kg_primera": 0, "kg_segunda": 0,
+                   "kg_vend_pri": 0, "kg_vend_seg": 42.5}
+    assert queries.categoria_de(vendida_seg) == "SEG", (
         "la categoría de la fila vendida sale de lo que se vendió")
+    assert "f.cat" in html, "y el template la lee ya resuelta"
     assert "{% set pts = (f.kg_vendidos * f.puntos) if vendida else f.puntos_fila %}" in html
     assert 'data-v="{{ pts }}">{{ pts | num_es(0) }}' in html
 
@@ -4064,3 +4079,74 @@ def test_la_forma_del_excel_sale_de_la_linea():
     assert _forma({"kg_tubular": 0, "kg_abierta": 10}) == "ABI"
     assert _forma({"forma": "TUB"}) == "TUB"
     assert _forma({}) == ""
+
+# ---------------------------------------------------------------------------
+# La CATEGORÍA de una fila (dueña 26/08/2026, leyendo el Excel: "¿cómo puede
+# haber algo parado que se vendió hace un mes?" — eran filas que habían entrado
+# por sus kilos de SEGUNDA y el archivo las etiquetaba PRI).
+# ---------------------------------------------------------------------------
+
+def test_categoria_de_la_fila_vendida_sale_de_lo_vendido():
+    """Sin kilos en bodega no hay lote: la categoría sale de la VENTA.
+
+    Éste es el caso que rompía. Una tela que entró por su segunda, la vendió
+    entera y quedó en cero: los cuatro contadores de stock dan 0 y la regla
+    vieja caía al `else` y devolvía "PRI".
+    """
+    fila = {"kg_primera": 0, "kg_segunda": 0,
+            "kg_vend_pri": 0, "kg_vend_seg": 87.3}
+    assert queries.categoria_de(fila) == "SEG"
+
+
+def test_categoria_de_la_fila_vendida_de_primera():
+    fila = {"kg_primera": 0, "kg_segunda": 0,
+            "kg_vend_pri": 96.45, "kg_vend_seg": 0}
+    assert queries.categoria_de(fila) == "PRI"
+
+
+def test_categoria_de_la_fila_que_vendio_las_dos():
+    fila = {"kg_primera": 0, "kg_segunda": 0,
+            "kg_vend_pri": 10, "kg_vend_seg": 5}
+    assert queries.categoria_de(fila) == "PRI SEG"
+
+
+def test_categoria_sin_stock_y_sin_venta_no_inventa():
+    """Vacío, no "PRI". Una etiqueta inventada es peor que un guión."""
+    assert queries.categoria_de({}) == ""
+
+
+def test_categoria_manda_el_stock_por_encima_de_lo_vendido():
+    """Si quedan kilos, la categoría es la del LOTE aunque haya vendido otra."""
+    fila = {"kg_primera": 0, "kg_segunda": 40,
+            "kg_vend_pri": 100, "kg_vend_seg": 0}
+    assert queries.categoria_de(fila) == "SEG"
+
+
+def test_categoria_manda_la_linea_ya_abierta():
+    fila = {"cal_fila": "PRI", "kg_primera": 0, "kg_segunda": 99,
+            "kg_vend_pri": 0, "kg_vend_seg": 99}
+    assert queries.categoria_de(fila) == "PRI"
+
+
+def test_abrir_en_lineas_le_pone_la_categoria_a_todas():
+    """Toda fila que sale para la pantalla lleva `cat`, se haya abierto o no."""
+    entera = {"stock_kg": 0, "kg_tub_pri": 0, "kg_tub_seg": 0,
+              "kg_abi_pri": 0, "kg_abi_seg": 0, "puntos": 1,
+              "kg_primera": 0, "kg_segunda": 0,
+              "kg_vend_pri": 0, "kg_vend_seg": 20.8}
+    partida = {"stock_kg": 30, "kg_tub_pri": 20, "kg_tub_seg": 10,
+               "kg_abi_pri": 0, "kg_abi_seg": 0, "puntos": 1,
+               "kg_primera": 20, "kg_segunda": 10,
+               "kg_vend_pri": 0, "kg_vend_seg": 0}
+    salida = queries.abrir_en_lineas([entera, partida])
+    assert all("cat" in g for g in salida)
+    assert salida[0]["cat"] == "SEG"
+    assert {g["cat"] for g in salida[1:]} == {"PRI", "SEG"}
+
+
+def test_el_excel_dice_lo_mismo_que_la_pantalla():
+    """El Excel no puede tener su propia versión de la regla."""
+    from modules.analisis import views
+    fila = {"kg_primera": 0, "kg_segunda": 0,
+            "kg_vend_pri": 0, "kg_vend_seg": 42.5}
+    assert views._categoria(fila) == queries.categoria_de(fila) == "SEG"

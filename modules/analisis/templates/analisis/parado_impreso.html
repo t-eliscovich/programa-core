@@ -82,13 +82,13 @@ thead{display:table-header-group}
     <td>{{ fm.forma(f) }}</td>
     {# La calidad de ESTA línea. Cuando el color viene de las dos, la hoja lo
        abrió en dos renglones y cada uno dice el suyo. #}
-    <td>{% if f.cal_fila is defined %}
-          {% if f.cal_fila == 'SEG' %}<span class="q seg">SEG</span>
-          {% elif f.cal_fila == 'PRI' %}<span class="q pri">PRI</span>
-          {% else %}<span class="g">—</span>{% endif %}
-        {% elif f.kg_segunda and f.kg_primera %}<span class="q pri">PRI</span>
-        <span class="q seg">SEG</span>{% elif f.kg_segunda %}<span class="q seg">SEG</span>
-        {% else %}<span class="q pri">PRI</span>{% endif %}</td>
+    <td>{# La categoría ya viene resuelta de `queries.categoria_de`: la misma
+             que la pantalla. Cuando este bloque tenía su propia versión, la
+             fila sin stock decía PRI aunque hubiera entrado por su segunda. #}
+        {% if f.cat == 'SEG' %}<span class="q seg">SEG</span>
+        {% elif f.cat == 'PRI' %}<span class="q pri">PRI</span>
+        {% elif f.cat == 'PRI SEG' %}<span class="q pri">PRI</span><span class="q seg">SEG</span>
+        {% else %}<span class="g">—</span>{% endif %}</td>
     <td class="n">{{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}</td>
     <td class="n">{{ f.puntos }} × kg</td>
     <td class="n">{{ f.puntos_fila | num_es(0) }}</td>

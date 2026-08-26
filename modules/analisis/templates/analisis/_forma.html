@@ -62,6 +62,9 @@
 {%- if c is not none -%}
   {%- if c == 'SEG' -%}<span class="q seg">SEG</span>
   {%- elif c == 'PRI' -%}<span class="q pri">PRI</span>
+  {#- ⚠ Un color puede tener kilos de las dos y llegar acá sin abrirse en dos
+      líneas. Sin este caso decía "—", que es mentira: sí se sabe qué es. -#}
+  {%- elif c == 'PRI SEG' -%}<span class="q pri">PRI</span><span class="q seg">SEG</span>
   {%- else -%}<span class="g">—</span>{%- endif -%}
 {%- elif f.kg_segunda and f.kg_primera -%}
   <span class="q pri">PRI</span><span class="q seg">SEG</span>

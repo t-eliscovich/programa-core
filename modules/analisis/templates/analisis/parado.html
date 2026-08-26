@@ -316,7 +316,11 @@ th.ord.desc::after{content:" ↓";opacity:1}
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-color="{{ f.color }}"
       data-vendido="{{ 'si' if f.kg_vendidos else 'no' }}"
-      data-cal="{% if f.cal_fila is defined %}{{ f.cal_fila or 'PRI SEG' }}{% elif f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
+      {# ⚠ La categoría sale RESUELTA de `queries.categoria_de`, no se recalcula
+         acá: cuando esta línea tenía su propia versión, la fila vendida caía a
+         PRI y el filtro "Sólo SEG" escondía justo las que habían entrado por su
+         segunda. Vacío = no se sabe, y entonces entra en los dos filtros. #}
+      data-cal="{{ f.cat or 'PRI SEG' }}"
       {# INTELA entra al filtro como uno más: sus clientes son los que no
          tienen vend_pc. Sin esto no había forma de aislar el mostrador, que es
          la mitad de las ventas de estas telas. #}
@@ -339,9 +343,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
        sale del stock —el macro caería a PRI por defecto y la fila diría PRI sin
        que nadie lo sepa—: sale de lo que se VENDIÓ, que es el dato que hay
        (dueña 25/08/2026: "completá los datos faltantes"). #}
-    {% set calidad %}{% if vendida %}{{ fm.cal({'cal_fila':
-        'SEG' if f.kg_vend_seg and not f.kg_vend_pri else
-        'PRI' if f.kg_vend_pri and not f.kg_vend_seg else none}) }}{% else %}{{ fm.cal(f) }}{% endif %}{% endset %}
+    {% set calidad %}{{ fm.cal({'cal_fila': f.cat}) }}{% endset %}
     <td class="tela"><span class="flecha">▸</span> <span class="nom">{{ f.subcategoria }}</span><span class="qm">{{ calidad }}</span></td>
     {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
        está en el producto y en Asinfo; el nombre es el que usa el cliente por

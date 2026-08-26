@@ -440,6 +440,36 @@ def _puntos_provisorios() -> dict[str, dict]:
     return agg
 
 
+def categoria_de(f: dict) -> str:
+    """PRI, SEG, las dos, o vacío. La ÚNICA definición de la categoría de una fila.
+
+    ⚠ Vivía escrita cuatro veces —la píldora de la pantalla, el `data-cal` del
+    filtro, el Excel y la hoja impresa— y sólo una de las cuatro contemplaba la
+    fila VENDIDA. Las otras tres caían al `else` y decían PRI. La dueña lo cazó
+    el 26/08/2026 leyendo el Excel: veinte renglones que decían "PRI", diez de
+    ellos telas que habían entrado a la lista por sus kilos de SEGUNDA. Una fila
+    que entró por su segunda no puede decir primera en ningún lado.
+
+    El orden es el que manda:
+
+      · la línea ya viene abierta por calidad (`cal_fila`) — dice la suya;
+      · tiene kilos en bodega — la categoría sale del LOTE;
+      · no le queda un kilo — sale de lo que se VENDIÓ, que es el dato que hay;
+      · y si tampoco vendió, vacío. Mejor un guión que una etiqueta inventada.
+    """
+    if f.get("cal_fila"):
+        return f["cal_fila"]
+    pri = float(f.get("kg_primera") or 0)
+    seg = float(f.get("kg_segunda") or 0)
+    if pri or seg:
+        return "PRI SEG" if (pri and seg) else ("SEG" if seg else "PRI")
+    vpri = float(f.get("kg_vend_pri") or 0)
+    vseg = float(f.get("kg_vend_seg") or 0)
+    if vpri or vseg:
+        return "PRI SEG" if (vpri and vseg) else ("SEG" if vseg else "PRI")
+    return ""
+
+
 def abrir_en_lineas(filas: list[dict]) -> list[dict]:
     """Una línea por tela × color × FORMA × CALIDAD, para la hoja que se sale a
     vender.
@@ -474,6 +504,11 @@ def abrir_en_lineas(filas: list[dict]) -> list[dict]:
         resto = round(total - sum(p[2] for p in vivas), 2)
         if abs(resto) >= 1:
             salida.append(_linea(f, resto, "", ""))
+    # ⭐ Y cada fila sale con su categoría YA resuelta, para que la píldora, el
+    # filtro y la hoja impresa lean el mismo dato en vez de recalcularlo cada
+    # una a su manera. Ver `categoria_de`.
+    for g in salida:
+        g["cat"] = categoria_de(g)
     return salida
 
 
