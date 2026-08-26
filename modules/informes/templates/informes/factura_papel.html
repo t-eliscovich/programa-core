@@ -1,0 +1,227 @@
+{# LA FACTURA EN PAPEL — la copia que el vendedor le manda al cliente.
+
+   TMT 2026-08-26 (dueña): *"que la factura imite exactamente como lo hace
+   asinfo… así no piensan que es distinta"*. Cada medida de acá salió de medir
+   el PDF de la 001-099-000182675 con `pdfplumber`: el logo ocupa 131×60 pt, la
+   caja del SRI arranca en x=320, las columnas cortan en 45, 148, 288, 335,
+   396, 441, 486 y 531, y la tipografía es Helvetica de 7 pt (8 en los títulos
+   de columna, 9 en el nombre de la empresa, 12 en el RUC y 14 en el número).
+
+   ⭐ La misma hoja para las TRES pantallas —oficina, vendedor y cliente— y
+   para el PDF y la foto que salen por WhatsApp, que se generan imprimiendo
+   ESTA página con el navegador del servidor. Dos hojas distintas divergen a la
+   primera corrección que se le hace a una sola.
+
+   ⭐ PAGINA SOLA. Hay facturas de 192 renglones y el 6,5% pasa de 26, que es
+   lo que entra en una carilla. Por eso la tabla FLUYE en vez de estar posada
+   en coordenadas fijas: el `<thead>` se repite en cada carilla y ningún
+   renglón queda partido al medio.
+
+   ⭐ VIVE EN `informes/` a propósito, aunque hable de facturas: es la carpeta
+   que `registro_portal._prestar_plantillas_de_informes` le presta al portal
+   del cliente, donde ya vive la otra hoja compartida por las tres pantallas
+   (`_estado_cuenta_impreso.html`). En `facturas/` el portal no la encuentra y
+   la factura del cliente muere con TemplateNotFound — el portal no registra
+   ni un blueprint del ERP.
+
+   Espera en el contexto: `p` (lo que devuelve `factura_papel.papel`). #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Factura {{ p.cabecera.numero or numero }}</title>
+<style>
+  @page{size:A4;margin:10mm 8mm}
+  *{box-sizing:border-box}
+  body{margin:0;padding:0;background:#fff;color:#000;
+       font:7pt/1.25 Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;
+       print-color-adjust:exact}
+  .hoja{width:579pt;margin:0 auto;padding:6pt 0}
+  table{border-collapse:collapse;width:100%}
+
+  /* --- encabezado ------------------------------------------------------ */
+  .enc{display:flex;gap:14pt;align-items:flex-start;margin-bottom:8pt}
+  .enc .izq{width:292pt}
+  .enc .der{width:265pt;border:.6pt solid #000;padding:5pt 6pt}
+  .logo{width:131pt;height:60pt;object-fit:contain;object-position:left top;
+        margin:0 0 6pt 6pt}
+  .emp{font-size:9pt;margin-bottom:5pt}
+  .par{display:flex;gap:6pt;margin-bottom:2pt}
+  .par .k{width:48pt;flex:none}
+  .der .ruc{font-size:12pt;margin-bottom:5pt}
+  .der .numf{font-size:14pt;margin-bottom:5pt}
+  .der .rot{font-size:8pt;margin:5pt 0 1pt}
+  .clave{word-break:break-all;letter-spacing:.02em}
+  .barras{display:block;height:16pt;margin:3pt 0 2pt}
+
+  /* --- datos del cliente ----------------------------------------------- */
+  .cli{border-top:.6pt solid #000;border-bottom:.6pt solid #000;
+       padding:4pt 0;margin-bottom:6pt}
+  .cli .fila{display:flex;gap:6pt;padding:1.5pt 2pt}
+  .cli .k{width:120pt;flex:none}
+  .cli .k2{width:78pt;flex:none}
+
+  /* --- renglones -------------------------------------------------------- */
+  .det{font-size:7pt}
+  .det thead th{border-top:.6pt solid #000;border-bottom:.6pt solid #000;
+                font-size:8pt;font-weight:400;text-align:left;padding:3pt 3pt;
+                vertical-align:bottom}
+  .det tbody td{border-bottom:.35pt solid #d4d4d4;padding:2.5pt 3pt;
+                vertical-align:top}
+  .det tbody tr{page-break-inside:avoid}
+  .det .r{text-align:right}
+  .det .n{width:17pt}
+  .det .cod{width:103pt}
+  .det .aca{width:47pt}
+  .det .col{width:61pt}
+  .det .cant{width:45pt}
+  .det .pre{width:45pt}
+  .det .des{width:45pt}
+  .det .tot{width:54pt}
+
+  /* --- pie -------------------------------------------------------------- */
+  .pie{display:flex;gap:14pt;margin-top:8pt;page-break-inside:avoid}
+  .pie .izq{flex:1}
+  .pie .der{width:200pt;flex:none}
+  .sri td{padding:2.5pt 4pt;border:.6pt solid #000}
+  .sri td.v{text-align:right;width:78pt}
+  .sri tr.grande td{font-size:8pt}
+  .arts td{padding:1.5pt 3pt;border-bottom:.35pt solid #d4d4d4}
+  .arts td.v{text-align:right;width:36pt}
+  .cierre{margin-top:8pt;font-size:6.5pt;color:#444;
+          border-top:.35pt solid #d4d4d4;padding-top:4pt}
+  .aviso{border:.6pt solid #000;padding:8pt;margin:8pt 0;font-size:8pt}
+</style>
+</head>
+<body>
+<div class="hoja">
+
+{% if p.estado != 'ok' %}
+  <div class="aviso">
+    {% if p.estado == 'sin-numero' %}
+      Esta factura no tiene número del SRI cargado, así que no se puede armar la hoja.
+    {% elif p.estado == 'sin-datos' %}
+      Asinfo no tiene el detalle de esta factura.
+    {% elif p.estado == 'sin-puente' %}
+      La hoja sale de Asinfo y acá no hay conexión con el ERP.
+    {% else %}
+      Ahora no se pudo traer la factura de Asinfo. Volvé a entrar en un rato.
+    {% endif %}
+  </div>
+{% else %}
+
+  <div class="enc">
+    <div class="izq">
+      <img class="logo" src="{{ url_for('static', filename='factura_logo.png') }}" alt="Intela">
+      <div class="emp">{{ p.emisor.nombre }}</div>
+      <div class="par"><span class="k">Dirección<br>Matriz:</span><span>{{ p.emisor.matriz }}</span></div>
+      <div class="par"><span class="k">Dirección<br>Sucursal:</span><span>{{ p.emisor.sucursal }}</span></div>
+      <div class="par"><span style="width:144pt;flex:none">Contribuyente Especial Nro.</span><span>{{ p.emisor.especial }}</span></div>
+      <div class="par"><span style="width:144pt;flex:none">Obligado a Llevar a Contabilidad</span><span>SI</span></div>
+    </div>
+    <div class="der">
+      <div class="ruc">R.U.C.: {{ p.emisor.ruc }}</div>
+      <div class="numf">FACTURA: {{ p.cabecera.numero }}</div>
+      {% if p.cabecera.autorizacion %}
+        <div class="rot">NÚMERO DE AUTORIZACIÓN</div>
+        <div class="clave">{{ p.cabecera.autorizacion }}</div>
+      {% endif %}
+      <div class="par" style="margin-top:4pt">
+        <span style="width:150pt;flex:none">FECHA Y HORA DE AUTORIZACIÓN</span>
+        <span>{{ p.cabecera.fecha_autorizacion or 'NO ENVIADO' }}</span>
+      </div>
+      <div class="par"><span style="width:64pt;flex:none">AMBIENTE:</span><span>{{ p.cabecera.ambiente }}</span></div>
+      <div class="par"><span style="width:64pt;flex:none">EMISIÓN:</span><span>{{ p.cabecera.emision }}</span></div>
+      {% if barras %}
+        <div class="rot">CLAVE DE ACCESO</div>
+        <svg class="barras" viewBox="0 0 {{ barras_ancho }} 20" preserveAspectRatio="none"
+             width="208pt" height="16pt" xmlns="http://www.w3.org/2000/svg">
+          {%- for x, w in barras %}<rect x="{{ x }}" y="0" width="{{ w }}" height="20" fill="#000"/>{% endfor -%}
+        </svg>
+        <div class="clave">{{ p.cabecera.clave }}</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div class="cli">
+    <div class="fila"><span class="k">Razón Social / Nombres y Apellidos:</span><span>{{ p.cliente.razon }}</span></div>
+    <div class="fila"><span class="k">Nombre Comercial:</span><span>{{ p.cliente.comercial }}</span></div>
+    <div class="fila"><span class="k">RUC / CI:</span><span>{{ p.cliente.ruc }}</span></div>
+    <div class="fila"><span class="k">Dirección:</span><span>{{ p.cliente.direccion }}{% if p.cliente.ciudad %}, {{ p.cliente.ciudad }}{% endif %}</span></div>
+    <div class="fila">
+      <span class="k">Emisión:</span><span style="width:110pt;flex:none">{{ p.cabecera.fecha }}</span>
+      <span class="k2">Teléfono:</span><span>{{ p.cliente.telefono }}</span>
+    </div>
+    <div class="fila"><span class="k">Correo E.:</span><span>{{ p.cliente.email }}</span></div>
+  </div>
+
+  <table class="det">
+    <thead>
+      <tr>
+        <th class="n">N°</th>
+        <th class="cod">Código</th>
+        <th>Descripción</th>
+        <th class="aca">Acabado</th>
+        <th class="col">Color</th>
+        <th class="cant r">Cantidad</th>
+        <th class="pre r">Precio<br>Unitario</th>
+        <th class="des r">Descuento</th>
+        <th class="tot r">Precio<br>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in p.renglones %}
+      <tr>
+        <td class="n">{{ r.n }}</td>
+        <td class="cod">{{ r.codigo }}</td>
+        <td>{{ r.descripcion }}</td>
+        <td class="aca">{{ r.acabado }}</td>
+        <td class="col">{{ r.color }}</td>
+        <td class="cant r">{{ r.cantidad | num_es(2) }}</td>
+        <td class="pre r">{{ r.precio | num_es(2) }}</td>
+        <td class="des r">{{ r.descuento | num_es(2) }}</td>
+        <td class="tot r">{{ r.total | num_es(2) }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <div class="pie">
+    <div class="izq">
+      <div style="margin-bottom:4pt">
+        <b>Total</b> {{ p.totales.kilos | num_es(2) }}
+        {%- if p.cabecera.referencia %} · {{ p.cabecera.referencia }}{% endif %}
+      </div>
+      {% if p.cabecera.forma_pago %}
+        <div style="margin-bottom:5pt">Forma de Pago SRI: {{ p.cabecera.forma_pago }}
+          {{ p.cabecera.forma_pago_texto }}</div>
+      {% endif %}
+      <div style="margin-bottom:2pt"><b>Total Artículos</b></div>
+      <table class="arts">
+        {% for nombre, cuantos in p.articulos %}
+        <tr><td>{{ nombre }}</td><td class="v">{{ cuantos }}</td></tr>
+        {% endfor %}
+      </table>
+    </div>
+    <div class="der">
+      <table class="sri">
+        <tr><td>SUBTOTAL PRECIO</td><td class="v">{{ p.totales.bruto | num_es(2) }}</td></tr>
+        <tr><td>DESCUENTO</td><td class="v">{{ p.totales.descuento | num_es(2) }}</td></tr>
+        <tr><td>SUBTOTAL SIN IMPUESTOS</td><td class="v">{{ p.totales.neto | num_es(2) }}</td></tr>
+        <tr><td>VALOR IVA 15%</td><td class="v">{{ p.totales.iva | num_es(2) }}</td></tr>
+        <tr class="grande"><td>VALOR TOTAL</td><td class="v">{{ p.totales.total | num_es(2) }}</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <div class="cierre">
+    Copia de la factura {{ p.cabecera.numero }}, emitida por INTELA INDUSTRIA TEXTIL
+    LATINOAMERICANA CIA. LTDA. El comprobante electrónico autorizado por el SRI
+    llega por correo.
+  </div>
+{% endif %}
+
+</div>
+</body>
+</html>

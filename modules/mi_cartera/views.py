@@ -434,14 +434,37 @@ def factura(codigo_cli: str, numf: int):
                            **_ctx_base(vend))
 
 
+def _hoja_html(codigo_cli: str, numf: int) -> tuple[str, dict, str]:
+    """(html, detalle, número) de la hoja de UNA factura.
+
+    ⭐ TMT 2026-08-26 (dueña): *"que la factura imite exactamente como lo hace
+    asinfo… así no piensan que es distinta"*. La hoja que el vendedor imprime
+    y manda ES la factura de Asinfo copiada —logo, recuadro del SRI y código
+    de barras incluidos—, la misma que ve la oficina y la misma que ve el
+    cliente en su portal.
+
+    Si Asinfo no contesta o la factura no tiene número del SRI, se cae a la
+    hoja de siempre (*Qué se llevó*): el vendedor está parado frente al
+    cliente y quedarse sin nada que mostrar es peor que mostrar el resumen.
+    """
+    from modules.asinfo import factura_papel
+
+    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
+    ctx = factura_papel.hoja(f.get("numf_completo"))
+    if ctx["p"].get("estado") == "ok":
+        return (render_template("informes/factura_papel.html", **ctx,
+                                numero=numero), det, numero)
+    return (render_template("mi_cartera/factura_hoja.html", cliente=cliente,
+                            f=f, det=det, numero=numero), det, numero)
+
+
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/factura/<int:numf>/hoja")
 @requiere_login
 @requiere_permiso("micartera.ver")
 def factura_hoja(codigo_cli: str, numf: int):
     """La hoja para imprimir. Es la MISMA que se manda por WhatsApp."""
-    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
-    return render_template("mi_cartera/factura_hoja.html", cliente=cliente,
-                           f=f, det=det, numero=numero)
+    html, _det, _numero = _hoja_html(codigo_cli, numf)
+    return html
 
 
 def _factura_archivo(codigo_cli: str, numf: int, formato: str):
@@ -465,9 +488,7 @@ def _factura_archivo(codigo_cli: str, numf: int, formato: str):
 
     from modules._lib import imagen_motor, pdf_motor
 
-    _v, cliente, f, det, numero = _factura_ctx(codigo_cli, numf)
-    html = render_template("mi_cartera/factura_hoja.html", cliente=cliente,
-                           f=f, det=det, numero=numero)
+    html, det, numero = _hoja_html(codigo_cli, numf)
     es_imagen = formato == "imagen"
     try:
         if es_imagen:

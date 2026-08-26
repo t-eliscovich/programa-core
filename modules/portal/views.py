@@ -367,6 +367,32 @@ def factura(numf: int):
         det=factura_lineas.que_se_llevo(elegida.get("numf_completo")))
 
 
+@portal_bp.route("/factura/<int:numf>/papel", methods=["GET"])
+def factura_papel_cliente(numf: int):
+    """La factura en papel, la misma que tiene su vendedor y la oficina.
+
+    El scope es el de siempre en el portal: la factura se busca DENTRO del
+    estado de cuenta del cliente que está adentro. Un número ajeno da 404.
+    """
+    from flask import abort
+
+    from modules.asinfo import factura_papel
+
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    for f in (data.get("facturas") or []):
+        try:
+            if int(f.get("numf") or 0) == int(numf):
+                return render_template(
+                    "informes/factura_papel.html",
+                    **factura_papel.hoja(f.get("numf_completo")), numero=numf)
+        except (TypeError, ValueError):
+            continue
+    abort(404)
+
+
 @portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])
 def estado_cuenta_imprimir():
     """La hoja para imprimir — la MISMA que sale de la oficina.

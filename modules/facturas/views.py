@@ -892,6 +892,27 @@ def que_se_llevo(id_factura: int):
     )
 
 
+@facturas_bp.route("/facturas/<int:id_factura>/papel")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def papel(id_factura: int):
+    """La factura como la imprime Asinfo, para verla y para mandarla.
+
+    TMT 2026-08-26 (dueña): *"tenemos que poder descargar esto desde el
+    programa core los demás empleados"*. Es la MISMA hoja que manda el
+    vendedor y la que ve el cliente en su portal — `informes/factura_papel.html`
+    con los datos de `modules.asinfo.factura_papel`. Tres hojas distintas
+    divergen a la primera corrección que se le hace a una sola.
+    """
+    fact = queries.por_id(id_factura)
+    if not fact:
+        abort(404)
+    from modules.asinfo import factura_papel
+    return render_template("informes/factura_papel.html",
+                           **factura_papel.hoja(fact.get("numf_completo")),
+                           numero=fact.get("numf"))
+
+
 def _despachado_hoy(fecha) -> dict:
     """{kg, hora, fresco} de lo que SALIÓ hoy por la puerta (Asinfo).
 
