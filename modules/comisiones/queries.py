@@ -181,16 +181,35 @@ _CAJA_COBRO_FROM = """
 #
 #   1. Ningún índice se puede usar — y `scintela.cheque` ni siquiera tenía uno
 #      sobre `fechad`, que es la fecha con la que se cuenta TODA la cobranza
-#      (migración 0230). Se recorrían los 60.000 cheques enteros en cada carga
-#      del Inicio del vendedor.
+#      (migración 0230).
 #   2. El planificador queda CIEGO: no sabe estimar cuántas filas caen en un
-#      mes, calcula 1 donde hay 379, y con esa cuenta elige un nested loop
-#      contra el CTE de clientes — 1,5 millones de comparaciones.
+#      mes, calcula 1 donde hay 476, y con esa cuenta elige un nested loop
+#      contra el CTE de clientes — 1,9 millones de comparaciones para juntar
+#      36 filas.
 #
-# Medido el 26/08 contra una base sembrada a escala de producción (3.986
-# clientes, 84.000 facturas, 60.000 cheques), el detalle de cobranza de un
-# vendedor pasó de **549 ms a 5 ms**, con el resultado igual fila por fila. Lo
-# único que cambió es la forma de preguntar por el mes.
+# ⭐ ESTO NO ES LO QUE SE ARREGLÓ EL 04/08, y conviene tenerlo separado.
+# Aquella vez (dueña: *"también está súper lento"*) el problema era que la
+# pantalla de comisión llamaba al detalle del mes UNA VEZ POR MES: 8 consultas
+# por carga, 3.190 ms. Eso se arregló con `cobranzas_por_cliente_anio` y sigue
+# arreglado. Lo de acá es otra capa: cómo pregunta por el mes CADA UNA de esas
+# consultas. Las dos cosas son ciertas a la vez y ninguna reemplaza a la otra.
+#
+# ⚠ MEDIDO ACÁ, no en producción: una base local sembrada con la FORMA que
+# tiene la de la fábrica según los números verificados que hay en el repo —
+# 3.986 clientes, 35.526 facturas (facturas/views.py:3052, 14/08), 4.526
+# cheques (~3.200 vinieron del dBase + ~476 por mes) y 476 cheques en el mes
+# que se consulta. Con el resultado igual fila por fila en los cuatro casos:
+#
+#                                       hoy   sólo índices   sólo rango   ambos
+#   cobranza del mes (un vendedor)   343 ms        348 ms        6,5 ms   6,2 ms
+#   ventas del mes (un vendedor)      13 ms         13 ms       62   ms   6,8 ms
+#   comisión mes a mes del año       101 ms        103 ms       10   ms   9,0 ms
+#   /comisiones (los 6 vendedores)    26 ms         25 ms       12   ms  11,4 ms
+#
+# Las dos columnas del medio son la lección: los índices SOLOS no hacen nada
+# —el `EXTRACT` los ignora— y el rango SOLO empeora las ventas, porque con la
+# estimación buena Postgres se pone a buscar cliente por cliente y sin el
+# índice del cruce paga un bitmap por cada uno. Van juntos o no van.
 #
 # ⚠ El rango va `>= primero del mes` y `< primero del mes SIGUIENTE`, nunca
 # `BETWEEN` con el último día: si alguna de estas columnas algún día guarda una

@@ -8,33 +8,28 @@
 -- pantalla de comisiones de la oficina. No tenía índice: cada una de esas
 -- pantallas recorría la tabla de cheques ENTERA para juntar un mes.
 --
--- Medido el 26/08 contra una base sembrada a escala de producción (3.986
--- clientes, 84.000 facturas, 60.000 cheques), el detalle de cobranza de un
--- vendedor pasó de **549 ms a 5 ms** — con el resultado igual fila por fila.
+-- ⚠ MEDIDO ACÁ y no en producción: una base local sembrada con la FORMA que
+-- tiene la de la fábrica según los números verificados que hay en el repo —
+-- 3.986 clientes, 35.526 facturas (facturas/views.py:3052, 14/08/2026) y 4.526
+-- cheques (~3.200 vinieron del dBase + ~476 por mes), con 476 cheques en el mes
+-- que se consulta.
 --
--- ⚠ El índice solo no alcanzaba: el SQL preguntaba por el mes con
--- `EXTRACT(YEAR FROM fechad) = … AND EXTRACT(MONTH FROM fechad) = …`, y una
--- columna envuelta en una función no puede usar ningún índice. Las dos cosas
--- van juntas — ver el comentario grande arriba de `_rango_mes` en
--- modules/comisiones/queries.py.
+-- ⚠ Y un índice sobre `fechad` SOLO no alcanza. Estas pantallas preguntan dos
+-- cosas a la vez —"los cheques de ESTE cliente en ESTE mes"— porque cruzan la
+-- tabla con los clientes del vendedor. Con un índice por columna suelta,
+-- Postgres arma un bitmap de los dos y lo paga UNA VEZ POR CLIENTE. Por eso van
+-- los tres, y por eso van JUNTO con el cambio del SQL: solos no hacen nada,
+-- porque el `EXTRACT` los ignora.
 --
--- ⚠ Y un índice sobre `fechad` SOLO tampoco alcanzaba. Estas pantallas
--- preguntan dos cosas a la vez —"los cheques de ESTE cliente en ESTE mes"—
--- porque cruzan la tabla con los clientes del vendedor. Con un índice por
--- columna suelta, Postgres arma un bitmap de los dos y lo paga UNA VEZ POR
--- CLIENTE: medido, 665 clientes × 0,3 ms = 200 ms. Con el índice de las dos
--- columnas juntas, cada búsqueda es directa.
---
--- Medido acá, los tres casos que se miran todos los días:
---
---                            sin estos índices   con estos índices
---   ventas del mes (viejo)         203,6 ms            8,8 ms
---   cobranza del mes               96,2 ms             8,1 ms
---   /comisiones                    16,0 ms            14,4 ms
+--                                    hoy   sólo estos índices   índices + rango
+--   cobranza del mes (un vendedor) 343 ms         348 ms              6,2 ms
+--   ventas del mes (un vendedor)    13 ms          13 ms              6,8 ms
+--   comisión mes a mes del año     101 ms         103 ms              9,0 ms
+--   /comisiones (los 6 vendedores)  26 ms          25 ms             11,4 ms
 --
 -- Los tres se quedan: el de `fechad` solo es el que usa /comisiones, que junta
--- el mes de TODOS los vendedores y no filtra por cliente; los otros dos son
--- los del cruce cliente+mes.
+-- el mes de TODOS los vendedores y no filtra por cliente; los otros dos son los
+-- del cruce cliente+mes.
 --
 -- `idx_factura_codigo_cli` (codigo_cli solo) queda cubierto por el nuevo
 -- (codigo_cli, fecha) y se podría borrar, pero eso ya no es "agregar un
