@@ -77,21 +77,12 @@ th.ord.desc::after{content:" ↓";opacity:1}
    también la oficina. #}
 {% if tiene_permiso('usuarios.admin')
       and (estado.nuevas or estado.produciendo or estado.pedidas) %}
-  <br>
-  Afuera de la lista:
-  {%- if estado.nuevas %}
-    {{ estado.nuevas }} tela{{ 's' if estado.nuevas != 1 }} × color
-    ({{ estado.nuevas_kg | num_es(0) }} kg) que se hicieron hace menos de
-    {{ dias_quieto }} días ·
-  {%- endif %}
-  {%- if estado.produciendo %}
-    {{ estado.produciendo }} ({{ estado.produciendo_kg | num_es(0) }} kg) que se
-    siguen tejiendo ·
-  {%- endif %}
-  {%- if estado.pedidas %}
-    {{ estado.pedidas }} ({{ estado.pedidas_kg | num_es(0) }} kg) con un pedido
-    esperando
-  {%- endif %}.
+  {# ⚠ Una línea y sin kilos (dueña 26/08/2026: "no puede ocupar tanto espacio,
+     todo simplifica"). Eran dos renglones enteros de paréntesis. Lo que hay que
+     poder contestar es por qué la lista tiene 700 ítems y no 4.200: para eso
+     alcanza con CUÁNTAS quedaron afuera y por qué. #}
+  · afuera {{ estado.nuevas }} recién hechas ·
+  {{ estado.produciendo }} tejiéndose · {{ estado.pedidas }} pedidas
 {% endif %}
 </p>
 
@@ -120,9 +111,8 @@ th.ord.desc::after{content:" ↓";opacity:1}
        Sin la aclaración, el número parece un descuadre. #}
     {% if resumen.kg_movido | abs >= 1 %}
       <span class="mini">y {{ resumen.kg_movido | abs | num_es(0) }} kg
-        {{ 'que salieron' if resumen.kg_movido > 0 else 'que entraron' }}
-        por bodega{% if resumen.kg_movido < 0 %}: la segunda nueva entra
-        sola{% endif %}</span>
+        {% if resumen.kg_movido < 0 %}de SEG nueva{% else %}que
+        salieron por bodega{% endif %}</span>
     {% else %}
       <span class="mini">hoy en la bodega</span>
     {% endif %}</span>
@@ -142,9 +132,10 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <span class="mini">en {{ resumen.n_segunda }} ítems · el resto es PRI</span></span>
 </div>
 
-{# Una línea, no un cuadro verde: es una aclaración, no una alarma. #}
-<p class="sub" style="margin:18px 0 0">Lo que se vende no desaparece de la
-lista — así se ve si funcionó.</p>
+{# ⚠ Acá decía "lo que se vende no desaparece de la lista — así se ve si
+   funcionó". Se fue el 26/08/2026 ("todo simplifica"): ahora se VE, en las
+   filas tachadas con su palabra «vendido» y en la columna Vendido. Una frase
+   que explica lo que la tabla ya muestra es un renglón de más. #}
 
 {# ⭐ EL ÍNDICE DE LA PANTALLA, AL COSTADO (dueña 25/08/2026: "poneme links
    al costado para ir pasando… me refería a títulos, vendidos etc"). La página

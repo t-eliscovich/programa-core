@@ -2886,19 +2886,22 @@ def test_la_meta_y_los_puntos_se_congelan_sobre_lo_que_se_acaba_de_escribir(
 
 def test_la_pantalla_dice_cuanta_tela_quedo_afuera_y_por_que():
     """Si la lista baja de 707 ítems a 600 sin una palabra, lo primero que se
-    piensa es que el programa se rompió. Las dos razones van separadas —una se
-    arregla sola con el tiempo, la otra cuando salga el pedido— y los días los
-    dice la constante, no un número escrito a mano en el HTML."""
-    import inspect as _i
+    piensa es que el programa se rompió. Las TRES razones van separadas: una se
+    arregla sola con el tiempo, otra cuando salga el pedido, otra cuando el
+    telar pare.
+
+    ⚠ Los KILOS se fueron el 26/08/2026 ("no puede ocupar tanto espacio, todo
+    simplifica"): eran dos renglones enteros de paréntesis. Para contestar por
+    qué la lista tiene 700 ítems y no 4.200 alcanza con cuántas quedaron afuera
+    y por qué; los kilos de lo que NO está en la lista no deciden nada."""
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
     assert ("estado.nuevas or estado.produciendo or estado.pedidas"
             in html)
-    assert "{{ estado.nuevas_kg | num_es(0) }}" in html
-    assert "{{ estado.pedidas_kg | num_es(0) }}" in html
-    assert "{{ dias_quieto }} días" in html
-    assert "dias_quieto=asinfo_parado.DIAS_QUIETO" in _i.getsource(views.parado)
+    for cuenta in ("estado.nuevas", "estado.produciendo", "estado.pedidas"):
+        assert "{{ " + cuenta + " }}" in html, f"falta la cuenta de {cuenta}"
+    assert "estado.nuevas_kg" not in html, "los kilos volvieron a ocupar renglón"
 
 
 def test_el_refresco_cuenta_aparte_las_recientes_y_las_pedidas(monkeypatch):
@@ -3172,8 +3175,12 @@ def test_la_pantalla_cuenta_los_tres_motivos_por_separado():
     assert "estado.nuevas or estado.produciendo or estado.pedidas" in html
     assert "tiene_permiso('usuarios.admin')" in html, (
         "la línea de lo que quedó afuera es sólo para la dueña")
-    assert "{{ estado.produciendo_kg | num_es(0) }}" in html
-    assert "que se\n    siguen tejiendo" in html
+    # ⚠ Los kilos se fueron el 26/08/2026: eran dos renglones de paréntesis
+    # ("todo simplifica"). Lo que tiene que estar es la CUENTA de cada motivo.
+    assert "{{ estado.produciendo }}" in html
+    # ⚠ La frase se acortó el 26/08/2026 ("todo simplifica"): lo que el test
+    # cuida es que el motivo se cuente APARTE, no la redacción.
+    assert "tejiéndose" in html
 
 
 def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
@@ -3826,8 +3833,9 @@ def test_los_kilos_que_entran_por_bodega_dicen_de_donde_salen():
     del telar todos los días y cae sola en la lista, porque un saldo es también
     "los kilos SEG de cualquier tela, se venda o no", sin pedirle antigüedad."""
     html = _html_parado()
-    i = html.index("por bodega")
-    assert "la segunda nueva entra" in html[i:i + 200]
+    i = html.index("resumen.kg_movido | abs | num_es(0)")
+    assert "de SEG nueva" in html[i:i + 200], (
+        "el número parece un descuadre si no dice de dónde sale")
     assert "resumen.kg_movido < 0" in html[i:i + 120], (
         "sólo cuando ENTRAN kilos: si salieron, la segunda no explica nada")
 

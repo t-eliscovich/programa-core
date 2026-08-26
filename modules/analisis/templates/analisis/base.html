@@ -100,13 +100,19 @@ margin-bottom:8px}
    "esto esta raro asi… muy nada"). Van en columnas separadas por una línea
    fina: cada uno con su rótulo arriba, su cifra y su aclaración. Ocupa lo
    mismo que un renglón y se lee de un vistazo. */
-.linea{display:flex;flex-wrap:wrap;margin:18px 0 26px}
-.linea>span{display:block;padding:0 20px;border-left:1px solid var(--l)}
+/* ⚠ SEIS cifras tienen que entrar en UN renglón. Con 19 px y 20 de padding la
+   sexta se caía a un segundo renglón y quedaba colgada abajo a la izquierda,
+   desalineada de todo (dueña 26/08/2026: "no puede ocupar tanto espacio").
+   Menos padding y un punto menos de cuerpo alcanzan: se siguen leyendo igual
+   y el encabezado pasa de cinco renglones a dos. */
+.linea{display:flex;flex-wrap:wrap;margin:14px 0 18px}
+.linea>span{display:block;padding:0 14px;border-left:1px solid var(--l)}
 .linea>span:first-child{padding-left:0;border-left:0}
-.linea .k{display:block;font-size:12px;color:var(--g);margin:0 0 3px}
-.linea b{display:block;font-size:19px;font-weight:600;letter-spacing:-.01em;
+.linea .k{display:block;font-size:11.5px;color:var(--g);margin:0 0 2px}
+.linea b{display:block;font-size:18px;font-weight:600;letter-spacing:-.01em;
 font-variant-numeric:tabular-nums;line-height:1.15}
-.linea .mini{display:block;font-size:12px;color:#9aa3af;margin-top:2px}
+.linea .mini{display:block;font-size:11.5px;color:#9aa3af;margin-top:2px;
+white-space:nowrap}
 @media (max-width:780px){
   .linea{gap:14px 0}
   .linea>span{padding:0 14px 0 0;border-left:0}
