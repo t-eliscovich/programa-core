@@ -36,7 +36,10 @@ _TPL = (
 
 def _src_estado_cuenta() -> str:
     from modules.informes import queries as iq
-    return inspect.getsource(iq.estado_cuenta_cliente)
+    # TMT 2026-08-26: las seis consultas se mudaron a `estado_cuenta_lote`
+    # (una sola vez para todos los clientes en vez de 7 por cliente). El de
+    # UNO ahora es un envoltorio de ése, así que el SQL a leer está acá.
+    return inspect.getsource(iq.estado_cuenta_lote)
 
 
 def _sql_cliente() -> str:

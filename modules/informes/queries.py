@@ -7613,6 +7613,41 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
 
     `totales.saldo_vivo` = lo que el cliente nos debe HOY (sum facturas activas
     con saldo > 0, excluye anuladas). Es el número que el gerente busca primero.
+
+    Es `estado_cuenta_lote` con UN cliente adentro. No hay dos versiones de
+    esta cuenta: la hoja que se imprime en lote y la que se abre en pantalla
+    salen de las mismas seis consultas.
+    """
+    return estado_cuenta_lote([codigo_cli]).get(codigo_cli) or {
+        "cliente": None,
+        "facturas": [],
+        "cheques": [],
+        "anticipos": [],
+        "totales": totales_estado_cuenta_en_cero(),
+    }
+
+
+def estado_cuenta_lote(codigos: list[str]) -> dict[str, dict]:
+    """El estado de cuenta de VARIOS clientes, en seis consultas y no en 7×N.
+
+    ⭐ TMT 2026-08-26 (dueña): *"algo más que dure mucho tiempo y podamos
+    bajar"*.
+
+    Imprimir los estados de cuenta de todos los clientes con saldo hacía
+    **3.644 consultas** a la base —siete por cliente, 520 clientes— y tardaba
+    3,6 s medidos contra una base local. En producción cada una de esas
+    consultas se va por la red hasta el RDS, así que lo que se paga no es el
+    trabajo de la base sino 3.644 idas y vueltas.
+
+    Acá las mismas seis consultas se hacen UNA vez con `= ANY(...)` y se
+    reparten por cliente en Python. Las consultas son las de siempre, letra por
+    letra: lo único que cambia es que el `WHERE` pregunta por una lista en vez
+    de por uno. El orden de las filas de cada cliente también es el mismo
+    —agrupar en Python conserva el orden en que vienen— así que la hoja sale
+    idéntica.
+
+    Devuelve `{codigo_cli: {cliente, facturas, cheques, anticipos, totales}}`,
+    y los clientes que no existen simplemente no están en el diccionario.
     """
     # La query de abajo hace LEFT JOIN contra la tabla espejo de mails de
     # Asinfo. El deploy no corre migraciones, así que se bootstrapea en
@@ -7620,7 +7655,29 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     from modules.clientes import mail_asinfo as _ma
 
     _ma.asegurar_tabla()
-    cliente = db.fetch_one(
+    # Sin repetidos y respetando el orden en que los pidieron.
+    cods = list(dict.fromkeys(c for c in (codigos or []) if c))
+    if not cods:
+        return {}
+
+    def _por_cliente(filas):
+        """Agrupa las filas por cliente SIN tocarles el orden."""
+        salida: dict[str, list] = {c: [] for c in cods}
+        for f in filas or []:
+            salida.setdefault(f["codigo_cli"], []).append(f)
+        return salida
+
+    def _uno_por_cliente(filas):
+        """Los totales, que son UNA fila por cliente.
+
+        ⚠ El cliente que no tiene ninguna factura (o ningún cheque) NO trae
+        fila: el `GROUP BY` no inventa grupos vacíos. Se le devuelve `{}`, que
+        es exactamente lo que leía antes — todos los `.get(...) or 0` de más
+        abajo dan cero igual, que es lo que devolvía el agregado sin agrupar.
+        """
+        return {f["codigo_cli"]: f for f in filas or []}
+
+    clientes_filas = db.fetch_all(
         """
         SELECT c.codigo_cli, c.nombre, c.telefono, c.ruc, c.cupo, c.stop,
                c.pago, c.pase, c.descuento,
@@ -7661,33 +7718,30 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         LEFT JOIN scintela.cliente_mail_asinfo ma
                ON ma.ruc10 = LEFT(regexp_replace(COALESCE(c.ruc, ''), '[^0-9]', '', 'g'), 10)
               AND LENGTH(regexp_replace(COALESCE(c.ruc, ''), '[^0-9]', '', 'g')) >= 10
-        WHERE c.codigo_cli = %s
+        WHERE c.codigo_cli = ANY(%s)
         """,
-        (codigo_cli,),
+        (cods,),
     )
-    if cliente:
+    clientes = {}
+    for fila in clientes_filas or []:
         # Qué mail se muestra y de dónde salió. La regla vive en Python
         # (testeable sin Postgres) — ver modules/clientes/mail_asinfo.py.
-        cliente = dict(cliente)
+        cliente = dict(fila)
         cliente["mail"] = _ma.resolver(
             cliente.get("correo"),
             cliente.get("observacion"),
             cliente.get("mail_asinfo"),
         )
-    if not cliente:
-        return {
-            "cliente": None,
-            "facturas": [],
-            "cheques": [],
-            "anticipos": [],
-            "totales": totales_estado_cuenta_en_cero(),
-        }
-    facturas = db.fetch_all(
+        clientes[cliente["codigo_cli"]] = cliente
+    if not clientes:
+        return {}
+    facturas = _por_cliente(db.fetch_all(
         """
-        SELECT id_factura, numf, numf_completo, fecha, vencimiento,
+        SELECT codigo_cli,
+               id_factura, numf, numf_completo, fecha, vencimiento,
                kg, importe, abono, retencion, saldo, stat, condic, tipo
         FROM scintela.factura
-        WHERE codigo_cli = %s
+        WHERE codigo_cli = ANY(%s)
           __STAT_VIVO__
           -- TMT 2026-07-06: excluir asinfo-backfill también acá (criterio
           -- canónico de cartera; ya lo hacía la cuenta corriente hermana en
@@ -7698,11 +7752,12 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         -- (Reemplaza el orden DESC del 2026-05-17.)
         ORDER BY fecha ASC, numf ASC
         """.replace("__STAT_VIVO__", _SQL_ESTADO_CUENTA_STAT_VIVO),
-        (codigo_cli,),
-    )
-    cheques = db.fetch_all(
+        (cods,),
+    ))
+    cheques = _por_cliente(db.fetch_all(
         """
-        SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing,
+        SELECT c.codigo_cli,
+               c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fechaing,
                c.fecha_recibido, c.fecha_crea, c.fechaout,
                -- TMT 2026-08-03. Este parcial tiene query PROPIA y se quedó con
                -- la versión vieja de dos columnas que ya se arreglaron en
@@ -7724,7 +7779,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                b.nombre AS nombre_banco
         FROM scintela.cheque c
         LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco
-        WHERE c.codigo_cli = %s
+        WHERE c.codigo_cli = ANY(%s)
           -- TMT 2026-06-23 (dueña): los espejos de anticipo NB=98 NO son
           -- cheques reales en cartera — son saldo a favor del cliente. Se
           -- listan aparte (ver `anticipos` abajo) para no ensuciar la grilla
@@ -7739,13 +7794,14 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         ORDER BY COALESCE(__DIA_SALIDA__, c.fechad, c.fecha) ASC, c.id_cheque ASC
         """.replace("__DIA_INGRESO__", _SQL_DIA_INGRESO_CHEQUE)
              .replace("__DIA_SALIDA__", _SQL_DIA_SALIDA_CHEQUE),
-        (codigo_cli,),
-    )
+        (cods,),
+    ))
 
     # Marca compartida: la usan la fila que se esconde al imprimir sólo
     # cheques y el contador de la impresión en lote. Ver STATS_CHEQUE_POR_COBRAR.
-    for _c in (cheques or []):
-        _c["por_cobrar"] = cheque_por_cobrar(_c.get("stat"))
+    for _lista in cheques.values():
+        for _c in _lista:
+            _c["por_cobrar"] = cheque_por_cobrar(_c.get("stat"))
 
     # TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.
     # En cobranza, cuando un cheque excede las facturas, el sobrante se guarda
@@ -7753,24 +7809,25 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     # Antes ese espejo quedaba "escondido" entre los cheques y NO bajaba el
     # saldo del cliente → la dueña no lo veía. Ahora lo levantamos aparte y lo
     # neteamos contra el saldo (ver `saldo_neto` / `saldo_a_favor` en totales).
-    anticipos = db.fetch_all(
+    anticipos = _por_cliente(db.fetch_all(
         """
-        SELECT c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fecha_crea,
+        SELECT c.codigo_cli,
+               c.id_cheque, c.no_cheque, c.fecha, c.fechad, c.fecha_crea,
                c.importe, c.stat, c.id_cheque_padre
         FROM scintela.cheque c
-        WHERE c.codigo_cli = %s
+        WHERE c.codigo_cli = ANY(%s)
           AND COALESCE(c.no_banco, 0) = 98
           AND COALESCE(c.stat, '') <> 'X'
         ORDER BY COALESCE(c.fecha_crea, c.fecha) ASC, c.id_cheque ASC
         """,
-        (codigo_cli,),
-    )
+        (cods,),
+    ))
 
     # Totales — calculados en SQL para precisión numeric, no en Python.
-    tot_fac = (
-        db.fetch_one(
+    tot_fac = _uno_por_cliente(
+        db.fetch_all(
             """
-        SELECT
+        SELECT codigo_cli,
           COALESCE(SUM(kg), 0)                                        AS kg,
           COALESCE(SUM(importe), 0)                                   AS importe,
           COALESCE(SUM(abono), 0)                                     AS abono,
@@ -7793,7 +7850,7 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
              AND COALESCE(vencimiento, fecha) < CURRENT_DATE
             THEN 1 END)                                               AS n_vencidas
         FROM scintela.factura
-        WHERE codigo_cli = %s
+        WHERE codigo_cli = ANY(%s)
           -- TMT 2026-07-06 (dueña "los totales muy mal están", caso EDU): el
           -- pie de la tabla dice "Totales (N facturas)" con N = filas
           -- LISTADAS (sin T, sin backfill), pero estas sumas iban sobre TODAS
@@ -7804,10 +7861,10 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           -- pie == Σ(filas visibles) y el último ACUM == saldo del pie.
           __STAT_VIVO__
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+        GROUP BY codigo_cli
         """.replace("__STAT_VIVO__", _SQL_ESTADO_CUENTA_STAT_VIVO),
-            (codigo_cli,),
+            (cods,),
         )
-        or {}
     )
     # Stats canónicos (2026-04-29 + TMT 2026-05-16):
     #   Z/P = cartera (todavía en mano)
@@ -7815,10 +7872,10 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
     #   1/2/3/R = devueltos/rebotados (1/2/3 todavía en gestión, R terminal)
     #   D = "Daniela" (caso especial legacy — no es depositado)
     #   E = endosado, X = eliminado
-    tot_che = (
-        db.fetch_one(
+    tot_che = _uno_por_cliente(
+        db.fetch_all(
             """
-        SELECT
+        SELECT codigo_cli,
           COALESCE(SUM(importe), 0)                                                       AS total,
           COALESCE(SUM(CASE WHEN stat IN ('Z','P')         THEN importe ELSE 0 END), 0)   AS cartera,
           COALESCE(SUM(CASE WHEN stat IN ('B','A')         THEN importe ELSE 0 END), 0)   AS depositados,
@@ -7831,40 +7888,64 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
           COALESCE(SUM(CASE WHEN __A_DEPOSITAR__ THEN importe ELSE 0 END), 0)              AS a_depositar,
           COALESCE(SUM(CASE WHEN __PROTESTADO__ THEN importe ELSE 0 END), 0)               AS protestados
         FROM scintela.cheque
-        WHERE codigo_cli = %s
+        WHERE codigo_cli = ANY(%s)
           AND COALESCE(stat,'') <> 'X'
           -- TMT 2026-06-23: excluir espejos de anticipo NB=98 de los totales
           -- de cheques reales (se contabilizan en `saldo_a_favor`).
           AND COALESCE(no_banco, 0) <> 98
+        GROUP BY codigo_cli
         """.replace("__POR_COBRAR__", _SQL_CHEQUE_POR_COBRAR)
             .replace("__A_DEPOSITAR__", _SQL_CHEQUE_A_DEPOSITAR)
             .replace("__PROTESTADO__", _SQL_CHEQUE_PROTESTADO),
-            (codigo_cli,),
+            (cods,),
         )
-        or {}
     )
 
     # TMT 2026-06-23: saldo a favor del cliente = -Σ(importe espejos NB=98).
     # `importe` es negativo en los espejos, así que el saldo a favor (positivo)
     # = -SUM. `saldo_neto` = saldo de facturas + Σ(importe NB=98) (lo reduce).
-    tot_ant = (
-        db.fetch_one(
+    tot_ant = _uno_por_cliente(
+        db.fetch_all(
             """
-        SELECT COALESCE(SUM(importe), 0) AS anticipo_raw,
+        SELECT codigo_cli,
+               COALESCE(SUM(importe), 0) AS anticipo_raw,
                COUNT(*)                  AS n_anticipos
         FROM scintela.cheque
-        WHERE codigo_cli = %s
+        WHERE codigo_cli = ANY(%s)
           AND COALESCE(no_banco, 0) = 98
           AND COALESCE(stat, '') <> 'X'
+        GROUP BY codigo_cli
         """,
-            (codigo_cli,),
+            (cods,),
         )
-        or {}
     )
+    salida: dict[str, dict] = {}
+    for _cod, cliente in clientes.items():
+        salida[_cod] = {
+            "cliente": cliente,
+            "facturas": facturas.get(_cod) or [],
+            "cheques": cheques.get(_cod) or [],
+            "anticipos": anticipos.get(_cod) or [],
+            "totales": _totales_estado_cuenta(tot_fac.get(_cod) or {},
+                                              tot_che.get(_cod) or {},
+                                              tot_ant.get(_cod) or {}),
+        }
+    return salida
+
+
+def _totales_estado_cuenta(tot_fac: dict, tot_che: dict, tot_ant: dict) -> dict:
+    """El bloque `totales` de un cliente, a partir de sus tres agregados.
+
+    Vive aparte de `estado_cuenta_lote` sólo para que el lote no tenga el
+    diccionario entero adentro del `for`. Los números son los mismos de
+    siempre; no se movió una sola cuenta.
+    """
+    # TMT 2026-06-23: saldo a favor del cliente = -Σ(importe espejos NB=98).
+    # `importe` es negativo en los espejos, así que el saldo a favor (positivo)
+    # = -SUM. `saldo_neto` = saldo de facturas + Σ(importe NB=98) (lo reduce).
     _anticipo_raw = float(tot_ant.get("anticipo_raw") or 0)  # negativo
     _saldo_fac = float(tot_fac.get("saldo") or 0)
-
-    totales = {
+    return {
         "kg": float(tot_fac.get("kg") or 0),
         "importe": float(tot_fac.get("importe") or 0),
         "abono": float(tot_fac.get("abono") or 0),
@@ -7886,13 +7967,6 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
         "saldo_a_favor": -_anticipo_raw,
         "saldo_neto": round(_saldo_fac + _anticipo_raw, 2),
         "n_anticipos": int(tot_ant.get("n_anticipos") or 0),
-    }
-    return {
-        "cliente": cliente,
-        "facturas": facturas,
-        "cheques": cheques,
-        "anticipos": anticipos,
-        "totales": totales,
     }
 
 

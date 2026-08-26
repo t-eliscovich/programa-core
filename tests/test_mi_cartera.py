@@ -718,13 +718,16 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
     )
     vistos = []
 
-    def _ec(cod):
-        vistos.append(cod)
-        return {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
-                "facturas": [], "cheques": [], "anticipos": [],
-                "totales": _totales()}
+    # TMT 2026-08-26: la hoja se arma con `estado_cuenta_lote` —los estados de
+    # cuenta de todos los clientes en una consulta, no uno por uno—. El fake
+    # recibe la LISTA de códigos, que es además lo que fija el orden.
+    def _ec_lote(cods):
+        vistos.extend(cods)
+        return {cod: {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
+                      "facturas": [], "cheques": [], "anticipos": [],
+                      "totales": _totales()} for cod in cods}
 
-    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _ec)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_lote", _ec_lote)
     r = vendedor_logueado.get("/mi-cartera/imprimir")
     assert r.status_code == 200
     assert b"Imprimir estados de cuenta" in r.data

@@ -35,7 +35,8 @@ _TPL = (
 
 def _src_estado_cuenta():
     from modules.informes import queries as iq
-    return inspect.getsource(iq.estado_cuenta_cliente)
+    # El SQL vive en `estado_cuenta_lote` desde el 26/08 — ver ahí el porqué.
+    return inspect.getsource(iq.estado_cuenta_lote)
 
 
 def test_totales_facturas_mismo_filtro_que_la_lista():
@@ -48,7 +49,11 @@ def test_totales_facturas_mismo_filtro_que_la_lista():
     criterio de stat, así que no pueden divergir aunque cambie.
     """
     src = _src_estado_cuenta()
-    i_lista = src.find("SELECT id_factura")
+    # ⚠ La marca es la lista de columnas y NO "SELECT id_factura": desde el
+    # 26/08 el SELECT arranca con `codigo_cli` (la consulta trae a todos los
+    # clientes de una), y buscar la palabra pegada al SELECT dejaba el test
+    # verde por no encontrar nada.
+    i_lista = src.find("id_factura, numf, numf_completo")
     i_tot = src.find("SUM(kg)")
     assert i_lista > 0 and i_tot > 0, "no encontré las dos queries de facturas"
     lista_sql = src[i_lista:src.find('"""', i_lista)]
@@ -86,7 +91,7 @@ def test_criterio_de_stat_deja_afuera_totalizadas_y_anuladas():
 
 def test_lista_facturas_excluye_backfill():
     src = _src_estado_cuenta()
-    i = src.find("SELECT id_factura")
+    i = src.find("id_factura, numf, numf_completo")   # ver la nota de arriba
     lista_sql = src[i:src.find('"""', i)]
     assert _BACKFILL_WHERE in lista_sql, (
         "la lista de facturas del estado de cuenta debe excluir asinfo-"

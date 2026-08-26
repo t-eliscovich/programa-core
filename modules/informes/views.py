@@ -3689,9 +3689,28 @@ def estado_cuenta_lote_imprimir():
         codes = [r["codigo_cli"] for r in sub]
 
     # Estado de cuenta completo por cliente (facturas + totales).
+    #
+    # ⭐ TMT 2026-08-26 (dueña): *"algo más que dure mucho tiempo y podamos
+    # bajar"*. Esto era un `for` que llamaba a `estado_cuenta_cliente` una vez
+    # por cliente: con los 520 clientes con saldo son **3.644 consultas** a la
+    # base, y en producción cada una se va por la red hasta el RDS. Medido
+    # contra una base local: 3,6 s.
+    #
+    # `estado_cuenta_lote` hace las MISMAS seis consultas una sola vez, con la
+    # lista de códigos adentro del WHERE. La hoja sale idéntica —hay un test
+    # que compara las dos formas cliente por cliente—.
+    #
+    # ⚠ El `_safe` de antes hacía que un cliente roto no se llevara puesta la
+    # impresión entera; con una sola consulta eso se perdería, así que si el
+    # lote falla se vuelve al camino de a uno en vez de devolver una hoja
+    # vacía.
+    lote, _e = _safe(lambda: queries.estado_cuenta_lote(codes), None)
     clientes = []
     for code in codes:
-        d, _e = _safe(lambda c=code: queries.estado_cuenta_cliente(c), {})
+        if lote is not None:
+            d = lote.get(code)
+        else:
+            d, _e2 = _safe(lambda c=code: queries.estado_cuenta_cliente(c), {})
         if d and d.get("cliente"):
             clientes.append(d)
 
