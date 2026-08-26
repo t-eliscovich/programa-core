@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-25._
+_Última actualización: 2026-08-26._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -152,29 +152,26 @@ del 05/08 que el agrupado se tragó por un corrimiento de índices, y se anuló 
 `/conciliacion/banco-v2/deshacer`. El bug de código está arreglado; lo que queda
 es cargar esas cobranzas — ver abajo.
 
-### [M] Cargar las 5 cobranzas del 05/08 que estaban adentro de la NC $7.404,88
+### [XS] Falta UN crédito del 05/08: $72,30 sin dueño
 
-Los cinco créditos del extracto del 05/08 volvieron a quedar **pendientes de
-banco** en la sesión abierta (panel Banco). Ninguno está aplicado a facturas, así
-que hoy esos clientes figuran debiendo plata que ya pagaron. Tamara (11/08): las
-carga Alex por Cobranza, no por script.
+⚠ **Corregido el 26/08/2026**: este item decía que faltaban CINCO cobranzas y
+que los clientes figuraban debiendo plata que ya habían pagado. **No es así.**
+Alex las cargó el 11 y el 12/08 y quedaron conciliadas; verificado contra la
+base: los cuatro depósitos están en `scintela.cheque` (banco 90, stat B) y los
+cuatro clientes tienen **cero facturas abiertas**.
 
-| Extracto (doc) | Monto | Cliente | Contra qué |
+| Extracto | Monto | Cliente | Estado |
 |---|---|---|---|
-| 53443956 | 1.142,96 | MMA · Marroquín Espinosa | FIFO (debe 38.066,95) |
-| 56804542 | 72,30 | ❓ sin identificar | — |
-| 71519723 | 3.099,52 | ADO · Oñate Oñate | factura 180981, importe idéntico |
-| 55685078 | 2.568,54 | DYS · Dayío Sports | sus 4 facturas abiertas, suman exacto |
-| 59356148 | 521,56 | YGE · Erazo Melendrez | **ya cargada** el 11/08 (cheque 102153) |
+| 71519723 | 3.099,52 | ADO · Oñate Oñate | conciliada 14/08 |
+| 55685078 | 2.568,54 | DYS · Dayío Sports | conciliada 12/08 |
+| 53443956 | 1.142,96 | MMA · Marroquín Espinosa | conciliada 12/08 |
+| 59356148 | 521,56 | YGE · Erazo Melendrez | conciliada 12/08 |
+| 56804542 | **72,30** | ❓ | **sigue pendiente** |
 
-Dos notas: el crédito de YGE **no se vuelve a cargar** — su depósito ya está en
-el libro con fecha 11/08 y lo que falta es cruzarlo contra el crédito del 05/08
-en el panel de conciliación. Y los $72,30 no tienen cliente reconocible en el
-concepto: hay que preguntarle al banco o buscar un saldo de ese importe.
-
-Mientras tanto, la traza debería decir de qué FECHA es el movimiento bancario y
-no sólo el importe.
-
+Lo único que queda son los **$72,30**, y su concepto no se parece al de los
+otros cuatro: donde ellos dicen "TRANSFERENCIA DIRECTA DE <nombre>", éste dice
+`2608050E4MXN-BANCO PI-PAG-16359728987`. **Puede no ser la cobranza de un
+cliente** — antes de buscarle dueño, preguntar al banco qué es.
 ### [L] Limpieza del código dBase — SEPTIEMBRE 2026, no antes
 
 Reconfirmado el 2026-08-09: **se hace en septiembre**, no antes. Lo que sigue
@@ -236,44 +233,53 @@ columnas de la misma tabla, con `COUNT(*) FILTER`. Eso recorre la tabla entera
 por definición y ningún índice lo cambia. Si algún día ese endpoint molesta, lo
 que hay que revisar es si sigue haciendo falta, no cómo filtra.
 
-### [M] El piso de /facturas ahora es el SERVIDOR, no el HTML
+### [M] /facturas: medido dónde se van los 700 ms (26/08/2026)
 
-24/08, medido en producción con 500 filas después de las dos pasadas de peso
-(4.528 KB → 2.568 → **2.042 KB**, 4 KB por fila; por la red viajan 103 KB
-porque va gzipeada):
+Medido en producción, mediana de 4 corridas, sobre el mes en curso. La clave
+es que el tiempo NO es una sola cosa: hay un **piso fijo** y un **costo por
+fila**.
 
-| | ms |
-|---|---|
-| respuesta del servidor | **590-880** |
-| parseo del HTML en el browser | 206 |
-| total hasta que está lista | ~1.100-1.360 |
+| filas por página | respuesta | HTML |
+|---|---|---|
+| 500 (lo que hay hoy) | **731 ms** | 2.044 KB |
+| 100 | 466 ms | 490 KB |
+| 20 | 454 ms | 179 KB |
+| 1 | **444 ms** | 105 KB |
 
-O sea que **lo que queda es el servidor**, y no depende de las filas: con
-`?por_pagina=100` la respuesta sigue en ~480 ms. Es la query + los totales del
-universo filtrado, no el render. Antes de tocar nada hay que medir QUÉ query
-—la de las filas, la de los conteos por vista, o el saldo acumulado— y recién
-ahí decidir.
+O sea: **~444 ms de piso** que no dependen de las filas, y **~290 ms que sí**.
+Descontando ~108 ms de red (medidos con un `SELECT 1` por la consola), el
+servidor pone ~336 ms fijos + 290 de las filas.
 
-El otro camino, más barato pero VISIBLE, es mostrar menos de 500 filas por
-página: eso lo decide la dueña, no se toca de oficio.
+**Qué NO es** (los tres sospechosos de siempre, descartados midiendo):
 
-### [S] Las notas de Alex que el Excel de pendientes ya se comió
+- **Asinfo no es.** `vista=estado` saltea el puente entero y tarda lo mismo
+  (670-745 ms). El warmup lo mantiene caliente.
+- **`contar_filtrado()` no es**: 5 ms.
+- **`conteos_por_vista()` no es**: 36 ms, aunque escanee la tabla entera — son
+  36.565 filas / 13 MB, chiquita.
 
-Hasta el 18/08/2026 la quinta columna del Excel de conciliación se mapeaba y se
-tiraba al piso al re-importar, y "Hacer prevalecer" borraba y re-insertaba las
-filas sin nota. Todo lo que Alex escribió a mano entre la carga inicial y esa
-fecha **no está en la base**: la única nota viva es `TTY` (5060382), y viene de
-la migración 0055, no del ciclo del Excel.
+**Qué sí es**, en orden de lo que rinde:
 
-El código ya no las pierde. Lo que falta es recuperarlas, si aparecen: la única
-copia posible es un Excel viejo en la compu de Tamara o de Alex. **Ojo**:
-volver a subir un archivo viejo por "Hacer prevalecer" también haría prevalecer
-su lista de pendientes (borra las filas que no estén en él). Para recuperar
-sólo las notas hace falta un camino aparte — subir el archivo y escribir
-ÚNICAMENTE la columna NOTA, sin tocar altas ni bajas. Hacerlo cuando haya un
-archivo viejo a mano; si no aparece ninguno, cerrar este item.
+1. **Las 500 filas** — 290 ms de servidor + los ~206 ms que el browser tarda
+   en parsear 2 MB. Bajar a 100 corta el HTML un 76% y la respuesta un 36%.
+   🔴 **Lo decide la dueña**: se ve.
+2. **`buscar()` cuesta 120 ms aunque muestre UNA fila.** El CTE arma el
+   universo filtrado entero —con el LATERAL a `cliente` por cada fila— y le
+   calcula el saldo corrido con una window, y recién ahí aplica LIMIT/OFFSET.
+   Es correcto (el acum tiene que cerrar con el total del header) pero
+   significa que **paginar no baja este pedazo**. Si molesta: sacar el acum de
+   arranque con un solo SUM y acumular sólo la página.
+3. **No hay índice plano sobre `scintela.cliente(codigo_cli)`.** El LATERAL
+   filtra por `codigo_cli = f.codigo_cli` y el único índice que hay es
+   FUNCIONAL (`upper(trim(codigo_cli))`), que ese predicado no puede usar. Hoy
+   lo salva el Memoize de Postgres —pocos clientes distintos por página—, por
+   eso son 120 ms y no segundos.
+   ⚠ **Probado y NO sirve** reescribir el LATERAL como
+   `upper(trim(codigo_cli)) = upper(trim(f.codigo_cli))` para usar el índice
+   que ya existe: sale **peor** (896 ms contra 235). El camino es crear el
+   índice plano y volver a medir — no se puede desde la consola read-only.
 
-
+~~El item anterior concluía "es la query + los totales". Los totales son 5 ms.~~
 ### [S] `STATS_VIVOS` está definido dos veces, con miembros distintos
 `modules/cheques/queries.py` L2818 (`Z,B,1,2,3,D,P,A`) y L4092
 (`Z,1,2,3,P,D`): gana el de abajo, que es el que quisieron los dos únicos usos
@@ -302,14 +308,13 @@ Va con la limpieza de septiembre.
 Las novedades de proveedores son por persona desde el 31/07 (mig 0147), pero
 `autobap_log` sigue global: lo que uno vio, desaparece para todos.
 
-### [M] 7 pares de códigos de cliente duplicados
-BLP BRC JQS LEC YMO JRP MTE — la mig 0155 prohíbe nuevos; estos quedaron.
-Cada par necesita decisión (mismo cliente ×2 vs dos empresas reales).
-Pantallas: `/admin/clientes-asinfo`, `cambiar-codigo`.
+### [S] Cupo de crédito cargado en el 11% de los clientes
+La ficha muestra cupo y descuento (38f900bb) pero el dato está casi vacío:
+**458 de 3.986 clientes** tienen cupo (medido 26/08/2026).
 
-### [S] Cupo de crédito cargado en ~10% de los clientes
-La ficha muestra cupo y descuento (38f900bb) pero el dato está casi vacío.
-Cargar los cupos reales o la columna es decoración.
+**Los carga Andrés, cuando pueda** (dueña, 26/08/2026). No hay nada que hacer
+del lado del programa: la pantalla de carga masiva ya existe
+(`/clientes/cupos-carga`, xlsx → preview → confirmar). Es esperar.
 
 ### [XS] Comisiones: la rama muerta de `scintela.cobro`
 ⚠ Este item estuvo MAL REDACTADO hasta el 24/08 ("la rama de cobros no-cheque
@@ -363,6 +368,17 @@ son uno solo, casi seguro es una sola causa. Lista completa y cómo reproducir:
   unas 15-28 por día ($22k el 24/08, $25k el 13/08) y nunca estuvieron: la
   card 199 de Metabase trae `id_documento IN (7, 17, 20, 251, 451, 501, 652)`
   y el 252 no está en esa lista. No es un agujero: es la decisión.
+- **La SEGUNDA casi no se marca al facturar — se deja como está** (dueña,
+  26/08/2026: *"eso lo dejamos como está"*). La calidad del stock vive en el
+  LOTE; la de la venta, en la LÍNEA de factura, que alguien tiene que tildar a
+  mano — y `dfc.id_lote` viene NULL, así que no hay puente. Campo vacío = se
+  asume PRIMERA. Medido: en 12 meses se facturaron 3.509.672 kg y sólo 40.390
+  llevan la marca SEG (**1,15%**), contra un 35% de segunda en la bodega de la
+  lista de saldos. El descuento está limpio (es del cliente, igual en todas las
+  líneas de una factura, tope 18,3%): la segunda se hace bajando el PRECIO
+  BRUTO, −20/−29% según la tela. Quedan 40 líneas / 1.872 kg que dicen
+  "Primera" a precio de segunda y ~1.850 kg de segunda que se fueron entre el
+  18 y el 24/08 sin factura que los explique. Es una decisión, no un pendiente.
 - Compras con kg=0 desde Asinfo: aceptado. Activos sin tipo (~$655k): aceptado.
 - No se cargan más aliases cliente Asinfo↔PC: sucursales por dirección.
 
