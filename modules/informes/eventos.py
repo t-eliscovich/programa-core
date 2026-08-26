@@ -360,21 +360,28 @@ def transacciones(desde, hasta) -> dict[str, dict]:
     """
     if not desde or not hasta:
         return {}
+    # 🚨 TMT 2026-08-26 — el día lleva DOS conversiones, y las dos hacen falta.
+    # `transacciones_bancarias.fecha_crea` es `timestamp` SIN zona (la tabla
+    # viene del dBase) y guarda hora UTC. Con una sola conversión Postgres hace
+    # lo contrario de lo que parece: LEE el valor como si ya fuera hora de
+    # Guayaquil y devuelve un timestamptz que, al castear a date, se mira en la
+    # zona de la sesión (UTC) — o sea que SUMA 5 horas en vez de restarlas.
+    # Medido: una nota de débito cargada 15:26 de Ecuador daba día 27/08, y el
+    # "ver" de la traza mandaba al Historial de un día sin movimientos. Todo lo
+    # cargado después de las 14:00 se iba al día siguiente, por eso el link
+    # andaba a la mañana y no a la tarde.
+    #
+    # ⭐ La distinción importa: en la consulta de arriba, sobre una columna que
+    # SÍ tiene zona, la conversión simple es la CORRECTA. Va por el TIPO de la
+    # columna, no por costumbre.
+    #
+    # Y el comentario vive acá, en Python, y no adentro del SQL: el test de la
+    # nota diaria elige qué devolver mirando el TEXTO de la consulta, así que
+    # una palabra de más en un comentario le cambia la respuesta.
     try:
         filas = db.fetch_all(
             """
             SELECT no_banco, documento, concepto, importe,
-                   -- 🚨 DOS conversiones, y las dos hacen falta. `fecha_crea`
-                   -- de esta tabla es `timestamp` SIN zona (viene del dBase) y
-                   -- guarda hora UTC. Con un solo `AT TIME ZONE
-                   -- 'America/Guayaquil'` Postgres hace lo contrario de lo que
-                   -- parece: LEE el valor como si ya fuera hora de Guayaquil y
-                   -- devuelve un timestamptz, que al castear a date se mira en
-                   -- UTC — o sea que SUMA 5 horas en vez de restarlas. Todo lo
-                   -- cargado después de las 14:00 de Ecuador se iba al día
-                   -- siguiente. Primero se dice "esto es UTC", después se pasa
-                   -- a Ecuador. (En `mov_doble.fecha_creacion`, que SÍ es
-                   -- TIMESTAMPTZ, la conversión simple es la correcta.)
                    ((fecha_crea AT TIME ZONE 'UTC')
                         AT TIME ZONE 'America/Guayaquil')::date AS dia
               FROM scintela.transacciones_bancarias

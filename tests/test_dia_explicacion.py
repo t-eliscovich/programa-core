@@ -1624,7 +1624,11 @@ def test_la_nota_agrupa_igual_que_la_traza():
                                             ("181306", "AJT", 196.0)])]
 
     def _fetch(sql, args=None, *a, **k):
-        return filas if "mov_doble" in sql else []
+        # Por la TABLA, no por la palabra suelta: `transacciones_bancarias`
+        # también nombra a mov_doble (en un comentario), y con el match flojo
+        # esta consulta se llevaba las filas de la otra y el agrupado salía
+        # vacío. TMT 2026-08-26.
+        return filas if "FROM scintela.mov_doble" in sql else []
 
     with patch.object(ev.db, "fetch_all", side_effect=_fetch):
         out = d._renglones(movs, {"creado_en": "a"}, {"creado_en": "b"})
