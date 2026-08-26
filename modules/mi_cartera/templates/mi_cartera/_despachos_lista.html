@@ -19,25 +19,42 @@
      d          los datos de `asinfo.despachos_cliente.de_cliente`
      url_base   a dónde van los períodos  ("/despachos")
      url_guia   con qué empieza el link de cada guía  ("/despacho/")
+     compacto   opcional; para cuando ya viene adentro de una tarjeta
+
+   ⭐ `compacto` es la ficha del vendedor, donde los despachos son una PESTAÑA
+   al lado de Facturas y Cheques (TMT 26/08). Ahí el marco y el título ya los
+   puso la tarjeta de las pestañas, y el `hero` grande chocaba con el del saldo
+   que está arriba en la misma pantalla: los mismos números pasan a un renglón.
+   El portal del cliente, que entra por su propia pantalla, no lo pasa.
 
    ⚠ La CSS va ACÁ ADENTRO a propósito: un parcial viaja CON su CSS. Ya pasó
    que se llevó el HTML de una tabla y no sus reglas, y la tabla salió cruda. #}
 
+{% set _cc = '' if compacto|default(false) else 'card ' %}
 {% if d.sin_ruc %}
   {# Sin RUC en la ficha no se puede probar de quién es la mercadería, y el
      código de 3 letras solo no alcanza: hay dos empresas distintas que
      comparten uno. Son 11 clientes de 3.986. #}
-  <div class="card vacio">
+  <div class="{{ _cc }}vacio">
     <b>Todavía no podemos mostrar los despachos.</b>
     <p>Falta el RUC en la ficha del cliente. Cargándolo, aparecen solos.</p>
   </div>
 {% elif not d.ok %}
-  <div class="card vacio">
+  <div class="{{ _cc }}vacio">
     <b>No pudimos traer los despachos en este momento.</b>
     <p>Es un problema nuestro. Probá de nuevo en un rato — el estado de cuenta
        sigue funcionando.</p>
   </div>
 {% else %}
+  {% if compacto|default(false) %}
+  <div class="dsub">
+    <b>{{ d.rollos }} rollo{{ '' if d.rollos == 1 else 's' }}</b> en
+    {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }}{%
+      if d.unidades %} · {{ d.unidades }} unidades{% endif %} ·
+    desde el {{ d.desde|fecha_es }}{%
+      if d.devueltos %} · incluye {{ d.devueltos }} que devolvió{% endif %}
+  </div>
+  {% else %}
   <div class="hero">
     <div class="lbl">Rollos despachados</div>
     <div class="val">{{ d.rollos }}</div>
@@ -50,23 +67,24 @@
       {% if d.devueltos %}<br>Incluye {{ d.devueltos }} que devolvió{% endif %}
     </div>
   </div>
+  {% endif %}
 
   {# Los períodos. Tres meses es lo que se pregunta; el año entero está a un
      toque para el que busca una guía vieja. #}
-  <div class="periodos">
+  <div class="periodos{{ ' chico' if compacto|default(false) }}">
     {% for m, rotulo in [(3, '3 meses'), (6, '6 meses'), (12, '1 año')] %}
       <a class="chip {{ 'on' if d.meses == m }}"
-         href="{{ url_base }}?meses={{ m }}">{{ rotulo }}</a>
+         href="{{ url_base }}{{ '&' if '?' in url_base else '?' }}meses={{ m }}">{{ rotulo }}</a>
     {% endfor %}
   </div>
 
   {% if not d.guias %}
-    <div class="card vacio">
+    <div class="{{ _cc }}vacio">
       <b>No hay despachos en este período.</b>
       <p>Probá con un período más largo.</p>
     </div>
   {% else %}
-    <div class="card">
+    {% if not compacto|default(false) %}<div class="card">{% endif %}
       <table class="ec desp">
         {# ⭐ TMT 26/08: *"mejor hagamos columna rollos y columna unidades"*.
            Apiladas en la misma celda se veían feas: son dos cosas distintas y
@@ -103,7 +121,7 @@
           {% endfor %}
         </tbody>
       </table>
-    </div>
+    {% if not compacto|default(false) %}</div>{% endif %}
   {% endif %}
 {% endif %}
 
@@ -113,8 +131,16 @@
     text-decoration:none;color:var(--ink);background:var(--surface);
     border:1px solid var(--line);border-radius:11px}
   .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* Adentro de la pestaña los períodos son un filtro, no la portada de la
+     pantalla: mismo lugar, menos peso. */
+  .periodos.chico{gap:6px;margin-bottom:10px}
+  .periodos.chico .chip{padding:6px 5px;font-size:12.5px;border-radius:9px}
 
   .vacio{padding:18px 16px;font-size:14px;line-height:1.5}
+  /* El resumen de los despachos cuando ya está adentro de la tarjeta de las
+     pestañas: los mismos números del `hero`, en un renglón. */
+  .dsub{margin:0 0 10px;font-size:13px;line-height:1.4;color:var(--ink-2)}
+  .dsub b{color:var(--ink);font-size:14px}
   .vacio p{margin:6px 0 0;color:var(--ink-2)}
 
   .hero .val .chico{font-size:.55em;font-weight:600;color:var(--ink-2)}

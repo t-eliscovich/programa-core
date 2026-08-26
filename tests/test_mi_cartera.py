@@ -428,8 +428,8 @@ def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
     factura). Apiladas liberan 33 px, que es lo que hacía falta para que las
     cifras entren cómodas. Ningún dato se pierde — se reacomodan.
     """
-    assert _encabezados(ficha) == ["Factura", "Importe", "Abonado", "Saldo",
-                                   "Acum."]
+    assert _encabezados(ficha) == ["Factura", "Importe", "Retenc.", "Abonado",
+                                   "Saldo", "Acum."]
     assert "Totales (3)" in ficha
 
     # La fecha sigue estando, adentro de la celda de la factura, con los días.
@@ -440,54 +440,44 @@ def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
     assert "Vencida" not in _tabla(ficha)
 
 
-def test_una_columna_vacia_en_todas_las_filas_no_se_dibuja(vendedor_logueado,
-                                                           monkeypatch):
-    """Tamara 2026-08-17: *"se ve bastante feo en el celu"*.
+def test_las_columnas_son_fijas_aunque_el_cliente_no_tenga_el_dato(
+        vendedor_logueado, monkeypatch):
+    """Tamara 2026-08-26: *"si no tiene nada una '-' pero consistente. entran
+    todas las columnas"*.
 
-    AGU no tiene una sola retención: la columna eran veinte guiones en fila
-    robándole ancho a las cifras que sí dicen algo. Con 390 px, una columna que
-    no aporta ningún dato es la más cara de todas.
+    Entre el 17 y el 26 de agosto la columna sin un solo dato se escondía. El
+    ancho que ganaba costaba algo peor: la tabla cambiaba de forma de un
+    cliente al otro, así que el vendedor que abre tres fichas seguidas tiene
+    que volver a buscar dónde quedó cada cifra, y una columna ausente se lee
+    como que el dato no existe. Es la misma tabla que la hoja impresa y que la
+    oficina, donde las columnas nunca se movieron.
 
-    Mismo criterio que el resto del portal: sin meta no hay anillo, con una
-    sola semana no hay barras, los meses sin comisión no se listan.
-
-    Se decide por CLIENTE, no por fila: con UNA retención la columna aparece
-    entera, con guiones en las filas sin — si no, la aritmética no se podría
-    seguir hacia abajo.
+    El test mira el caso más pelado: un cliente sin UNA retención y sin UN
+    abono. Las seis columnas tienen que estar igual, con guiones.
     """
     from modules.mi_cartera import views
 
     monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
 
-    def _ficha(ec):
-        monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", ec)
-        return vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
-
-    # Sin ninguna retención: la columna no está.
-    sin_ret = _encabezados(_ficha(_ec_con_facturas))
-    assert "Retenc." not in sin_ret
-    assert "Abonado" in sin_ret, "sí hay abonos, esa columna tiene que estar"
-
-    # Con UNA sola: aparece, y las otras dos filas llevan guión.
-    def _con_una(cod):
-        d = _ec_con_facturas(cod)
-        d["facturas"][1]["retencion"] = 98.76
-        d["totales"]["retencion"] = 98.76
-        return d
-
-    con_ret = _ficha(_con_una)
-    assert "Retenc." in _encabezados(con_ret)
-    assert con_ret.count('class="mono ret"') == 4, "3 filas + el pie"
-
-    # Y una cartera sin un solo abono tampoco paga esa columna.
-    def _sin_abonos(cod):
+    def _pelado(cod):
         d = _ec_con_facturas(cod)
         for f in d["facturas"]:
             f["abono"] = 0.0
+            f["retencion"] = 0.0
         d["totales"]["abono"] = 0.0
+        d["totales"]["retencion"] = 0.0
         return d
 
-    assert "Abonado" not in _encabezados(_ficha(_sin_abonos))
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _pelado)
+    html = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    assert _encabezados(html) == ["Factura", "Importe", "Retenc.", "Abonado",
+                                  "Saldo", "Acum."]
+    # 3 filas + el pie, en las dos columnas, todas con guión.
+    tabla = _tabla(html)
+    assert tabla.count('class="mono ret"') == 4
+    assert tabla.count('class="mono ab"') == 4
+    assert tabla.count("—") >= 8
 
 
 def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
@@ -655,7 +645,7 @@ def _hero(html: str) -> str:
     del portal nombran los mismos rótulos ("Cheques por cobrar", "Total") y un
     `not in html` daba verde/rojo por un comentario."""
     i = html.index('<div class="hero">')
-    return html[i:html.index('<div class="acciones">', i)]
+    return html[i:html.index('<div class="acc4', i)]
 
 
 def _ficha_de(cliente_client, monkeypatch, datos):
@@ -693,7 +683,7 @@ def test_el_boton_de_imprimir_no_es_un_caracter_raro(ficha):
     """El "⎙" (U+2399) no existe en las tipografías de Android: en el celular
     del vendedor el botón salía con el cuadradito del glifo que falta. Mismo
     problema que el emoji de WhatsApp el 20/08, mismo arreglo: máscara SVG."""
-    i = ficha.index('<div class="acciones">')
+    i = ficha.index('<div class="acc4')
     assert "\u2399" not in ficha[i:i + 900]
     assert "--ico-pr" in ficha
 
@@ -2052,12 +2042,13 @@ def test_el_boton_de_whatsapp_dice_lo_que_hace_y_no_es_una_flechita(
     monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
     ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
 
-    assert "Enviar por WhatsApp" in ficha
+    assert "data-wa-pdf" in ficha
     assert "⤴" not in ficha, "volvió el ícono que nadie entiende"
-    assert 'class="btn-wa"' in ficha
-    # Imprimir también sale de la barra y dice su nombre: el vendedor tiene
-    # las dos cosas que hace con una ficha, a la vista y rotuladas.
-    assert "Imprimir" in ficha
+    assert 'class="a4 wa"' in ficha
+    # ⭐ Los cuatro botones entran en UNA fila (TMT 26/08), y los cuatro
+    # llevan RÓTULO: un ícono sin rótulo es un botón que no existe.
+    for rotulo in ("WhatsApp", "Imagen", "Imprimir", "PDF"):
+        assert ">" + rotulo + "<" in ficha, rotulo
 
 
 def test_la_ficha_manda_el_estado_de_cuenta_como_FOTO(app, vendedor_logueado, monkeypatch):
@@ -2088,11 +2079,12 @@ def test_la_ficha_manda_el_estado_de_cuenta_como_FOTO(app, vendedor_logueado, mo
     # q genera no permite enviar por wsp"* → Tamara: *"creo que foto y
     # compartir como imagen si no?"*. En un teléfono mandar una FOTO lo sabe
     # hacer cualquiera; mandar un DOCUMENTO, no.
-    assert "Mandar como imagen" in ficha
+    assert ">Imagen<" in ficha
     assert '/mi-cartera/cliente/TDV/imagen"' in ficha, "no apunta a la imagen"
-    # Y dice el gesto, que es el que el vendedor ya usa todos los días.
-    assert "Mantené apretada" in ficha
-    # El PDF no se saca —el que lo prefiere lo tiene— pero baja a un renglón.
+    # Y dice el gesto, que es el que el vendedor ya usa todos los días. Desde
+    # el 26/08 va UNA vez abajo de la fila, no como bajada de un botón.
+    assert "mantenela apretada y elegí WhatsApp" in ficha
+    # El PDF no se saca —el que lo prefiere lo tiene— pero es el más chico.
     assert '/mi-cartera/cliente/TDV/pdf"' in ficha
 
 
@@ -2122,9 +2114,10 @@ def test_con_muchas_facturas_la_ficha_manda_al_PDF(app, vendedor_logueado, monke
     ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
 
     assert "mejor mandá el PDF" in ficha
-    assert "Mantené apretada" not in ficha, "sigue empujando a la foto"
+    assert "mantenela apretada" not in ficha, "sigue empujando a la foto"
     # La foto NO se saca: se puede mandar igual, sólo deja de ser la recomendada.
-    assert "Mandar como imagen" in ficha
+    assert ">Imagen<" in ficha
+    assert 'class="acc4 flojo"' in ficha, "el verde de la foto sigue prendido"
 
 
 def test_sin_motor_la_ficha_no_ofrece_ni_el_boton_ni_la_foto(
@@ -2140,10 +2133,13 @@ def test_sin_motor_la_ficha_no_ofrece_ni_el_boton_ni_la_foto(
     monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: False)
     ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
 
-    assert "Mandar como imagen" not in ficha
-    assert "Enviar por WhatsApp" not in ficha
+    # Se busca el BOTÓN, no la palabra: los comentarios de la hoja de estilos
+    # nombran WhatsApp y viajan al navegador.
+    assert "data-wa-pdf" not in ficha
+    assert 'class="a4 img"' not in ficha
+    assert 'class="a4 pdf"' not in ficha
     # Imprimir no pasa por el motor: sigue estando.
-    assert "Imprimir" in ficha
+    assert ">Imprimir<" in ficha
 
 
 def test_la_ficha_no_muestra_la_forma_de_pago(ficha):

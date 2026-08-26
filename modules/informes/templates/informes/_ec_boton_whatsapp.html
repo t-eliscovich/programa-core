@@ -290,8 +290,11 @@
   function planB(listo) {
     var foto = document.querySelector('[data-wa-img]');
     if (foto) {
+      // ⚠ El rótulo que se nombra acá tiene que ser el REAL del botón: hay
+      // un test que lo lee de la pantalla. El 25/08 este mensaje mandaba a un
+      // botón que se había dejado de llamar así una hora antes.
       alert('No se pudo abrir WhatsApp desde el programa.\n\n'
-          + 'Mandalo como foto: tocá "Mandar como imagen" acá abajo, '
+          + 'Mandalo como foto: tocá "Imagen" acá al lado, '
           + 'mantené apretada la foto y elegí WhatsApp.');
       // En un teléfono el link puede haber quedado fuera de la pantalla: se lo
       // acerca, que es la diferencia entre nombrarlo y mostrarlo.

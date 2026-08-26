@@ -294,13 +294,31 @@ def _cargar_cliente(vend: str, codigo_cli: str) -> dict:
 def cliente(codigo_cli: str):
     vend = _vend_actual()
     data = _cargar_cliente(vend, codigo_cli)
+    tab = (request.args.get("tab") or "facturas").strip().lower()
+
+    # ⭐ Los DESPACHOS son la tercera pestaña (TMT 26/08: *"«despachos»
+    # debería estar después de cheques, no uno aparte"*), y se traen de Asinfo
+    # SÓLO cuando se toca: el estado de cuenta, que es a lo que se entra, no
+    # paga esa consulta. `_cargar_cliente` ya verificó que el cliente sea suyo.
+    despachos_d = None
+    if tab == "despachos":
+        from modules.asinfo import despachos_cliente as dsp
+
+        try:
+            meses = int(request.args.get("meses") or dsp.MESES_DEFAULT)
+        except (TypeError, ValueError):
+            meses = dsp.MESES_DEFAULT
+        ficha = data.get("cliente") or {}
+        despachos_d = dsp.de_cliente(codigo_cli, ficha.get("ruc") or "", meses)
+
     return render_template(
         "mi_cartera/cliente.html",
         hoy=today_ec(),
         # A dónde lleva el número de factura de la tabla (ver _movimientos).
         factura_endpoint="mi_cartera.factura",
         factura_args={"codigo_cli": codigo_cli},
-        tab=(request.args.get("tab") or "facturas").strip().lower(),
+        tab=tab,
+        d=despachos_d,
         # El acceso de ESTE cliente al portal. Va acá, donde el vendedor ya
         # está parado, y no en una pantalla nueva que nadie abre.
         portal=portal_cliente.estado(codigo_cli),
@@ -322,23 +340,24 @@ def _ficha_del_cliente(vend: str, codigo_cli: str) -> dict:
 @requiere_login
 @requiere_permiso("micartera.ver")
 def despachos(codigo_cli: str):
-    """Qué le mandamos al cliente y cuándo, desde la ficha del vendedor.
+    """La vieja pantalla suelta de despachos: ahora es la tercera PESTAÑA.
 
-    Es el MISMO módulo y el MISMO parcial que ve el cliente en su portal: si
-    los dos vieran listas distintas, la discusión no se puede tener.
+    TMT 2026-08-26: *"«despachos» debería estar después de cheques, no uno
+    aparte"*. La lista no se mudó a ningún lado nuevo —es el mismo parcial que
+    ve el cliente en su portal— pero se mira desde la ficha, al lado de
+    Facturas y Cheques.
+
+    La ruta se queda como REDIRECCIÓN y no se borra: el link viejo está en el
+    historial de los teléfonos y en cualquier chat donde alguien lo pegó, y un
+    404 ahí se lee como "se rompió".
     """
-    from modules.asinfo import despachos_cliente as dsp
-
+    # El `?vend=` de la preview se arrastra: sin él, el segundo click saca a
+    # la dueña del vendedor que estaba mirando.
     vend = _vend_actual()
-    try:
-        meses = int(request.args.get("meses") or dsp.MESES_DEFAULT)
-    except (TypeError, ValueError):
-        meses = dsp.MESES_DEFAULT
-    ficha = _ficha_del_cliente(vend, codigo_cli)
-    return render_template(
-        "mi_cartera/despachos.html", cliente=ficha,
-        d=dsp.de_cliente(codigo_cli, ficha.get("ruc") or "", meses),
-        **_ctx_base(vend))
+    destino = url_for("mi_cartera.cliente", codigo_cli=codigo_cli) + "?tab=despachos"
+    if not vendedor_de(g.get("user")):
+        destino += "&vend=" + vend
+    return redirect(destino)
 
 
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/despacho/<numero>")

@@ -114,9 +114,13 @@ def test_la_factura_tambien_se_manda_como_FOTO():
     t = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
          / "factura.html").read_text(encoding="utf-8")
     assert "mi_cartera.factura_imagen" in t
-    assert "Mandar como imagen" in t
-    assert "Mantené apretada" in t, "no dice el gesto"
-    # El PDF no se saca: baja a un renglón.
+    # Desde el 26/08 la foto es uno de los cuatro botones de la fila, con su
+    # rótulo, y el gesto se dice una vez debajo (ver `_acciones_fila.html`).
+    fila = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
+            / "_acciones_fila.html").read_text(encoding="utf-8")
+    assert ">Imagen</span>" in fila
+    assert "mantenela apretada y elegí WhatsApp" in fila, "no dice el gesto"
+    # El PDF no se saca: es el botón más chico de la fila.
     assert "mi_cartera.factura_pdf" in t
 
 
@@ -133,15 +137,16 @@ def test_la_fila_de_acciones_viaja_CON_SU_CSS():
     """
     tpl = ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
     acciones = (tpl / "_acciones_css.html").read_text(encoding="utf-8")
-    assert ".btn-wa{" in acciones and ".acciones{" in acciones
-    assert ".ver-img{" in acciones and ".ver-pdf{" in acciones
+    assert ".acc4{" in acciones and ".a4{" in acciones
+    assert ".a4.wa{" in acciones and ".a4.img{" in acciones
+    assert ".acc4-nota{" in acciones
 
     for pantalla in ("cliente.html", "factura.html"):
         t = (tpl / pantalla).read_text(encoding="utf-8")
-        assert 'class="acciones"' in t, pantalla
+        assert '{% include "mi_cartera/_acciones_fila.html" %}' in t, pantalla
         assert '{% include "mi_cartera/_acciones_css.html" %}' in t, (
             f"{pantalla} usa la fila de acciones sin traer su CSS")
 
     # Y no quedó una copia vieja suelta: dos definiciones de lo mismo divergen.
     ficha = (tpl / "_ficha_css.html").read_text(encoding="utf-8")
-    assert ".btn-wa{" not in ficha, "quedó la copia vieja en _ficha_css"
+    assert ".a4{" not in ficha, "quedó la copia vieja en _ficha_css"

@@ -521,41 +521,50 @@ def test_el_cliente_y_su_vendedor_miran_EL_MISMO_parcial():
     vendedores"*. Y no una copia: si el vendedor y el cliente vieran dos listas
     distintas, la discusión no se puede tener. Misma razón por la que
     `_movimientos.html` y `_que_se_llevo.html` viven en `mi_cartera`."""
-    for archivo in ("despachos.html", "despacho.html"):
-        del_cliente = (TPL / archivo).read_text(encoding="utf-8")
-        del_vendedor = (VEND_TPL / archivo).read_text(encoding="utf-8")
-        for pantalla in (del_cliente, del_vendedor):
-            assert "_despachos_lista.html" in pantalla or \
-                   "_despachos_guia.html" in pantalla, archivo
+    pantallas = [(TPL / "despachos.html").read_text(encoding="utf-8"),
+                 (TPL / "despacho.html").read_text(encoding="utf-8"),
+                 (VEND_TPL / "despacho.html").read_text(encoding="utf-8"),
+                 # La lista del vendedor es la PESTAÑA de la ficha (26/08):
+                 # el parcial se incluye desde `_movimientos.html`.
+                 (VEND_TPL / "_movimientos.html").read_text(encoding="utf-8")]
+    for pantalla in pantallas:
+        assert "_despachos_lista.html" in pantalla or \
+               "_despachos_guia.html" in pantalla
 
 
 def test_las_pantallas_del_vendedor_no_copian_la_tabla():
     """La tabla se escribe UNA vez. Si alguna se dibujara la suya, se separan a
     la primera corrección."""
-    for archivo in ("despachos.html", "despacho.html"):
-        for carpeta in (TPL, VEND_TPL):
-            texto = re.sub(r"\{#.*?#\}", "", (carpeta / archivo).read_text(encoding="utf-8"),
-                           flags=re.S)
-            assert "<table" not in texto, f"{carpeta.name}/{archivo} copió la tabla"
+    for carpeta, archivo in ((TPL, "despachos.html"), (TPL, "despacho.html"),
+                             (VEND_TPL, "despacho.html")):
+        texto = re.sub(r"\{#.*?#\}", "", (carpeta / archivo).read_text(encoding="utf-8"),
+                       flags=re.S)
+        assert "<table" not in texto, f"{carpeta.name}/{archivo} copió la tabla"
 
 
 def test_el_guard_del_vendedor_corre_ANTES_de_pedirle_nada_a_asinfo():
     """🚨 `_cargar_cliente` es el que verifica que el cliente sea SUYO. Si se
     llamara después, tipear el código de un cliente ajeno mostraría su
     mercadería — el mismo cuidado que el botón de cortar el acceso."""
-    for funcion, pedido in (("def despachos(", "dsp.de_cliente("),
+    for funcion, pedido in (("def cliente(", "dsp.de_cliente("),
                             ("def despacho(", "dsp.guia(")):
         cuerpo = VISTAS_VEND[VISTAS_VEND.index(funcion):]
         cuerpo = cuerpo[:cuerpo.index("\n@")]
-        assert cuerpo.index("_ficha_del_cliente(") < cuerpo.index(pedido), funcion
+        guard = "_cargar_cliente(" if funcion == "def cliente(" else "_ficha_del_cliente("
+        assert cuerpo.index(guard) < cuerpo.index(pedido), funcion
 
 
 def test_el_vendedor_llega_desde_la_ficha_de_su_cliente():
     """Una pantalla a la que no lleva ningún link es una pantalla que no
     existe. Y con rótulo: un ícono suelto no se encuentra."""
     ficha = (VEND_TPL / "cliente.html").read_text(encoding="utf-8")
-    assert "mi_cartera.despachos" in ficha
-    assert "Ver los despachos" in ficha
+    # ⭐ TMT 26/08: *"«despachos» debería estar después de cheques, no uno
+    # aparte"*. Ya no es un botón arriba de la ficha: es la tercera pestaña,
+    # al lado de Facturas y Cheques.
+    assert "despachos_tab = True" in ficha
+    tabs = (VEND_TPL / "_movimientos.html").read_text(encoding="utf-8")
+    assert "?tab=despachos" in tabs
+    assert ">Despachos</a>" in tabs
 
 
 def test_las_dos_pantallas_del_vendedor_piden_el_permiso_de_siempre():

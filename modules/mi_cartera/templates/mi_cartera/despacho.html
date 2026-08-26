@@ -7,7 +7,10 @@
 {% block appbar %}
   <div class="row">
     <div>
-      <a class="back" href="{{ url_for('mi_cartera.despachos', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ Despachos</a>
+      {# El "‹ Volver" devuelve a la PESTAÑA de despachos de la ficha, que es de
+         donde se entró desde el 26/08. Devolver a la pantalla suelta dejaba al
+         vendedor sin las otras dos pestañas. #}
+      <a class="back" href="{{ url_for('mi_cartera.cliente', codigo_cli=cliente.codigo_cli) }}?tab=despachos{{ ('&vend=' ~ vend) if preview else '' }}">‹ Despachos</a>
       <h1 style="margin-top:3px">Despacho {{ g.corto }}</h1>
       <div class="sub">{{ cliente.codigo_cli }} · {{ g.numero }}{% if g.dia %} · {{ g.dia|fecha_es }}{% endif %}</div>
     </div>

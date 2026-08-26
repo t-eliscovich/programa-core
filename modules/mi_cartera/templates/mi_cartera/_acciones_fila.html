@@ -1,0 +1,51 @@
+{# ⭐ LAS CUATRO ACCIONES, EN UNA SOLA LÍNEA.
+
+   TMT 2026-08-26, con la ficha abierta en el celular: *"despues whatsapp,
+   imprimir e imagen, esta muy grande todo. haceme un diseno que entre todos
+   esos botones en una linea"*.
+
+   Eran cuatro renglones apilados —WhatsApp+Imprimir, "Ver los despachos",
+   "Mandar como imagen" con su bajada, y "o mandá el PDF"— que sumaban 210 px
+   arriba de los datos. En una pantalla de 390 el saldo entraba y lo que el
+   cliente debe empezaba abajo del pliegue otra vez, que es el problema que ya
+   se había arreglado el 24/08.
+
+   Cada acción baja a un ícono con su rótulo debajo. El rótulo NO se saca: un
+   ícono sin rótulo es un botón que no existe (20/08, con este mismo botón de
+   WhatsApp). Lo que se saca es el ancho de fila entero que cada uno se estaba
+   llevando para decir una palabra.
+
+   WhatsApp queda verde y lleno: es el que se usa todos los días, y el color
+   es la mitad de lo que lo hace reconocible. Imagen lleva el borde verde
+   —es la red que SÍ anda en todos los teléfonos (Alex, 25/08)— y el gesto,
+   que no se adivina, se dice en el renglón de abajo, una vez para los cuatro.
+
+   Los íconos van como máscara SVG y NO como carácter especial: Android no
+   tiene ⎙ ni el emoji de WhatsApp en sus tipografías y salía el cuadradito
+   del glifo que falta (20/08 y 24/08, dos veces el mismo bug).
+
+   Contexto que espera:
+     pdf_url · img_url · hoja_url · wa_nombre
+     nota      opcional; el renglón de abajo. Sin ella va el gesto de la foto.
+     flojo     opcional; apaga el verde de Imagen (cuando la foto sale chica)
+#}
+{% if pdf_disponible() %}
+<div class="acc4{{ ' flojo' if flojo|default(false) }}">
+  {% with wa_clase = 'a4 wa', wa_label = 'WhatsApp', wa_label_cargando = 'Un toque…' %}
+    {% include "informes/_ec_boton_whatsapp.html" %}
+  {% endwith %}
+  <a class="a4 img" data-wa-img target="_blank" rel="noopener" href="{{ img_url }}"
+     title="Abre la hoja como foto, para mandarla por WhatsApp"><span>Imagen</span></a>
+  <a class="a4 pr" target="_blank" rel="noopener" href="{{ hoja_url }}"
+     title="Imprimir o guardar como PDF"><span>Imprimir</span></a>
+  <a class="a4 pdf" target="_blank" rel="noopener" href="{{ pdf_url }}"
+     title="Bajar el archivo PDF"><span>PDF</span></a>
+</div>
+<p class="acc4-nota">{{ nota | default('La imagen se manda solita: mantenela apretada y elegí WhatsApp.', true) }}</p>
+{% else %}
+{# Sin motor de PDF en el servidor quedan las acciones que no lo necesitan. #}
+<div class="acc4">
+  <a class="a4 pr" target="_blank" rel="noopener" href="{{ hoja_url }}"
+     title="Imprimir o guardar como PDF"><span>Imprimir</span></a>
+</div>
+{% endif %}

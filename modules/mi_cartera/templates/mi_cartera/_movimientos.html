@@ -16,32 +16,53 @@
    `saldo_neto`, `tab` y `qv` (el query string que conserva ?vend= en la
    vista previa del dueño; el portal del cliente le pasa ""). #}
 <div class="card">
+  {# ⭐ DESPACHOS es la tercera PESTAÑA, no un botón aparte.
+
+     TMT 2026-08-26: *"«despachos» debería estar después de cheques, no uno
+     aparte"*. Estaba como un renglón blanco arriba de la ficha, que se llevaba
+     un renglón entero y quedaba mezclado con las acciones de mandar la hoja.
+     Y no es una acción sobre el estado de cuenta: es OTRA lista del mismo
+     cliente, igual que las facturas y los cheques. Donde se elige qué lista
+     mirar es acá.
+
+     La pestaña sólo se dibuja si quien incluye este parcial pasa
+     `despachos_tab`: el portal del cliente usa el mismo parcial y tiene su
+     propio camino a los despachos.
+
+     ⚡ Se trae de Asinfo SÓLO cuando se toca: la pestaña es un link con
+     `?tab=despachos` y el estado de cuenta no paga esa consulta. #}
   <div class="tabs">
-    <a href="?tab=facturas{{ qv }}" class="{% if tab != 'cheques' %}on{% endif %}">Facturas</a>
+    <a href="?tab=facturas{{ qv }}" class="{% if tab not in ('cheques', 'despachos') %}on{% endif %}">Facturas</a>
     <a href="?tab=cheques{{ qv }}" class="{% if tab == 'cheques' %}on{% endif %}">Cheques</a>
+    {% if despachos_tab|default(false) %}
+    <a href="?tab=despachos{{ qv }}" class="{% if tab == 'despachos' %}on{% endif %}">Despachos</a>
+    {% endif %}
   </div>
 
-  {% if tab != 'cheques' %}
+  {% if despachos_tab|default(false) and tab == 'despachos' %}
+    {# El MISMO cuerpo que ve el cliente en su portal, sin el `hero` ni el
+       marco propio: acá ya está adentro de la tarjeta de las pestañas. #}
+    {% with compacto = True %}
+      {% include "mi_cartera/_despachos_lista.html" %}
+    {% endwith %}
+
+  {% elif tab != 'cheques' %}
     {% if facturas %}
-    {# ⭐ Una columna vacía en TODAS las filas NO se dibuja.
+    {# ⭐ Las columnas son FIJAS: Importe · Retenc. · Abonado · Saldo · Acum.
 
-       Tamara 2026-08-17, con la cartera de AGU en el celular: *"se ve bastante
-       feo en el celu, fijate de diseñar lindo las columnas"*. Ese cliente no
-       tiene una sola retención: la columna eran veinte guiones en fila,
-       robándole ancho a las cifras que sí dicen algo. Con siete columnas en
-       390 px, una columna que no aporta ningún dato es la más cara de todas.
+       Tamara 2026-08-26, mirando la ficha de un cliente sin abonos: *"si no
+       tiene nada una '-' pero consistente. entran todas las columnas"*.
 
-       Es el mismo criterio que ya usa el portal en otras tres partes: sin meta
-       no se dibuja el anillo, con una sola semana no se dibujan las barras, y
-       los meses sin comisión no se listan. Un elemento que no puede decir lo
-       que promete no se muestra a medias.
+       Entre el 17 y el 26 de agosto la columna sin un solo dato no se dibujaba
+       (venía de *"se ve bastante feo en el celu"*, con la cartera de AGU). El
+       ancho que ganaba costaba algo peor: la tabla cambiaba de forma de un
+       cliente al otro, así que el vendedor que abre tres fichas seguidas tiene
+       que volver a buscar dónde quedó cada cifra, y la ausencia de la columna
+       se lee como que el dato no existe. Es la misma tabla que la hoja
+       impresa y que la oficina, y ahí las columnas nunca se movieron.
 
-       Se decide por CLIENTE, no por fila: si tiene aunque sea una retención,
-       la columna aparece entera —con guiones en las filas sin— y la aritmética
-       se puede seguir hacia abajo. La hoja impresa NO cambia: ahí las columnas
-       son fijas, porque el papel se compara contra el de la oficina. #}
-    {% set hay_ret = facturas|map(attribute='retencion', default=0)|select|list|length > 0 %}
-    {% set hay_abo = facturas|map(attribute='abono', default=0)|select|list|length > 0 %}
+       Sin dato va un guión, no "0,00": un cero alineado con las cifras pide la
+       misma atención que ellas y no dice nada. #}
     <table class="ec">
       <thead>
         <tr>
@@ -53,10 +74,8 @@
              por el que el cliente nombra la factura cuando discute un saldo. #}
           <th class="l">Factura</th>
           <th>Importe</th>
-          {% if hay_ret %}
           <th title="Retención en la fuente que nos retuvo el cliente. Descuenta del saldo igual que un pago, pero no es plata cobrada.">Retenc.</th>
-          {% endif %}
-          {% if hay_abo %}<th>Abonado</th>{% endif %}
+          <th>Abonado</th>
           <th>Saldo</th>
           <th title="Saldo acumulado leído de arriba hacia abajo">Acum.</th>
         </tr>
@@ -105,12 +124,8 @@
             {# Sin retención y sin abono va un guión: un "0,00" ocupa el mismo
                lugar visual que una cifra real y obliga a leerlo para descubrir
                que no dice nada. #}
-            {% if hay_ret %}
             <td class="mono ret">{% if f.retencion and f.retencion != 0 %}{{ f.retencion|money_es }}{% else %}—{% endif %}</td>
-            {% endif %}
-            {% if hay_abo %}
             <td class="mono ab">{% if f.abono and f.abono != 0 %}{{ f.abono|money_es }}{% else %}—{% endif %}</td>
-            {% endif %}
             <td class="mono fuerte">{{ f.saldo|money_es }}</td>
             <td class="mono {{ 'venc' if acum.s < 0 }}">{{ acum.s|money_es }}</td>
           </tr>
@@ -120,12 +135,8 @@
         <tr>
           <td class="l">Totales ({{ facturas|length }})</td>
           <td class="mono">{{ t.importe|money_es }}</td>
-          {% if hay_ret %}
           <td class="mono ret">{% if t.retencion and t.retencion != 0 %}{{ t.retencion|money_es }}{% else %}—{% endif %}</td>
-          {% endif %}
-          {% if hay_abo %}
           <td class="mono ab">{% if t.abono and t.abono != 0 %}{{ t.abono|money_es }}{% else %}—{% endif %}</td>
-          {% endif %}
           <td class="mono fuerte">{{ t.saldo|money_es }}</td>
           <td></td>
         </tr>

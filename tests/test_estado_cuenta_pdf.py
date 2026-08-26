@@ -953,10 +953,13 @@ def test_el_plan_B_solo_nombra_botones_que_EXISTEN(app):
     plan = _boton(app).split("function planB")[1].split("function compartirYa")[0]
     assert "Ver el PDF" not in plan, "volvió a nombrar el botón viejo"
 
-    ficha = (Path(__file__).resolve().parent.parent / "modules" / "mi_cartera"
-             / "templates" / "mi_cartera" / "cliente.html").read_text(encoding="utf-8")
-    marcado = ficha.split("data-wa-img")[1]
-    rotulo = marcado.split(">", 1)[1].strip().split("\n")[0].strip()
+    # El link marcado vive en la fila de acciones, que comparten la ficha del
+    # cliente y la de una factura (26/08).
+    fila = (Path(__file__).resolve().parent.parent / "modules" / "mi_cartera"
+            / "templates" / "mi_cartera"
+            / "_acciones_fila.html").read_text(encoding="utf-8")
+    marcado = fila.split("data-wa-img")[1]
+    rotulo = marcado.split("<span>", 1)[1].split("</span>")[0].strip()
     assert rotulo, "el link marcado no tiene rótulo"
     assert rotulo in plan, (
         f"el mensaje no nombra al botón como se llama en la pantalla ({rotulo!r})")

@@ -126,91 +126,31 @@
   {% endif %}
 </div>
 
-{# ⭐ Las dos acciones de la ficha, a la vista y con NOMBRE.
+{# LAS ACCIONES, EN UNA LÍNEA — el detalle está en `_acciones_fila.html`.
 
-   TMT 2026-08-20: *"los vendedores no tienen el botón de enviar por
-   whatsapp"*. Lo tenían: era un cuadradito verde con una flechita "⤴" en la
-   barra de arriba, al lado del de imprimir. Un ícono que nadie reconoce es un
-   botón que no existe — la dueña lo dio por faltante mirando la pantalla, y
-   ella sabía que el botón se había hecho. Así que salen de la barra, donde no
-   entra el rótulo, y bajan al cuerpo con el nombre entero. El verde es el de
-   WhatsApp, que es la otra mitad de lo que hace reconocible un botón. #}
-<div class="acciones">
-  {% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
-          img_url = url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) ~ (('?vend=' ~ vend) if preview else ''),
-          wa_nombre = cliente.nombre,
-          wa_clase = 'btn-wa' %}
-    {% include "informes/_ec_boton_whatsapp.html" %}
-  {% endwith %}
-  <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
-     href="{{ url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
-</div>
+   TMT 2026-08-26: *"whatsapp, imprimir e imagen, esta muy grande todo. haceme
+   un diseno que entre todos esos botones en una linea"*. Eran cuatro renglones
+   apilados que sumaban ~210 px arriba de los datos, y volvían a empujar la
+   primera factura abajo del pliegue — el mismo problema que se había arreglado
+   el 24/08 achicando el resumen.
 
-{# LA MERCADERÍA, al lado de la plata. Va como renglón propio y no como tercer
-   botón de la fila de arriba: a 390 px no entra un tercero, y esto no es una
-   acción sobre el estado de cuenta sino otra pantalla.
-
-   Es la MISMA lista que ve el cliente en su portal. Sin rótulo no existiría:
-   un ícono suelto es un botón que nadie encuentra. #}
-<a class="verdesp"
-   href="{{ url_for('mi_cartera.despachos', codigo_cli=cliente.codigo_cli) }}{{ ('?vend=' ~ vend) if preview else '' }}">Ver los despachos</a>
-<style>
-  .verdesp{display:block;text-align:center;background:#fff;border:1px solid var(--line);
-    border-radius:12px;padding:11px 14px;margin-bottom:12px;font-size:14.5px;
-    font-weight:600;color:var(--ink);text-decoration:none}
-</style>
-
-{# ⭐ EL PISO: mandarlo como FOTO.
-
-   TMT 2026-08-25, por WhatsApp con Alex Velastegui:
-       Alex   — *"desde el pdf q genera no permite enviar por wsp"*
-       Tamara — *"creo que foto y compartir como imagen si no?"*
-       Alex   — *"es una opción sólo q la imagen es muy pequeña"*
-       Tamara — *"agrando la imagen"*
-
-   Van tres arreglos del botón verde y seguía habiendo teléfonos donde el menú
-   de compartir no sale. Alex marcó el punto exacto: NO es que el programa
-   falle al generar —el PDF está— es que el paso siguiente no existe para él.
-   En un teléfono, mandar una FOTO lo sabe hacer cualquiera; mandar un
-   DOCUMENTO hay que saber que existe Descargas y encontrar el "adjuntar
-   documento" de WhatsApp.
-
-   Así que la salida de abajo ya no es el PDF: es la MISMA hoja sacada como
-   imagen. Se abre, se mantiene apretada y se elige WhatsApp — el gesto que el
-   vendedor ya usa todos los días, sin permisos del navegador, sin menú de
-   compartir del programa y sin carpeta que buscar.
-
-   Y lo de *"muy pequeña"* tiene arreglo del lado del servidor: la captura de
-   Tamara salía de la pantalla del teléfono, que tiene 390 px de ancho. Ésta se
-   dibuja a 1100 y nace grande. (El techo, en `imagen_motor`: WhatsApp achica
-   el lado largo a ~1600, así que hasta ~40 facturas llega entera.)
-
-   El PDF no se saca —el que lo prefiere lo tiene— pero baja a un renglón: es
-   el camino que ya sabemos que a algunos no les sirve. #}
-{% if pdf_disponible() %}
+   ⚠ EL TECHO, dicho donde importa: WhatsApp recomprime las fotos y le achica
+   el lado largo a ~1600 px. Medido, un estado de cuenta de hasta ~40 facturas
+   entra entero; más largo que eso la letra se aprieta (con 60 facturas la foto
+   sale al 58% y ya cuesta leerla). Para esos clientes el PDF es mejor, y el
+   vendedor no tiene manera de saberlo mirando la pantalla — así que se lo dice
+   la pantalla. #}
 {% set _q = ('?vend=' ~ vend) if preview else '' %}
-{# ⚠ EL TECHO, dicho donde importa. WhatsApp recomprime las fotos y le achica
-   el lado largo a ~1600 px: medido, un estado de cuenta de hasta ~40 facturas
-   entra entero y más largo que eso la letra se aprieta (con 60 facturas la
-   foto sale al 58% y ya cuesta leerla).
-
-   Para esos clientes el PDF es mejor, y el vendedor no tiene manera de saberlo
-   mirando la pantalla — así que se lo dice la pantalla. Es la misma regla que
-   el botón verde: puede no poder, pero no puede quedarse callado. #}
 {% set _muchas = (facturas|length) > 40 %}
-<a class="ver-img {{ 'flojo' if _muchas }}" data-wa-img target="_blank" rel="noopener"
-   href="{{ url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) }}{{ _q }}">
-  Mandar como imagen
-  {% if _muchas %}
-    <small>Este cliente tiene muchas facturas: la foto sale chica, mejor mandá el PDF</small>
-  {% else %}
-    <small>Mantené apretada la foto y elegí WhatsApp</small>
-  {% endif %}
-</a>
-<a class="ver-pdf" target="_blank" rel="noopener"
-   href="{{ url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) }}{{ _q }}">o mandá el PDF</a>
-{% endif %}
-
+{% with pdf_url = url_for('mi_cartera.pdf', codigo_cli=cliente.codigo_cli) ~ _q,
+        img_url = url_for('mi_cartera.imagen', codigo_cli=cliente.codigo_cli) ~ _q,
+        hoja_url = url_for('mi_cartera.imprimir', codigo_cli=cliente.codigo_cli) ~ _q,
+        wa_nombre = cliente.nombre,
+        flojo = _muchas,
+        nota = ('Este cliente tiene muchas facturas: la foto sale chica, mejor mandá el PDF.'
+                if _muchas else None) %}
+  {% include "mi_cartera/_acciones_fila.html" %}
+{% endwith %}
 
 {# CRÉDITO — cupo, descuento, forma de pago y bloqueo.
 
@@ -325,7 +265,13 @@
 {% endif %}
 </div>
 
-{% include "mi_cartera/_movimientos.html" %}
+{# Facturas · Cheques · Despachos. Los períodos de la pestaña vuelven a ESTA
+   pantalla, no a la de despachos suelta. #}
+{% with despachos_tab = True,
+        url_base = url_for('mi_cartera.cliente', codigo_cli=cliente.codigo_cli) ~ '?tab=despachos' ~ qv,
+        url_guia = url_for('mi_cartera.despacho', codigo_cli=cliente.codigo_cli, numero='') %}
+  {% include "mi_cartera/_movimientos.html" %}
+{% endwith %}
 
 {% if totales.saldo_a_favor and totales.saldo_a_favor > 0 %}
 <div class="card">

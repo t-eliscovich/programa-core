@@ -33,41 +33,22 @@
 </div>
 
 {% include "mi_cartera/_acciones_css.html" %}
-{# Las dos acciones, con NOMBRE — mismo criterio que la ficha del cliente: un
-   ícono que nadie reconoce es un botón que no existe (20/08). #}
-<div class="acciones">
-  {% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ (('?vend=' ~ vend) if preview else ''),
-          img_url = url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ (('?vend=' ~ vend) if preview else ''),
-          wa_nombre = cliente.nombre,
-          wa_clase = 'btn-wa' %}
-    {% include "informes/_ec_boton_whatsapp.html" %}
-  {% endwith %}
-  <a class="btn-pr" title="Imprimir o guardar como PDF" target="_blank" rel="noopener"
-     href="{{ url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ ('?vend=' ~ vend) if preview else '' }}"><span>Imprimir</span></a>
-</div>
+{# LAS ACCIONES, EN UNA LÍNEA — la misma fila que la ficha del cliente.
 
-{# ⭐ EL PISO, el mismo que la ficha del cliente.
-
-   TMT 2026-08-25: *"si dale"*. Esta pantalla nació el mismo día con el botón
-   de WhatsApp y el PDF, así que arrastra el problema de Alex tal cual — *"desde
-   el pdf q genera no permite enviar por wsp"*. Es el mismo teléfono, el mismo
-   botón y el mismo archivo que no sabe adjuntar.
-
-   En un teléfono, mandar una FOTO lo sabe hacer cualquiera; mandar un
-   DOCUMENTO hay que saber que existe Descargas. La hoja de la factura sale
-   como imagen por el mismo motor, y se manda con el gesto de siempre.
+   TMT 2026-08-26: *"whatsapp, imprimir e imagen, esta muy grande todo. haceme
+   un diseno que entre todos esos botones en una linea"*. Lo pidió mirando la
+   ficha del cliente, y esta pantalla arrastraba la misma pila de renglones —es
+   el mismo parcial, el mismo archivo y el mismo teléfono—: si sólo se
+   arreglara una, a la semana son dos diseños distintos para lo mismo.
 
    Acá no hace falta el aviso de "muchas facturas" que sí tiene el estado de
    cuenta: una factura tiene los renglones que tiene y no crece con el tiempo
    como una cartera. #}
-{% if pdf_disponible() %}
 {% set _q = ('?vend=' ~ vend) if preview else '' %}
-<a class="ver-img" data-wa-img target="_blank" rel="noopener"
-   href="{{ url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">
-  Mandar como imagen
-  <small>Mantené apretada la foto y elegí WhatsApp</small>
-</a>
-<a class="ver-pdf" target="_blank" rel="noopener"
-   href="{{ url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) }}{{ _q }}">o mandá el PDF</a>
-{% endif %}
+{% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
+        img_url = url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
+        hoja_url = url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
+        wa_nombre = cliente.nombre %}
+  {% include "mi_cartera/_acciones_fila.html" %}
+{% endwith %}
 {% endblock %}

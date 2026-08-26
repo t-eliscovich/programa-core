@@ -1,63 +1,69 @@
-{# La fila de acciones del portal: "Enviar por WhatsApp" + "Imprimir", y
-   abajo la foto y el PDF. Vive en su propio parcial porque la usan DOS
-   pantallas —la ficha del cliente y la de una factura— y hasta el 25/08 la
-   CSS estaba sólo en `_ficha_css.html`.
+{# La CSS de la fila de acciones del portal —WhatsApp · Imagen · Imprimir ·
+   PDF— que dibuja `_acciones_fila.html`.
 
-   🐞 Eso quería decir que en la pantalla de la factura, que nació el mismo
-   día, los tres botones salían SIN ESTILO: usaba `.acciones`, `.btn-wa` y
-   `.btn-pr` sin incluir la hoja donde estaban definidos. Es exactamente lo
-   que ya advertía `_que_se_llevo.html` el 24/08 —*"el parcial viaja CON SU
-   CSS; partirlo no avisa: renderiza sin estilo"*— y volvió a pasar por el
-   mismo motivo. Ahora la CSS viaja con lo que la usa. #}
+   Vive en su propio parcial porque la usan DOS pantallas: la ficha del cliente
+   y la de una factura.
+
+   🐞 Hasta el 25/08 estaba sólo en `_ficha_css.html`, y eso quería decir que
+   en la pantalla de la factura, que nació el mismo día, los botones salían SIN
+   ESTILO. Es exactamente lo que ya advertía `_que_se_llevo.html` el 24/08
+   —*"el parcial viaja CON SU CSS; partirlo no avisa: renderiza sin estilo"*—
+   y volvió a pasar por el mismo motivo. La CSS viaja con lo que la usa. #}
 <style>
-  /* Las dos acciones, con el nombre entero. El de WhatsApp lleva el verde y
-     el globito de WhatsApp: el rótulo dice qué hace y el color lo confirma
-     de un vistazo. El ícono va como máscara SVG —no como emoji— porque el
-     emoji no existe en Android y salía un cuadradito vacío. */
-  /* 🐞 TMT 2026-08-24: el ícono de imprimir era el carácter "⎙" (U+2399), que
-     Android NO tiene en ninguna de sus tipografías — en el celular del
-     vendedor salía el cuadradito vacío del glifo que falta, al lado de la
-     palabra "Imprimir". Es EXACTAMENTE lo que ya había pasado el 20/08 con el
-     emoji de WhatsApp, y se arregla igual: máscara SVG, que se dibuja siempre
-     y toma el color del botón. Regla para el portal: en un botón no va un
-     carácter especial, va un SVG. */
-  .acciones{display:flex;gap:8px;margin:10px 0;
-    --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>")}
-  .btn-wa{flex:1;display:flex;align-items:center;justify-content:center;gap:7px;
-          background:#25D366;color:#fff;border:0;border-radius:12px;
-          padding:11px 10px;font:inherit;font-size:14.5px;font-weight:700;
-          cursor:pointer;white-space:nowrap}
-  .btn-wa::before{content:'';width:19px;height:19px;flex:0 0 19px;background:#fff;
-    -webkit-mask:center/contain no-repeat var(--ico-wa);mask:center/contain no-repeat var(--ico-wa)}
-  .btn-wa:disabled{opacity:.65}
-  .btn-wa span{overflow:hidden;white-space:nowrap}
-  .btn-pr::before{content:'';width:17px;height:17px;flex:0 0 17px;background:var(--ink);
-    -webkit-mask:center/contain no-repeat var(--ico-pr);mask:center/contain no-repeat var(--ico-pr)}
-  .btn-pr{flex:0 0 auto;display:flex;align-items:center;gap:6px;background:#fff;
-          border:1px solid var(--line);border-radius:12px;padding:11px 14px;
-          font-size:14.5px;font-weight:600;color:var(--ink)}
+  /* ⭐ LAS CUATRO ACCIONES EN UNA LÍNEA — ver `_acciones_fila.html`.
 
+     Cuatro columnas iguales salvo WhatsApp, que se lleva la mitad más: es el
+     que se toca todos los días y el único cuyo rótulo cambia de estado
+     ("Un toque…", "Enviar ahora") con el ancho ya clavado.
+
+     Los íconos van como MÁSCARA SVG y no como carácter: Android no tiene ⎙
+     ni el emoji de WhatsApp en sus tipografías, y en el celular del vendedor
+     salía el cuadradito del glifo que falta. Pasó dos veces (20/08 y 24/08).
+     Regla del portal: en un botón no va un carácter especial, va un SVG. */
+  .acc4{display:flex;gap:6px;margin:10px 0 6px;
+    --ico-wa:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M17.5 14.4c-.3-.2-1.8-.9-2.1-1-.3-.1-.5-.2-.7.1-.2.3-.8 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.3-.5-2.4-1.5-.9-.8-1.5-1.8-1.7-2.1-.2-.3 0-.5.1-.6.1-.1.3-.3.4-.5.1-.2.2-.3.3-.5 0-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.1.2 2.1 3.2 5 4.5.7.3 1.2.5 1.7.6.7.2 1.3.2 1.8.1.6-.1 1.8-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.5-.4z'/><path d='M12 2a10 10 0 0 0-8.6 15L2 22l5.2-1.4A10 10 0 1 0 12 2zm0 18.2c-1.6 0-3.1-.4-4.4-1.2l-.3-.2-3.1.8.8-3-.2-.3A8.2 8.2 0 1 1 12 20.2z'/></svg>");
+    --ico-img:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zm0 14h16v-3.2l-3.6-3.6-4 4-2.4-2.4L4 17.2V18zm3.5-9a1.8 1.8 0 1 0 0 3.6 1.8 1.8 0 0 0 0-3.6z'/></svg>");
+    --ico-pdf:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M13 2H7a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-6-6zm0 2.5L17.5 9H13V4.5z'/><path d='M8.5 13h7v1.6h-7zm0 3h5v1.6h-5z' fill='%23fff'/></svg>")}
+
+  /* El cuerpo común: ícono arriba, rótulo abajo, todos del mismo alto. El
+     rótulo NO se saca —un ícono sin rótulo es un botón que no existe (TMT
+     20/08, con este mismo botón)—; lo que se sacó es el renglón entero que
+     cada acción se llevaba para decir una palabra. */
+  .a4{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+      gap:3px;min-width:0;padding:8px 4px;border-radius:12px;background:#fff;
+      border:1px solid var(--line);font:inherit;font-size:11.5px;font-weight:700;
+      color:var(--ink);text-decoration:none;text-align:center;cursor:pointer;
+      line-height:1.15}
+  .a4::before{content:'';width:19px;height:19px;flex:0 0 19px;background:var(--ink);
+    -webkit-mask:center/contain no-repeat var(--ico);mask:center/contain no-repeat var(--ico)}
+  .a4 span{display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap}
+
+  /* WhatsApp: verde lleno y un poco más ancho. El color es la otra mitad de
+     lo que hace reconocible al botón. */
+  .a4.wa{flex:1.55;background:#25D366;border-color:#25D366;color:#fff;--ico:var(--ico-wa)}
+  .a4.wa::before{background:#fff}
+  .a4.wa:disabled{opacity:.65}
   /* ⭐ El botón ARMADO: el PDF ya está y falta el toque que abre WhatsApp.
      TMT 2026-08-25 *"generando y luego no abre el pdf"* — el rótulo cambiaba
      y el vendedor no lo registraba. El aro verde claro se ve sin leer. */
-  .btn-wa[data-wa-listo]{box-shadow:0 0 0 3px rgba(37,211,102,.45)}
+  .a4.wa[data-wa-listo]{box-shadow:0 0 0 3px rgba(37,211,102,.45)}
 
-  /* La red que SÍ anda en todos los teléfonos: la hoja como foto. Tiene
-     marco propio y no es gris: después de tres vueltas del botón verde, éste
-     es el camino que hay que ver, no el que hay que descubrir. */
-  .ver-img{display:block;margin:-2px 0 6px;padding:10px 12px;background:#fff;
-    border:1.5px solid #25D366;border-radius:12px;text-align:center;
-    font-size:14px;font-weight:700;color:var(--ink)}
-  .ver-img small{display:block;margin-top:2px;font-size:11.5px;font-weight:500;
-    color:#6b7280;line-height:1.35}
+  /* Imagen: borde verde. Es la red que SÍ anda en todos los teléfonos (Alex,
+     25/08: *"desde el pdf q genera no permite enviar por wsp"*), así que
+     tiene que verse como camino, no descubrirse. */
+  .a4.img{border-color:#25D366;border-width:1.5px;--ico:var(--ico-img)}
+  .a4.img::before{background:#1faa53}
+  .a4.pr{--ico:var(--ico-pr)}
+  .a4.pdf{--ico:var(--ico-pdf)}
   /* Con muchas facturas la foto sale chica y el PDF es mejor: el marco verde
      se apaga para no empujar al camino que en ESE cliente no es el bueno. */
-  .ver-img.flojo{border-color:var(--line)}
-  /* El PDF, en un renglón: el que lo prefiere lo tiene, pero ya sabemos que a
-     algunos teléfonos no les sirve, así que no compite con la foto. */
-  .ver-pdf{display:block;margin:0 0 10px;text-align:center;
-    font-size:12.5px;font-weight:600;color:#6b7280;text-decoration:underline}
+  .acc4.flojo .a4.img{border-color:var(--line);border-width:1px}
 
+  /* El gesto de la foto no se adivina, y se dice UNA vez para los cuatro
+     botones en lugar de una bajada por botón. */
+  .acc4-nota{margin:0 0 11px;text-align:center;font-size:11.5px;line-height:1.35;
+    color:#6b7280}
 
   /* El portal del cliente. Discreto a propósito: es información de fondo, no
 </style>
