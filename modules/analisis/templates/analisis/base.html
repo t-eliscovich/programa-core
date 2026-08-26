@@ -139,22 +139,23 @@ background:#fafafa}
 letter-spacing:.02em;text-transform:uppercase}
 .filtros input,.filtros select{width:100%}
 .filtros .cuenta{margin:0 0 6px auto;font-size:13px}
-/* ⭐ Los GRUPOS al costado. Columna angosta y pegajosa: la tabla es larga y el
-   navegador tiene que seguir a mano al llegar abajo.
-   ⚠ `min-width:0` en la columna de la tabla no es un adorno: sin eso el flex
-   la deja crecer con su contenido y la tabla ancha empuja el costado fuera de
-   la pantalla. */
-.conlado{display:flex;gap:18px;align-items:flex-start}
-.conlado-main{flex:1;min-width:0}
-.gnav{flex:0 0 172px;position:sticky;top:12px;display:flex;flex-direction:column;
-gap:2px;padding:8px;border:1px solid var(--l);border-radius:10px;background:#fafafa}
-.gnav a{display:flex;justify-content:space-between;gap:8px;align-items:baseline;
-padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--t);
-font-size:13.5px;white-space:nowrap}
-.gnav a span{color:var(--g);font-size:12px;font-variant-numeric:tabular-nums}
-.gnav a:hover{background:#f1f5f9}
-.gnav a.on{background:var(--az);color:#fff;font-weight:600}
-.gnav a.on span{color:#dbeafe}
+/* ⭐ EL ÍNDICE DE LA PANTALLA. Por defecto es una tira pegajosa arriba: no le
+   saca un pixel de ancho a la tabla, que fue el problema de la primera versión
+   ("horrible esto, me achico la tabla"). */
+.secciones{position:sticky;top:0;z-index:5;display:flex;gap:6px;flex-wrap:wrap;
+padding:8px 0;margin:0 0 4px;background:#fff}
+.secciones a{padding:5px 11px;border:1px solid var(--l);border-radius:20px;
+background:#fafafa;color:var(--t);text-decoration:none;font-size:13px;
+white-space:nowrap}
+.secciones a:hover{background:#f1f5f9}
+/* Y cuando la pantalla es ancha se va al MARGEN, que está vacío: el contenido
+   mide 1120 y recién a partir de 1400 sobra lugar para una columna de 150 sin
+   pisar nada. */
+@media (min-width:1400px){
+  .secciones{position:fixed;top:96px;left:calc(50% - 560px - 172px);width:150px;
+  flex-direction:column;gap:4px;padding:0;margin:0;background:none}
+  .secciones a{text-align:left}
+}
 .plegable>summary{cursor:pointer;list-style:none;padding:14px 0 0;
 border-top:1px solid var(--l);margin-top:30px}
 .plegable>summary::-webkit-details-marker{display:none}
@@ -213,6 +214,13 @@ td.cal{white-space:nowrap}
 .q{font-size:10px;font-weight:600;border-radius:5px;padding:1px 5px;margin-right:3px}
 .q.pri{color:#475569;background:#f1f5f9}
 .q.seg{color:#854d0e;background:#fef3c7}
+/* ⭐ LA FILA QUE SE VENDIÓ ENTERA. Se queda en la lista —es lo que la
+   competencia vino a premiar— pero tachada y en gris, para que no se lea como
+   algo que todavía hay para ofrecer. Los kilos NO se tachan: el 0 es un dato. */
+tr.vendida td{color:var(--g)}
+tr.vendida .nom{text-decoration:line-through}
+.pill.vend{background:#dcfce7;color:#166534;font-size:10px;font-weight:600;
+border-radius:5px;padding:1px 5px;margin-left:6px;white-space:nowrap}
 /* La FORMA va gris: es un dato de la ficha, no una decisión. El color de las
    tablas está reservado para los puntos.
    ⚠ Vive acá, en el cascarón, y no en Saldos: la misma píldora se dibuja en
@@ -262,14 +270,11 @@ font-size:12px;color:var(--g)}
   .filtros .ff:first-child{flex:1 1 100%}
   .filtros input,.filtros select{font-size:16px;max-width:none}
   .filtros .cuenta{flex:1 1 100%;margin:0}
-  /* ⚠ En el teléfono NO hay costado: la columna se acuesta y se convierte en
-     una tira que se corre con el dedo. Con `flex-direction:column` a 390 px
-     eran nueve renglones de menú antes de ver la primera tela. */
-  .conlado{display:block}
-  .gnav{position:static;flex-direction:row;overflow-x:auto;gap:6px;
-  padding:6px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
-  .gnav a{flex:0 0 auto;font-size:13px;padding:6px 10px}
-  .gnav a span{display:none}
+  /* ⚠ En el teléfono el índice NO se pega arriba: son tres botones que taparían
+     el primer renglón de cada tabla al scrollear. */
+  .secciones{position:static;gap:6px;flex-wrap:nowrap;overflow-x:auto;
+  -webkit-overflow-scrolling:touch}
+  .secciones a{flex:0 0 auto}
   table{font-size:13px}
   th,td{padding:6px 5px}
   tr.det>td{padding-left:10px}

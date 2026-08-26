@@ -3218,7 +3218,7 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert "<h2>Vendidos</h2>" in html
+    assert '<h2 id="vendidos-tabla">Vendidos</h2>' in html
 
     def cabeceras(tabla: str) -> list[str]:
         trozo = html[html.index(tabla):]
@@ -3451,7 +3451,7 @@ def test_vendidos_lleva_su_total_arriba():
     suma no da lo mismo que el «Se vendió» del encabezado y que el ranking de la
     Competencia, hay un renglón contándose de más o de menos."""
     html = _html_parado()
-    i = html.index('<h2>Vendidos</h2>')
+    i = html.index('id="vendidos-tabla"')
     j = html.index('id="vendidos"')
     arriba = html[i:j]
     assert "vendidos | sum(attribute='kg')" in arriba, "el total no está, o está debajo de la tabla"
@@ -3500,9 +3500,12 @@ def test_por_grupo_se_pliega_y_los_filtros_tienen_su_cuadro():
     mezclados con los botones de Excel, Imprimir y PDF, todos del mismo tamaño
     y sin rótulo."""
     html = _html_parado()
-    i = html.index("Por grupo")
-    assert '<details class="plegable">' in html[:i], "«Por grupo» no se pliega"
-    assert "open" not in html[i - 60:i], "arranca abierta: sigue ocupando lo mismo"
+    # ⚠ Buscar el `<details>` y no el texto "Por grupo": desde que hay índice
+    # al costado, la PRIMERA aparición de esas dos palabras es el link.
+    i = html.index('<details class="plegable" id="por-grupo">')
+    fin = html.index("</summary>", i)
+    assert "Por grupo" in html[i:fin], "el desplegable no es el de Por grupo"
+    assert " open" not in html[i:i + 60], "arranca abierta: sigue ocupando lo mismo"
     assert '<div class="filtros">' in html
     for campo in ("q", "grupo", "subgrupo", "calidad", "vend"):
         assert f'<label for="{campo}">' in html, f"el filtro {campo} no tiene rótulo"
@@ -3527,24 +3530,31 @@ def test_los_filtros_entran_en_un_telefono():
     assert ".filtros input,.filtros select{font-size:16px" in movil
 
 
-def test_los_grupos_tienen_links_al_costado():
-    """Dueña 25/08/2026: *"poneme también links al costado para ir pasando de
-    categoría"*. Para ver otro grupo había que abrir un desplegable, buscarlo y
-    soltarlo: ocho clicks para recorrer ocho grupos.
+def test_los_titulos_tienen_links_al_costado():
+    """Dueña 25/08/2026: *"poneme links al costado para ir pasando… me refería
+    a títulos, vendidos etc"*. La pantalla tiene tres bloques largos y para
+    llegar a Vendidos había que scrollear 700 telas.
 
-    ⚠ Es el MISMO filtro que el desplegable —le escribe el valor y llama a
-    `grupoCambio()`—, no un segundo camino. Dos maneras de filtrar que no se
-    hablan terminan mostrando cosas distintas."""
+    ⚠ El índice va FUERA del ancho del contenido. La primera versión era una
+    columna al lado de la tabla y le comía el ancho: *"horrible esto, me achico
+    la tabla"*. Ahora es una tira pegajosa arriba y, sólo cuando la pantalla es
+    ancha, se muda al margen, que está vacío."""
     html = _html_parado()
-    assert '<nav class="gnav" id="gnav">' in html
-    assert 'for g in grupos_resumen' in html[html.index('id="gnav"'):
-                                             html.index('</nav>')]
-    js = html[html.index("{% block scripts %}"):]
-    assert "document.getElementById('grupo').value = a.dataset.g" in js, (
-        "el link no escribe el filtro: sería un segundo camino")
-    assert "grupoCambio();" in js
-    assert "a.classList.toggle('on', a.dataset.g === g)" in js, (
-        "el link no se marca cuando el filtro cambia desde el desplegable")
+    assert '<nav class="secciones" id="secciones">' in html
+    for ancla in ("#por-grupo", "#tela-por-tela", "#vendidos-tabla"):
+        assert f'href="{ancla}"' in html, f"falta el link a {ancla}"
+        assert f'id="{ancla[1:]}"' in html, f"el link a {ancla} no lleva a ningún lado"
+    assert 'class="gnav"' not in html, (
+        "volvió la columna de grupos al costado, que achicaba la tabla")
+
+    from pathlib import Path
+    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
+    i = base.index(".secciones{")
+    assert "position:sticky" in base[i:i + 200], "no se queda a la vista al scrollear"
+    j = base.index("@media (min-width:1400px)")
+    assert "position:fixed" in base[j:j + 300], (
+        "en pantalla ancha tiene que irse al margen, no comerle ancho a la tabla")
 
 
 def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
@@ -3561,3 +3571,40 @@ def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
     assert "vendidos | sum(attribute='puntos_fila')" in pie
     assert pie.count("<td") == 10, "el pie tiene que tener las 10 columnas"
     assert '<td class="opt"></td>\n<td><b>Total</b>' in pie
+
+
+def test_la_tela_vendida_entera_se_queda_tachada():
+    """Dueña 25/08/2026: *"¿esto que se vendió por ejemplo? no hay que ponerlo
+    en 0. ¿Tachar la fila y decir vendido?"*.
+
+    Primero se habían sacado los renglones de 0 kg —"los que hay 0 no tienen
+    que estar"— y eso rompía dos cosas: la lista dejaba de mostrar justo lo que
+    la competencia premia, y el click de la tabla de Vendidos, que lleva a la
+    fila de esa tela, no encontraba a dónde ir. Lo que molestaba era el CERO
+    pelado, no la fila.
+
+    ⚠ El que quedó en cero SIN vender nada sí se va: es un ajuste de bodega."""
+    import inspect as _i
+    fuente = _i.getsource(views.parado)
+    assert 'float(f.get("kg_vendidos") or 0) > 0' in fuente, (
+        "la tela vendida entera volvió a desaparecer de la lista")
+    html = _html_parado()
+    assert "{% set vendida = not f.stock_kg and f.kg_vendidos %}" in html
+    assert '<span class="pill vend">vendido</span>' in html
+    from pathlib import Path
+    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
+    assert "tr.vendida .nom{text-decoration:line-through}" in base
+    assert "tr.vendida td{text-decoration:line-through}" not in base, (
+        "los kilos no se tachan: el 0 es un dato")
+
+
+def test_vendidos_no_promete_un_click_que_no_anda():
+    """Dueña 25/08/2026: *"esto borrar, no funciona tampoco"*. La bajada decía
+    "toque una fila para ver esa tela arriba" y el click estaba roto: la fila
+    de arriba era justamente la que se había ido por tener 0 kg. Ahora la fila
+    existe —tachada— y el click anda; el texto igual sobraba."""
+    html = _html_parado()
+    assert "Toque una fila para ver esa tela arriba" not in html
+    assert "Lo que salió de la lista desde que arrancó la competencia" not in html
+    assert 'onclick="verTela(this)"' in html, "el click sigue estando"

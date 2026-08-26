@@ -129,11 +129,25 @@ th.ord.desc::after{content:" ↓";opacity:1}
 <p class="sub" style="margin:18px 0 0">Lo que se vende no desaparece de la
 lista — así se ve si funcionó.</p>
 
+{# ⭐ EL ÍNDICE DE LA PANTALLA, AL COSTADO (dueña 25/08/2026: "poneme links
+   al costado para ir pasando… me refería a títulos, vendidos etc"). La página
+   tiene tres bloques largos y para llegar a Vendidos había que scrollear 700
+   telas.
+   ⚠ Va FUERA del ancho del contenido —fijo en el margen— y no adentro: la
+   primera versión era una columna al lado de la tabla y le comía el ancho
+   ("horrible esto, me achico la tabla"). Cuando no hay margen que alcance, se
+   acuesta y queda una tira pegajosa arriba. #}
+<nav class="secciones" id="secciones">
+  <a href="#por-grupo">Por grupo</a>
+  <a href="#tela-por-tela">Tela por tela</a>
+  <a href="#vendidos-tabla">Vendidos</a>
+</nav>
+
 {# ⭐ SE PLIEGA (dueña 25/08/2026: "en saldos por grupo dejame hide así no es
    tan grande"). Son ocho renglones que se miran una vez y después estorban:
    entre el encabezado y la tabla que sí se usa había media pantalla de
    subtotales. Cerrada por defecto — el que la quiere, la abre. #}
-<details class="plegable">
+<details class="plegable" id="por-grupo">
 <summary><h2 style="display:inline;border:0;padding:0;margin:0">Por grupo</h2>
 <span class="sub" style="margin:0 0 0 8px">los mismos kilos, agrupados</span></summary>
 <div class="caja" style="margin-top:10px"><table class="resumen">
@@ -160,7 +174,7 @@ lista — así se ve si funcionó.</p>
 </table></div>
 </details>
 
-<h2>Tela por tela</h2>
+<h2 id="tela-por-tela">Tela por tela</h2>
 {# Cuatro frases largas eran un párrafo que nadie leía. Dos cortas: qué hay
    adentro y qué hacer. El resto (que se separan por Categoría, que ordena por
    puntos) se ve en los filtros y en la columna. #}
@@ -174,23 +188,6 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
    del mismo tamaño y sin nombre: no se veía cuáles filtraban la tabla de abajo
    y cuáles hacían algo. Ahora los filtros van en una caja gris, cada uno con
    su rótulo arriba, y las acciones en su propio renglón. #}
-{# ⭐ LOS GRUPOS, AL COSTADO (dueña 25/08/2026: "poneme también links al
-   costado para ir pasando de categoría"). Para ver otro grupo había que abrir
-   un desplegable, buscarlo y soltarlo: ocho clicks para recorrer ocho grupos.
-   Acá se pasa de uno al otro con un click y sin perder de vista la tabla.
-   Es el MISMO filtro que el desplegable —le escribe el valor y llama a
-   `grupoCambio()`—, no un segundo camino: dos maneras de filtrar que no se
-   hablan terminan diciendo cosas distintas.
-   ⚠ En el teléfono no hay costado: pasa a ser una tira que se corre con el
-   dedo, arriba de los filtros. #}
-<div class="conlado">
-<nav class="gnav" id="gnav">
-  <a href="#" data-g="" class="on">Todos<span>{{ resumen.kg | num_es(0) }}</span></a>
-  {% for g in grupos_resumen %}
-  <a href="#" data-g="{{ g.grupo }}">{{ g.grupo }}<span>{{ g.kg | num_es(0) }}</span></a>
-  {% endfor %}
-</nav>
-<div class="conlado-main">
 <div class="filtros">
 <div class="ff"><label for="q">Buscar</label>
   <input id="q" placeholder="Tela, color, cliente, provincia…" oninput="filtrar()"></div>
@@ -275,7 +272,11 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 <tbody>
 {% for f in filas %}
   {% set cand = llamados.get(f.subcategoria, []) %}
-  <tr class="item" onclick="abrir(this)"
+  {# ⭐ La que se vendió entera va TACHADA y con su palabra. Es el único
+     renglón de la lista que es una buena noticia: sacarlo escondía justo lo
+     que la competencia vino a premiar. #}
+  {% set vendida = not f.stock_kg and f.kg_vendidos %}
+  <tr class="item{{ ' vendida' if vendida }}" onclick="abrir(this)"
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-color="{{ f.color }}"
@@ -299,7 +300,8 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
        la fila se abrió en dos, y cada una dice la suya (dueña 25/08/2026: "pri
        y seg las sigo viendo juntas. tienen que ser por separado"). #}
     {% set calidad %}{{ fm.cal(f) }}{% endset %}
-    <td class="tela"><span class="flecha">▸</span> {{ f.subcategoria }}<span class="qm">{{ calidad }}</span></td>
+    <td class="tela"><span class="flecha">▸</span> <span class="nom">{{ f.subcategoria }}</span>{% if vendida %}
+      <span class="pill vend">vendido</span>{% endif %}<span class="qm">{{ calidad }}</span></td>
     {# ⭐ Dueña 24/08/2026: *"pero quiero codigo y color"*. El código es el que
        está en el producto y en Asinfo; el nombre es el que usa el cliente por
        teléfono. Los dos, no uno en vez del otro. El que no está en el catálogo
@@ -380,8 +382,7 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
   </td></tr>
 {% endfor %}
 </tbody>
-</table></div>
-</div>
+</table>
 </div>
 
 {# ⭐ LO VENDIDO, renglón por renglón (dueña 25/08/2026: "abajo de saldos poné
@@ -389,9 +390,13 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
    vendedor"). Arriba estaba el total en una tarjeta, pero qué se vendió, qué
    día y quién había que ir a buscarlo a la Competencia, vendedor por vendedor.
    ⚠ Mismas columnas que la lista de arriba, para leerlas juntas. #}
-<h2>Vendidos</h2>
-<p class="sub">Lo que salió de la lista desde que arrancó la competencia. Sólo
-lo que suma puntos. Toque una fila para ver esa tela arriba.</p>
+<h2 id="vendidos-tabla">Vendidos</h2>
+{# ⚠ La bajada se sacó el 25/08/2026 (dueña: "esto borrar, no funciona
+   tampoco"). Prometía un click que estaba roto —llevaba a la fila de esa tela
+   en la lista de arriba, y esa fila era justamente la que se había ido por
+   tener 0 kg—. Ahora la fila está, tachada, así que el click funciona; el
+   texto igual sobraba: la tabla se llama Vendidos y tiene las columnas a la
+   vista. #}
 {% if vendidos %}
 {# ⭐ EL TOTAL ARRIBA DE TODO (dueña 25/08/2026: "acá poneme un total arriba de
    todo: debería coincidir con los que dicen que vendió"). Es la comprobación:
@@ -500,10 +505,6 @@ function filtrar(){
 // qué — parece que no hay datos, y lo que hay es una combinación imposible.
 function grupoCambio(){
   const g = document.getElementById('grupo').value;
-  // El link del costado y el desplegable son el MISMO filtro: acá se marca
-  // cuál está encendido, venga de donde venga el cambio.
-  document.querySelectorAll('#gnav a').forEach(
-    a => a.classList.toggle('on', a.dataset.g === g));
   const sel = document.getElementById('subgrupo');
   let sigueValiendo = false;
   Array.from(sel.options).forEach(o => {
@@ -649,14 +650,6 @@ function bajarExcel(){
   URL.revokeObjectURL(a.href);
 }
 
-document.querySelectorAll('#gnav a').forEach(a => a.addEventListener('click', ev => {
-  ev.preventDefault();
-  document.getElementById('grupo').value = a.dataset.g;
-  grupoCambio();
-}));
-// ⚠ `grupoCambio()` y no sólo `filtrar()`: además de marcar el link, deja en
-// el desplegable de telas SÓLO las de ese grupo. Sin eso quedaba pedido un
-// subgrupo de otro grupo y la tabla salía vacía sin decir por qué.
-document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); grupoCambio(); });
+document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); filtrar(); });
 </script>
 {% endblock %}

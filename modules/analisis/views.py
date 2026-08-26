@@ -105,13 +105,19 @@ def parado():
     # por forma y calidad — ver `abrir_en_lineas`.
     base = queries.con_puntos(queries.items())
     filas = queries.abrir_en_lineas(base)
-    # ⭐ LO QUE YA NO TIENE UN KILO NO SE DIBUJA (dueña 25/08/2026: "los que hay
-    # 0 no tienen que estar"). El ítem que se vendió entero se queda en la
-    # cohorte —"si empezamos a venderlas, que no se nos vayan de la lista"— y
-    # sigue contando en el resumen y en la competencia, que salen de `base`.
-    # Pero en la LISTA era un renglón de 0 kg, 0 puntos y grupo "—": no hay
-    # nada que ofrecer ahí. Lo que se vendió tiene su propia tabla en el pie.
-    filas = [f for f in filas if float(f.get("stock_kg") or 0) > 0]
+    # ⭐ EL QUE SE VENDIÓ SE QUEDA, TACHADO (dueña 25/08/2026: "¿esto que se
+    # vendió por ejemplo? no hay que ponerlo en 0. ¿Tachar la fila y decir
+    # vendido?"). Primero se habían sacado los renglones de 0 kg —"los que hay
+    # 0 no tienen que estar"— y eso rompía dos cosas: la lista dejaba de mostrar
+    # justo lo que la competencia premia, y el click de la tabla de Vendidos,
+    # que lleva a la fila de esa tela, no encontraba a dónde ir.
+    # Lo que molestaba era el CERO pelado, no la fila. Ahora va tachada y con
+    # la palabra vendido.
+    # ⚠ El que quedó en cero SIN haber vendido nada sí se va: es un ajuste de
+    # bodega, no un logro, y no hay nada que ofrecer ahí.
+    filas = [f for f in filas
+             if float(f.get("stock_kg") or 0) > 0
+             or float(f.get("kg_vendidos") or 0) > 0]
     filas.sort(key=lambda f: -float(f.get("puntos_fila") or 0))
     # Los desplegables salen de las filas que se van a dibujar, no de una lista
     # aparte: si un grupo no tiene nada parado, no tiene por qué estar.
@@ -342,13 +348,19 @@ def mis_telas():
     for f in base:
         f["clientes"] = len(llamados.get(f["subcategoria"], []))
     filas = queries.abrir_en_lineas(base)
-    # ⭐ LO QUE YA NO TIENE UN KILO NO SE DIBUJA (dueña 25/08/2026: "los que hay
-    # 0 no tienen que estar"). El ítem que se vendió entero se queda en la
-    # cohorte —"si empezamos a venderlas, que no se nos vayan de la lista"— y
-    # sigue contando en el resumen y en la competencia, que salen de `base`.
-    # Pero en la LISTA era un renglón de 0 kg, 0 puntos y grupo "—": no hay
-    # nada que ofrecer ahí. Lo que se vendió tiene su propia tabla en el pie.
-    filas = [f for f in filas if float(f.get("stock_kg") or 0) > 0]
+    # ⭐ EL QUE SE VENDIÓ SE QUEDA, TACHADO (dueña 25/08/2026: "¿esto que se
+    # vendió por ejemplo? no hay que ponerlo en 0. ¿Tachar la fila y decir
+    # vendido?"). Primero se habían sacado los renglones de 0 kg —"los que hay
+    # 0 no tienen que estar"— y eso rompía dos cosas: la lista dejaba de mostrar
+    # justo lo que la competencia premia, y el click de la tabla de Vendidos,
+    # que lleva a la fila de esa tela, no encontraba a dónde ir.
+    # Lo que molestaba era el CERO pelado, no la fila. Ahora va tachada y con
+    # la palabra vendido.
+    # ⚠ El que quedó en cero SIN haber vendido nada sí se va: es un ajuste de
+    # bodega, no un logro, y no hay nada que ofrecer ahí.
+    filas = [f for f in filas
+             if float(f.get("stock_kg") or 0) > 0
+             or float(f.get("kg_vendidos") or 0) > 0]
     filas.sort(key=lambda f: -float(f.get("puntos_fila") or 0))
     grupos = sorted({f["categoria"] for f in filas if f["categoria"]})
     subgrupos = sorted({(f["subcategoria"], f["categoria"] or "") for f in filas},
