@@ -3700,3 +3700,7 @@ def test_la_pantalla_no_se_corre_para_el_costado_en_el_telefono():
     # porque en escritorio va con `overflow:visible` para no matar su encabezado
     # fijo. En el teléfono el encabezado fijo se apaga y la tabla se corre.
     assert "#tabla thead th{position:static}" in movil
+    # ⚠ Con las DOS clases: `.caja{...}` sola pierde por especificidad contra
+    # `.caja.larga{overflow:visible}` y la regla no entraba. A 320 px la página
+    # seguía midiendo 350.
+    assert ".caja.larga{overflow-x:auto}" in movil

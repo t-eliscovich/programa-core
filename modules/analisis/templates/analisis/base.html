@@ -291,6 +291,10 @@ font-size:12px;color:var(--g)}
      apaga —un `overflow-x:auto` arrastra el vertical y el sticky muere igual—
      y se cambia por lo que sirve en una pantalla de 390: poder correr la tabla
      con el dedo sin que se mueva el resto de la página. */
+  /* ⚠ Y con la MISMA especificidad que `.caja.larga{overflow:visible}` de más
+     arriba: `.caja{...}` sola pierde contra las dos clases y la regla no
+     entraba. Medido a 320 px: la página seguía midiendo 350. */
+  .caja.larga{overflow-x:auto}
   #tabla thead th{position:static}
   /* ⚠ En el teléfono el índice NO se pega arriba: son tres botones que taparían
      el primer renglón de cada tabla al scrollear. */
