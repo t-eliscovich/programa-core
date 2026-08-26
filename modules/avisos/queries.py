@@ -345,6 +345,37 @@ def resolver(id_aviso: int, *, titulo: str, detalle: str | None = None) -> bool:
         return False
 
 
+def abiertos_por_clave(prefijo: str) -> list[dict]:
+    """Los avisos de `prefijo` que SIGUEN siendo un problema: {id_aviso, clave}.
+
+    Es lo que necesita un vigía para saber de qué avisó y todavía no resolvió,
+    sin llevar él la cuenta. `nivel <> 'ok'` es el freno de los ya resueltos, y
+    el archivado queda afuera: si la persona lo cerró con la ×, cerrado se
+    queda.
+
+    🚨 Va DIRECTO a la tabla y no por `listar()`: `listar` no devuelve la
+    columna `clave` (lección de `modules/asinfo/hilo_sin_of.py`, que se comió
+    esa: la comparación se hacía siempre contra un string vacío y no resolvía
+    nunca, en silencio).
+    """
+    if not prefijo:
+        return []
+    try:
+        return db.fetch_all(
+            f"""
+            SELECT id_aviso, clave
+              FROM scintela.aviso
+             WHERE clave LIKE %s
+               AND nivel <> 'ok'
+               {"AND NOT archivado" if _tiene_archivado() else ""}
+            """,
+            (prefijo + "%",),
+        ) or []
+    except Exception as e:  # noqa: BLE001 -- nunca frena al vigía
+        _LOG.warning("no pude leer los avisos abiertos de %s: %s", prefijo, e)
+        return []
+
+
 def archivar(id_aviso: int, usuario: str = "web", *, deshacer: bool = False) -> bool:
     """Saca (o devuelve) un aviso de la lista. Devuelve True si tocó una fila.
 

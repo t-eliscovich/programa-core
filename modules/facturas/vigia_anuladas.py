@@ -103,6 +103,9 @@ MOTIVO = "Anulada en Asinfo (fc.estado=0) — detectada por el vigía"
 # ese feo?"*. El "— no se tocó" salía del constante y se repetía en la pantalla
 # al lado de la palabra "Frenada", que ya lo dice. Queda sólo el motivo, y el
 # "No se tocó nada" va una sola vez, en el aviso.
+#: Prefijo de la clave del aviso de una frenada. Es también por donde se lo
+#: busca para darlo por resuelto (ver `_resolver_los_que_ya_se_arreglaron`).
+CLAVE_FRENADA = "vigia-frenada-"
 FRENO_VIVA = "Asinfo la sigue dando por viva (estado {estado})"
 FRENO_SIN_RESPUESTA = "Asinfo no la reconoce por su número"
 FRENO_SIN_CONSULTA = "No se pudo confirmar con Asinfo"
@@ -337,10 +340,81 @@ def _avisar_frenadas(frenadas: list[dict]) -> None:
                 url="/facturas/anuladas-asinfo",
                 # Una vez por documento: el vigía repasa la misma ventana
                 # cada 15 minutos y sin clave el buzón se llenaría.
-                clave=f"vigia-frenada-{numero}",
+                clave=CLAVE_FRENADA + numero,
             )
         except Exception as e:  # noqa: BLE001
             _LOG.warning("vigia-anuladas: no pude avisar de %s: %s", numero, e)
+
+
+# ── El aviso que ya se solucionó ────────────────────────────────────────────
+# TMT 2026-08-26 (dueña): *"si un aviso ya se solucionó habría que avisar que se
+# solucionó"*. El mecanismo ya existía desde el 11/08 (`avisos.resolver`: el
+# MISMO renglón pasa a ✅ y vuelve a no leído); lo que faltaba era engancharlo
+# acá.
+def _resolver_los_que_ya_se_arreglaron(res: dict) -> None:
+    """Las frenadas que ya no son un problema pasan a "listo" en la campanita.
+
+    Sólo se da por resuelto lo que se puede VERIFICAR, y hay exactamente dos
+    finales buenos:
+
+      · la factura se anuló en PC (`stat='X'`) — el problema era ese;
+      · Asinfo la volvió a reportar dentro de la ventana: no estaba anulada, a
+        la lectura anterior le faltaba. Se sabe porque la factura sigue viva,
+        su fecha cae en la ventana que ACABA de compararse, y esta corrida no
+        la frenó.
+
+    Lo que NO se toca: la factura que quedó FUERA de la ventana. Ahí el aviso
+    no dejó de aparecer porque se arreglara, sino porque dejamos de mirarla —
+    decir "listo" sería mentir. Y si Asinfo estuvo mudo (`ok=False`) no se
+    concluye nada, igual que en el resto del vigía.
+    """
+    if not res.get("ok"):
+        return
+    from modules.avisos import queries as avisos
+
+    abiertos = avisos.abiertos_por_clave(CLAVE_FRENADA)
+    if not abiertos:
+        return
+    frenadas_hoy = {(f.get("numf_completo") or "").strip()
+                    for f in (res.get("frenadas") or [])}
+    por_numero = {}
+    for a in abiertos:
+        clave = str(a.get("clave") or "")
+        # El prefijo se re-chequea en Python aunque el SQL ya filtre: el día
+        # que alguien reuse el helper con otro WHERE, cortar por ":" sobre una
+        # clave ajena devolvería basura y la daría por nuestra.
+        if not clave.startswith(CLAVE_FRENADA):
+            continue
+        numero = clave[len(CLAVE_FRENADA):].strip()
+        if numero and numero not in frenadas_hoy:
+            por_numero[numero] = a
+    if not por_numero:
+        return
+    filas = db.fetch_all(
+        """
+        SELECT numf_completo, fecha, stat
+          FROM scintela.factura
+         WHERE numf_completo = ANY(%s)
+        """,
+        (list(por_numero),),
+    ) or []
+    desde, hasta = res.get("desde"), res.get("hasta")
+    for f in filas:
+        numero = (f.get("numf_completo") or "").strip()
+        a = por_numero.get(numero)
+        if not a:
+            continue
+        fecha = _fecha_de(f.get("fecha"))
+        if (f.get("stat") or "").strip().upper() == "X":
+            titulo = f"{numero} · listo, se anuló"
+            detalle = "Ya no suma en la venta ni en la cartera."
+        elif fecha and desde and hasta and desde <= fecha <= hasta:
+            titulo = f"{numero} · listo, Asinfo la volvió a reportar"
+            detalle = ("No estaba anulada: a la lista de Asinfo le faltaba. "
+                       "La factura queda como estaba.")
+        else:
+            continue
+        avisos.resolver(int(a["id_aviso"]), titulo=titulo, detalle=detalle)
 
 
 def correr(dias: int | None = None, *, dry_run: bool = False) -> dict:
@@ -369,6 +443,10 @@ def correr(dias: int | None = None, *, dry_run: bool = False) -> dict:
             res["bloqueadas"].append({**fila, "motivo": str(e)})
         except Exception as e:  # noqa: BLE001 — una fila mala no frena al resto
             res["bloqueadas"].append({**fila, "motivo": f"error: {e}"})
+    try:
+        _resolver_los_que_ya_se_arreglaron(res)
+    except Exception as e:  # noqa: BLE001 -- resolver nunca frena al vigía
+        _LOG.warning("vigia-anuladas: no pude resolver avisos: %s", e)
     return res
 
 

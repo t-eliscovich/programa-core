@@ -392,6 +392,61 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
     return out
 
 
+# ── El aviso que ya se solucionó ────────────────────────────────────────────
+# TMT 2026-08-26 (dueña): *"si un aviso ya se solucionó habría que avisar que se
+# solucionó"*.
+def _resolver_los_arreglados(rows: list[dict] | None) -> None:
+    """Los avisos de importaciones que ya se acomodaron pasan a "listo".
+
+    Se resuelve sólo lo VERIFICABLE: el grupo tiene que estar en la lectura de
+    HOY y su US$/kg tiene que haber ENTRADO en banda. Que un grupo "ya no
+    aparezca" NO alcanza — la lectura trae las últimas 1.000 importaciones y la
+    alarma tiene techo de 31 días, así que desaparecer es lo que hacen las
+    viejas, no las arregladas.
+    """
+    if not rows:
+        return
+    from filters import num_es as _n
+    from modules.avisos import queries as avisos
+
+    from . import service as svc
+    lo, hi = svc.BANDA_USD_KG
+    grupos = _grupos_recibidos(rows)
+
+    for a in avisos.abiertos_por_clave("import-sin-plata:"):
+        clave = str(a.get("clave") or "")
+        g = grupos.get(clave.split(":", 1)[1]) if ":" in clave else None
+        if not g or g["kg"] <= 0:
+            continue
+        ukg = g["importe"] / g["kg"]
+        if not (lo <= ukg <= hi):
+            continue                     # sigue fuera de banda
+        avisos.resolver(
+            int(a["id_aviso"]),
+            titulo=f"{g['codigo']} · listo, ya tiene toda la plata",
+            detalle=f"Quedó en {_n(ukg)} el kilo.",
+        )
+
+    # La factura repartida se arregla cuando ninguna de sus importaciones
+    # quedó sin plata.
+    mal = {f["factura"]
+           for f in facturas_con_plata_en_una_sola(rows=rows, techo=0)}
+    for a in avisos.abiertos_por_clave("import-factura-en-una:"):
+        clave = str(a.get("clave") or "")
+        if ":" not in clave:
+            continue
+        base = clave.split(":", 1)[1]
+        miembros = [g for g in grupos.values() if g["factura"][1] == base]
+        if not miembros or base in mal:
+            continue
+        codigos = ", ".join(sorted(g["codigo"] for g in miembros))
+        avisos.resolver(
+            int(a["id_aviso"]),
+            titulo=f"{codigos} · listo, la plata quedó repartida",
+            detalle="Cada importación tiene la suya.",
+        )
+
+
 def revisar_si_toca() -> dict:
     """Corre cada `_FRENO_SECS` y deja los avisos de los dos chequeos: uno por
     grupo fuera de banda y uno por factura repartida. Fail-soft."""
@@ -484,6 +539,10 @@ def revisar_si_toca() -> dict:
             clave=f"import-factura-en-una:{f['factura']}",
         ):
             n += 1
+    try:
+        _resolver_los_arreglados(_rows)
+    except Exception as e:  # noqa: BLE001 -- resolver nunca frena la alarma
+        _LOG.warning("no pude resolver los avisos arreglados: %s", e)
     if n:
         _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
                   "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
