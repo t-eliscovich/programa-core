@@ -47,6 +47,13 @@
      clarito. Verificado con `getComputedStyle` sobre una fila de verdad. */
   .fila { border-bottom-color: rgb(15 23 42); }
   .fila:hover { background-color: rgb(248 250 252); }
+  /* TMT 2026-08-26 (duena): *"el lapicito en factura tapa el nombre del
+     cliente"*. La columna Fecha tenia 8% (94 px) y la fecha con su lapicito
+     mide 120 px: el lapicito se salia de la celda y caia justo arriba del
+     codigo del cliente. Los anchos de abajo ya le dan lugar a cada columna
+     (medidos sobre las 500 filas en vivo); esto es el seguro para que ninguna
+     celda vuelva a dibujar encima de la de al lado. */
+  .editable-cell, .numf-cell { overflow: hidden; }
 </style>
 {# TMT 2026-05-17 — wrapper estándar (.page-shell). #}
 <div class="page-shell page-shell--full">
@@ -368,22 +375,31 @@
   {# TMT 2026-05-25 — overflow-x-auto para que la tabla scrollee internamente
      en viewports tablet (1024px). Sin esto, main entero overflowea. #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-x-auto">
-    <table class="w-full text-xs sortable table-fixed">
+    <table class="w-full text-xs sortable table-fixed" style="min-width: 1180px;">
       <colgroup>
         {# Anchos suman 100%. Cliente muestra sólo el código de 3 letras → no
            necesita ancho de sobra. TMT 2026-07-21: quitadas las columnas Kg AI /
-           USD AI de conciliación Asinfo (la dueña usa Kg e Importe). #}
+           USD AI de conciliación Asinfo (la dueña usa Kg e Importe).
+
+           TMT 2026-08-26: repartidos de nuevo. Cada ancho se midió en vivo
+           sobre las 500 filas (contenido más largo de cada columna, y el
+           título cuando es más ancho que los valores), contando el lapicito:
+           Fecha necesita 120 px y tenía 94 → por eso el lapicito se le subía
+           encima al cliente. Ahora sobra en todas. La tabla no baja de
+           1180 px: más angosta que eso, el cuadro scrollea (ya tiene
+           overflow-x-auto) en vez de apretar las columnas y repetir el
+           problema en pantallas chicas. #}
         <col style="width: 8%">    <!-- N° -->
-        <col style="width: 8%">    <!-- Fecha -->
-        <col style="width: 9%">    <!-- Cliente -->
-        <col style="width: 9%">    <!-- Kg -->
+        <col style="width: 11%">   <!-- Fecha -->
+        <col style="width: 8%">    <!-- Cliente -->
+        <col style="width: 10%">   <!-- Kg -->
         <col style="width: 12%">   <!-- Importe -->
         <col style="width: 5%">    <!-- Tipo -->
-        <col style="width: 11%">   <!-- Retención -->
-        <col style="width: 12%">   <!-- Abonado -->
-        <col style="width: 12%">   <!-- Saldo -->
-        <col style="width: 9%">    <!-- Acum -->
-        <col style="width: 5%">    <!-- Stat -->
+        <col style="width: 10%">   <!-- Retención -->
+        <col style="width: 10%">   <!-- Abonado -->
+        <col style="width: 10%">   <!-- Saldo -->
+        <col style="width: 10%">   <!-- Acum -->
+        <col style="width: 6%">    <!-- Stat -->
       </colgroup>
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-[10px] uppercase tracking-wider text-slate-500">
         <tr>
