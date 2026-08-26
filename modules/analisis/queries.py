@@ -1143,11 +1143,11 @@ def actualizar() -> dict:
                 db.execute(
                     """INSERT INTO scintela.parado_venta
                            (subcategoria, color, vend_pc, vendedor, fecha, kg,
-                            calidad, cuenta)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+                            calidad, cuenta, numf)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (k[0], k[1], v.get("vend_pc"), _quien_vendio(v),
                      _fecha(v["fecha"]), parte,
-                     v.get("calidad"), cuenta), conn=conn)
+                     v.get("calidad"), cuenta, v.get("numf")), conn=conn)
 
         db.execute("DELETE FROM scintela.parado_share", conn=conn)
         for s in asinfo_parado.share_por_grupo():
@@ -1287,7 +1287,7 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
     """
     filas = db.fetch_all(
         """SELECT v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
-                  v.fecha, SUM(v.kg) AS kg,
+                  v.fecha, v.numf, SUM(v.kg) AS kg,
                   SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos,
                   -- ⭐ El color con su nombre y la FORMA, para que el detalle
                   -- que se abre tenga las mismas columnas que la lista de
@@ -1310,7 +1310,7 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   LIMIT 1) nom ON TRUE
             WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
-                     v.fecha, nom.n
+                     v.fecha, v.numf, nom.n
             ORDER BY SUM(v.kg) DESC""", (desde,)) or []
     out: dict[str, list[dict]] = defaultdict(list)
     for f in filas:
@@ -1340,7 +1340,7 @@ def vendidos(desde) -> list[dict]:
     return db.fetch_all(
         """
         SELECT v.subcategoria, v.color, v.calidad, v.fecha,
-               v.vendedor, v.vend_pc,
+               v.vendedor, v.vend_pc, v.numf,
                COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                           AS color_nombre,
                -- ⚠ El grupo sale de la foto y, si la tela ya no tiene foto
@@ -1385,7 +1385,7 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, nom.n, f.categoria, p.categoria
+                  v.vend_pc, v.numf, nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC
         """, (desde,)) or []

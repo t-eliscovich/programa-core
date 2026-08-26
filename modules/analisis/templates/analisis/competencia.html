@@ -269,7 +269,16 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
             class="g">{{ v.color_nombre }}</span>{% endif %}</td>
           <td>{{ fm.forma(v) }}</td>
           <td>{{ fm.cal(v) }}</td>
-          <td class="opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
+          {# ⭐ El día abre la FACTURA (dueña 26/08/2026: "¿me podés poner un
+             link a la factura también? así la veo").
+             ⚠ SÓLO para quien puede ver facturas. Los vendedores ven el detalle
+             de los siete —eso ella lo dejó abierto a propósito— pero la factura
+             no: *"eso sí, pero el link a la factura no"*. Y sin el permiso el
+             link les daría 404, así que además sería un link roto. #}
+          <td class="opt">{% if v.fecha %}{% if v.numf and tiene_permiso('facturas.ver')
+            %}<a href="/facturas?q={{ v.numf }}" title="Factura {{ v.numf }}"
+                 class="alista">{{ v.fecha.strftime('%d/%m') }}</a>{% else
+            %}{{ v.fecha.strftime('%d/%m') }}{% endif %}{% else %}—{% endif %}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>
           <td class="n pts">{{ v.puntos | num_es(0) }}</td>
         </tr>

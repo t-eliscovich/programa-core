@@ -461,7 +461,12 @@ en {{ vendidos | length }} renglones ·
     <td class="n vale"><span class="pt p{{ v.puntos }}">{{ v.puntos }} × kg</span></td>
     <td class="n pts opt">{{ v.puntos_fila | num_es(0) }}</td>
     <td>{{ v.vendedor }}</td>
-    <td class="g n opt">{{ v.fecha.strftime('%d/%m/%y') }}</td>
+    {# ⭐ El día abre la FACTURA (dueña 26/08/2026), sólo para quien puede
+       verlas. Ver el comentario en competencia.html. #}
+    <td class="g n opt">{% if v.numf and tiene_permiso('facturas.ver')
+      %}<a href="/facturas?q={{ v.numf }}" title="Factura {{ v.numf }}"
+           style="color:inherit">{{ v.fecha.strftime('%d/%m/%y') }}</a>{% else
+      %}{{ v.fecha.strftime('%d/%m/%y') }}{% endif %}</td>
   </tr>
 {% endfor %}
 </tbody>

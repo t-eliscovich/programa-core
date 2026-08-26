@@ -3882,3 +3882,50 @@ def test_afuera_de_la_lista_no_vuelve_a_la_pantalla():
         "se pasaba al contexto sólo para ese texto")
     fuente = _i.getsource(queries.actualizar)
     assert "nuevas" in fuente and "produciendo" in fuente and "pedidas" in fuente
+
+
+def test_el_numero_de_factura_se_pela_para_buscarla_en_el_programa():
+    """Asinfo la numera `001-099-000182637` y Programa Core la busca por `numf`,
+    que es el número pelado. Verificado el 26/08/2026 contra las dos facturas
+    del día de James 1.2 BLA: 182637 y 182654 existen en `scintela.factura`.
+
+    ⚠ Si el formato cambiara y no quedara ningún dígito, devuelve None y la
+    fila se dibuja sin link — antes que mandar a la dueña a otra factura."""
+    assert asinfo_parado._numf("001-099-000182637") == 182637
+    assert asinfo_parado._numf(" 001-099-000182654 ") == 182654
+    assert asinfo_parado._numf("182637") == 182637
+    assert asinfo_parado._numf(None) is None
+    assert asinfo_parado._numf("") is None
+    assert asinfo_parado._numf("001-099-XXX") is None
+
+
+def test_el_renglon_vendido_guarda_su_factura():
+    """Sin el número no hay a dónde linkear, y con el grain viejo —todo lo
+    vendido de esa tela ese día— un renglón podía venir de dos facturas y el
+    link no sabría a cuál ir. Por eso el número entra al GROUP BY: cada renglón
+    es UNA factura."""
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert "RTRIM(fc.numero) AS numero" in sql
+    assert sql.count("RTRIM(fc.numero)") == 2, "tiene que estar en el GROUP BY"
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    assert "calidad, cuenta, numf" in fuente
+    assert 'v.get("numf")' in fuente
+
+
+def test_la_factura_es_solo_para_quien_puede_ver_facturas():
+    """Dueña 26/08/2026: *"eso sí, pero el link a la factura no"*. El detalle de
+    los siete lo dejó abierto para los vendedores; la factura no.
+
+    ⚠ Y sin el permiso el link igual daría 404: sería un link roto además de
+    una filtración."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for nombre in ("competencia.html", "parado.html"):
+        html = (carpeta / nombre).read_text(encoding="utf-8")
+        i = html.index("/facturas?q=")
+        antes = html[i - 260:i]
+        assert "tiene_permiso('facturas.ver')" in antes, (
+            f"{nombre}: el link a la factura no está gateado")
+        assert "v.numf and" in antes, "sin número no se dibuja el link"
