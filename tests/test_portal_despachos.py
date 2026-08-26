@@ -345,11 +345,18 @@ def test_los_kilos_igual_se_traen(monkeypatch):
     assert dsp.de_cliente("AJO", RUC)["kg"] == 354.25
 
 
-def test_el_lote_repetido_se_nombra_UNA_vez(monkeypatch):
-    """Dos rollos del mismo lote son dos rollos, pero un lote."""
-    _asinfo(monkeypatch, Falso(ROLLOS))
-    lotes = dsp.guia("AJO", RUC, "DES-000096562")["telas"][0]["lotes"]
-    assert lotes == ["2/8-0004177689", "2/8-0004177690"]
+def test_los_LOTES_no_van(monkeypatch):
+    """TMT 26/08: *"esto no hace falta: Lotes: 209367 · 209468"*. Eran dos
+    números por tela que el cliente no le pide a esta pantalla — el lote está
+    impreso en la etiqueta del rollo que tiene enfrente. No se traen ni se
+    muestran."""
+    f = _asinfo(monkeypatch, Falso(ROLLOS))
+    tela = dsp.guia("AJO", RUC, "DES-000096562")["telas"][0]
+    assert "lotes" not in tela
+    assert "codigo_lote" not in f.consultas[0], "ni se le pide a Asinfo"
+    # 🪞 Sin los comentarios: el ⛔ que explica por qué se sacaron dice
+    # "Lote", y el test se encontraba a sí mismo.
+    assert "Lote" not in re.sub(r"\{#.*?#\}", "", GUIA_COMPARTIDA, flags=re.S)
 
 
 def test_las_telas_van_de_mayor_a_menor(monkeypatch):
@@ -488,11 +495,10 @@ def test_el_estado_de_cuenta_linkea_los_despachos():
     assert '"/despachos"' in sin_comentarios
 
 
-def test_la_pantalla_muestra_lote_rollos_y_factura():
-    """Lo que el plan pidió mostrar, ya sin kilos: es lo que el cliente tiene
-    impreso en la etiqueta de cada rollo y en su guía."""
+def test_la_pantalla_muestra_la_tela_los_rollos_y_la_factura():
+    """Lo que quedó después de tres podas: sin kilos y sin lotes."""
     assert "Factura" in LISTA_COMPARTIDA and "Rollos" in LISTA_COMPARTIDA
-    assert "Lote" in GUIA_COMPARTIDA and "rollo" in GUIA_COMPARTIDA
+    assert "Tela" in GUIA_COMPARTIDA and "rollo" in GUIA_COMPARTIDA
 
 
 def test_los_rollos_y_las_unidades_van_en_COLUMNAS_SEPARADAS():

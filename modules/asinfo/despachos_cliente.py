@@ -6,8 +6,12 @@ es lo que el cliente mira antes de reclamar—, y lo hace desde el mismo lugar
 donde está su saldo.
 
 Programa Core guarda la PLATA de la factura; la MERCADERÍA vive en Asinfo. Acá
-se le pregunta lo que sólo él sabe: las guías de despacho, sus rollos, sus
-lotes y en qué factura salieron.
+se le pregunta lo que sólo él sabe: las guías de despacho, sus rollos y en qué
+factura salieron.
+
+⛔ El LOTE de cada rollo estuvo y se sacó (TMT 26/08: *"esto no hace falta"*).
+Está impreso en la etiqueta del rollo que el cliente tiene enfrente, y en la
+pantalla eran dos números por tela que nadie vino a buscar.
 
 ## Lo medido el 26/08/2026, antes de escribir la consulta
 
@@ -384,7 +388,6 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
                ISNULL(p.nombre, '')                         AS producto,
                ISNULL(p.codigo, '')                         AS pcod,
                ISNULL(p.nombre_categoria_producto, '')      AS categoria,
-               ISNULL(dd.codigo_lote, '')                   AS lote,
                ROUND(ISNULL(dd.cantidad, 0), 2)             AS kg,
                ROUND(ISNULL(dd.cantidad_devuelta, 0), 2)    AS devuelto,
                ISNULL(fc.numero, '')                        AS factura
@@ -420,18 +423,11 @@ def guia(codigo: str, ruc: str, numero: str) -> dict:
             # Cuellos, Rib y Puños se cuentan en unidades; las telas, en
             # rollos. Lo dice la categoría del maestro de Asinfo.
             "por_unidad": _por_unidad(f.get("categoria")),
-            "cuantos": 0, "kg": 0.0, "devueltos": 0,
-            "lotes": [], "lotes_cortos": []})
+            "cuantos": 0, "kg": 0.0, "devueltos": 0})
         t["cuantos"] += 1
         t["kg"] = round(t["kg"] + _num(f.get("kg")), 2)
         if _num(f.get("devuelto")):
             t["devueltos"] += 1
-        lote = _limpio(f.get("lote"))
-        if lote and lote not in t["lotes"]:
-            t["lotes"].append(lote)
-            # El rótulo corto va aparte del lote entero: el entero es el que
-            # está impreso en la etiqueta del rollo y el que se compara.
-            t["lotes_cortos"].append(corto(lote))
 
     orden = sorted(telas.values(), key=lambda t: -t["kg"])
     salida = {

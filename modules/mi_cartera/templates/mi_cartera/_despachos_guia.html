@@ -44,12 +44,12 @@
         {% for t in g.telas %}
         <tr>
           <td class="fac">
+            {# ⛔ Los LOTES estuvieron acá y se sacaron (TMT 26/08: *"esto no
+               hace falta: Lotes: 209367 · 209468"*). Eran dos números por tela
+               que el cliente no le pide a esta pantalla: viene a ver qué le
+               mandaron, y el lote está impreso en la etiqueta del rollo que
+               tiene enfrente. No volver a agregarlos sin que los pida. #}
             <b>{{ t.producto }}</b>
-            {# Los lotes: es lo que está impreso en la etiqueta de cada rollo,
-               y por lo que el cliente llama cuando algo no coincide. Cortos
-               en pantalla, enteros en el `title`. #}
-            {% if t.lotes %}<small title="{{ t.lotes|join(' · ') }}">Lote{{ '' if t.lotes|length == 1 else 's' }}:
-              {{ t.lotes_cortos|join(' · ') }}</small>{% endif %}
             {# Lo devuelto se NOMBRA y no se descuenta: la factura cobra lo que
                salió y la devolución se corrige con otro documento. Si acá se
                restara, esta pantalla diría algo distinto de la factura. #}
