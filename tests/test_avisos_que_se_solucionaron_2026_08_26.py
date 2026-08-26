@@ -119,9 +119,19 @@ def _im(kg, importe, *, im="IM-A", dias_atras=35):
             "anticipo": None}
 
 
+def _costos(rows, usd_kg=3.0):
+    return {
+        r["im_numero"]: {"costo": float(r["kg"] or 0) * usd_kg,
+                         "kg": float(r["kg"] or 0), "kg_sin_precio": 0.0,
+                         "ventana": "3m"}
+        for r in rows
+    }
+
+
 def _resolver_importaciones(rows):
     resueltos = []
-    with patch("modules.avisos.queries.abiertos_por_clave",
+    with patch.object(vig, "_leer_costos", return_value=_costos(rows)), \
+         patch("modules.avisos.queries.abiertos_por_clave",
                side_effect=lambda p: (
                    [{"id_aviso": 9, "clave": "import-sin-plata:IM-A"}]
                    if "sin-plata" in p else [])), \
@@ -135,7 +145,7 @@ def _resolver_importaciones(rows):
 def test_la_importacion_que_ya_tiene_su_plata_pasa_a_listo():
     assert _resolver_importaciones([_im(47730.0, 47730.0 * 3.0)]) == [
         (9, {"titulo": "MH 66 · listo, ya tiene toda la plata",
-             "detalle": "Quedó en 3,00 el kilo."}),
+             "detalle": "Quedó en 3,00 el kilo, y este hilo va a 3,00."}),
     ]
 
 

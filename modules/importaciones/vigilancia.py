@@ -145,11 +145,65 @@ def _d(s):
         return None
 
 
-def _dist_banda(ukg: float, lo: float, hi: float) -> float:
-    """Cuán lejos está un US$/kg de la banda razonable (0 = adentro)."""
-    if lo <= ukg <= hi:
-        return 0.0
-    return min(abs(ukg - lo), abs(ukg - hi))
+# ── Contra QUÉ se compara: el promedio de ESE tipo de hilado ────────────────
+# TMT 2026-08-26. La alarma comparaba el US$/kg contra una banda fija de
+# 2,7–3,4 y saltó con MH 66-67. Tamara se lo preguntó a Andrés y la respuesta
+# terminó con la banda: *"No falta nada por pasar. Ese hilo es de poliéster,
+# que tiene un precio menor al polialgodón. Un hilo de polialgodón está en este
+# momento a 2,75, mientras que uno de poliéster está a 1,70"*.
+#
+# O sea que la banda no era una banda: era el precio de UN tipo de hilo. La
+# alarma no encontraba un error, encontraba hilo más barato.
+#
+# Ahora cada grupo se compara con lo que vale SU hilo:
+# `asinfo.importaciones_costo_estimado()` promedia el US$/kg por PRODUCTO con
+# ventana de 3 meses (cae a 6 si ese hilado no se importó hace poco) y marca
+# aparte los kilos sin histórico. Estaba escrito desde el 29/06 y sin usar.
+#
+# **Los cortes salen del dato**, no de la intuición — medidos el 26/08 sobre
+# los 71 grupos con precio de los últimos 12 meses
+# (/admin/debug-costo-importacion). El "esperado" es la mercadería; lo cargado
+# en el programa incluye además CAE, flete y seguro, así que el ratio normal
+# está ARRIBA de 1:
+#
+#     ratio = cargado ÷ esperado    mediana 1,06 · p90 1,26 · máximo 1,275
+#     ninguno entre 0,19 y 0,90     ← el hueco donde cae el corte de abajo
+#
+#   · abajo de 0,85 no llega ni a lo que vale el hilo → falta plata. El más
+#     bajo con algo cargado es AC 58 (0,18); el más bajo NORMAL, 0,902;
+#   · arriba de 1,35 ya no es flete: son kilos que faltan (media importación
+#     dobla el US$/kg). El máximo real medido fue 1,275.
+RATIO_MINIMO = 0.85
+RATIO_MAXIMO = 1.35
+
+
+def _leer_costos(limite: int = 1000) -> dict | None:
+    """{im_numero: costo estimado por tipo de hilado}, o None si no se pudo.
+
+    Fail-closed igual que la lectura de importaciones: sin el promedio del hilo
+    no hay contra qué comparar, y una alarma que no puede leer no inventa.
+    """
+    try:
+        from modules.asinfo import service as asinfo_service
+        return asinfo_service.importaciones_costo_estimado(limite=limite) or None
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude leer el costo por tipo de hilado: %s", e)
+        return None
+
+
+def _esperado(g: dict, costos: dict) -> float | None:
+    """Lo que vale el hilo de ESTE grupo, en US$.
+
+    None si a alguna de sus importaciones le falta el histórico de su hilado:
+    ahí no se inventa un esperado ni se avisa.
+    """
+    total = 0.0
+    for im in (g.get("ims") or []):
+        c = (costos or {}).get(str(im).strip())
+        if not c or float(c.get("kg_sin_precio") or 0) > 0:
+            return None
+        total += float(c.get("costo") or 0)
+    return total if total > 0 else None
 
 
 def _leer_importaciones(limite: int = 1000) -> list[dict] | None:
@@ -223,7 +277,8 @@ def _grupos_recibidos(rows: list[dict]) -> dict[str, dict]:
 def importaciones_fuera_de_banda(dias: int | None = None,
                                  limite: int = 1000,
                                  techo: int | None = None,
-                                 rows: list[dict] | None = None) -> list[dict]:
+                                 rows: list[dict] | None = None,
+                                 costos: dict | None = None) -> list[dict]:
     """Grupos recibidos hace más de `dias` cuyo US$/kg sigue fuera de banda.
 
     Se mira por GRUPO (las dos mitades de una partida son una sola mercadería) y
@@ -232,7 +287,6 @@ def importaciones_fuera_de_banda(dias: int | None = None,
     """
     from filters import today_ec
 
-    from . import service as svc
 
     dias = int(dias if dias is not None else _dias_umbral())
     # techo=0 → sin techo (para mirar el histórico a mano; la alarma nunca lo usa)
@@ -241,7 +295,10 @@ def importaciones_fuera_de_banda(dias: int | None = None,
         rows = _leer_importaciones(limite=limite)
     if rows is None:
         return []
-    lo, hi = svc.BANDA_USD_KG
+    if costos is None:
+        costos = _leer_costos(limite=limite)
+    if not costos:
+        return []                    # sin el promedio del hilo no se compara
     hoy = today_ec()
 
     grupos = _grupos_recibidos(rows)
@@ -260,17 +317,24 @@ def importaciones_fuera_de_banda(dias: int | None = None,
             # no es que Andrés no lo haya cargado. Avisar acá es el ruido que
             # llenó la campanita de 200 avisos el 31/07.
             continue
-        ukg = g["importe"] / g["kg"]
-        if lo <= ukg <= hi:
+        esperado = _esperado(g, costos)
+        if esperado is None:
+            continue                 # ese hilado no tiene histórico: no se inventa
+        ratio = g["importe"] / esperado
+        if RATIO_MINIMO <= ratio <= RATIO_MAXIMO:
             continue
+        ukg = g["importe"] / g["kg"]
         out.append({
             "grupo_id": g["grupo_id"], "codigo": g["codigo"], "ims": g["ims"],
             "kg": round(g["kg"], 2), "importe": round(g["importe"], 2),
-            "usd_kg": round(ukg, 4), "recepcion": str(g["recepcion"]),
-            "dias": edad, "falta_plata": ukg < lo,
-            # Cuánto habría que cargar para que el grupo entre en banda por
-            # abajo. Es una referencia, no una cifra a asentar.
-            "faltarian_us": round(max(0.0, g["kg"] * lo - g["importe"]), 2),
+            "usd_kg": round(ukg, 4),
+            "usd_kg_esperado": round(esperado / g["kg"], 4),
+            "esperado": round(esperado, 2), "ratio": round(ratio, 3),
+            "recepcion": str(g["recepcion"]),
+            "dias": edad, "falta_plata": ratio < RATIO_MINIMO,
+            # Cuánto falta para llegar a lo que vale el hilo. Es una
+            # referencia, no una cifra a asentar.
+            "faltarian_us": round(max(0.0, esperado - g["importe"]), 2),
         })
     out.sort(key=lambda x: -x["dias"])
     return out
@@ -325,18 +389,21 @@ def importaciones_fuera_de_banda(dias: int | None = None,
 # esto se estrene no aparezca un inventario de casos de 2024.
 def facturas_con_plata_en_una_sola(limite: int = 1000,
                                    rows: list[dict] | None = None,
-                                   techo: int | None = None) -> list[dict]:
+                                   techo: int | None = None,
+                                   costos: dict | None = None) -> list[dict]:
     """Facturas del proveedor que llegaron en varias importaciones y tienen
     toda la plata colgada de una sola. Fail-soft: [] si no se puede leer."""
     from filters import today_ec
 
-    from . import service as svc
 
     if rows is None:
         rows = _leer_importaciones(limite=limite)
     if rows is None:
         return []
-    lo, hi = svc.BANDA_USD_KG
+    if costos is None:
+        costos = _leer_costos(limite=limite)
+    if not costos:
+        return []
     techo = _techo_dias() if techo is None else int(techo)
     hoy = today_ec()
 
@@ -365,9 +432,21 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
         edad = (hoy - recepcion).days
         if techo and edad > techo:
             continue                     # historia, no una tarea pendiente
+        esperado = 0.0
+        for m in miembros:
+            e = _esperado(m, costos)
+            if e is None:
+                esperado = 0.0
+                break
+            esperado += e
+        if esperado <= 0:
+            continue                 # sin el promedio del hilo no se concluye
+        esperado_kg = esperado / kg_total
         ukg = us / kg_con
         ukg_repartido = us / kg_total
-        if _dist_banda(ukg_repartido, lo, hi) >= _dist_banda(ukg, lo, hi):
+        # Repartir esos dólares entre TODA la factura, ¿acerca el US$/kg a lo
+        # que vale ese hilo? Si no, el número alto no es plata mal atribuida.
+        if abs(ukg_repartido - esperado_kg) >= abs(ukg - esperado_kg):
             # Repartirla no explica mejor el número. Acá caen las que están en
             # banda o abajo: repartir sólo baja el US$/kg, nunca las acerca.
             continue
@@ -385,6 +464,7 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
             "importe": round(us, 2),
             "usd_kg": round(ukg, 4),
             "usd_kg_repartido": round(ukg_repartido, 4),
+            "usd_kg_esperado": round(esperado_kg, 4),
             "recepcion": str(recepcion),
             "dias": edad,
         })
@@ -409,8 +489,9 @@ def _resolver_los_arreglados(rows: list[dict] | None) -> None:
     from filters import num_es as _n
     from modules.avisos import queries as avisos
 
-    from . import service as svc
-    lo, hi = svc.BANDA_USD_KG
+    costos = _leer_costos()
+    if not costos:
+        return
     grupos = _grupos_recibidos(rows)
 
     for a in avisos.abiertos_por_clave("import-sin-plata:"):
@@ -418,19 +499,23 @@ def _resolver_los_arreglados(rows: list[dict] | None) -> None:
         g = grupos.get(clave.split(":", 1)[1]) if ":" in clave else None
         if not g or g["kg"] <= 0:
             continue
-        ukg = g["importe"] / g["kg"]
-        if not (lo <= ukg <= hi):
-            continue                     # sigue fuera de banda
+        esperado = _esperado(g, costos)
+        if not esperado:
+            continue
+        if not (RATIO_MINIMO <= g["importe"] / esperado <= RATIO_MAXIMO):
+            continue                     # el problema sigue
         avisos.resolver(
             int(a["id_aviso"]),
             titulo=f"{g['codigo']} · listo, ya tiene toda la plata",
-            detalle=f"Quedó en {_n(ukg)} el kilo.",
+            detalle=(f"Quedó en {_n(g['importe'] / g['kg'])} el kilo, y este "
+                     f"hilo va a {_n(esperado / g['kg'])}."),
         )
 
     # La factura repartida se arregla cuando ninguna de sus importaciones
     # quedó sin plata.
     mal = {f["factura"]
-           for f in facturas_con_plata_en_una_sola(rows=rows, techo=0)}
+           for f in facturas_con_plata_en_una_sola(rows=rows, techo=0,
+                                                   costos=costos)}
     for a in avisos.abiertos_por_clave("import-factura-en-una:"):
         clave = str(a.get("clave") or "")
         if ":" not in clave:
@@ -471,8 +556,6 @@ def revisar_si_toca() -> dict:
 
     from filters import num_es as _n
     from modules.avisos import queries as avisos
-    from modules.importaciones import service as svc
-    lo, hi = svc.BANDA_USD_KG
 
     # ── Cómo se escribe el aviso ────────────────────────────────────────────
     # TMT 2026-08-26 (dueña, sobre la versión larga): *"La importación tiene 2.3
@@ -491,8 +574,9 @@ def revisar_si_toca() -> dict:
     n = 0
     for c in casos:
         if c["falta_plata"]:
-            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y suele ser "
-                      f"{_n(lo)}. ¿Faltan compras por cargar?")
+            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y este hilo "
+                      f"va a {_n(c['usd_kg_esperado'])}. "
+                      "¿Faltan compras por cargar?")
             detalle = (
                 f"{_n(c['kg'], 0)} kg con US$ {_n(c['importe'])} cargados: "
                 f"faltarían unos US$ {_n(c['faltarian_us'], 0)}. "
@@ -500,8 +584,8 @@ def revisar_si_toca() -> dict:
             )
         else:
             # Con la plata cargada, lo que suele faltar son KILOS.
-            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y suele ser "
-                      f"hasta {_n(hi)}. ¿Faltan kilos?")
+            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y este hilo "
+                      f"va a {_n(c['usd_kg_esperado'])}. ¿Faltan kilos?")
             detalle = (
                 f"{_n(c['kg'], 0)} kg con US$ {_n(c['importe'])} cargados. "
                 f"Llegó hace {c['dias']} días."

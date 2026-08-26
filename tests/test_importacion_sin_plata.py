@@ -34,11 +34,30 @@ def _im(codigo_prov, numero, dias_atras, kg, importe, *, im="IM-1"):
     }
 
 
-def _casos(rows, dias=30, techo=None):
+def _costos(rows, usd_kg=3.0):
+    """El promedio por TIPO DE HILADO, como lo devuelve Asinfo.
+
+    3,00 US$/kg es un polialgodón cualquiera. Lo que importa no es el número
+    sino que desde el 26/08 cada grupo se compara con el promedio de SU hilo y
+    no contra una banda fija — la banda era el precio del polialgodón, y con
+    poliéster (1,70) la alarma saltaba sin motivo.
+    """
+    return {
+        r["im_numero"]: {"costo": float(r["kg"] or 0) * usd_kg,
+                         "kg": float(r["kg"] or 0), "kg_sin_precio": 0.0,
+                         "ventana": "3m"}
+        for r in rows
+    }
+
+
+def _casos(rows, dias=30, techo=None, usd_kg=3.0, costos=None):
     with patch.object(vig, "_dias_umbral", return_value=dias), \
          patch("modules.importaciones.service.importaciones_con_cruce",
                return_value=rows):
-        return vig.importaciones_fuera_de_banda(techo=techo)
+        return vig.importaciones_fuera_de_banda(
+            techo=techo,
+            costos=_costos(rows, usd_kg) if costos is None else costos,
+        )
 
 
 # ── El umbral: 30 días ───────────────────────────────────────────────────────
@@ -70,7 +89,7 @@ def test_el_caso_ac_76_75():
     assert casos[0]["dias"] == 225
     assert casos[0]["usd_kg"] < 0.2
     # Cuánto habría que cargar para entrar en banda por abajo.
-    assert casos[0]["faltarian_us"] == round(50200.0 * 2.7 - 8360.0, 2)
+    assert casos[0]["faltarian_us"] == round(50200.0 * 3.0 - 8360.0, 2)
 
 
 # ── Dentro de banda no avisa, por vieja que sea ─────────────────────────────
@@ -129,6 +148,7 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
     vig._ultima_corrida = 0.0
     caso = {"grupo_id": "IM-A+IM-B", "codigo": "MH 66", "ims": ["IM-A", "IM-B"],
             "kg": 47730.0, "importe": 110439.62, "usd_kg": 2.3138,
+            "usd_kg_esperado": 2.70,
             "recepcion": "2026-06-01", "dias": 60, "falta_plata": True,
             "faltarian_us": 18432.38}
     vistos = []
@@ -145,7 +165,8 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
     # El texto, palabra por palabra (dueña 2026-08-26): el precio, el precio
     # que debería ser, y la pregunta. Nada más.
     assert vistos[0]["titulo"] == (
-        "MH 66 · 2,31 el kilo, y suele ser 2,70. ¿Faltan compras por cargar?")
+        "MH 66 · 2,31 el kilo, y este hilo va a 2,70. "
+        "¿Faltan compras por cargar?")
     assert vistos[0]["detalle"] == (
         "47.730 kg con US$ 110.439,62 cargados: faltarían unos US$ 18.432. "
         "Llegó hace 60 días.")
@@ -316,6 +337,7 @@ def test_el_aviso_de_kilos_tambien_es_corto():
     vig._ultima_corrida = 0.0
     caso = {"grupo_id": "IM-A", "codigo": "MH 66", "ims": ["IM-A"],
             "kg": 23430.0, "importe": 104894.95, "usd_kg": 4.4770,
+            "usd_kg_esperado": 3.40,
             "recepcion": "2026-06-01", "dias": 60, "falta_plata": False,
             "faltarian_us": 0.0}
     vistos = []
@@ -325,7 +347,33 @@ def test_el_aviso_de_kilos_tambien_es_corto():
                side_effect=lambda **kw: vistos.append(kw) or True):
         vig.revisar_si_toca()
     assert vistos[0]["titulo"] == (
-        "MH 66 · 4,48 el kilo, y suele ser hasta 3,40. ¿Faltan kilos?")
+        "MH 66 · 4,48 el kilo, y este hilo va a 3,40. ¿Faltan kilos?")
     assert vistos[0]["detalle"] == (
         "23.430 kg con US$ 104.894,95 cargados. Llegó hace 60 días.")
     assert "IM-" not in vistos[0]["titulo"] + vistos[0]["detalle"]
+
+
+# ── El promedio por TIPO DE HILADO ─────────────────────────────────────────
+# TMT 2026-08-26, Andrés sobre MH 66-67: *"No falta nada por pasar. Ese hilo es
+# de poliéster, que tiene un precio menor al polialgodón: el polialgodón está a
+# 2,75 y el poliéster a 1,70"*. La banda fija era el precio de UN tipo de hilo.
+def test_el_poliester_ya_no_dispara():
+    """Los números reales del caso: 47.730 kg, US$ 110.439,62 cargados = 2,31
+    el kilo. Contra la banda vieja (2,7–3,4) saltaba; contra el promedio de SU
+    hilo (1,93) está 20 % arriba, que es lo que suman CAE, flete y seguro."""
+    assert _casos([_im("MH", 66, 31, 47730.0, 110439.62)], usd_kg=1.9296) == []
+
+
+def test_sin_el_promedio_del_hilo_no_avisa():
+    """Fail-closed: si Asinfo no devuelve los costos no hay contra qué
+    comparar, y una alarma que no puede leer no inventa."""
+    assert _casos([_im("MH", 66, 31, 47730.0, 110439.62)], costos={}) == []
+
+
+def test_el_hilado_sin_historico_no_avisa():
+    """`kg_sin_precio > 0` = ese hilado no se importó en 6 meses. No se le
+    inventa un precio."""
+    rows = [_im("MH", 66, 31, 47730.0, 110439.62)]
+    costos = _costos(rows)
+    costos["IM-1"]["kg_sin_precio"] = 100.0
+    assert _casos(rows, costos=costos) == []

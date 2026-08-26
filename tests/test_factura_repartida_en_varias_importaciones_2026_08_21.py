@@ -52,8 +52,19 @@ def _filas(spec, *, dias_atras=0, recepcion=None):
     return rows
 
 
+def _costos(rows, usd_kg=3.0):
+    """El promedio por TIPO DE HILADO que ahora usa la alarma (26/08)."""
+    return {
+        r["im_numero"]: {"costo": float(r["kg"] or 0) * usd_kg,
+                         "kg": float(r["kg"] or 0), "kg_sin_precio": 0.0,
+                         "ventana": "3m"}
+        for r in rows
+    }
+
+
 def _casos(rows, techo=None):
-    return vig.facturas_con_plata_en_una_sola(rows=rows, techo=techo)
+    return vig.facturas_con_plata_en_una_sola(rows=rows, techo=techo,
+                                              costos=_costos(rows))
 
 
 # El caso real ───────────────────────────────────────────────────────────────
