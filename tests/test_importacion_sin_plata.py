@@ -144,6 +144,8 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
     assert vistos[0]["clave"] == "import-sin-plata:IM-A+IM-B"
     assert "MH 66" in vistos[0]["titulo"] and "30" not in vistos[0]["titulo"]
     assert "60 días" in vistos[0]["titulo"]
+    # Y el "ver →" abre la pantalla FILTRADA por el caso, no la lista entera.
+    assert vistos[0]["url"] == "/importaciones?anio=todos&q=MH+66"
 
 
 def test_el_freno_evita_repetir_en_cada_ciclo():
@@ -258,3 +260,43 @@ def test_el_endpoint_esta_registrado():
     assert "/admin/importaciones-sin-plata" in inspect.getsource(
         __import__("modules.admin_dbase.import_sin_plata_view",
                    fromlist=["bp"]))
+
+
+# ── El "ver →" lleva a la pantalla FILTRADA ────────────────────────────────
+# TMT 2026-08-26 (dueña, sobre el aviso de MH 66-67): *"acá el ver no me lleva
+# a filtrado por esas importaciones"*.
+def test_el_link_filtra_por_el_codigo_del_grupo():
+    """Un solo `q`, y trae las DOS mitades de la partida: el código es el mismo
+    string en las dos."""
+    assert vig._url_filtrada(vig._q_del_caso({
+        "codigo": "MH 66-67", "ims": ["IM-0000608", "IM-0000609"],
+    })) == "/importaciones?anio=todos&q=MH+66-67"
+
+
+def test_el_link_lleva_anio_todos():
+    """/importaciones muestra por defecto sólo el año en curso. Un aviso del 2
+    de enero sobre una recepción de diciembre caería en una pantalla vacía."""
+    assert "anio=todos" in vig._url_filtrada("MH 66-67")
+
+
+def test_el_codigo_del_aviso_es_el_mismo_que_busca_la_pantalla():
+    """El `q` se compara contra el `codigo` de la fila, que sale de
+    parse_nota_importacion. Si los dos no fueran el mismo string, el link
+    filtraría a cero — que es justo el bug que esto arregla."""
+    from concepto_parser import parse_nota_importacion
+    codigo_fila = parse_nota_importacion("HY3087-26-1 ( MH 66 -67)--2")["codigo"]
+    assert codigo_fila == "MH 66-67"
+    assert vig._q_del_caso({"codigo": codigo_fila}) == codigo_fila
+
+
+def test_sin_codigo_parseable_el_link_va_por_el_numero_de_importacion():
+    """Sin código en la nota, `codigo` sale "None None" y buscarlo no devuelve
+    nada. El número de la importación existe siempre."""
+    caso = {"codigo": "None None", "ims": ["IM-0000608", "IM-0000609"]}
+    assert vig._url_filtrada(vig._q_del_caso(caso)) == \
+        "/importaciones?anio=todos&q=IM-0000608"
+
+
+def test_sin_nada_para_filtrar_el_link_es_la_lista_entera():
+    assert vig._url_filtrada(vig._q_del_caso({"codigo": None, "ims": []})) == \
+        "/importaciones"

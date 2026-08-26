@@ -43,9 +43,11 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import threading
 import time as _t
 from datetime import date
+from urllib.parse import quote_plus
 
 _LOG = logging.getLogger("programa_core.importaciones.vigilancia")
 
@@ -95,6 +97,45 @@ def _dias_umbral() -> int:
         return v if v >= 1 else DIAS_SIN_PLATA_DEFAULT
     except (TypeError, ValueError):
         return DIAS_SIN_PLATA_DEFAULT
+
+
+# ── A dónde lleva el "ver →" ────────────────────────────────────────────────
+# TMT 2026-08-26 (dueña, sobre el aviso de MH 66-67): *"acá el ver no me lleva a
+# filtrado por esas importaciones"*. El aviso abría /importaciones entera y el
+# caso quedaba perdido entre las demás.
+#
+# Dos cosas de esa pantalla hacen falta para que el link caiga bien:
+#   · busca con `q`, y cada PALABRA tiene que aparecer en algún campo (proveedor,
+#     nota, código, número de importación, factura). El código del programa
+#     ("MH 66-67") es el MISMO string en las dos mitades de una partida, así que
+#     buscarlo las trae juntas;
+#   · por defecto muestra sólo el año en curso. Un aviso no puede depender de en
+#     qué año cayó la recepción, así que va `anio=todos`.
+_RE_CODIGO = re.compile(r"^[A-Z]{2,3} \d+(-\d+)?$")
+
+
+def _url_filtrada(q: str) -> str:
+    """La pantalla de importaciones ya filtrada, o la lista entera si no hay
+    nada seguro que buscar: un link a de más miente menos que uno que no
+    devuelve ninguna fila."""
+    q = (q or "").strip()
+    if not q:
+        return "/importaciones"
+    return "/importaciones?anio=todos&q=" + quote_plus(q)
+
+
+def _q_del_caso(c: dict) -> str:
+    """Qué buscar para que queden las filas de ESTE grupo.
+
+    El código del programa si se pudo parsear; si la nota de Asinfo no lo tenía,
+    `codigo` sale armado con None ("None None") y ahí se cae al número de la
+    importación, que existe siempre.
+    """
+    cod = str(c.get("codigo") or "").strip()
+    if _RE_CODIGO.match(cod):
+        return cod
+    ims = [str(i).strip() for i in (c.get("ims") or []) if i]
+    return ims[0] if ims else ""
 
 
 def _d(s):
@@ -412,7 +453,7 @@ def revisar_si_toca() -> dict:
             titulo=titulo[:200],
             detalle=detalle,
             importe=c["faltarian_us"] or None,
-            url="/importaciones",
+            url=_url_filtrada(_q_del_caso(c)),
             # Idempotente: se dice UNA vez por grupo, no en cada corrida.
             clave=f"import-sin-plata:{c['grupo_id']}",
         ):
@@ -446,7 +487,9 @@ def revisar_si_toca() -> dict:
             nivel="alerta",
             titulo=titulo[:200],
             detalle=detalle,
-            url="/importaciones",
+            # La factura del proveedor está adentro de la `nota` de las N
+            # importaciones, así que buscarla las trae a las N.
+            url=_url_filtrada(str(f["factura"] or "")),
             # Idempotente por FACTURA: se dice una vez, no una por importación.
             clave=f"import-factura-en-una:{f['factura']}",
         ):

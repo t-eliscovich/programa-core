@@ -207,7 +207,9 @@ def test_avisa_una_vez_por_factura_y_a_la_campanita():
     assert a["fuente"] == "importaciones" and a["nivel"] == "alerta"
     # Idempotente por FACTURA: una vez, no una por importación.
     assert a["clave"] == "import-factura-en-una:INV HY3821-26"
-    assert a["url"] == "/importaciones"
+    # El "ver →" abre las TRES: la factura del proveedor está adentro de la
+    # nota de cada una, así que buscarla las trae a las tres.
+    assert a["url"] == "/importaciones?anio=todos&q=INV+HY3821-26"
     assert "MH 68, MH 69, MH 70" in a["titulo"]
     assert len(a["titulo"]) <= 200
     assert "6.6009" in a["detalle"] and "2.2315" in a["detalle"]
