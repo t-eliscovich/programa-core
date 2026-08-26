@@ -114,64 +114,49 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
-### [S] `/retiros` quedó huérfana del menú
-`/informes/retiros` ("Dividendos", TMT 2026-05-20) dice explícitamente que
-*"reemplaza la antigua /capital + /retiros"*, y ninguna pantalla ni el menú
-linkean a `/retiros` — pero el Historial sí, y es el único destino que puede
-mostrar un retiro de CUALQUIER fecha: Dividendos sólo sabe mostrar el mes o el
-año EN CURSO (`modules/informes/views.py`, sin filtros de fecha). Por eso el
-link del historial siguió apuntando a `/retiros` (ahora con `?id=`).
+### [XS] La traza no dice de qué FECHA es el movimiento bancario
 
-Decisión pendiente de Tamara: o se la deja como pantalla de detalle a la que
-sólo se llega por link (como `/compras/<id>`), o Dividendos aprende a mostrar
-un retiro puntual y `/retiros` se borra ("no tenemos que tener basura",
-2026-07-20).
+⚠ **Reescrito el 26/08/2026** — el item anterior estaba mal en sus dos partes.
+Decía que Alex había cargado el ND de *Comisiones e impuestos 17/06-05/08*
+($64,73) por la pantalla de bancos con una fecha vieja, y pedía (a) que esa
+pantalla propusiera HOY y (b) corregir la fila.
 
-### [S] Un movimiento de banco se carga con la fecha del día, no con una vieja
-Dueña 2026-08-07, mirando el +$7.340 de la traza: *"debería ese movimiento
-armarse con la fecha de hoy, no con el 05/08"*.
+**Ninguna de las dos cosas aplica.** Verificado en
+`scintela.banco_conciliacion_match`: la fila (tx 45428) nació de la
+CONCILIACIÓN, con método `created_from_real_grouped` — el agrupador juntó OCHO
+líneas del extracto (comisiones + IVA) en una sola fila del libro. La fecha del
+05/08 no la eligió nadie: es la del extracto, o sea la fecha en que el banco
+cobró, que es la correcta. No hay nada que corregir y la pantalla de bancos no
+está en el medio.
 
-El ND de *Comisiones e impuestos 17/06-05/08* ($64,73) lo cargó Alex el **07/08
-a las 17:00** con `fecha = 2026-08-05`. Mueve la utilidad de HOY pero vive en la
-fila de anteayer, así que quien lo busca por la fecha del salto no lo encuentra
-— le pasó a la dueña en la pantalla de PICHINCHA. Es la misma trampa que costó
-el día del 03/08.
+Lo que queda del reclamo original de la dueña (07/08, mirando el +$7.340 de la
+traza: *"debería ese movimiento armarse con la fecha de hoy, no con el 05/08"*)
+es más chico y es de la TRAZA: **la utilidad se movió el 07/08 pero la fila vive
+el 05/08**, así que quien busca el salto por la fecha del día no la encuentra.
+Se arregla mostrando la fecha del movimiento en la traza, no tocando la fila.
 
-Dos pedazos, y conviene el segundo primero:
+### [S] Un cobro de $72,30 entra cada dos o tres semanas y nunca se concilia
 
-1. **Que no vuelva a pasar** — la pantalla de carga propone HOY por defecto y
-   pide confirmación explícita si la fecha es anterior. `modules/bancos/`.
-2. **Corregir esa fila** — por la pantalla de bancos, no por SQL.
-   🚨 `transacciones_bancarias.saldo` es un saldo corrido ALMACENADO: cambiar
-   la fecha reordena las filas y reescribe la cadena hacia adelante. Verificar
-   con `/admin/health/cadena-saldos` antes y después.
+⚠ **Reescrito el 26/08/2026.** El item decía que faltaban CINCO cobranzas del
+05/08 y que esos clientes figuraban debiendo plata ya pagada. **No es así**:
+Alex las cargó el 11 y el 12/08 (ADO, DYS, MMA, YGE), están conciliadas, los
+cuatro depósitos están en `scintela.cheque` (banco 90, stat B) y los cuatro
+clientes tienen **cero facturas abiertas**.
 
-⚠ El OTRO movimiento de ese par (la NC de $7.404,88, tx 45429) **ya no existe**:
-el 11/08 se descubrió que no eran comisiones sino CINCO cobranzas de clientes
-del 05/08 que el agrupado se tragó por un corrimiento de índices, y se anuló por
-`/conciliacion/banco-v2/deshacer`. El bug de código está arreglado; lo que queda
-es cargar esas cobranzas — ver abajo.
+Lo que sí hay, y no es un caso suelto: **siete cobros de $72,30 sin conciliar**,
+todos con el mismo formato de concepto `<fecha><código>-BANCO PI-PAG-<número>`
+(los otros dicen "TRANSFERENCIA DIRECTA DE <nombre>"):
 
-### [XS] Falta UN crédito del 05/08: $72,30 sin dueño
+| fecha | monto |
+|---|---|
+| 01/06 · 03/06 · 06/07 · 29/07 · 05/08 · 20/08 | 72,30 cada uno |
+| 17/06 + 22/06 | 7,43 + 64,87 = 72,30 partido en dos |
 
-⚠ **Corregido el 26/08/2026**: este item decía que faltaban CINCO cobranzas y
-que los clientes figuraban debiendo plata que ya habían pagado. **No es así.**
-Alex las cargó el 11 y el 12/08 y quedaron conciliadas; verificado contra la
-base: los cuatro depósitos están en `scintela.cheque` (banco 90, stat B) y los
-cuatro clientes tienen **cero facturas abiertas**.
+**Ninguno tiene factura ni cheque de ese importe detrás** — buscado en
+`scintela.factura` y `scintela.cheque`, cero. Son ~$506 entrando cada dos o tres
+semanas que nadie imputó nunca. La pregunta no es qué es el del 05/08: es qué es
+este cobro recurrente. Ahí sí, preguntarle al banco.
 
-| Extracto | Monto | Cliente | Estado |
-|---|---|---|---|
-| 71519723 | 3.099,52 | ADO · Oñate Oñate | conciliada 14/08 |
-| 55685078 | 2.568,54 | DYS · Dayío Sports | conciliada 12/08 |
-| 53443956 | 1.142,96 | MMA · Marroquín Espinosa | conciliada 12/08 |
-| 59356148 | 521,56 | YGE · Erazo Melendrez | conciliada 12/08 |
-| 56804542 | **72,30** | ❓ | **sigue pendiente** |
-
-Lo único que queda son los **$72,30**, y su concepto no se parece al de los
-otros cuatro: donde ellos dicen "TRANSFERENCIA DIRECTA DE <nombre>", éste dice
-`2608050E4MXN-BANCO PI-PAG-16359728987`. **Puede no ser la cobranza de un
-cliente** — antes de buscarle dueño, preguntar al banco qué es.
 ### [L] Limpieza del código dBase — SEPTIEMBRE 2026, no antes
 
 Reconfirmado el 2026-08-09: **se hace en septiembre**, no antes. Lo que sigue
@@ -233,53 +218,29 @@ columnas de la misma tabla, con `COUNT(*) FILTER`. Eso recorre la tabla entera
 por definición y ningún índice lo cambia. Si algún día ese endpoint molesta, lo
 que hay que revisar es si sigue haciendo falta, no cómo filtra.
 
-### [M] /facturas: medido dónde se van los 700 ms (26/08/2026)
+### [S] /facturas: medido, y la dueña lo deja como está (26/08/2026)
 
-Medido en producción, mediana de 4 corridas, sobre el mes en curso. La clave
-es que el tiempo NO es una sola cosa: hay un **piso fijo** y un **costo por
-fila**.
+Medido en producción sobre el mes en curso: **731 ms** con las 500 filas de hoy,
+**466** con 100, **444** con una sola. O sea ~444 ms de piso + ~290 de las filas.
+La dueña vio los números y decidió **dejar las 500**: *"ya está, dejemos como
+está"*. No volver a proponer bajarlas.
 
-| filas por página | respuesta | HTML |
-|---|---|---|
-| 500 (lo que hay hoy) | **731 ms** | 2.044 KB |
-| 100 | 466 ms | 490 KB |
-| 20 | 454 ms | 179 KB |
-| 1 | **444 ms** | 105 KB |
+Descartados midiendo, para que nadie los vuelva a sospechar: **Asinfo no es**
+(la vista que saltea el puente tarda lo mismo), **los totales del header** son
+5 ms y **los conteos de los tabs** 36 ms.
 
-O sea: **~444 ms de piso** que no dependen de las filas, y **~290 ms que sí**.
-Descontando ~108 ms de red (medidos con un `SELECT 1` por la consola), el
-servidor pone ~336 ms fijos + 290 de las filas.
+Si algún día el piso molesta, quedan dos hilos ya investigados:
 
-**Qué NO es** (los tres sospechosos de siempre, descartados midiendo):
+1. `buscar()` cuesta 120 ms aunque muestre UNA fila: arma el universo filtrado
+   entero —con el LATERAL a `cliente` por fila— y le calcula el saldo corrido
+   con una window, y recién ahí aplica LIMIT/OFFSET. Paginar no baja ese pedazo.
+2. No hay índice PLANO sobre `scintela.cliente(codigo_cli)`; el único es
+   funcional (`upper(trim(...))`) y ese predicado no puede usarlo. Hoy lo salva
+   el Memoize de Postgres.
+   ⚠ **Probado y NO sirve** reescribir el LATERAL con `upper(trim(...))` para
+   usar el índice que ya existe: sale peor (896 ms contra 235). El camino es
+   crear el índice plano y medir.
 
-- **Asinfo no es.** `vista=estado` saltea el puente entero y tarda lo mismo
-  (670-745 ms). El warmup lo mantiene caliente.
-- **`contar_filtrado()` no es**: 5 ms.
-- **`conteos_por_vista()` no es**: 36 ms, aunque escanee la tabla entera — son
-  36.565 filas / 13 MB, chiquita.
-
-**Qué sí es**, en orden de lo que rinde:
-
-1. **Las 500 filas** — 290 ms de servidor + los ~206 ms que el browser tarda
-   en parsear 2 MB. Bajar a 100 corta el HTML un 76% y la respuesta un 36%.
-   🔴 **Lo decide la dueña**: se ve.
-2. **`buscar()` cuesta 120 ms aunque muestre UNA fila.** El CTE arma el
-   universo filtrado entero —con el LATERAL a `cliente` por cada fila— y le
-   calcula el saldo corrido con una window, y recién ahí aplica LIMIT/OFFSET.
-   Es correcto (el acum tiene que cerrar con el total del header) pero
-   significa que **paginar no baja este pedazo**. Si molesta: sacar el acum de
-   arranque con un solo SUM y acumular sólo la página.
-3. **No hay índice plano sobre `scintela.cliente(codigo_cli)`.** El LATERAL
-   filtra por `codigo_cli = f.codigo_cli` y el único índice que hay es
-   FUNCIONAL (`upper(trim(codigo_cli))`), que ese predicado no puede usar. Hoy
-   lo salva el Memoize de Postgres —pocos clientes distintos por página—, por
-   eso son 120 ms y no segundos.
-   ⚠ **Probado y NO sirve** reescribir el LATERAL como
-   `upper(trim(codigo_cli)) = upper(trim(f.codigo_cli))` para usar el índice
-   que ya existe: sale **peor** (896 ms contra 235). El camino es crear el
-   índice plano y volver a medir — no se puede desde la consola read-only.
-
-~~El item anterior concluía "es la query + los totales". Los totales son 5 ms.~~
 ### [S] `STATS_VIVOS` está definido dos veces, con miembros distintos
 `modules/cheques/queries.py` L2818 (`Z,B,1,2,3,D,P,A`) y L4092
 (`Z,1,2,3,P,D`): gana el de abajo, que es el que quisieron los dos únicos usos
