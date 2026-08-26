@@ -3249,8 +3249,11 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     assert arriba[5:7] == ["Kg en saldo", "Vendido"]
     assert abajo[5:8] == ["Queda", "Vendido", "Vale"]
     assert abajo[9:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
-    assert "Última venta" not in arriba, (
-        "volvió la columna que la dueña sacó el 25/08/2026")
+    # ⭐ «Última» volvió el mismo día que se fue: lo que molestaba no era la
+    # columna sino que la tabla no entraba y quedaba cortada a la derecha
+    # ("antes se veía fuera"). Es el dato que explica por qué una tela entra o
+    # sale de la lista.
+    assert arriba[-1] == "Última"
 
     # el día con el mismo formato que la fecha de arriba, y el vendedor
     assert "{{ v.fecha.strftime('%d/%m/%y') }}" in html
@@ -3756,3 +3759,31 @@ def test_el_premio_del_mes_no_dice_que_no_tiene_tope():
     import inspect as _i
     assert "v.cuenta" in _i.getsource(queries._meses), (
         "si algún día cuenta también lo que no puntúa, la frase vuelve a ser cierta")
+
+
+def test_la_tabla_larga_entra_en_la_pagina():
+    """Once columnas con `table-layout:fixed`: si los anchos suman más de 100,
+    la tabla se pasa del ancho de la página y la ÚLTIMA queda cortada a la
+    derecha. Es lo que le pasaba a «Última venta» (dueña 25/08/2026: "antes se
+    veía fuera") y por lo que la columna parecía sobrar."""
+    import re
+    html = _html_parado()
+    anchos = [int(x) for x in re.findall(r"#tabla th:nth-child\(\d+\)\{width:(\d+)%\}", html)]
+    assert len(anchos) == 11, f"hay {len(anchos)} anchos para 11 columnas"
+    assert sum(anchos) == 100, f"los anchos suman {sum(anchos)}%: la tabla se desborda"
+
+
+def test_la_fila_vendida_no_tiene_huecos():
+    """Dueña 25/08/2026: *"por favor, completá los datos faltantes"*. La fila
+    tachada mostraba la categoría en "—" y los puntos en 0.
+
+    · La CATEGORÍA no puede salir del stock —no queda un lote que mirar— pero sí
+      de lo que se VENDIÓ, que es el dato que hay.
+    · Los PUNTOS de una fila vendida no son cero: son los que ya hizo. El cero
+      salía de multiplicar el stock —que es 0— por el valor del kilo, y en una
+      fila tachada leer "0 puntos" es exactamente al revés de lo que pasó."""
+    html = _html_parado()
+    assert "f.kg_vend_seg and not f.kg_vend_pri" in html, (
+        "la categoría de la fila vendida sale de lo que se vendió")
+    assert "{% set pts = (f.kg_vendidos * f.puntos) if vendida else f.puntos_fila %}" in html
+    assert 'data-v="{{ pts }}">{{ pts | num_es(0) }}' in html
