@@ -3246,7 +3246,10 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     # ⭐ Y las dos del medio significan lo MISMO en las dos tablas (dueña
     # 25/08/2026: "¿qué pasa si se vende 10 kg de 100? … poner para vender 90").
     # Arriba: lo que queda y lo que salió. Abajo, lo mismo, en el mismo lugar.
-    assert arriba[5:7] == ["Kg en saldo", "Vendido"]
+    # ⚠ «Queda» y no «Kg en saldo»: con la columna Vendido al lado, "Kg en
+    # saldo 84 · Vendido 20" invita a restar, y los 84 ya tienen la venta
+    # descontada. Es además el mismo rótulo que usa la tabla del pie.
+    assert arriba[5:7] == ["Queda", "Vendido"]
     assert abajo[5:8] == ["Queda", "Vendido", "Vale"]
     assert abajo[9:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
     # ⭐ «Última» volvió el mismo día que se fue: lo que molestaba no era la

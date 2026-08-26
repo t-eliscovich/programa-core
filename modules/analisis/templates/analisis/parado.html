@@ -257,10 +257,15 @@ lista — así se ve si funcionó.</p>
    pregunta el cliente por teléfono, y hasta ahora no estaba en ningún lado. #}
 <th class="ord forma" data-i="3">Forma</th>
 <th class="ord cal" data-i="4">Categoría</th>
-<th class="ord n" data-i="5" data-num="1">Kg en saldo</th>
+{# ⚠ Se llama «Queda» y no «Kg en saldo» (25/08/2026). Con la columna Vendido
+   al lado, "Kg en saldo 84 · Vendido 20" invita a restar —y la dueña lo
+   restó—: los 84 son el stock de HOY, con la venta YA descontada. «Queda» no
+   se presta. Y es el mismo rótulo que usa la tabla de Vendidos del pie, así
+   que las dos se leen igual. #}
+<th class="ord n" data-i="5" data-num="1">Queda</th>
 {# ⭐ CUÁNTO SE VENDIÓ DE ESTA FILA (dueña 25/08/2026: "¿qué pasa si se vende
    ejemplo 10 kg de 100 kg? lo tenemos que seguir mostrando y poner para vender
-   90, ¿no?"). Exacto: «Kg en saldo» es lo que QUEDA y esta columna lo que
+   90, ¿no?"). Exacto: «Queda» es lo que hay HOY y esta columna lo que
    SALIÓ. Sin ella, la fila que bajó de 100 a 90 se veía igual que la que
    siempre tuvo 90.
    ⚠ Va abierta por categoría, como la fila: la línea de primera no muestra los
