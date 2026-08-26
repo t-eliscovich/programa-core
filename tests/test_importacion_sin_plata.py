@@ -142,8 +142,15 @@ def test_avisa_una_vez_por_grupo_y_a_la_campanita():
     assert vistos[0]["nivel"] == "alerta"
     # `clave` es lo que hace que no se repita en cada corrida de 6 h.
     assert vistos[0]["clave"] == "import-sin-plata:IM-A+IM-B"
-    assert "MH 66" in vistos[0]["titulo"] and "30" not in vistos[0]["titulo"]
-    assert "60 días" in vistos[0]["titulo"]
+    # El texto, palabra por palabra (dueña 2026-08-26): el precio, el precio
+    # que debería ser, y la pregunta. Nada más.
+    assert vistos[0]["titulo"] == (
+        "MH 66 · 2,31 el kilo, y suele ser 2,70. ¿Faltan compras por cargar?")
+    assert vistos[0]["detalle"] == (
+        "47.730 kg con US$ 110.439,62 cargados: faltarían unos US$ 18.432. "
+        "Llegó hace 60 días.")
+    # Sin los IM: *"esos números larguísimos es muy largo e inútil"*.
+    assert "IM-" not in vistos[0]["titulo"] + vistos[0]["detalle"]
     # Y el "ver →" abre la pantalla FILTRADA por el caso, no la lista entera.
     assert vistos[0]["url"] == "/importaciones?anio=todos&q=MH+66"
 
@@ -300,3 +307,25 @@ def test_sin_codigo_parseable_el_link_va_por_el_numero_de_importacion():
 def test_sin_nada_para_filtrar_el_link_es_la_lista_entera():
     assert vig._url_filtrada(vig._q_del_caso({"codigo": None, "ims": []})) == \
         "/importaciones"
+
+
+# ── El aviso de KILOS que faltan (el US$/kg quedó ALTO) ─────────────────────
+def test_el_aviso_de_kilos_tambien_es_corto():
+    """La otra mitad de la alarma: con la plata cargada, lo que suele faltar
+    son kilos. Mismo molde de texto, otra pregunta."""
+    vig._ultima_corrida = 0.0
+    caso = {"grupo_id": "IM-A", "codigo": "MH 66", "ims": ["IM-A"],
+            "kg": 23430.0, "importe": 104894.95, "usd_kg": 4.4770,
+            "recepcion": "2026-06-01", "dias": 60, "falta_plata": False,
+            "faltarian_us": 0.0}
+    vistos = []
+    with patch.object(vig, "_leer_importaciones", return_value=[]), \
+         patch.object(vig, "importaciones_fuera_de_banda", return_value=[caso]), \
+         patch("modules.avisos.queries.avisar",
+               side_effect=lambda **kw: vistos.append(kw) or True):
+        vig.revisar_si_toca()
+    assert vistos[0]["titulo"] == (
+        "MH 66 · 4,48 el kilo, y suele ser hasta 3,40. ¿Faltan kilos?")
+    assert vistos[0]["detalle"] == (
+        "23.430 kg con US$ 104.894,95 cargados. Llegó hace 60 días.")
+    assert "IM-" not in vistos[0]["titulo"] + vistos[0]["detalle"]

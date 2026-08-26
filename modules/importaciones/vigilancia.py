@@ -414,38 +414,42 @@ def revisar_si_toca() -> dict:
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
 
+    from filters import num_es as _n
     from modules.avisos import queries as avisos
     from modules.importaciones import service as svc
     lo, hi = svc.BANDA_USD_KG
 
+    # ── Cómo se escribe el aviso ────────────────────────────────────────────
+    # TMT 2026-08-26 (dueña, sobre la versión larga): *"La importación tiene 2.3
+    # por kilo, promedio 2.7. ¿Faltan compras que cargar? Algo así, cortito y
+    # fácil de entender"*.
+    #
+    # Tres decisiones suyas, y valen para los tres avisos de acá:
+    #   · el título dice el PRECIO y el precio que debería ser, y termina en la
+    #     pregunta. Nada de "el US$/kg quedó fuera de banda";
+    #   · el porqué largo —la maduración medida, por qué la tarifa del hilado
+    #     queda torcida— NO va en la campanita. Vive en este módulo, que es
+    #     donde lo lee el que va a tocar el código;
+    #   · sin los IM: *"esos números larguísimos IM-xxxxx es muy largo e
+    #     inútil"*. El código del programa (MH 66-67) alcanza para saber de qué
+    #     se habla, y desde hoy el "ver →" abre la pantalla YA FILTRADA por él.
     n = 0
     for c in casos:
         if c["falta_plata"]:
-            titulo = (f"{c['codigo']} · llegó hace {c['dias']} días y le falta "
-                      f"plata por cargar")
+            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y suele ser "
+                      f"{_n(lo)}. ¿Faltan compras por cargar?")
             detalle = (
-                f"Recibida el {c['recepcion']}: {c['kg']:,.0f} kg, y hasta hoy "
-                f"tiene cargados US$ {c['importe']:,.2f} — {c['usd_kg']:,.4f} "
-                f"US$/kg, contra una banda normal de {lo:,.1f}–{hi:,.1f}. "
-                f"Para entrar en banda faltarían unos US$ {c['faltarian_us']:,.0f} "
-                "(factura, CAE, flete o seguro).\n\n"
-                "Una importación tarda normalmente 10 días en tener toda su "
-                f"plata, y 34 de cada 35 cierran antes de los 21. Ésta lleva "
-                f"{c['dias']}.\n\n"
-                "Ojo: también puede ser que la plata ESTÉ cargada y el sistema "
-                "no se la esté atribuyendo — vale la pena mirar las dos cosas. "
-                f"Importación {', '.join(str(i) for i in c['ims'])}."
+                f"{_n(c['kg'], 0)} kg con US$ {_n(c['importe'])} cargados: "
+                f"faltarían unos US$ {_n(c['faltarian_us'], 0)}. "
+                f"Llegó hace {c['dias']} días."
             )
         else:
-            titulo = (f"{c['codigo']} · llegó hace {c['dias']} días y el US$/kg "
-                      f"quedó alto ({c['usd_kg']:,.2f})")
+            # Con la plata cargada, lo que suele faltar son KILOS.
+            titulo = (f"{c['codigo']} · {_n(c['usd_kg'])} el kilo, y suele ser "
+                      f"hasta {_n(hi)}. ¿Faltan kilos?")
             detalle = (
-                f"Recibida el {c['recepcion']}: {c['kg']:,.0f} kg por "
-                f"US$ {c['importe']:,.2f} = {c['usd_kg']:,.4f} US$/kg, contra una "
-                f"banda normal de {lo:,.1f}–{hi:,.1f}. Con la plata ya cargada, "
-                "lo que suele faltar son KILOS — que la importación esté partida "
-                "en dos documentos y falte uno, o que tenga pegada plata de otra. "
-                f"Importación {', '.join(str(i) for i in c['ims'])}."
+                f"{_n(c['kg'], 0)} kg con US$ {_n(c['importe'])} cargados. "
+                f"Llegó hace {c['dias']} días."
             )
         if avisos.avisar(
             fuente="importaciones",
@@ -460,27 +464,13 @@ def revisar_si_toca() -> dict:
             n += 1
     for f in facturas:
         codigos = ", ".join(f["codigos"])
-        titulo = (f"{codigos} · la misma factura llegó en {len(f['codigos'])} "
-                  "importaciones y la plata quedó en una sola")
+        con = ", ".join(f["con_plata"])
+        titulo = f"{codigos} · toda la plata quedó en {con}"
         detalle = (
-            f"La factura {f['factura']} del proveedor llegó en "
-            f"{len(f['codigos'])} importaciones ({codigos}): {f['kg']:,.0f} kg "
-            f"en total, recibidas el {f['recepcion']}.\n\n"
-            f"Los US$ {f['importe']:,.2f} que hay cargados están colgados de "
-            f"{', '.join(f['con_plata'])} sola: {f['kg_con_plata']:,.0f} kg = "
-            f"{f['usd_kg']:,.4f} US$/kg, contra una banda normal de "
-            f"{lo:,.1f}–{hi:,.1f}. Repartidos entre los {f['kg']:,.0f} kg de "
-            f"toda la factura darían {f['usd_kg_repartido']:,.4f}.\n\n"
-            f"Los {f['kg_sin_plata']:,.0f} kg de {', '.join(f['sin_plata'])} "
-            "están en la bodega sin plata, y esos kilos NO diluyen la tarifa "
-            "del hilado: el promedio ponderado toma los dólares enteros contra "
-            "los kilos que sí la tienen, así que la tarifa —y con ella el "
-            "stock— quedan altos hasta que esto se acomode.\n\n"
-            "Se acomoda de dos maneras: que la nota de Asinfo diga el código "
-            f"con el rango en las {len(f['codigos'])} (como ya pasa con "
-            "MH 64-65, y el programa las junta solas), o cargar la plata que "
-            "le toca a cada una.\n\n"
-            f"Importación {', '.join(str(i) for i in f['ims'])}."
+            f"Una factura ({f['factura']}) llegó en {len(f['codigos'])} "
+            f"importaciones. Los US$ {_n(f['importe'])} cargados quedaron en "
+            f"{con}: {_n(f['usd_kg'])} el kilo. Repartidos entre las "
+            f"{len(f['codigos'])}, {_n(f['usd_kg_repartido'])}."
         )
         if avisos.avisar(
             fuente="importaciones",

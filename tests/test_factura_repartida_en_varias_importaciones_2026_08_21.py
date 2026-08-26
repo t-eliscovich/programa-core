@@ -210,12 +210,14 @@ def test_avisa_una_vez_por_factura_y_a_la_campanita():
     # El "ver →" abre las TRES: la factura del proveedor está adentro de la
     # nota de cada una, así que buscarla las trae a las tres.
     assert a["url"] == "/importaciones?anio=todos&q=INV+HY3821-26"
-    assert "MH 68, MH 69, MH 70" in a["titulo"]
+    # El texto, palabra por palabra (dueña 2026-08-26), y sin los IM.
+    assert a["titulo"] == "MH 68, MH 69, MH 70 · toda la plata quedó en MH 68"
     assert len(a["titulo"]) <= 200
-    assert "6.6009" in a["detalle"] and "2.2315" in a["detalle"]
-    assert "160,400.78" in a["detalle"]
-    assert "47,580 kg de MH 69, MH 70" in a["detalle"]
-    assert "MH 64-65" in a["detalle"]
+    assert a["detalle"] == (
+        "Una factura (INV HY3821-26) llegó en 3 importaciones. Los "
+        "US$ 160.400,78 cargados quedaron en MH 68: 6,60 el kilo. "
+        "Repartidos entre las 3, 2,23.")
+    assert "IM-" not in a["titulo"] + a["detalle"]
 
 
 def test_los_dos_chequeos_comparten_una_sola_lectura():
