@@ -495,6 +495,16 @@ def test_la_pantalla_muestra_lote_rollos_y_factura():
     assert "Lote" in GUIA_COMPARTIDA and "rollo" in GUIA_COMPARTIDA
 
 
+def test_los_rollos_y_las_unidades_van_en_COLUMNAS_SEPARADAS():
+    """TMT 26/08: *"mejor hagamos columna rollos y columna unidades, se ve
+    feo"*. Apiladas en la misma celda son dos cosas distintas peleando por un
+    lugar."""
+    for texto in (LISTA_COMPARTIDA, GUIA_COMPARTIDA):
+        sin_comentarios = re.sub(r"\{#.*?#\}", "", texto, flags=re.S)
+        assert ">Rollos<" in sin_comentarios
+        assert ">Unidades<" in sin_comentarios
+
+
 # ---------------------------------------------------------------------------
 # El vendedor mira LO MISMO
 # ---------------------------------------------------------------------------

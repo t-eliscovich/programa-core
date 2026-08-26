@@ -20,10 +20,10 @@
 {% else %}
   <div class="hero">
     <div class="lbl">Lo que salió en este despacho</div>
-    <div class="val">{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}{%
-      if g.unidades %} <span class="chico">+ {{ g.unidades }} u</span>{% endif %}</div>
+    <div class="val">{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}</div>
     <div class="sub">
-      {{ g.telas|length }} tela{{ '' if g.telas|length == 1 else 's' }} ·
+      {{ g.telas|length }} tela{{ '' if g.telas|length == 1 else 's' }}{%
+        if g.unidades %} · {{ g.unidades }} unidades{% endif %} ·
       {% if g.factura %}factura <span title="{{ g.factura }}">{{ g.factura_corta }}</span>{% else %}todavía sin factura{% endif %}
       {% if g.devueltos %}<br>Incluye {{ g.devueltos }} que devolvió{% endif %}
     </div>
@@ -31,10 +31,13 @@
 
   <div class="card">
     <table class="ec desp">
+      {# ⭐ TMT 26/08: *"columna rollos y columna unidades"*. Cada cosa en la
+         suya; la que no aplica queda vacía. #}
       <thead>
         <tr>
           <th>Tela</th>
-          <th class="der">Cuántos</th>
+          <th class="der">Rollos</th>
+          <th class="der">Unidades</th>
         </tr>
       </thead>
       <tbody>
@@ -52,17 +55,16 @@
                restara, esta pantalla diría algo distinto de la factura. #}
             {% if t.devueltos %}<small class="dev">Devolvió {{ t.devueltos }}</small>{% endif %}
           </td>
-          <td class="der nowrap">
-            {{ t.cuantos }}{% if t.por_unidad %} u{% else %} rollo{{ '' if t.cuantos == 1 else 's' }}{% endif %}
-          </td>
+          <td class="der nowrap">{{ '' if t.por_unidad else t.cuantos }}</td>
+          <td class="der nowrap">{{ t.cuantos if t.por_unidad else '' }}</td>
         </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="tot">
           <td>Total</td>
-          <td class="der">{{ g.rollos }} rollo{{ '' if g.rollos == 1 else 's' }}{%
-            if g.unidades %} · {{ g.unidades }} u{% endif %}</td>
+          <td class="der">{{ g.rollos or '' }}</td>
+          <td class="der">{{ g.unidades or '' }}</td>
         </tr>
       </tfoot>
     </table>

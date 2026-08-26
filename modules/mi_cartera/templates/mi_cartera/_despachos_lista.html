@@ -40,9 +40,10 @@
 {% else %}
   <div class="hero">
     <div class="lbl">Rollos despachados</div>
-    <div class="val">{{ d.rollos }}{% if d.unidades %} <span class="chico">+ {{ d.unidades }} u</span>{% endif %}</div>
+    <div class="val">{{ d.rollos }}</div>
     <div class="sub">
-      {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }} ·
+      {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }}{%
+        if d.unidades %} · {{ d.unidades }} unidades{% endif %} ·
       desde el {{ d.desde|fecha_es }}
       {# Lo devuelto se NOMBRA, no se descuenta: la factura cobra lo que salió
          y la devolución se corrige con otro documento. #}
@@ -67,11 +68,16 @@
   {% else %}
     <div class="card">
       <table class="ec desp">
+        {# ⭐ TMT 26/08: *"mejor hagamos columna rollos y columna unidades"*.
+           Apiladas en la misma celda se veían feas: son dos cosas distintas y
+           cada una tiene su columna. La de unidades queda VACÍA cuando no hay
+           —una columna de guiones es ruido, no información—. #}
         <thead>
           <tr>
             <th>Fecha</th>
             <th>Despacho</th>
             <th class="der">Rollos</th>
+            <th class="der">Unidades</th>
             <th>Factura</th>
           </tr>
         </thead>
@@ -88,10 +94,8 @@
               <a href="{{ url_guia }}{{ g.numero }}" title="{{ g.numero }}"><b>{{ g.corto }}</b></a>
               {% if g.devueltos %}<small class="dev">devolvió {{ g.devueltos }}</small>{% endif %}
             </td>
-            <td class="der nowrap">
-              {% if g.rollos %}{{ g.rollos }}{% elif not g.unidades %}—{% endif %}
-              {% if g.unidades %}<small>{{ g.unidades }} u</small>{% endif %}
-            </td>
+            <td class="der nowrap">{{ g.rollos or '' }}</td>
+            <td class="der nowrap">{{ g.unidades or '' }}</td>
             {# Sin factura NO es un error: la mercadería va adelante del papel,
                y al día siguiente ya está. #}
             <td class="nowrap chico" title="{{ g.factura }}">{{ g.factura_corta or 'todavía no' }}</td>
