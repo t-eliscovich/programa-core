@@ -33,6 +33,10 @@
 <title>Factura {{ p.cabecera.numero or numero }}</title>
 <style>
   @page{size:A4;margin:10mm 8mm}
+  .bajar{position:fixed;top:6pt;right:8pt;font-size:9pt;color:#0369a1;
+         text-decoration:none;border:.6pt solid #cbd5e1;border-radius:4pt;
+         padding:3pt 7pt;background:#fff;font-family:system-ui,sans-serif}
+  @media print{.no-print{display:none !important}}
   *{box-sizing:border-box}
   body{margin:0;padding:0;background:#fff;color:#000;
        font:7pt/1.25 Helvetica,Arial,sans-serif;-webkit-print-color-adjust:exact;
@@ -100,6 +104,9 @@
 </style>
 </head>
 <body>
+{# El PDF cuelga de acá y no de la botonera de la ficha: allá hay UN botón,
+   Imprimir. `no-print` para que el papel salga limpio. #}
+{% if pdf_url %}<a class="no-print bajar" href="{{ pdf_url }}">Bajar PDF</a>{% endif %}
 <div class="hoja">
 
 {% if p.estado != 'ok' %}

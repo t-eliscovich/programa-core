@@ -922,7 +922,9 @@ def papel(id_factura: int):
     return render_template("informes/factura_papel.html",
                            **factura_papel.hoja(fact.get("numf_completo")),
                            numero=fact.get("numf"),
-                           imprimir=request.args.get("imprimir") == "1")
+                           imprimir=request.args.get("imprimir") == "1",
+                           pdf_url=url_for("facturas.papel_pdf",
+                                           id_factura=fact["id_factura"]))
 
 
 def _despachado_hoy(fecha) -> dict:

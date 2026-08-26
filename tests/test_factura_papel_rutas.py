@@ -291,11 +291,22 @@ def test_imprimir_imprime_LA_FACTURA_no_la_pantalla():
         encoding="utf-8")
     assert "{% if fact.numf_completo %}" in t
     assert "facturas.papel', id_factura=fact.id_factura, imprimir=1" in t
-    assert "facturas.papel_pdf" in t
     # el `window.print()` de la pantalla queda SÓLO para el caso sin número
     assert t.count("window.print()") == 1
-    assert t.index("{% else %}\n        <button onclick=\"window.print()") > \
-           t.index("facturas.papel_pdf")
+
+
+def test_la_botonera_de_la_ficha_tiene_UN_boton_de_imprimir():
+    """TMT 2026-08-26: *"muchos botones. solo uno de imprimir. y ya"*. El PDF
+    cuelga de la hoja que abre ese botón, no de la botonera."""
+    from pathlib import Path
+
+    t = Path("modules/facturas/templates/facturas/detalle.html").read_text(
+        encoding="utf-8")
+    assert t.count(">Imprimir<") == 2       # el de la hoja y el de sin-número
+    assert "papel_pdf" not in t
+    hoja = Path("modules/informes/templates/informes/factura_papel.html").read_text(
+        encoding="utf-8")
+    assert "pdf_url" in hoja and "no-print" in hoja
 
 
 def test_la_hoja_se_imprime_sola_solo_si_se_lo_piden(app, monkeypatch):

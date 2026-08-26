@@ -43,11 +43,12 @@
          portal—, no esta pantalla. Sin número del SRI no hay factura de
          Asinfo que copiar, y ahí sí se imprime la ficha, que es lo único que
          hay. #}
+      {# UN botón, no tres. TMT 2026-08-26: *"muchos botones. solo uno de
+         imprimir. y ya"*. El PDF cuelga de la hoja que abre este botón, no de
+         acá. #}
       {% if fact.numf_completo %}
         <a href="{{ url_for('facturas.papel', id_factura=fact.id_factura, imprimir=1) }}"
            target="_blank" rel="noopener" style="white-space:nowrap" class="{{ _btn }}">Imprimir</a>
-        <a href="{{ url_for('facturas.papel_pdf', id_factura=fact.id_factura) }}"
-           style="white-space:nowrap" class="{{ _btn }}">Bajar PDF</a>
       {% else %}
         <button onclick="window.print()" style="white-space:nowrap" class="{{ _btn }}">Imprimir</button>
       {% endif %}
