@@ -99,9 +99,13 @@ MOTIVO = "Anulada en Asinfo (fc.estado=0) — detectada por el vigía"
 
 #: Guard 6: para anular hace falta que Asinfo lo CONFIRME. Cuando no lo
 #: confirma, este es el texto que explica por qué la fila quedó frenada.
-FRENO_VIVA = "Asinfo la sigue dando por VIVA (estado {estado}) — no se tocó"
-FRENO_SIN_RESPUESTA = "Asinfo no la reconoce por su número — no se tocó"
-FRENO_SIN_CONSULTA = "no se pudo confirmar contra Asinfo — no se tocó"
+# TMT 2026-08-26 (dueña, sobre el aviso que salía de acá): *"¿podés reescribir
+# ese feo?"*. El "— no se tocó" salía del constante y se repetía en la pantalla
+# al lado de la palabra "Frenada", que ya lo dice. Queda sólo el motivo, y el
+# "No se tocó nada" va una sola vez, en el aviso.
+FRENO_VIVA = "Asinfo la sigue dando por viva (estado {estado})"
+FRENO_SIN_RESPUESTA = "Asinfo no la reconoce por su número"
+FRENO_SIN_CONSULTA = "No se pudo confirmar con Asinfo"
 
 _NUM_SRI_RE = re.compile(r"^\d{3}-\d{3}-\d{6,9}$")
 #: Notas de entrega y notas de crédito de mercadería. Vienen de la MISMA
@@ -311,6 +315,7 @@ def _confirmar_contra_asinfo(out: dict) -> None:
 def _avisar_frenadas(frenadas: list[dict]) -> None:
     """La campanita. Fail-soft: un aviso que no entra no frena al vigía."""
     try:
+        from filters import num_es
         from modules.avisos.queries import avisar
     except Exception:  # noqa: BLE001
         return
@@ -320,14 +325,14 @@ def _avisar_frenadas(frenadas: list[dict]) -> None:
             avisar(
                 fuente="facturas",
                 nivel="alerta",
-                titulo=(
-                    f"Revisar {numero} — Asinfo dejó de reportarla pero no "
-                    "dice que esté anulada"
-                ),
+                # Cortito y con la pregunta al final (dueña 2026-08-26): qué
+                # pasó, y qué hay que ir a mirar. El motivo del freno y el
+                # "no se tocó nada" van en el renglón de abajo.
+                titulo=f"{numero} · desapareció de la lista de Asinfo. ¿Está anulada?",
                 detalle=(
                     f"{fila.get('codigo_cli') or ''} · "
-                    f"$ {float(fila.get('importe') or 0):,.2f} · "
-                    f"{fila.get('freno') or ''}"
+                    f"$ {num_es(fila.get('importe') or 0)}. "
+                    f"{fila.get('freno') or ''}. No se tocó nada."
                 )[:150],
                 url="/facturas/anuladas-asinfo",
                 # Una vez por documento: el vigía repasa la misma ventana
