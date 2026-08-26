@@ -3217,8 +3217,13 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     """Dueña 25/08/2026: *"mantené el orden y formato de las de arriba, podés
     reemplazar clientes por vendedor"*. Dos tablas que muestran lo mismo con
     otro orden se leen como dos cosas distintas: las columnas van iguales y en
-    el mismo orden, y sólo cambian las dos últimas, que acá significan otra cosa
-    (Clientes → Vendedor, Última venta → Día)."""
+    el mismo orden, y sólo cambian las de la derecha, que acá significan otra
+    cosa (Clientes → Vendedor, y el Día de la venta).
+
+    ⚠ Arriba se fue «Última venta» el 25/08/2026 ("última venta se va de la
+    tabla"), así que la de arriba tiene una columna menos. Lo que este test
+    cuida es que las que están se lean juntas: las cinco primeras iguales, y
+    «lo que queda | lo que salió» en el mismo par de columnas."""
     import inspect as _i
     import re as _re
     from pathlib import Path
@@ -3236,7 +3241,6 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
 
     arriba = cabeceras('<table id="tabla">')
     abajo = cabeceras('<table class="resumen" id="vendidos">')
-    assert len(arriba) == len(abajo), "las dos tablas tienen las mismas columnas"
     assert arriba[:5] == abajo[:5], (
         f"el orden de las cinco primeras no coincide: {arriba[:5]} vs {abajo[:5]}")
     # ⭐ Y las dos del medio significan lo MISMO en las dos tablas (dueña
@@ -3245,6 +3249,8 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     assert arriba[5:7] == ["Kg en saldo", "Vendido"]
     assert abajo[5:8] == ["Queda", "Vendido", "Vale"]
     assert abajo[9:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
+    assert "Última venta" not in arriba, (
+        "volvió la columna que la dueña sacó el 25/08/2026")
 
     # el día con el mismo formato que la fecha de arriba, y el vendedor
     assert "{{ v.fecha.strftime('%d/%m/%y') }}" in html
