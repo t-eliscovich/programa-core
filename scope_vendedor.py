@@ -97,6 +97,24 @@ PREFIJOS_HOME: tuple[str, ...] = (
     "/operaciones",
 )
 
+# ⭐ Las pantallas de la OFICINA que el vendedor tiene con otra ruta se
+# redirigen a la suya, tampoco se 404ean.
+#
+# TMT 2026-08-26 (dueña, mirando la sección como Patricio): *"¿por qué no puedo
+# ver saldos como patricio, o a quién ofrecerle qué?"*. Sí puede: son las
+# MISMAS pantallas, con sus clientes adentro, colgadas de
+# /analisis/competencia. Lo que no funciona es llegar por la URL de la oficina
+# —un bookmark, un link copiado, o la dueña previsualizando con "Ver como"— y
+# ahí el allowlist contestaba un 404 seco.
+#
+# ⚠ Redirigir sólo donde la pantalla EXISTE del otro lado. Para todo lo demás
+# el 404 se queda: el vendedor no tiene por qué enterarse de qué hay.
+EQUIVALENTE_VENDEDOR: dict[str, str] = {
+    "/analisis": "/analisis/competencia",
+    "/analisis/parado": "/analisis/competencia/telas",
+    "/analisis/parado/clientes": "/analisis/competencia/mi-hoja",
+}
+
 
 def vendedor_de(user: dict | None) -> str:
     """Código de vendedor del usuario, normalizado. '' si no es vendedor.
@@ -135,6 +153,10 @@ def enforce_scope_vendedor():
 
     if path == "/" or _path_permitido(path, PREFIJOS_HOME):
         return redirect(HOME_VENDEDOR)
+
+    destino = EQUIVALENTE_VENDEDOR.get(path.rstrip("/") or "/")
+    if destino:
+        return redirect(destino)
 
     if _path_permitido(path, PREFIJOS_PERMITIDOS):
         return None
