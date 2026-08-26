@@ -80,9 +80,14 @@ th.ord.desc::after{content:" ↓";opacity:1}
   {# ⚠ Una línea y sin kilos (dueña 26/08/2026: "no puede ocupar tanto espacio,
      todo simplifica"). Eran dos renglones enteros de paréntesis. Lo que hay que
      poder contestar es por qué la lista tiene 700 ítems y no 4.200: para eso
-     alcanza con CUÁNTAS quedaron afuera y por qué. #}
-  · afuera {{ estado.nuevas }} recién hechas ·
-  {{ estado.produciendo }} tejiéndose · {{ estado.pedidas }} pedidas
+     alcanza con CUÁNTAS quedaron afuera y por qué.
+     ⚠⚠ Pero cada motivo tiene que decir DE QUÉ habla. El primer recorte lo dejó
+     en "589 tejiéndose · 351 pedidas" y la dueña preguntó qué quería decir: sin
+     sujeto, "pedidas" puede ser pedidas por un cliente o pedidas a un
+     proveedor. Simplificar es sacar palabras, no sacar el significado. #}
+  <br>Afuera de la lista: {{ estado.nuevas }} recién hechas ·
+  {{ estado.produciendo }} que se siguen tejiendo ·
+  {{ estado.pedidas }} con un pedido esperando
 {% endif %}
 </p>
 

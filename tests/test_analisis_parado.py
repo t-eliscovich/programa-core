@@ -3855,3 +3855,18 @@ def test_la_linea_abierta_se_lleva_su_propia_categoria_vendida():
     seg = next(x for x in lineas if x["cal_fila"] == "SEG")
     assert (pri["kg_vendidos"], pri["kg_vend_pri"], pri["kg_vend_seg"]) == (7, 7, 0)
     assert (seg["kg_vendidos"], seg["kg_vend_pri"], seg["kg_vend_seg"]) == (3, 0, 3)
+
+
+def test_cada_motivo_de_afuera_dice_de_que_habla():
+    """Dueña 26/08/2026, sobre el primer recorte: *"tejiéndose · 351 pedidas.
+    ¿Qué quiere decir esto?"*. Sin sujeto no se entiende: "pedidas" puede ser
+    pedidas por un cliente o pedidas a un proveedor, y "tejiéndose" a secas no
+    dice que sean telas.
+
+    Simplificar es sacar palabras, no sacar el significado."""
+    html = _html_parado()
+    i = html.index("Afuera de la lista")
+    trozo = " ".join(html[i:i + 400].split())
+    assert "recién hechas" in trozo
+    assert "que se siguen tejiendo" in trozo, "«tejiéndose» no dice de qué"
+    assert "con un pedido esperando" in trozo, "«pedidas» no dice de quién"
