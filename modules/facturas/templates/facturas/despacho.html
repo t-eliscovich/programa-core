@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Guía {{ numero }}{% endblock %}
+
+{% block content %}
+{# QUÉ SALIÓ POR UNA GUÍA — TMT 2026-08-26 (dueña): *"desde acá quiero links a
+   facturas y a despachos"*.
+
+   La pantalla contesta la pregunta con la que se entra: la fila de Guías del
+   día salió en ROJO porque los kilos que salieron no son los que se
+   facturaron, y acá se ve cuál rollo. Por eso la columna Factura va al lado
+   de los kilos y no al final, y por eso el rollo que difiere se pinta entero.
+
+   Los kilos de acá dan los MISMOS que el renglón que se clickeó: la consulta
+   mide con la misma vara (bodega de producto terminado, guías sin anular). #}
+<div class="max-w-5xl mx-auto px-4 py-3 info-page">
+
+  <div class="flex items-baseline gap-2 flex-wrap mb-1">
+    <h1 class="text-base font-semibold text-slate-800">Guía {{ numero }}</h1>
+    {% if d.estado == 'ok' %}
+      <span class="text-sm text-slate-500">{{ d.cabecera.fecha }}</span>
+      {% if d.cabecera.cliente %}
+        <span class="text-sm text-slate-500">· {{ d.cabecera.cliente }}</span>
+      {% endif %}
+    {% endif %}
+  </div>
+
+  {% if d.estado == 'ok' %}
+  <div class="text-sm text-slate-600 mb-3 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+    <span>Salieron <b class="text-slate-900">{{ d.totales.kg | kg_es }} kg</b>
+      <span class="text-xs text-slate-400">· {{ d.totales.rollos }} rollo{{ '' if d.totales.rollos == 1 else 's' }}</span></span>
+    {% if d.totales.kg_factura is not none %}
+    <span>Facturados <b class="text-slate-900">{{ d.totales.kg_factura | kg_es }} kg</b></span>
+    {% endif %}
+    {% if d.totales.sin_factura %}
+    <span class="text-amber-800">{{ d.totales.sin_factura }} rollo{{ '' if d.totales.sin_factura == 1 else 's' }} sin facturar</span>
+    {% endif %}
+    <a href="/facturas/dia?fecha={{ d.cabecera.fecha[6:10] }}-{{ d.cabecera.fecha[3:5] }}-{{ d.cabecera.fecha[0:2] }}"
+       class="text-xs text-sky-700">← Guías del día</a>
+  </div>
+  {% endif %}
+
+  {% if d.estado != 'ok' %}
+    <div class="rounded border border-slate-200 bg-white px-3 py-3 text-sm text-slate-500">
+      {% if d.estado == 'sin-numero' %}
+        Ese número de guía no tiene la forma de una guía de Asinfo.
+      {% elif d.estado == 'sin-datos' %}
+        Asinfo no tiene esta guía, o quedó anulada.
+      {% elif d.estado == 'sin-puente' %}
+        La guía sale de Asinfo y acá no hay conexión con el ERP.
+      {% else %}
+        Ahora no se pudo traer la guía de Asinfo. Volvé a entrar en un rato.
+      {% endif %}
+    </div>
+  {% else %}
+    <div class="rounded border border-slate-200 bg-white overflow-hidden mb-4">
+      <table class="w-full text-sm">
+        <thead class="bg-slate-50 text-xs text-slate-500">
+          <tr><th class="px-3 py-1.5 text-left">Tela</th>
+              <th class="px-3 py-1.5 text-left">Código</th>
+              <th class="px-3 py-1.5 text-left">Color</th>
+              <th class="px-3 py-1.5 text-left">Rollo</th>
+              <th class="px-3 py-1.5 text-right">Kg salieron</th>
+              <th class="px-3 py-1.5 text-right">Kg factura</th>
+              <th class="px-3 py-1.5 text-left">Factura</th></tr>
+        </thead>
+        <tbody>
+          {% for l in d.lineas %}
+          <tr class="border-t border-slate-100 {{ 'bg-red-50 text-red-700' if l.difiere }}">
+            <td class="px-3 py-1.5">{{ l.tela }}</td>
+            <td class="px-3 py-1.5 text-mono">{{ l.codigo or '—' }}</td>
+            <td class="px-3 py-1.5">{{ l.color or '—' }}</td>
+            <td class="px-3 py-1.5 text-mono whitespace-nowrap">{{ l.lote or '—' }}</td>
+            <td class="px-3 py-1.5 text-right {{ 'font-medium' if l.difiere }}">{{ l.kg | kg_es }}</td>
+            <td class="px-3 py-1.5 text-right {{ 'font-medium' if l.difiere }}">
+              {% if l.kg_factura is not none %}{{ l.kg_factura | kg_es }}
+                {%- if l.difiere %}<span class="text-xs"> · {{ '+' if (l.kg_factura - l.kg) > 0 }}{{ (l.kg_factura - l.kg) | kg_es }}</span>{% endif %}
+              {% else %}—{% endif %}
+            </td>
+            <td class="px-3 py-1.5 whitespace-nowrap">
+              {% if l.factura %}{{ l.factura }}
+              {% else %}<span class="text-amber-800">todavía no</span>{% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+        <tfoot class="bg-slate-50 border-t border-slate-200 text-sm">
+          <tr>
+            <td class="px-3 py-1.5 font-medium" colspan="4">Total</td>
+            <td class="px-3 py-1.5 text-right font-semibold">{{ d.totales.kg | kg_es }}</td>
+            <td class="px-3 py-1.5 text-right font-semibold">
+              {% if d.totales.kg_factura is not none %}{{ d.totales.kg_factura | kg_es }}{% else %}—{% endif %}</td>
+            <td class="px-3 py-1.5"></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  {% endif %}
+
+</div>
+{% endblock %}

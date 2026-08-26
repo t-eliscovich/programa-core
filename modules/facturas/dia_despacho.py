@@ -369,4 +369,8 @@ def cuadre(fecha) -> dict:
         "sin_autorizar": {"kg": kg_sin_autorizar, "items": sin_autorizar},
         "residuo": residuo,
         "guias": guias,
+        # ⭐ El número visible de cada documento → su `numf`, para que la tabla
+        #    pueda linkear a la ficha. Los que todavía no están acá no entran:
+        #    un link a una factura que no existe es un 404 servido.
+        "numf_por_doc": {d["doc"]: d["numf"] for d in docs if d["doc"]},
     }

@@ -68,7 +68,12 @@
            las dos, manda el rojo. #}
         {% set _rojo = g.difiere %}
         <tr class="border-t border-slate-100 {{ 'bg-red-50 text-red-700' if _rojo }}">
-          <td class="px-3 py-1.5 whitespace-nowrap">{{ g.guia }}</td>
+          {# TMT 2026-08-26 (dueña): *"desde acá quiero links a facturas y a
+             despachos"*. La guía abre qué salió, rollo por rollo: es lo que
+             hay que mirar cuando la fila está en rojo. #}
+          <td class="px-3 py-1.5 whitespace-nowrap">
+            <a href="/despachos/{{ g.guia }}"
+               class="{{ 'text-red-700' if _rojo else 'text-sky-700' }} hover:underline">{{ g.guia }}</a></td>
           <td class="px-3 py-1.5 {{ 'text-red-700' if _rojo else 'text-slate-500' }}">{{ g.hora }}</td>
           <td class="px-3 py-1.5">{{ g.cliente }}</td>
           <td class="px-3 py-1.5 text-right {{ 'font-medium' if _rojo }}">{{ g.kg | kg_es }}</td>
@@ -76,7 +81,13 @@
              con el número se usa. En ámbar lo que todavía no está acá. #}
           <td class="px-3 py-1.5 whitespace-nowrap">
             {% if g.docs %}
-              {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{{ doc }}</span>{% if not loop.last %}, {% endif %}{% endfor %}
+              {# 🚨 El `numf` de una NOTA DE ENTREGA se repite: el 10879 es una
+                 NTEN de BED del 19/08 y también una factura vieja de otro
+                 cliente, así que `/facturas/10879` abre la que no es. La NTEN
+                 se linkea al listado del día filtrado por su cliente, que
+                 siempre da bien. Y lo que todavía NO está acá no se linkea:
+                 un link a una factura que no existe es un 404 servido. #}
+              {% for doc in g.docs %}<span class="{{ 'text-red-700' if _rojo else ('text-slate-700' if doc in g.en_pc else 'text-amber-800') }}">{% if doc.upper().startswith('NTEN') %}<a href="/facturas?desde={{ d.fecha }}&hasta={{ d.fecha }}&cliente={{ g.cliente }}" class="hover:underline">{{ doc }}</a>{% elif d.numf_por_doc.get(doc) %}<a href="/facturas/{{ d.numf_por_doc[doc] }}" class="hover:underline">{{ doc }}</a>{% else %}{{ doc }}{% endif %}</span>{% if not loop.last %}, {% endif %}{% endfor %}
               {# TMT 2026-08-24 (dueña): *"me suena raro porque van más de 5
                  mins"*. Decían las dos cosas "falta cargarla", pero son
                  distintas: una entra sola en dos minutos y la otra no va a

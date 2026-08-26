@@ -1015,6 +1015,25 @@ def dia_despacho_view():
     return render_template("facturas/dia_despacho.html", d=datos)
 
 
+@facturas_bp.route("/despachos/<numero>")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def despacho(numero: str):
+    """Qué salió por una guía, rollo por rollo.
+
+    TMT 2026-08-26 (dueña): *"desde acá quiero links a facturas y a
+    despachos"*, parada en Guías del día. El número de la guía era texto
+    muerto, y es justo lo que hay que abrir cuando la fila sale en rojo: acá se
+    ve CUÁL rollo salió con un peso y se facturó con otro.
+
+    Mismo permiso que la pantalla del día, que es de donde se entra.
+    """
+    from modules.asinfo import despacho_lineas
+    return render_template("facturas/despacho.html",
+                           d=despacho_lineas.que_salio(numero),
+                           numero=(numero or "").strip().upper())
+
+
 @facturas_bp.route("/facturas/diag-cartera")
 @requiere_login
 @requiere_permiso("facturas.ver")
