@@ -55,7 +55,15 @@ Este módulo devuelve todo lo que el papel necesita. La plantilla sólo dibuja.
    `1 + pct1/100` en vez de una constante: en las dos facturas medidas el
    contado era 5%, como en 299.425 de los 313.000 renglones de 2025-2026.
 
-7. **Hay facturas de 192 renglones.** El 6,5% pasa de 26, que es lo que entra
+7. **La guía de remisión cuelga del DESPACHO, no de la factura.**
+   `guia_remision` tiene las dos columnas y la de la factura viene siempre en
+   blanco: se une por `id_despacho_cliente`. Con el enganche por factura el
+   campo salía vacío SIEMPRE. Y no se puede multiplicar la consulta: de los
+   56.412 despachos con guía, ninguno tiene dos. Que a veces salga vacío es
+   correcto — la 001-099-000182675 no tiene guía y el papel de Asinfo tampoco
+   la muestra.
+
+8. **Hay facturas de 192 renglones.** El 6,5% pasa de 26, que es lo que entra
    en una carilla: la hoja PAGINA sola y repite el encabezado de la tabla.
 
 Fail-soft, como todo lo que cuelga de Asinfo: si el ERP no contesta, la hoja
@@ -186,7 +194,7 @@ SELECT LTRIM(RTRIM(ISNULL(fc.numero, '')))                    AS numero,
   LEFT JOIN factura_clienteSRI sri
     ON sri.id_factura_cliente = fc.id_factura_cliente
   LEFT JOIN guia_remision gui
-    ON gui.id_factura_cliente = fc.id_factura_cliente
+    ON gui.id_despacho_cliente = fc.id_despacho_cliente
   LEFT JOIN empresa em ON em.id_empresa = fc.id_empresa
   LEFT JOIN direccion_empresa dir
     ON dir.id_direccion_empresa = fc.id_direccion_empresa

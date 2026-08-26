@@ -469,3 +469,15 @@ def test_la_guia_de_remision_sale_en_la_hoja(app):
     """Una factura la trae y la otra no: la 182675 va con el campo vacío."""
     assert fp.armar(_filas_182678())["cabecera"]["guia"] == "001-099-000170016"
     assert fp.armar(_filas())["cabecera"]["guia"] == ""
+
+
+def test_la_guia_de_remision_cuelga_del_despacho_no_de_la_factura():
+    """`guia_remision` tiene las dos columnas y la de la factura viene SIEMPRE
+    en blanco: con el enganche por factura el campo salía vacío siempre.
+
+    La 001-099-000182678 sale con guía 001-099-000170016 (despacho 170290) y la
+    001-099-000182675 sin ninguna, igual que los dos papeles de Asinfo.
+    """
+    sql = fp._sql("001-099-000182678")
+    assert "gui.id_despacho_cliente = fc.id_despacho_cliente" in sql
+    assert "gui.id_factura_cliente" not in sql
