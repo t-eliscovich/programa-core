@@ -787,9 +787,16 @@ def por_id_interno(id_factura: int) -> dict | None:
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
-               c.ruc, c.telefono, c.pago
+               c.ruc, c.telefono, c.pago,
+               -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
+               --    de esta factura. Se trae con el nombre porque el código de
+               --    tres letras no se lo sabe todo el mundo.
+               UPPER(TRIM(COALESCE(c.vend, ''))) AS vend,
+               COALESCE(NULLIF(TRIM(v.nombre), ''), '') AS vendedor_nombre
           FROM scintela.factura f
           LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+          LEFT JOIN scintela.vendedor v
+                 ON UPPER(TRIM(v.codigo)) = UPPER(TRIM(COALESCE(c.vend, '')))
          WHERE f.id_factura = %s
          LIMIT 1
         """,
@@ -811,9 +818,16 @@ def por_id(id_factura: int) -> dict | None:
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
-               c.ruc, c.telefono, c.pago
+               c.ruc, c.telefono, c.pago,
+               -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
+               --    de esta factura. Se trae con el nombre porque el código de
+               --    tres letras no se lo sabe todo el mundo.
+               UPPER(TRIM(COALESCE(c.vend, ''))) AS vend,
+               COALESCE(NULLIF(TRIM(v.nombre), ''), '') AS vendedor_nombre
           FROM scintela.factura f
           LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+          LEFT JOIN scintela.vendedor v
+                 ON UPPER(TRIM(v.codigo)) = UPPER(TRIM(COALESCE(c.vend, '')))
          WHERE f.numf = %s OR f.id_factura = %s
          ORDER BY (f.numf = %s) DESC, f.id_factura ASC
          LIMIT 1
@@ -842,9 +856,16 @@ def por_numf_completo(numf_completo: str) -> dict | None:
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
                COALESCE(c.nombre, '')    AS cliente,
-               c.ruc, c.telefono, c.pago
+               c.ruc, c.telefono, c.pago,
+               -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
+               --    de esta factura. Se trae con el nombre porque el código de
+               --    tres letras no se lo sabe todo el mundo.
+               UPPER(TRIM(COALESCE(c.vend, ''))) AS vend,
+               COALESCE(NULLIF(TRIM(v.nombre), ''), '') AS vendedor_nombre
           FROM scintela.factura f
           LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+          LEFT JOIN scintela.vendedor v
+                 ON UPPER(TRIM(v.codigo)) = UPPER(TRIM(COALESCE(c.vend, '')))
          WHERE f.numf_completo = %s
          ORDER BY f.id_factura ASC
          LIMIT 1

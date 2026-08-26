@@ -95,6 +95,17 @@
           {{ fact.ruc | cleanstr }} · Tel {{ fact.telefono | cleanstr }}
         </div>
       </a>
+      {# TMT 2026-08-26 (dueña): *"¿se puede agregar el vendedor?"*. Es el
+         vendedor del CLIENTE, que es el que cobra la comisión de esta
+         factura. Va con el código y con el nombre: el código de tres letras
+         no se lo sabe todo el mundo. Fuera del <a> del cliente, que lleva a
+         su estado de cuenta. #}
+      <div class="text-xs text-slate-500 mt-1">
+        Vendedor
+        {%- if fact.vend %} <span class="font-mono">{{ fact.vend }}</span>
+          {%- if fact.vendedor_nombre %} · {{ fact.vendedor_nombre }}{% endif %}
+        {%- else %} <span class="text-amber-800">sin asignar</span>{% endif %}
+      </div>
     </div>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4">
       <div class="text-xs text-slate-500 uppercase tracking-wider mb-2">Importes</div>

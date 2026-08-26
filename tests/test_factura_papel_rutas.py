@@ -365,3 +365,43 @@ def test_sin_desempate_la_ficha_sigue_resolviendo_como_siempre(
     monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
     assert oficina_facturas.get("/facturas/182675").status_code == 200
     assert llamadas == []          # sin `?doc=` ni se pregunta
+
+
+# --- el vendedor en la ficha ------------------------------------------------
+
+def test_la_ficha_dice_el_vendedor(oficina_facturas, monkeypatch):
+    """TMT 2026-08-26: *"¿se puede agregar el vendedor?"*. Es el vendedor del
+    CLIENTE, que es el que cobra la comisión de esta factura. Va con el código
+    y con el nombre: el de tres letras no se lo sabe todo el mundo."""
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv.queries, "por_id",
+                        lambda n: _factura_pc(vend="EDG",
+                                              vendedor_nombre="Edgar Ramirez"))
+    monkeypatch.setattr(fv.queries, "cheques_aplicados", lambda *a: [])
+    monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
+    html = oficina_facturas.get("/facturas/182675").data.decode()
+    assert "Vendedor" in html and "EDG" in html and "Edgar Ramirez" in html
+
+
+def test_el_cliente_sin_vendedor_lo_dice(oficina_facturas, monkeypatch):
+    """La 182755 es de TNZ, que no tiene vendedor cargado. Callarse el renglón
+    haría pensar que la pantalla no anda; decirlo es el dato."""
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv.queries, "por_id",
+                        lambda n: _factura_pc(vend="", vendedor_nombre=""))
+    monkeypatch.setattr(fv.queries, "cheques_aplicados", lambda *a: [])
+    monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
+    html = oficina_facturas.get("/facturas/182675").data.decode()
+    assert "sin asignar" in html
+
+
+def test_la_consulta_de_la_ficha_trae_el_vendedor():
+    """Las TRES formas de buscar una factura tienen que traerlo, o la ficha
+    diría 'sin asignar' según por dónde se entró."""
+    from pathlib import Path
+
+    q = Path("modules/facturas/queries.py").read_text(encoding="utf-8")
+    assert q.count("scintela.vendedor v") == 3
+    assert q.count("AS vendedor_nombre") == 3
