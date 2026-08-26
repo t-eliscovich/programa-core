@@ -71,7 +71,7 @@ def diagnose():
             "baseline_date": str(raw.get("baseline_date")) if raw.get("baseline_date") else None,
         }
         try:
-            # cuota_diaria de provisiones (best-effort)
+            # cuota MENSUAL de provisiones (best-effort)
             cd = None
             try:
                 provs = db.fetch_all(
@@ -85,11 +85,15 @@ def diagnose():
                         break
             except Exception:
                 cd = None
-            cell["cuota_diaria_resolved"] = cd
+            cell["cuota_mensual_resolved"] = cd
 
             # Probar el helper directo con un dict de 1 fila.
+            # TMT 2026-08-25: `provisiones.importe` guarda el monto MENSUAL
+            # (migración 0223) y `_aplicar_display_time_yy` lee `cuota_mensual`.
+            # Pasarle `cuota_diaria` dejaba el devengo en cero y esta pantalla
+            # mostraba que la fila no se movía, que es mentira.
             fila = dict(raw)
-            fila["cuota_diaria"] = cd
+            fila["cuota_mensual"] = cd
             pq._aplicar_display_time_yy([fila], hoy=hoy)
             cell["after_display_time"] = {
                 "importe": fila.get("importe"),

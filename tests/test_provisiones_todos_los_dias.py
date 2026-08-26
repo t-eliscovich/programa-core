@@ -101,3 +101,21 @@ def test_la_cuota_diaria_se_calcula_no_se_guarda():
     assert filas[0]["cuota_diaria"] > 0
     # la diaria tiene que salir del mensual, nunca al revés
     assert filas[0]["cuota_diaria"] < filas[0]["cuota_mensual"]
+
+
+def test_el_devengo_lee_la_cuota_mensual_no_la_diaria():
+    """Guard: quien arme una fila a mano tiene que poner `cuota_mensual`.
+
+    /admin/debug-yy armaba la fila con `cuota_diaria` y el devengo daba cero:
+    la pantalla mostraba que la deuda no se movía, que es mentira.
+    """
+    con_mensual = {"prov": "YY", "importe": 0.0, "cuota_mensual": MENSUAL_AEC,
+                   "baseline_date": date(2026, 9, 1)}
+    con_diaria = {"prov": "YY", "importe": 0.0, "cuota_diaria": 9000.0,
+                  "baseline_date": date(2026, 9, 1)}
+    pq._aplicar_display_time_yy([con_mensual], hoy=date(2026, 9, 3))
+    pq._aplicar_display_time_yy([con_diaria], hoy=date(2026, 9, 3))
+    assert con_mensual["importe"] > 0
+    assert con_diaria["importe"] == 0.0, (
+        "una fila armada a mano con cuota_diaria no devenga — hay que pasarle "
+        "cuota_mensual (ver modules/admin_dbase/debug_yy_view.py)")
