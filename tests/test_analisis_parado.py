@@ -3334,17 +3334,46 @@ def test_el_renglon_vendido_cuelga_de_su_grupo():
     assert "vlinea" not in base, "el nombre nuevo tiene que seguir libre"
 
 
-def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
-    """Dueña 25/08/2026: *"muy finito tiene que ser, y no me repitas info 64,
-    64"*. Con el color en negrita en su propia celda, cada venta ocupaba tres
-    renglones de alto; y en una tela de 1 punto por kilo, kg y puntos son el
-    mismo número escrito dos veces."""
+def test_el_renglon_colgado_es_una_linea():
+    """Dueña 25/08/2026: *"muy finito tiene que ser"*. Con el color en negrita
+    en su propia celda, cada venta ocupaba tres renglones de alto.
+
+    ⚠ Los puntos estuvieron un día escondidos cuando eran iguales a los kilos
+    ("no me repitas info 64, 64"). Funcionaba mientras todas las telas del grupo
+    valieran 1: en un grupo MEZCLADO la columna quedaba con un solo número
+    —Lycra mostraba 707 en una fila y nada en las otras cuatro— y parecía que
+    sólo un color puntuaba (dueña 26/08/2026). Repetir un número es menos malo
+    que una columna que se lee como un error, y con todos a la vista el total
+    del grupo se puede verificar sumando."""
     from pathlib import Path
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "white-space:nowrap" in t and "tr.vlinea>td *{display:inline" in t
-    assert "{% if v.puntos | round(0) != v.kg | round(0) %}" in t, (
-        "los puntos sólo cuando dicen algo distinto de los kilos")
+    assert "white-space:nowrap" in t
+    assert "{% if v.puntos | round(0) != v.kg | round(0) %}" not in t, (
+        "volvieron a esconderse los puntos que son iguales a los kilos")
+    assert '<td class="n pts">{{ v.puntos | num_es(0) }}</td>' in t
+
+
+def test_desde_el_detalle_se_salta_a_esa_tela_en_saldos():
+    """Dueña 26/08/2026: *"dejame clickear ahí en el producto y me lleve a los
+    saldos de ese producto"*. Los filtros de Saldos viajan en la URL, así que
+    el link deja la lista filtrada por grupo, tela y color.
+
+    ⚠ El vendedor va a SU copia de la lista: `/analisis/parado` no está en su
+    allowlist y le daría 404."""
+    from pathlib import Path
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    i = t.index('class="alista"')
+    link = " ".join(t[i - 400:i].split())
+    assert "/analisis/competencia/telas' if vend" in link
+    assert "else '/analisis/parado'" in link
+    for campo in ("grupo=", "subgrupo=", "q="):
+        assert campo in link, f"el link no filtra por {campo}"
+    # los tres campos existen en el buscador de Saldos
+    parado = (Path("modules/analisis/templates/analisis/parado.html")
+              .read_text(encoding="utf-8"))
+    assert "const CAMPOS = ['q', 'grupo', 'subgrupo'" in parado
 
 
 def test_el_que_no_compite_es_la_casa():

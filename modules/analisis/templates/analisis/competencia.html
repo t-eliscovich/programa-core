@@ -87,6 +87,8 @@ tr.vdet td,tr.vdet th{overflow:hidden;text-overflow:ellipsis}
    vertical. */
 tr.vlinea>td{font-size:12px;color:var(--g);white-space:nowrap;line-height:1.6}
 tr.vlinea>td:first-child{padding-left:26px}
+tr.vlinea a.alista{color:inherit;text-decoration:none;border-bottom:1px dotted var(--l)}
+tr.vlinea a.alista:hover{color:var(--az);border-bottom-color:var(--az)}
 /* El color, como en la lista de saldos: el código en negro y el nombre al lado
    en gris. */
 tr.vlinea>td b{color:var(--t);font-weight:600;margin-right:4px}
@@ -242,18 +244,34 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
       <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
       {% for v in d.lineas %}
-        {# ⚠ Los puntos SÓLO si no son los kilos ("no me repitas info 64, 64"):
-           en una tela de 1 punto por kilo es el mismo número dos veces. #}
+        {# ⚠ Los puntos van SIEMPRE. Estuvieron un día escondidos cuando eran
+           iguales a los kilos ("no me repitas info 64, 64"), y eso funcionaba
+           mientras todas las telas del grupo valieran 1. En un grupo mezclado
+           la columna quedaba con UN solo número —Lycra mostraba 707 en una fila
+           y nada en las otras cuatro— y parecía que sólo un color puntuaba
+           (dueña 26/08/2026: "¿por qué acá los puntos se ven sólo de uno de los
+           colores?"). Repetir un número es menos malo que una columna que se
+           lee como un error, y así el total del grupo se puede verificar
+           sumando lo que está a la vista. #}
         <tr class="vlinea">
-          <td>{{ v.subcategoria }}</td>
+          {# ⭐ Y desde acá se salta a esa tela en Saldos (dueña 26/08/2026:
+             "dejame clickear ahí en el producto y me lleve a los saldos de ese
+             producto"). Los filtros de Saldos viajan en la URL, así que el link
+             deja la lista filtrada por grupo, tela y color.
+             ⚠ El vendedor va a SU copia de la lista: `/analisis/parado` no
+             está en su allowlist y le daría 404. #}
+          <td><a href="{{ '/analisis/competencia/telas' if vend
+                          else '/analisis/parado' }}?grupo={{ d.grupo | urlencode
+                          }}&subgrupo={{ v.subcategoria | urlencode
+                          }}&q={{ v.color | urlencode }}"
+                 class="alista">{{ v.subcategoria }}</a></td>
           <td><b>{{ v.color }}</b>{% if v.color_nombre %}<span
             class="g">{{ v.color_nombre }}</span>{% endif %}</td>
           <td>{{ fm.forma(v) }}</td>
           <td>{{ fm.cal(v) }}</td>
           <td class="opt">{{ v.fecha.strftime('%d/%m') if v.fecha else '—' }}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>
-          <td class="n pts">{% if v.puntos | round(0) != v.kg | round(0) %}
-            {{- v.puntos | num_es(0) }}{% endif %}</td>
+          <td class="n pts">{{ v.puntos | num_es(0) }}</td>
         </tr>
       {% endfor %}
     {% endfor %}
