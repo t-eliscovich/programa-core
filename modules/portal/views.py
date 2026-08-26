@@ -393,6 +393,58 @@ def factura_papel_cliente(numf: int):
     abort(404)
 
 
+@portal_bp.route("/mis-pagos", methods=["GET"])
+def mis_pagos():
+    """Lo que le recibimos: un recibo, no la máquina de estados.
+
+    ⭐ TMT 26/08: *"no mostremos tanto detalle, sólo fecha y recibido"*. El
+    recorrido del cheque —postergado, depositado, endosado, devuelto— es
+    trabajo nuestro; contarlo abre preguntas que él no hizo. Lo que le importa
+    de la plata está en su estado de cuenta, que es donde se discute el saldo.
+
+    En el estado de cuenta los pagos aparecen sólo mientras siguen EN CARTERA:
+    una vez depositados desaparecen de la pestaña. Acá están todos, que es lo
+    que contesta *"¿les llegó lo que les dejé?"*.
+
+    No hay una consulta nueva: sale de `estado_cuenta_cliente`, la misma
+    función que usa la oficina.
+    """
+    from modules.cheques import estados
+
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+
+    data = _cargar_estado_cuenta(cod)
+    pagos = [{**c, "que_es": _que_es(c)}
+             for c in (data.get("cheques") or [])
+             if estados.se_le_muestra_al_cliente(c.get("stat"))]
+    pagos.reverse()                       # lo último primero
+
+    return render_template("portal/pagos.html", codigo=cod, pagos=pagos,
+                           cliente=data.get("cliente") or {})
+
+
+#: Los "bancos" que no son bancos: 99 es efectivo y 90/91 son los depósitos
+#: directos (DEP.PICH.). Ver el skill de cobranza — en la tabla de cheques
+#: viven las tres cosas.
+BANCO_EFECTIVO = 99
+BANCOS_DEPOSITO = (90, 91)
+
+
+def _que_es(c: dict) -> str:
+    """Cheque, depósito o efectivo. Los tres viven en la misma tabla."""
+    try:
+        no_banco = int(c.get("no_banco") or 0)
+    except (TypeError, ValueError):
+        no_banco = 0
+    if no_banco == BANCO_EFECTIVO:
+        return "Efectivo"
+    if no_banco in BANCOS_DEPOSITO:
+        return "Depósito"
+    return "Cheque"
+
+
 @portal_bp.route("/despachos", methods=["GET"])
 def despachos():
     """Qué le mandamos y cuándo. La mercadería, al lado de su saldo.

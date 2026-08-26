@@ -84,6 +84,27 @@ ESTADOS: dict[str, Estado] = {
 }
 
 
+#: ⭐ LO QUE EL CLIENTE **NO** VE EN SU PORTAL.
+#:
+#: TMT 2026-08-26, armando "Mis pagos": *"no mostremos tanto detalle, sólo fecha
+#: y recibido"*. La pantalla del cliente es un RECIBO —qué nos entregó y
+#: cuándo—, no la máquina de estados: el recorrido del cheque (postergado,
+#: depositado, endosado, devuelto) es trabajo nuestro, y contarlo abre
+#: preguntas que él no hizo. Lo que le importa de la plata ya está en su estado
+#: de cuenta, que es donde se discute el saldo.
+#:
+#: Por eso acá no hay traducción de estados: hay una sola pregunta, si esa fila
+#: va o no va. El anulado no va — para él ese cheque no existió, y verlo
+#: listado, aunque dijera "anulado", es una pregunta que no tenía.
+NO_SE_LE_MUESTRA = frozenset({"X"})
+
+
+def se_le_muestra_al_cliente(stat: str) -> bool:
+    """¿Este pago va en la pantalla del cliente?"""
+    letra = (stat or "").upper().strip()
+    return bool(letra) and letra not in NO_SE_LE_MUESTRA
+
+
 def _familia(nombre: str) -> tuple[str, ...]:
     return tuple(e.letra for e in ESTADOS.values() if e.familia == nombre)
 

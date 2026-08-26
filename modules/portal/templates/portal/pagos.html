@@ -1,0 +1,88 @@
+{# LO QUE LE RECIBIMOS. Un recibo, no la máquina de estados.
+
+   ⭐ TMT 26/08: *"no mostremos tanto detalle, sólo fecha y recibido"*. El
+   recorrido del cheque —postergado, depositado, endosado, devuelto— es trabajo
+   nuestro, y contarlo abre preguntas que él no hizo. Lo que le importa de la
+   plata está en su estado de cuenta, que es donde se discute el saldo.
+
+   Lo último primero: vino a mirar el de la semana pasada, no el de marzo. #}
+{% extends "portal/base.html" %}
+{% block titulo %}Mis pagos — Intela{% endblock %}
+{% block cuerpo %}
+
+<header class="appbar">
+  <div class="row">
+    <div>
+      <h1>Mis pagos</h1>
+      <div class="sub">Cliente {{ codigo }} · <a href="/">Ver mi cuenta</a></div>
+    </div>
+    <a class="iconbtn salir" href="/salir" title="Salir" aria-label="Salir"></a>
+  </div>
+</header>
+
+<main>
+  {% if not pagos %}
+    <div class="card vacio">
+      <b>Todavía no tenemos ningún pago suyo cargado.</b>
+      <p>Cuando nos entregue un cheque, un depósito o efectivo, aparece acá.</p>
+    </div>
+  {% else %}
+    <div class="card">
+      <table class="ec pagos">
+        <thead>
+          <tr>
+            <th>Recibido</th>
+            <th>Qué</th>
+            <th class="der">Importe</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for p in pagos %}
+          <tr>
+            <td class="nowrap">{{ (p.dia_ingreso or p.fecha_recibido or p.fecha)|fecha_es }}</td>
+            <td class="fac">
+              <b>{{ p.que_es }}{% if p.que_es == 'Cheque' and p.no_cheque %}
+                {{ p.no_cheque|cleanstr }}{% endif %}</b>
+              {% if p.nombre_banco and p.que_es == 'Cheque' %}<small>{{ p.nombre_banco|title }}</small>{% endif %}
+            </td>
+            <td class="der nowrap">{{ p.importe|money_es }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="pie-nota">Si falta alguno, llámenos y lo miramos juntos.</p>
+  {% endif %}
+
+  <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
+</main>
+
+<style>
+  .iconbtn.salir::before{
+    content:'';width:18px;height:18px;display:block;background:var(--accent);
+    -webkit-mask:center/contain no-repeat var(--ico-salir);
+    mask:center/contain no-repeat var(--ico-salir)}
+  :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
+
+  .vacio{padding:18px 16px;font-size:14px;line-height:1.5}
+  .vacio p{margin:6px 0 0;color:var(--ink-2)}
+
+  .pagos .der{text-align:right}
+  .pagos td.fac small{display:block;color:var(--ink-3);font-size:11.5px;
+    margin-top:2px;line-height:1.4}
+  .card:has(> .ec){overflow-x:auto}
+
+  .pie-nota{font-size:13px;color:var(--ink-2);text-align:center;margin:2px 0 0}
+
+  /* El mismo ensanche que el estado de cuenta: son la misma pantalla vista de
+     otro lado y no pueden tener otro ancho. */
+  @media (min-width: 700px){
+    main{max-width:860px;padding:22px 24px 34px}
+    .appbar{padding:16px 24px 14px}
+    .appbar h1{font-size:22px}
+    .ec{font-size:14px}
+    .ec td,.ec th{padding-top:9px;padding-bottom:9px}
+  }
+</style>
+{% endblock %}

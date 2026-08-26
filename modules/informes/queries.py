@@ -7720,7 +7720,8 @@ def estado_cuenta_cliente(codigo_cli: str) -> dict:
                -- = fue postergado, snapshot de la 1ra fechad. fecha_postergacion
                -- = cuándo se postergó (última si hay varias).
                c.fechad_original, c.fecha_postergacion,
-               c.importe, c.stat, c.banco, b.nombre AS nombre_banco
+               c.importe, c.stat, c.banco, c.no_banco,
+               b.nombre AS nombre_banco
         FROM scintela.cheque c
         LEFT JOIN scintela.banco b ON b.no_banco = c.no_banco
         WHERE c.codigo_cli = %s
