@@ -174,6 +174,23 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
    del mismo tamaño y sin nombre: no se veía cuáles filtraban la tabla de abajo
    y cuáles hacían algo. Ahora los filtros van en una caja gris, cada uno con
    su rótulo arriba, y las acciones en su propio renglón. #}
+{# ⭐ LOS GRUPOS, AL COSTADO (dueña 25/08/2026: "poneme también links al
+   costado para ir pasando de categoría"). Para ver otro grupo había que abrir
+   un desplegable, buscarlo y soltarlo: ocho clicks para recorrer ocho grupos.
+   Acá se pasa de uno al otro con un click y sin perder de vista la tabla.
+   Es el MISMO filtro que el desplegable —le escribe el valor y llama a
+   `grupoCambio()`—, no un segundo camino: dos maneras de filtrar que no se
+   hablan terminan diciendo cosas distintas.
+   ⚠ En el teléfono no hay costado: pasa a ser una tira que se corre con el
+   dedo, arriba de los filtros. #}
+<div class="conlado">
+<nav class="gnav" id="gnav">
+  <a href="#" data-g="" class="on">Todos<span>{{ resumen.kg | num_es(0) }}</span></a>
+  {% for g in grupos_resumen %}
+  <a href="#" data-g="{{ g.grupo }}">{{ g.grupo }}<span>{{ g.kg | num_es(0) }}</span></a>
+  {% endfor %}
+</nav>
+<div class="conlado-main">
 <div class="filtros">
 <div class="ff"><label for="q">Buscar</label>
   <input id="q" placeholder="Tela, color, cliente, provincia…" oninput="filtrar()"></div>
@@ -364,6 +381,8 @@ bien. Van por puntos: primero lo que más conviene ir a buscar.<br>
 {% endfor %}
 </tbody>
 </table></div>
+</div>
+</div>
 
 {# ⭐ LO VENDIDO, renglón por renglón (dueña 25/08/2026: "abajo de saldos poné
    una tabla que se llame vendidos, y ponés la misma info + día vendido +
@@ -411,6 +430,21 @@ en {{ vendidos | length }} renglones ·
   </tr>
 {% endfor %}
 </tbody>
+{# ⭐ El TOTAL debajo de sus columnas (dueña 25/08/2026: "totales para la tabla
+   de vendidos"). Arriba está la cifra sola, para leerla antes de la tabla;
+   acá cae abajo de Kg y de Puntos, que es donde se la va a buscar cuando se
+   terminó de recorrer los renglones. Mismo pie que «Por grupo». #}
+<tfoot><tr>
+{# ⚠ «Total» va en la columna TELA y no en Grupo: Grupo es `opt` y en el
+   teléfono se esconde, así que el pie se quedaba sin rótulo. #}
+<td class="opt"></td>
+<td><b>Total</b> <span class="g">{% if vendidos | length != 1 %}{{ vendidos | length }} renglones{% else %}1 renglón{% endif %}</span></td>
+<td></td><td class="forma"></td><td class="cal"></td>
+<td class="n"><b>{{ vendidos | sum(attribute='kg') | num_es(0) }}</b></td>
+<td class="n"></td>
+<td class="n pts opt"><b>{{ vendidos | sum(attribute='puntos_fila') | num_es(0) }}</b></td>
+<td></td><td class="n opt"></td>
+</tr></tfoot>
 </table></div>
 {% else %}
 <p class="sub">Todavía no se vendió nada de la lista.</p>
@@ -466,6 +500,10 @@ function filtrar(){
 // qué — parece que no hay datos, y lo que hay es una combinación imposible.
 function grupoCambio(){
   const g = document.getElementById('grupo').value;
+  // El link del costado y el desplegable son el MISMO filtro: acá se marca
+  // cuál está encendido, venga de donde venga el cambio.
+  document.querySelectorAll('#gnav a').forEach(
+    a => a.classList.toggle('on', a.dataset.g === g));
   const sel = document.getElementById('subgrupo');
   let sigueValiendo = false;
   Array.from(sel.options).forEach(o => {
@@ -611,6 +649,14 @@ function bajarExcel(){
   URL.revokeObjectURL(a.href);
 }
 
-document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); filtrar(); });
+document.querySelectorAll('#gnav a').forEach(a => a.addEventListener('click', ev => {
+  ev.preventDefault();
+  document.getElementById('grupo').value = a.dataset.g;
+  grupoCambio();
+}));
+// ⚠ `grupoCambio()` y no sólo `filtrar()`: además de marcar el link, deja en
+// el desplegable de telas SÓLO las de ese grupo. Sin eso quedaba pedido un
+// subgrupo de otro grupo y la tabla salía vacía sin decir por qué.
+document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); grupoCambio(); });
 </script>
 {% endblock %}

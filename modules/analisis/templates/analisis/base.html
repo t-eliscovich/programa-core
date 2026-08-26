@@ -139,6 +139,22 @@ background:#fafafa}
 letter-spacing:.02em;text-transform:uppercase}
 .filtros input,.filtros select{width:100%}
 .filtros .cuenta{margin:0 0 6px auto;font-size:13px}
+/* ⭐ Los GRUPOS al costado. Columna angosta y pegajosa: la tabla es larga y el
+   navegador tiene que seguir a mano al llegar abajo.
+   ⚠ `min-width:0` en la columna de la tabla no es un adorno: sin eso el flex
+   la deja crecer con su contenido y la tabla ancha empuja el costado fuera de
+   la pantalla. */
+.conlado{display:flex;gap:18px;align-items:flex-start}
+.conlado-main{flex:1;min-width:0}
+.gnav{flex:0 0 172px;position:sticky;top:12px;display:flex;flex-direction:column;
+gap:2px;padding:8px;border:1px solid var(--l);border-radius:10px;background:#fafafa}
+.gnav a{display:flex;justify-content:space-between;gap:8px;align-items:baseline;
+padding:7px 9px;border-radius:7px;text-decoration:none;color:var(--t);
+font-size:13.5px;white-space:nowrap}
+.gnav a span{color:var(--g);font-size:12px;font-variant-numeric:tabular-nums}
+.gnav a:hover{background:#f1f5f9}
+.gnav a.on{background:var(--az);color:#fff;font-weight:600}
+.gnav a.on span{color:#dbeafe}
 .plegable>summary{cursor:pointer;list-style:none;padding:14px 0 0;
 border-top:1px solid var(--l);margin-top:30px}
 .plegable>summary::-webkit-details-marker{display:none}
@@ -246,6 +262,14 @@ font-size:12px;color:var(--g)}
   .filtros .ff:first-child{flex:1 1 100%}
   .filtros input,.filtros select{font-size:16px;max-width:none}
   .filtros .cuenta{flex:1 1 100%;margin:0}
+  /* ⚠ En el teléfono NO hay costado: la columna se acuesta y se convierte en
+     una tira que se corre con el dedo. Con `flex-direction:column` a 390 px
+     eran nueve renglones de menú antes de ver la primera tela. */
+  .conlado{display:block}
+  .gnav{position:static;flex-direction:row;overflow-x:auto;gap:6px;
+  padding:6px;margin-bottom:10px;-webkit-overflow-scrolling:touch}
+  .gnav a{flex:0 0 auto;font-size:13px;padding:6px 10px}
+  .gnav a span{display:none}
   table{font-size:13px}
   th,td{padding:6px 5px}
   tr.det>td{padding-left:10px}

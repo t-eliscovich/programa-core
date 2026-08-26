@@ -3525,3 +3525,39 @@ def test_los_filtros_entran_en_un_telefono():
     assert ".filtros .ff{min-width:0;flex:1 1 calc(50% - 4px)}" in movil
     assert ".filtros .ff:first-child{flex:1 1 100%}" in movil
     assert ".filtros input,.filtros select{font-size:16px" in movil
+
+
+def test_los_grupos_tienen_links_al_costado():
+    """Dueña 25/08/2026: *"poneme también links al costado para ir pasando de
+    categoría"*. Para ver otro grupo había que abrir un desplegable, buscarlo y
+    soltarlo: ocho clicks para recorrer ocho grupos.
+
+    ⚠ Es el MISMO filtro que el desplegable —le escribe el valor y llama a
+    `grupoCambio()`—, no un segundo camino. Dos maneras de filtrar que no se
+    hablan terminan mostrando cosas distintas."""
+    html = _html_parado()
+    assert '<nav class="gnav" id="gnav">' in html
+    assert 'for g in grupos_resumen' in html[html.index('id="gnav"'):
+                                             html.index('</nav>')]
+    js = html[html.index("{% block scripts %}"):]
+    assert "document.getElementById('grupo').value = a.dataset.g" in js, (
+        "el link no escribe el filtro: sería un segundo camino")
+    assert "grupoCambio();" in js
+    assert "a.classList.toggle('on', a.dataset.g === g)" in js, (
+        "el link no se marca cuando el filtro cambia desde el desplegable")
+
+
+def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
+    """Dueña 25/08/2026: *"totales para la tabla de vendidos"*. Arriba está la
+    cifra sola; acá cae debajo de Kg y de Puntos, que es donde se la busca
+    cuando se terminó de recorrer los renglones.
+
+    ⚠ El rótulo «Total» va en la columna Tela y no en Grupo: Grupo es `opt` y
+    en el teléfono se esconde."""
+    html = _html_parado()
+    tabla = html[html.index('id="vendidos"'):]
+    pie = tabla[tabla.index("<tfoot>"):tabla.index("</tfoot>")]
+    assert "vendidos | sum(attribute='kg')" in pie
+    assert "vendidos | sum(attribute='puntos_fila')" in pie
+    assert pie.count("<td") == 10, "el pie tiene que tener las 10 columnas"
+    assert '<td class="opt"></td>\n<td><b>Total</b>' in pie
