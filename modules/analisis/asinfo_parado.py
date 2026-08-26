@@ -661,11 +661,21 @@ GROUP BY pr.nombre_categoria_producto, {_VENDEDOR}
 # lote — los slots no siguen el número del atributo (medido el 25/08/2026). Se
 # filtra por el CÓDIGO del valor y no por su id: si mañana el slot cambia, esto
 # deja de encontrarlo y da vacío, no confunde una cosa con otra.
+# ⭐ UNA TELA ES TUBULAR O ABIERTA, NUNCA LAS DOS (dueña 25/08/2026: "telas no
+# pueden ser tub y abi al mismo tiempo"). Y tiene razón: medido el 25/08 sobre
+# la bodega 53, en cada tela × color que figuraba con las dos, la forma
+# minoritaria era el 0-4% de los lotes (Fleece 96 Perchado NEG: 1.296 abiertos
+# contra 36.878 tubulares). No son dos formas, son lotes mal marcados.
+#
+# ⚠ Por eso se cuentan los lotes de cada forma en vez de una bandera SÍ/NO:
+# gana la mayoría y la fila muestra UNA sigla. Con la bandera, un solo lote mal
+# marcado entre 24.000 alcanzaba para que la pantalla dijera "TUB ABI" —y salir
+# a ofrecer "de las dos" es prometer algo que no está.
 SQL_FORMA = f"""
 SELECT p.nombre_subcategoria_producto AS subcategoria,
        RIGHT(RTRIM(p.codigo), 3)      AS color,
-       MAX(CASE WHEN t.codigo = 'TUB' THEN 1 ELSE 0 END) AS tub,
-       MAX(CASE WHEN t.codigo = 'ABI' THEN 1 ELSE 0 END) AS abi
+       SUM(CASE WHEN t.codigo = 'TUB' THEN 1 ELSE 0 END) AS tub,
+       SUM(CASE WHEN t.codigo = 'ABI' THEN 1 ELSE 0 END) AS abi
 FROM (SELECT DISTINCT id_producto, id_lote FROM saldo_producto_lote
        WHERE id_bodega = {BODEGA_TERMINADO}) s
 JOIN producto p ON p.id_producto = s.id_producto
@@ -728,22 +738,28 @@ def vendido_desde(desde: str) -> list[dict]:
 
 
 def formas() -> dict[tuple[str, str], str]:
-    """`{(tela, color): 'TUB' | 'ABI' | 'TUB ABI'}`.
+    """`{(tela, color): 'TUB' | 'ABI'}` — UNA sola, la de la mayoría de los lotes.
 
     Sale de todos los lotes que pasaron por la bodega, con saldo o sin él: es la
     forma de la TELA, no la del stock de hoy. La que no tiene ni un lote con el
     atributo cargado no entra al diccionario —y la pantalla, en vez de mentir,
     sigue mostrando lo que sabe.
+
+    ⭐ Nunca devuelve las dos (dueña 25/08/2026: "telas no pueden ser tub y abi
+    al mismo tiempo"). Ver el comentario de `SQL_FORMA`: donde figuraban las
+    dos, la minoritaria era el 0-4% de los lotes — están mal marcados.
     """
     out: dict[tuple[str, str], str] = {}
     for f in _filas(SQL_FORMA):
         clave = (f.get("subcategoria"), f.get("color"))
         if not clave[0]:
             continue
-        forma = " ".join(x for x, hay in (("TUB", f.get("tub")),
-                                          ("ABI", f.get("abi"))) if int(hay or 0))
-        if forma:
-            out[clave] = forma
+        tub, abi = int(f.get("tub") or 0), int(f.get("abi") or 0)
+        if not tub and not abi:
+            continue
+        # Gana la mayoría. El empate exacto es tan raro que no vale una regla
+        # propia: se queda con tubular, que es el 96% de la bodega.
+        out[clave] = "TUB" if tub >= abi else "ABI"
     return out
 
 

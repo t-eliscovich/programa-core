@@ -30,8 +30,9 @@
     y ahí el "—" no era un dato, era una laguna. -#}
 {%- if f.forma_fila is defined -%}
   {%- set txt = f.forma_fila or f.forma | default('', true) -%}
-{%- elif f.kg_tubular and f.kg_abierta -%}
-  {%- set txt = 'TUB ABI' -%}
+{#- ⚠ NO hay caso «las dos»: una tela es tubular o abierta (dueña 25/08/2026).
+    Donde figuraban las dos, la minoritaria era el 0-4% de los lotes: están mal
+    marcados. El refresco dobla esos kilos sobre la forma que manda. -#}
 {%- elif f.kg_tubular -%}
   {%- set txt = 'TUB' -%}
 {%- elif f.kg_abierta -%}

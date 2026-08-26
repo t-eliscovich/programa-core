@@ -2478,11 +2478,19 @@ def test_la_forma_sale_del_lote_y_no_separa_los_kilos():
 
 
 def test_la_forma_se_resuelve_una_sola_vez_en_la_consulta():
-    """TUB, ABI, las dos o vacío. Se arma en el SQL y no en cada plantilla: la
-    pantalla y la hoja impresa tienen que decir lo mismo."""
+    """TUB, ABI o vacío. Se arma en el SQL y no en cada plantilla: la pantalla y
+    la hoja impresa tienen que decir lo mismo.
+
+    ⭐ Y NUNCA las dos (dueña 25/08/2026: "telas no pueden ser tub y abi al
+    mismo tiempo"). Medido ese día contra la bodega 53: en cada tela × color
+    que figuraba con las dos, la forma minoritaria era el 0-4% de los lotes
+    —Fleece 96 Perchado NEG, 1.296 abiertos contra 36.878 tubulares—. Son lotes
+    mal marcados, no dos formas."""
     import inspect as _i
     fuente = " ".join(_i.getsource(queries.items).split())
-    assert "THEN 'TUB ABI'" in fuente
+    assert "TUB ABI" not in fuente, (
+        "volvió el caso mezclado: sostiene que una tela puede ser tubular y "
+        "abierta a la vez")
     assert "THEN 'TUB'" in fuente and "THEN 'ABI'" in fuente
     assert "AS forma" in fuente
 
@@ -2570,25 +2578,58 @@ def test_lo_que_no_cuadra_entre_las_dos_tablas_va_en_su_propia_linea():
     assert len(chico) == 2
 
 
-def test_cuando_hay_de_las_dos_formas_se_dicen_los_kilos_de_cada_una():
-    """⭐ Dueña 25/08/2026: "si hay tubular y abierta, quiero saber cuantas de
-    tubular y cuantos de abierta. no es lo mismo".
+def test_la_fila_dice_UNA_forma_y_nunca_las_dos():
+    """⭐ Dueña 25/08/2026: *"telas no pueden ser tub y abi al mismo tiempo"*.
 
-    Con una sola forma alcanza la sigla —los kilos de la fila son todos de
-    ésa—; con las dos, el total de la fila no dice cuánto hay de cada una, y
-    salir a ofrecer 200 kg "de las dos" es prometer algo que puede no estar.
+    Antes la fila decía «TUB ABI» cuando el ítem tenía lotes de las dos, y se
+    partía en dos renglones. Medido ese día contra la bodega 53: en cada tela ×
+    color que figuraba con las dos, la forma minoritaria era el 0-4% de los
+    lotes —Fleece 96 Perchado NEG, 1.296 abiertos contra 36.878 tubulares—.
+    Son lotes mal marcados. Ahora `formas()` elige la mayoría y el refresco
+    dobla los kilos de la otra sobre ella, así que este caso no llega ni al
+    macro; si llegara —datos viejos, sin refrescar— manda el tubular y NO se
+    dicen las dos.
+
+    ⚠ La sigla y NADA de kilos: los kilos de la línea están en su columna.
+    "TUB 422" al lado de un renglón de 171 kg son dos números que no cierran.
     """
-    # ⚠ La sigla y NADA de kilos: los kilos de la línea están en su columna.
-    # "TUB 422" al lado de un renglón de 171 kg son dos números que no cierran
-    # — pasó en vivo el 25/08/2026 con los ítems que entran sólo por su segunda.
     con_dos = _forma(kg_tubular=120, kg_abierta=51)
-    assert "TUB" in con_dos and "ABI" in con_dos
-    assert "120" not in con_dos and "51" not in con_dos
+    assert con_dos == '<span class="fm">TUB</span>', (
+        "la fila volvió a decir las dos formas")
 
     assert _forma(kg_tubular=200, kg_abierta=0) == '<span class="fm">TUB</span>'
     assert _forma(kg_tubular=0, kg_abierta=200) == '<span class="fm">ABI</span>'
     # el lote que no lo dice no inventa una forma
     assert "—" in _forma(kg_tubular=0, kg_abierta=0)
+
+
+def test_la_forma_de_la_tela_sale_de_la_mayoria_de_los_lotes():
+    """`formas()` devuelve UNA sigla: la que tienen más lotes. Con una bandera
+    SÍ/NO, un solo lote mal marcado entre 24.000 alcanzaba para que la fila
+    dijera las dos."""
+    llamadas = {}
+
+    def falso(sql):
+        llamadas["sql"] = sql
+        return [
+            {"subcategoria": "Fleece 96 Perchado", "color": "NEG",
+             "tub": 36878, "abi": 1296},
+            {"subcategoria": "Lluvia", "color": "MAR", "tub": 2, "abi": 900},
+            {"subcategoria": "Sin lotes", "color": "XXX", "tub": 0, "abi": 0},
+        ]
+
+    import modules.analisis.asinfo_parado as ap
+    viejo = ap._filas
+    ap._filas = falso
+    try:
+        out = ap.formas()
+    finally:
+        ap._filas = viejo
+    assert out[("Fleece 96 Perchado", "NEG")] == "TUB"
+    assert out[("Lluvia", "MAR")] == "ABI"
+    assert ("Sin lotes", "XXX") not in out, "sin lotes marcados no se inventa forma"
+    assert "SUM(CASE WHEN t.codigo = 'TUB'" in llamadas["sql"], (
+        "volvió la bandera SÍ/NO: un lote mal marcado vuelve a mandar")
 
 
 def test_la_forma_se_dibuja_con_UN_macro_en_las_dos_pantallas():

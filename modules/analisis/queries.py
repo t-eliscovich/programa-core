@@ -89,9 +89,12 @@ def items(conn=None) -> list[dict]:
                -- de todos sus lotes. Sin eso, la que se vendió entera —o la que
                -- tiene el lote sin el atributo— mostraba "—", y toda tela
                -- terminada es tubular o abierta (dueña 25/08/2026).
-               CASE WHEN COALESCE(f.kg_tubular, 0) > 0
-                     AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
-                    WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+               -- ⚠ NO hay caso «las dos»: una tela es tubular o abierta
+               -- (dueña 25/08/2026). El refresco ya dobló los kilos de la
+               -- forma minoritaria sobre la que manda, así que estas dos
+               -- columnas no pueden ser las dos mayores que cero. Sostener
+               -- acá el caso mezclado sería decir que puede pasar.
+               CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                     WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
                     ELSE COALESCE(f.forma, '') END     AS forma,
                f.motivo,
@@ -756,6 +759,37 @@ def actualizar() -> dict:
     # la tela vendida entera no tiene lote con saldo que mirar.
     forma_de = asinfo_parado.formas()
 
+    def _una_sola_forma(p: dict) -> dict:
+        """Los kilos de la forma minoritaria pasan a la que manda.
+
+        ⭐ Dueña 25/08/2026: *"telas no pueden ser tub y abi al mismo tiempo"*.
+        `formas()` ya elige una sola sigla para la fila, pero los kilos venían
+        abiertos en cuatro (tub/abi × pri/seg) y con eso la lista partía la fila
+        en DOS renglones —uno tubular y otro abierto— de la misma tela. Un
+        renglón de 3 kg abiertos que en realidad son lotes mal marcados no es
+        una fila de la lista: es ruido con el que nadie puede salir a vender.
+
+        Los kilos no se pierden, se mudan: el total de la fila no cambia y la
+        apertura por PRI/SEG —que sí es real— se mantiene.
+        """
+        forma = forma_de.get((p["subcategoria"], p["color"]))
+        if forma not in ("TUB", "ABI"):
+            return p
+        de, a = ("abi", "tub") if forma == "TUB" else ("tub", "abi")
+        for cal in ("pri", "seg"):
+            sobra = float(p.get(f"kg_{de}_{cal}") or 0)
+            if sobra:
+                p[f"kg_{a}_{cal}"] = float(p.get(f"kg_{a}_{cal}") or 0) + sobra
+                p[f"kg_{de}_{cal}"] = 0
+        junto = float(p.get("kg_tubular") or 0) + float(p.get("kg_abierta") or 0)
+        if forma == "TUB":
+            p["kg_tubular"], p["kg_abierta"] = junto, 0
+        else:
+            p["kg_abierta"], p["kg_tubular"] = junto, 0
+        return p
+
+    todas = [_una_sola_forma(p) for p in todas]
+
     # ⭐ NI LA RECIÉN HECHA, NI LA PEDIDA, NI LA QUE SE SIGUE TEJIENDO SON TELA
     # PARADA (dueña 25/08/2026: "no es saldo si se seguía produciendo ese color
     # x tela").
@@ -1229,9 +1263,7 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   -- tienen que ser columnas").
                   COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                     AS color_nombre,
-                  MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0
-                            AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
-                           WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                  MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                            WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
                            ELSE COALESCE(f.forma, '') END) AS forma_fila
              FROM scintela.parado_venta v
@@ -1297,9 +1329,7 @@ def vendidos(desde) -> list[dict]:
                -- que es la forma de lo que HAY, no la de lo que salió. Cuando
                -- la tela se vendió entera no queda rollo que mirar y la columna
                -- dice "—": preferible a inventar una sigla.
-               MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0
-                         AND COALESCE(f.kg_abierta, 0) > 0 THEN 'TUB ABI'
-                        WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+               MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                         WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
                         ELSE COALESCE(f.forma, '') END)    AS forma_fila,
                SUM(v.kg)                                   AS kg,
