@@ -2,10 +2,16 @@
 
 Un solo camino, sin ramas (`PLAN_PORTAL_CLIENTE_2026_08_24.md`):
 
-    /ingresar        código + clave — la primera vez, código + RUC
+    /ingresar        RUC + clave — la primera vez, 6 números al correo
+    /codigo          los 6 números que llegaron por correo
     /elegir-clave    elige su clave y confirma su correo
+    /mis-cuentas     si su RUC cae en dos fichas, cuál está mirando
     /                lo que ve adentro
     /salir
+
+⭐ **El usuario es el RUC** (TMT 26/08/2026: *"los clientes no se saben su
+código de cliente"*). El código de 3 letras sigue entrando por el mismo campo
+para el que lo sepa. El porqué, medido, está en `acceso.py`.
 
 ⚠ La sesión del cliente vive en una llave PROPIA (`portal_cliente`), separada
 de la de los empleados (`user_id`). No se mezclan a propósito: en este proceso
@@ -36,6 +42,11 @@ portal_bp = Blueprint("portal", __name__, url_prefix="",
 #: este proceso vino a evitar.
 LLAVE = "portal_cliente"
 
+#: Las cuentas que abrió el RUC con el que entró. Con una sola no se usa; con
+#: dos es la lista contra la que se valida el cambio de cuenta, para que nadie
+#: se pase a una que su RUC no abre escribiéndola en la URL.
+CUENTAS = "portal_cuentas"
+
 
 @portal_bp.app_context_processor
 def _comunes():
@@ -48,6 +59,9 @@ def _comunes():
         # las vencidas. Con un string eso no da False — LEVANTA, y se cae la
         # pantalla entera. Para mostrarla, `{{ hoy|fecha_es }}`.
         "hoy": today_ec(),
+        # Las cuentas que abrió su RUC. Con una sola nadie las mira; con dos,
+        # el encabezado le ofrece cambiar. Ver `mis_cuentas`.
+        "cuentas_del_cliente": session.get(CUENTAS) or [],
         "csrf_token_input": Markup(
             f'<input type="hidden" name="csrf_token" value="{generate_csrf()}">'),
     }
@@ -80,27 +94,52 @@ def ingresar():
     if request.method == "GET":
         if cliente_actual():
             return redirect(url_for("portal.inicio"))
-        return render_template("portal/ingreso.html", codigo="")
+        return render_template("portal/ingreso.html", identificador="")
 
-    codigo = (request.form.get("codigo") or "").strip()
-    secreto = request.form.get("secreto") or ""
+    quien = (request.form.get("identificador") or "").strip()
+    clave = request.form.get("clave") or ""
     ip, navegador = _de_donde()
-    r = acceso.entrar(codigo, secreto, ip=ip, navegador=navegador)
+    r = acceso.entrar(quien, clave, ip=ip, navegador=navegador)
+
+    if r["primera_vez"]:
+        # Nunca eligió clave. No se le dice "clave mala": se le manda el código
+        # al correo que ya teníamos y sigue por ahí. Es el mismo camino que
+        # "olvidé mi clave", así que hay una sola puerta que cuidar.
+        return _mandar_y_pedir_el_codigo(r["codigo_cli"], quien)
 
     if not r["ok"]:
         flash(r["mensaje"], "error")
-        # El código se devuelve para no hacerlo escribir de nuevo; la clave no.
-        return render_template("portal/ingreso.html",
-                               codigo=acceso.normalizar_codigo(codigo)), 401
+        # El RUC se devuelve para no hacerlo escribir de nuevo; la clave no.
+        return render_template("portal/ingreso.html", identificador=quien), 401
 
-    # Sesión nueva y limpia en cada ingreso: si quedaba algo de antes, se va.
+    return _adentro(r["codigo_cli"], r["cuentas"])
+
+
+def _adentro(codigo_cli: str, cuentas: list):
+    """Abre la sesión del cliente y lo manda a lo que vino a ver.
+
+    Sesión nueva y limpia en cada ingreso: si quedaba algo de antes, se va.
+    """
     session.clear()
-    session[LLAVE] = r["codigo_cli"]
+    session[LLAVE] = codigo_cli
+    session[CUENTAS] = [{"codigo_cli": c["codigo_cli"], "nombre": c.get("nombre") or ""}
+                        for c in (cuentas or [])]
     session.permanent = True
-
-    if r["elegir_clave"]:
-        return redirect(url_for("portal.elegir_clave"))
+    if len(session[CUENTAS]) > 1:
+        # Su RUC cae en dos fichas: elige él cuál mira. Elegir por él sería
+        # mostrarle media deuda sin decírselo.
+        return redirect(url_for("portal.mis_cuentas"))
     return redirect(url_for("portal.inicio"))
+
+
+def _mandar_y_pedir_el_codigo(codigo_cli: str, escrito: str):
+    """Le manda los 6 números y muestra la pantalla donde los escribe."""
+    seis, mail = acceso.pedir_codigo(codigo_cli)
+    if seis:
+        _mandar_el_codigo(seis, mail)
+    flash(acceso.MANDADO, "ok")
+    return render_template("portal/codigo.html", identificador=escrito,
+                           minutos=acceso.MINUTOS_CODIGO)
 
 
 @portal_bp.route("/elegir-clave", methods=["GET", "POST"])
@@ -111,7 +150,9 @@ def elegir_clave():
 
     fic = acceso.cliente(cod) or {}
     acc = acceso.acceso(cod) or {}
-    mail_previo = (acc.get("mail") or "").strip()
+    # Si todavía no cargó ninguno, se le muestra el que usamos para mandarle
+    # los 6 números: es el que tenemos, y ahí mismo lo corrige si es viejo.
+    mail_previo = (acc.get("mail") or "").strip() or acceso.ultimo_mail_usado(cod)
 
     if request.method == "GET":
         return render_template("portal/elegir_clave.html",
@@ -156,23 +197,24 @@ def elegir_clave():
 @limiter.limit("6 per minute; 30 per hour", methods=["POST"])
 def olvide_la_clave():
     if request.method == "GET":
-        return render_template("portal/olvide.html", codigo="")
+        return render_template("portal/olvide.html", identificador="")
 
-    codigo = (request.form.get("codigo") or "").strip()
-    seis, mail = acceso.pedir_codigo(codigo)
-    if seis:
-        _mandar_el_codigo(codigo, seis, mail)
+    quien = (request.form.get("identificador") or "").strip()
+    cuentas = acceso.cuentas_de(quien)
+    if cuentas:
+        seis, mail = acceso.pedir_codigo(acceso.cuenta_con_la_clave(cuentas))
+        if seis:
+            _mandar_el_codigo(seis, mail)
 
     # ⭐ La MISMA respuesta exista o no el cliente, y tenga o no correo. Si
     # dijera "ese cliente no tiene correo", esta pantalla sería un buscador de
-    # códigos de cliente reales — y el código son sólo 3 letras.
+    # clientes reales.
     flash(acceso.MANDADO, "ok")
-    return render_template("portal/codigo.html",
-                           codigo=acceso.normalizar_codigo(codigo),
+    return render_template("portal/codigo.html", identificador=quien,
                            minutos=acceso.MINUTOS_CODIGO)
 
 
-def _mandar_el_codigo(codigo: str, seis: str, mail: str) -> None:
+def _mandar_el_codigo(seis: str, mail: str) -> None:
     """Manda el código por correo. Nunca rompe la pantalla.
 
     Si el mail no sale, el cliente ve el mismo mensaje de siempre y puede
@@ -192,24 +234,60 @@ def _mandar_el_codigo(codigo: str, seis: str, mail: str) -> None:
 @portal_bp.route("/codigo", methods=["POST"])
 @limiter.limit("10 per minute; 40 per hour")
 def codigo():
-    """El código de 6 números que llegó por correo."""
-    cod = acceso.normalizar_codigo(request.form.get("codigo") or "")
+    """El código de 6 números que llegó por correo.
+
+    ⚠ Lo que viaja en la pantalla es lo que el cliente ESCRIBIÓ (su RUC), no el
+    código de 3 letras: si viajara el nuestro, quien tipeara un RUC cualquiera
+    lo leería en el HTML y la pantalla sería una tabla de equivalencias.
+    """
+    quien = (request.form.get("identificador") or "").strip()
     seis = request.form.get("seis") or ""
     ip, navegador = _de_donde()
+    cuentas = acceso.cuentas_de(quien)
+    cod = acceso.cuenta_con_la_clave(cuentas)
 
-    if not acceso.usar_codigo(cod, seis):
-        acceso.anotar(cod, "codigo_malo", "codigo", ip, navegador)
+    if not cod or not acceso.usar_codigo(cod, seis):
+        acceso.anotar(cod or acceso.normalizar_codigo(quien)[:40],
+                      "codigo_malo", "codigo", ip, navegador)
         flash("Ese código no sirve. Puede estar vencido o ya usado.", "error")
-        return render_template("portal/codigo.html", codigo=cod,
+        return render_template("portal/codigo.html", identificador=quien,
                                minutos=acceso.MINUTOS_CODIGO), 401
 
     acceso.anotar(cod, "ok", "codigo", ip, navegador)
     session.clear()
     session[LLAVE] = cod
+    session[CUENTAS] = [{"codigo_cli": c["codigo_cli"], "nombre": c.get("nombre") or ""}
+                        for c in cuentas]
     session.permanent = True
     # Entró con el correo, no con la clave: lo que sigue es elegir una nueva.
     flash("Elegí una clave nueva.", "ok")
     return redirect(url_for("portal.elegir_clave"))
+
+
+@portal_bp.route("/mis-cuentas", methods=["GET", "POST"])
+def mis_cuentas():
+    """Cuál de sus cuentas está mirando, cuando su RUC cae en dos fichas.
+
+    Un caso real y uno solo: AJO y AJ2, Almacenes José Puebla, la misma empresa
+    cargada dos veces. Mostrarle una sola sería mostrarle media deuda.
+
+    ⚠ Sólo se puede saltar a una cuenta que esté EN LA SESIÓN, o sea que la
+    abrió el mismo RUC con el que entró. Escribir otro código en el formulario
+    no lleva a ningún lado.
+    """
+    if not cliente_actual():
+        return _pedir_entrar()
+    cuentas = session.get(CUENTAS) or []
+
+    if request.method == "POST":
+        elegida = acceso.normalizar_codigo(request.form.get("codigo_cli") or "")
+        if elegida not in {c["codigo_cli"] for c in cuentas}:
+            return _pedir_entrar()
+        session[LLAVE] = elegida
+        return redirect(url_for("portal.inicio"))
+
+    return render_template("portal/cuentas.html", cuentas=cuentas,
+                           actual=cliente_actual())
 
 
 @portal_bp.route("/salir", methods=["GET", "POST"])

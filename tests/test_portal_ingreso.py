@@ -1,15 +1,17 @@
 """Cómo entra el cliente al portal.
 
-TMT 2026-08-24, `PLAN_PORTAL_CLIENTE_2026_08_24.md`. Un solo camino:
+TMT 2026-08-26. Un solo camino:
 
-    código de 3 letras + RUC  →  elige su clave  →  entra
-    después:  código + su clave
+    RUC  →  6 números al correo que ya teníamos  →  elige su clave  →  entra
+    después:  RUC + su clave
 
-⚠ **El riesgo que se acepta a propósito**: código y RUC son los dos públicos
-—el RUC está en cada factura y en el SRI—, así que alguien con una factura
-vieja puede entrar antes que el cliente. Lo que lo frena es que el vendedor lo
-ve enseguida y le corta el acceso. Por eso lo que SÍ se testea acá es que quede
-rastro de todo y que no se pueda averiguar nada probando.
+⭐ **El usuario es el RUC** porque el cliente no se sabe su código de 3 letras
+(que es una llave nuestra, no de él). El código igual sigue entrando por el
+mismo campo: no se le sacó nada a nadie.
+
+⭐ Y por eso la primera vez YA NO alcanza con el RUC: si el usuario es público
+y el secreto es el mismo dato público, no hay secreto. Los 6 números van al
+correo que YA teníamos cargado — el cliente no elige la dirección.
 
 Los de base necesitan un Postgres descartable (`PG_PORTAL_DSN`):
 
@@ -105,11 +107,20 @@ def test_el_codigo_de_seis_es_de_seis_y_no_es_random():
 
 
 def test_el_mensaje_de_error_es_siempre_el_mismo():
-    """⭐ Si dijera 'ese código no existe' contra 'la clave está mal',
-    cualquiera podría averiguar qué códigos de cliente son reales probando de a
-    uno — y el código son 3 letras, o sea 17.576 pruebas."""
-    assert "código o la clave" in acceso.NO_ENTRO
+    """⭐ Si dijera 'ese cliente no existe' contra 'la clave está mal',
+    cualquiera podría averiguar qué RUC son clientes de Intela probando de a
+    uno."""
+    assert "RUC o la clave" in acceso.NO_ENTRO
     assert "no existe" not in acceso.NO_ENTRO.lower()
+
+
+def test_lo_que_escribe_se_lee_como_RUC_o_como_codigo():
+    """El campo es uno solo. Lo que decide es si trae números: un código de
+    cliente son letras, y ningún RUC entra en 3 letras."""
+    assert acceso.parece_ruc("1791234567001") is True
+    assert acceso.parece_ruc("179-123.4567 001") is True
+    assert acceso.parece_ruc("ATE") is False
+    assert acceso.parece_ruc("") is False
 
 
 # ---------------------------------------------------------------------------
@@ -166,62 +177,96 @@ def _intentos(cn, codigo="ATE"):
     return c.fetchall()
 
 
+def _alta(identificador="ATE"):
+    """El primer intento del cliente: existe, y todavía no tiene clave."""
+    return acceso.entrar(identificador, "")
+
+
+def _con_clave(clave="miclave123"):
+    _alta()
+    acceso.guardar_clave("ATE", clave)
+
+
 @sin_pg
-def test_la_primera_vez_entra_con_el_ruc(base):
-    r = acceso.entrar("ate", "1791234567001")
-    assert r["ok"] is True
+def test_el_RUC_encuentra_al_cliente(base):
+    """⭐ Lo que el cliente sí sabe. Está impreso en cada factura suya."""
+    assert [c["codigo_cli"] for c in acceso.cuentas_de("1791234567001")] == ["ATE"]
+
+
+@sin_pg
+def test_la_cedula_pelada_encuentra_al_mismo(base):
+    """La ficha a veces tiene la cédula y el cliente escribe el RUC entero, o
+    al revés. Los 10 primeros dígitos hacen que las dos formas coincidan."""
+    assert [c["codigo_cli"] for c in acceso.cuentas_de("1791234567")] == ["ATE"]
+
+
+@sin_pg
+def test_el_codigo_de_tres_letras_sigue_entrando(base):
+    """No se le sacó nada al que ya lo sabe — la oficina y el vendedor lo usan."""
+    assert [c["codigo_cli"] for c in acceso.cuentas_de(" ate ")] == ["ATE"]
+
+
+@sin_pg
+def test_un_RUC_que_no_es_de_nadie_no_abre_nada(base):
+    assert acceso.cuentas_de("0999999999001") == []
+
+
+@sin_pg
+def test_la_primera_vez_NO_entra_todavia(base):
+    """⭐ El corazón del cambio: sin clave elegida no se entra, se manda el
+    código al correo. Si el RUC abriera solo, el usuario y el secreto serían el
+    mismo dato público."""
+    r = acceso.entrar("1791234567001", "")
+    assert r["ok"] is False
+    assert r["primera_vez"] is True
     assert r["codigo_cli"] == "ATE"
-    assert r["elegir_clave"] is True, "sin clave, la pantalla siguiente es elegirla"
-    assert _intentos(base)[-1] == ("ok", "ruc")
+    assert _intentos(base)[-1][0] == "primera_vez"
 
 
 @sin_pg
-def test_la_cedula_pelada_tambien_entra(base):
-    assert acceso.entrar("ATE", "1791234567")["ok"] is True
+def test_la_primera_vez_no_cuenta_como_intento_fallido(base):
+    """No es un error del cliente: es el camino normal. Si sumara intentos, el
+    cliente nuevo se trabaría solo antes de recibir el correo."""
+    for _ in range(acceso.TOPE_INTENTOS + 2):
+        acceso.entrar("1791234567001", "")
+    c = base.cursor()
+    c.execute("SELECT intentos_fallidos, bloqueado_hasta FROM scintela.portal_acceso "
+              " WHERE codigo_cli='ATE'")
+    assert c.fetchone() == (0, None)
 
 
 @sin_pg
-def test_con_el_ruc_de_otro_no_entra(base):
-    r = acceso.entrar("ATE", "0999999999001")
-    assert r["ok"] is False
-    assert r["mensaje"] == acceso.NO_ENTRO
-    assert _intentos(base)[-1] == ("ruc_malo", "ruc")
+def test_el_RUC_NUNCA_ABRE_por_si_solo(base):
+    """⭐ Ni antes ni después de elegir la clave. El RUC dice QUIÉN es, no que
+    sea él."""
+    _con_clave()
+    assert acceso.entrar("1791234567001", "miclave123")["ok"] is True
+    assert acceso.entrar("1791234567001", "1791234567001")["ok"] is False
 
 
 @sin_pg
-def test_desde_que_elige_la_clave_el_RUC_YA_NO_ABRE(base):
-    """⭐ El punto de todo el diseño. El RUC sirve para el primer ingreso; si
-    siguiera abriendo, la clave sería un adorno."""
-    acceso.entrar("ATE", "1791234567001")
-    ok, _ = acceso.guardar_clave("ATE", "miclave123")
-    assert ok
-
-    assert acceso.entrar("ATE", "miclave123")["ok"] is True
-    assert acceso.entrar("ATE", "1791234567001")["ok"] is False
+def test_con_la_clave_puesta_ya_no_es_la_primera_vez(base):
+    _con_clave()
+    assert acceso.entrar("1791234567001", "miclave123")["primera_vez"] is False
 
 
 @sin_pg
-def test_al_entrar_con_la_clave_ya_no_pide_elegirla(base):
-    acceso.entrar("ATE", "1791234567001")
-    acceso.guardar_clave("ATE", "miclave123")
-    assert acceso.entrar("ATE", "miclave123")["elegir_clave"] is False
-
-
-@sin_pg
-def test_un_codigo_que_no_existe_da_el_MISMO_mensaje(base):
-    """Y queda anotado igual: muchos intentos contra códigos inexistentes es
+def test_un_cliente_que_no_existe_da_el_MISMO_mensaje(base):
+    """Y queda anotado igual: muchos intentos contra RUC inexistentes es
     alguien probando de a uno, y eso se tiene que poder ver."""
-    r = acceso.entrar("ZZZ", "1791234567001")
+    r = acceso.entrar("ZZZ", "loquesea")
     assert r["ok"] is False
+    assert r["primera_vez"] is False
     assert r["mensaje"] == acceso.NO_ENTRO
     assert _intentos(base, "ZZZ")[-1][0] == "no_existe"
 
 
 @sin_pg
 def test_a_los_cinco_intentos_se_traba(base):
+    _con_clave()
     for _ in range(acceso.TOPE_INTENTOS):
-        assert acceso.entrar("ATE", "0000000000")["ok"] is False
-    r = acceso.entrar("ATE", "1791234567001")   # ahora SÍ es el RUC bueno
+        assert acceso.entrar("1791234567001", "no-es")["ok"] is False
+    r = acceso.entrar("1791234567001", "miclave123")   # ahora SÍ es la buena
     assert r["ok"] is False
     assert "Esperá" in r["mensaje"], "trabado tiene que decir cuánto falta"
     assert _intentos(base)[-1][0] == "trabado"
@@ -231,26 +276,68 @@ def test_a_los_cinco_intentos_se_traba(base):
 def test_elegir_la_clave_destraba(base):
     """El cliente que se equivocó cinco veces y llama para que lo destraben no
     tiene que quedar trabado también después."""
+    _con_clave()
     for _ in range(acceso.TOPE_INTENTOS):
-        acceso.entrar("ATE", "0000000000")
-    acceso.guardar_clave("ATE", "miclave123")
-    assert acceso.entrar("ATE", "miclave123")["ok"] is True
+        acceso.entrar("1791234567001", "no-es")
+    acceso.guardar_clave("ATE", "otraclave123")
+    assert acceso.entrar("1791234567001", "otraclave123")["ok"] is True
 
 
 @sin_pg
 def test_el_vendedor_le_corta_el_acceso(base):
-    acceso.entrar("ATE", "1791234567001")
+    _con_clave()
     acceso.cortar("ATE", "edg")
-    r = acceso.entrar("ATE", "1791234567001")
+    r = acceso.entrar("1791234567001", "miclave123")
     assert r["ok"] is False
     assert r["mensaje"] == acceso.CORTADO
+
+
+# ---------------------------------------------------------------------------
+# Un RUC en dos fichas — la misma empresa cargada dos veces
+# ---------------------------------------------------------------------------
+
+
+def _dos_fichas(cn):
+    """AJO y AJ2: Almacenes José Puebla, el único caso real (medido 26/08)."""
+    c = cn.cursor()
+    c.execute("INSERT INTO scintela.cliente (codigo_cli, nombre, ruc) VALUES "
+              "('AJ2', 'ALMACENES JOSE PUEBLA', '1793217341001'), "
+              "('AJO', 'ALMACENES JOSE PUEBLA', '1793217341001')")
+
+
+@sin_pg
+def test_un_RUC_en_dos_fichas_devuelve_LAS_DOS(base):
+    """⭐ Elegir por él sería mostrarle media deuda sin decírselo."""
+    _dos_fichas(base)
+    assert [c["codigo_cli"] for c in acceso.cuentas_de("1793217341001")] == ["AJ2", "AJO"]
+
+
+@sin_pg
+def test_la_clave_vive_donde_ya_la_eligieron(base):
+    """Si entró alguna vez como AJO, esa es su clave: no se le pide otra por
+    haber escrito el RUC."""
+    _dos_fichas(base)
+    acceso.entrar("AJO", "")            # crea la fila
+    acceso.guardar_clave("AJO", "miclave123")
+    cuentas = acceso.cuentas_de("1793217341001")
+    assert acceso.cuenta_con_la_clave(cuentas) == "AJO"
+    r = acceso.entrar("1793217341001", "miclave123")
+    assert r["ok"] is True
+    assert r["codigo_cli"] == "AJO"
+    assert len(r["cuentas"]) == 2, "las dos viajan: adentro elige cuál mira"
+
+
+@sin_pg
+def test_sin_ninguna_clave_elegida_la_primera_es_la_de_acceso(base):
+    _dos_fichas(base)
+    assert acceso.cuenta_con_la_clave(acceso.cuentas_de("1793217341001")) == "AJ2"
 
 
 @sin_pg
 def test_cortar_no_borra_la_fila(base):
     """Reversar no es eliminar: queda el rastro de que existió y de quién lo
     cortó."""
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.cortar("ATE", "edg")
     c = base.cursor()
     c.execute("SELECT activo, cortado_por FROM scintela.portal_acceso "
@@ -262,7 +349,7 @@ def test_cortar_no_borra_la_fila(base):
 def test_el_mail_del_portal_no_pisa_la_ficha_del_cliente(base):
     """⚠ Decisión de la dueña: se guarda para medir cuántos lo cambian, y
     pasarlo al maestro lo hace el vendedor desde la pantalla de siempre."""
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "nuevo@ate.com.ec", "viejo@ate.com.ec")
     c = base.cursor()
     c.execute("SELECT mail, mail_cambiado FROM scintela.portal_acceso "
@@ -276,7 +363,7 @@ def test_el_mail_del_portal_no_pisa_la_ficha_del_cliente(base):
 
 @sin_pg
 def test_confirmar_el_mismo_mail_no_cuenta_como_cambio(base):
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "  Compras@ATE.com.ec ", "compras@ate.com.ec")
     c = base.cursor()
     c.execute("SELECT mail_cambiado FROM scintela.portal_acceso WHERE codigo_cli='ATE'")
@@ -340,16 +427,21 @@ def test_la_pantalla_tiene_los_dos_campos_de_correo():
 
 
 def test_la_respuesta_es_la_misma_exista_o_no_el_cliente():
-    """⭐ Si dijera 'ese cliente no tiene correo' o 'ese código no existe',
-    la pantalla de recuperación sería un buscador de códigos de cliente
-    reales — y el código son sólo 3 letras."""
-    assert "Si ese código" in acceso.MANDADO
+    """⭐ Si dijera 'ese cliente no tiene correo' o 'ese RUC no existe', la
+    pantalla de recuperación sería un buscador de clientes reales."""
+    assert "Si ese RUC" in acceso.MANDADO
     assert "no existe" not in acceso.MANDADO.lower()
+
+
+def test_al_que_no_le_llega_se_le_dice_que_llame():
+    """Los 37 clientes sin correo cargado no entran solos, a propósito: los
+    destraba la oficina. El mensaje tiene que decirles qué hacer."""
+    assert "llámenos" in acceso.MANDADO.lower()
 
 
 @sin_pg
 def test_el_codigo_de_seis_se_guarda_cifrado(base):
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     seis, mail = acceso.pedir_codigo("ATE")
     assert len(seis) == 6 and mail == "compras@ate.com.ec"
@@ -363,14 +455,14 @@ def test_el_codigo_de_seis_se_guarda_cifrado(base):
 @sin_pg
 def test_sin_correo_no_manda_nada(base):
     """Y el que llama contesta lo mismo igual: ver MANDADO."""
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     seis, mail = acceso.pedir_codigo("ATE")
     assert (seis, mail) == ("", "")
 
 
 @sin_pg
 def test_a_un_cliente_cortado_no_se_le_manda_codigo(base):
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     acceso.cortar("ATE", "edg")
     assert acceso.pedir_codigo("ATE") == ("", "")
@@ -379,7 +471,7 @@ def test_a_un_cliente_cortado_no_se_le_manda_codigo(base):
 @sin_pg
 def test_el_codigo_sirve_una_sola_vez(base):
     """🚨 Un código de un solo uso que se puede reusar no es de un solo uso."""
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     seis, _ = acceso.pedir_codigo("ATE")
     assert acceso.usar_codigo("ATE", seis) is True
@@ -388,7 +480,7 @@ def test_el_codigo_sirve_una_sola_vez(base):
 
 @sin_pg
 def test_el_codigo_vencido_no_sirve(base):
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     seis, _ = acceso.pedir_codigo("ATE")
     base.cursor().execute(
@@ -401,7 +493,7 @@ def test_el_codigo_de_un_cliente_no_abre_el_de_otro(base):
     c = base.cursor()
     c.execute("INSERT INTO scintela.cliente (codigo_cli, nombre, ruc) "
               "VALUES ('BRC', 'OTRO', '0999999999001')")
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     seis, _ = acceso.pedir_codigo("ATE")
     assert acceso.usar_codigo("BRC", seis) is False
@@ -409,7 +501,7 @@ def test_el_codigo_de_un_cliente_no_abre_el_de_otro(base):
 
 @sin_pg
 def test_un_codigo_inventado_no_entra(base):
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     acceso.pedir_codigo("ATE")
     assert acceso.usar_codigo("ATE", "000000") is False
@@ -418,10 +510,27 @@ def test_un_codigo_inventado_no_entra(base):
 
 
 @sin_pg
+def test_se_recuerda_a_que_correo_le_mandamos(base):
+    """Para llenarle la casilla en la pantalla de elegir la clave: acaba de
+    recibir el código ahí, así que preguntárselo en blanco es hacerlo tipear de
+    nuevo lo que ya sabemos — y ahí mismo lo corrige si es viejo."""
+    _alta()
+    acceso.guardar_mail("ATE", "compras@ate.com.ec")
+    acceso.pedir_codigo("ATE")
+    assert acceso.ultimo_mail_usado("ATE") == "compras@ate.com.ec"
+
+
+@sin_pg
+def test_sin_codigo_pedido_no_hay_correo_que_recordar(base):
+    _alta()
+    assert acceso.ultimo_mail_usado("ATE") == ""
+
+
+@sin_pg
 def test_el_codigo_del_correo_destraba(base):
     """El que llegó hasta acá probó que tiene el correo, no que se acuerda la
     clave: dejarlo trabado sería castigarlo por haberse olvidado."""
-    acceso.entrar("ATE", "1791234567001")
+    _alta()
     acceso.guardar_mail("ATE", "compras@ate.com.ec")
     for _ in range(acceso.TOPE_INTENTOS):
         acceso.entrar("ATE", "0000000000")

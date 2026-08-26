@@ -1,0 +1,22 @@
+{# Cuál de sus cuentas está mirando. Sale sólo cuando su RUC cae en dos fichas
+   —la misma empresa cargada dos veces—, que hoy es un caso y uno solo. #}
+{% extends "portal/base.html" %}
+{% block titulo %}Sus cuentas — Intela{% endblock %}
+{% block contenido %}
+  <div class="titulo">Tiene dos cuentas</div>
+  <p class="bajada">Su RUC figura en más de una. Elija cuál quiere ver — puede
+    cambiar cuando quiera.</p>
+
+  <form method="post">
+    {{ csrf_token_input | safe }}
+    {% for c in cuentas %}
+      <button type="submit" name="codigo_cli" value="{{ c.codigo_cli }}"
+              class="{{ 'btn' if c.codigo_cli == actual else 'btn-suave' }}">
+        {{ c.nombre|title if c.nombre else c.codigo_cli }} · {{ c.codigo_cli }}
+      </button>
+    {% endfor %}
+  </form>
+
+  <div class="raya"></div>
+  <p class="pie-ayuda"><a href="/salir">Salir</a></p>
+{% endblock %}

@@ -6,7 +6,9 @@
 
   <form method="post">
     {{ csrf_token_input | safe }}
-    <input type="hidden" name="codigo" value="{{ codigo }}">
+    {# Viaja lo que ESCRIBIÓ el cliente, no nuestro código de 3 letras: si
+       viajara el nuestro, quien tipeara un RUC cualquiera lo leería acá. #}
+    <input type="hidden" name="identificador" value="{{ identificador }}">
     <div class="campo">
       <label for="seis">Código de 6 números</label>
       <input class="cod" type="text" id="seis" name="seis" maxlength="6"

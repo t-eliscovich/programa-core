@@ -2,7 +2,7 @@
 {% block titulo %}Elegir la clave — Intela{% endblock %}
 {% block contenido %}
   <div class="titulo">Hola, {{ nombre|title }}</div>
-  <p class="bajada">Elija una clave. La próxima vez entra con ella y no con el RUC.</p>
+  <p class="bajada">Elija una clave. La próxima vez entra con su RUC y esta clave.</p>
 
   <form method="post">
     {{ csrf_token_input | safe }}

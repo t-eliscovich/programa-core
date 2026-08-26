@@ -2,16 +2,40 @@
 
 TMT 2026-08-24, `PLAN_PORTAL_CLIENTE_2026_08_24.md`. Un solo camino, sin ramas:
 
-    código de 3 letras + RUC  →  elige su clave  →  entra
-    después:  código + su clave
-    si la olvida:  6 dígitos por mail
+    RUC  →  6 números al correo que ya teníamos  →  elige su clave  →  entra
+    después:  RUC + su clave
+    si la olvida:  6 números por correo, otra vez
 
-⚠ **El riesgo que se acepta a propósito.** El código de 3 letras y el RUC son
-los dos públicos —el RUC está impreso en cada factura y se consulta gratis en
-el SRI—, así que alguien con una factura vieja puede entrar antes que el
-cliente. Lo que lo frena no es la puerta: es que **el vendedor lo ve enseguida
-en Mi Cartera y le corta el acceso**. Se eligió así porque cualquier chequeo
-previo le carga fricción al 100% de los clientes para atajar un caso raro.
+## Por qué el usuario es el RUC y no el código de 3 letras (TMT 26/08/2026)
+
+*"los clientes no se saben su código de cliente"*. Es verdad: el código es una
+llave nuestra, no de ellos. Se midió qué podían escribir sin equivocarse:
+
+- **El RUC lo tienen todos**: de los 507 clientes con saldo, 506 lo tienen
+  cargado. Está impreso en cada factura y el contador lo sabe de memoria. Y es
+  sólo números: no hay espacios, ni acentos, ni "S.A." contra "SA".
+- **El nombre no sirve**: la misma persona está escrita al revés en dos fichas
+  ("EDG DURAN CORDOVA EDGAR DAVID" contra "SDG EDGAR DAVID DURAN CORDOVA").
+- **El RUC casi no se repite**: 167 RUC aparecen en dos fichas, pero uno solo
+  tiene las dos cuentas con saldo (AJO / AJ2, la misma empresa). Por eso el
+  portal no elige por él: si el RUC cae en dos cuentas, las muestra y elige él.
+
+El código de 3 letras **sigue sirviendo** para entrar: quien lo sepa lo escribe
+en el mismo campo. No se le sacó nada a nadie.
+
+## Y por qué la primera vez ya no alcanza con el RUC
+
+Hasta el 25/08 la primera vez se entraba con código + RUC, los dos públicos, y
+el freno era que el vendedor lo veía y le cortaba el acceso. Con el RUC de
+usuario ese par se vuelve un dato solo, así que la primera vez pasa a pedir los
+**6 números que le mandamos al correo que YA teníamos** (470 de los 507
+clientes con saldo lo tienen, el 95,6% de la plata). El cliente no elige a qué
+dirección van: van a la que está cargada. Es la misma máquina que "olvidé mi
+clave", así que no hay una puerta nueva que cuidar — hay una sola.
+
+⚠ **Los 37 clientes sin correo no entran solos.** Es a propósito: los destraba
+la oficina o el vendedor cargándoles el correo por la pantalla de siempre. Un
+camino alternativo "sin correo" sería justamente el agujero que esto tapa.
 
 Por eso todo lo de acá deja rastro: `portal_ingreso` guarda cada intento, con
 qué entró y desde dónde.
@@ -60,6 +84,67 @@ def ruc10(ruc: str) -> str:
     """
     solo_numeros = re.sub(r"\D", "", ruc or "")
     return solo_numeros[:10]
+
+
+#: Desde cuántos dígitos lo que escribió es un RUC y no un código. La cédula
+#: tiene 10 y el RUC 13; con 6 ya no puede ser un código de cliente, que son
+#: letras. No se exige el largo exacto: el que escribe 9 dígitos se equivocó y
+#: merece "no entraste", no "eso no es un RUC".
+DIGITOS_RUC = 6
+
+
+def parece_ruc(texto: str) -> bool:
+    """¿Escribió un RUC o un código de cliente? Lo dicen los dígitos."""
+    return len(re.sub(r"\D", "", texto or "")) >= DIGITOS_RUC
+
+
+def cuentas_de(identificador: str) -> list[dict]:
+    """Las cuentas que abre lo que escribió. Vacío si no abre ninguna.
+
+    Cada una: ``{"codigo_cli": str, "nombre": str}``.
+
+    Un RUC puede caer en DOS fichas —la misma empresa cargada dos veces— y por
+    eso devuelve una lista y no una cuenta: elegir por él sería mostrarle media
+    deuda sin decírselo. Un código de 3 letras devuelve una sola, o ninguna.
+
+    ⚠ Acá no se pregunta por facturas ni por cheques a propósito: en este
+    proceso la plata sale toda de `informes.queries`, y hay un test que falla
+    si aparece un SELECT sobre `factura` o `cheque` en el portal.
+    """
+    texto = (identificador or "").strip()
+    if not texto:
+        return []
+    if not parece_ruc(texto):
+        fic = cliente(texto)
+        return [{"codigo_cli": fic["codigo_cli"], "nombre": fic.get("nombre") or ""}] \
+            if fic else []
+    r10 = ruc10(texto)
+    if len(r10) < DIGITOS_RUC:
+        return []
+    filas = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(codigo_cli))                 AS codigo_cli,
+               COALESCE(NULLIF(TRIM(nombre), ''), '')  AS nombre
+          FROM scintela.cliente
+         WHERE LEFT(regexp_replace(COALESCE(ruc, ''), '[^0-9]', '', 'g'), 10) = %s
+         ORDER BY 1
+        """, (r10,)) or []
+    return [dict(f) for f in filas]
+
+
+def cuenta_con_la_clave(cuentas: list[dict]) -> str:
+    """De estas cuentas, en cuál vive la clave.
+
+    Con una sola no hay nada que decidir. Con dos, la clave vive donde ya la
+    eligieron: si el cliente entró alguna vez como AJ2, esa es su clave y no se
+    le pide otra por haber escrito el RUC. Si ninguna la tiene todavía, la
+    primera —que es el mismo orden que ve en la pantalla de elegir cuenta—.
+    """
+    for c in cuentas:
+        acc = acceso(c["codigo_cli"])
+        if acc and acc.get("clave_hash"):
+            return c["codigo_cli"]
+    return cuentas[0]["codigo_cli"] if cuentas else ""
 
 
 # ---------------------------------------------------------------------------
@@ -187,35 +272,37 @@ def _crear_acceso(cod: str) -> None:
 #: Lo que se le dice al que no entró. **Siempre lo mismo**, gane quien gane: si
 #: dijera "ese código no existe" contra "la clave está mal", cualquiera podría
 #: averiguar qué códigos de cliente son reales probando de a uno.
-NO_ENTRO = "El código o la clave no son correctos."
+NO_ENTRO = "El RUC o la clave no son correctos."
 TRABADO = ("Probaste demasiadas veces. Esperá {minutos} minutos, "
            "o llamanos y te destrabamos.")
 CORTADO = "Tu acceso está cerrado. Llamanos y lo abrimos de nuevo."
 
 
-def entrar(codigo: str, secreto: str, ip: str = "",
+def entrar(identificador: str, clave: str, ip: str = "",
            navegador: str = "") -> dict:
-    """Intenta entrar. Devuelve qué pasó y qué mostrar.
+    """Intenta entrar con el RUC (o el código) y la clave. Qué pasó y qué mostrar.
 
-    ``{"ok": bool, "mensaje": str, "codigo_cli": str, "elegir_clave": bool}``
+    ``{"ok": bool, "mensaje": str, "codigo_cli": str, "cuentas": list,
+       "primera_vez": bool}``
 
-    `elegir_clave` es True cuando entró con el RUC porque todavía no tiene
-    clave: la pantalla siguiente es la de elegirla.
+    `primera_vez` es True cuando el cliente existe y **todavía no eligió
+    clave**: ahí no entra: el que llama le manda los 6 números al correo. Es la
+    única rama, y por eso el RUC ya no abre nada por sí solo.
     """
     fuera = {"ok": False, "mensaje": NO_ENTRO, "codigo_cli": "",
-             "elegir_clave": False}
-    cod = normalizar_codigo(codigo)
-    secreto = (secreto or "").strip()
-    if not cod or not secreto:
+             "cuentas": [], "primera_vez": False}
+    texto = (identificador or "").strip()
+    if not texto:
         return fuera
 
-    fic = cliente(cod)
-    if not fic:
-        # Se anota igual: un montón de intentos contra códigos que no existen
-        # es alguien probando de a uno, y eso se tiene que poder ver.
-        anotar(cod, "no_existe", "", ip, navegador)
+    cuentas = cuentas_de(texto)
+    if not cuentas:
+        # Se anota igual: un montón de intentos contra RUC que no existen es
+        # alguien probando de a uno, y eso se tiene que poder ver.
+        anotar(normalizar_codigo(texto)[:40], "no_existe", "", ip, navegador)
         return fuera
 
+    cod = cuenta_con_la_clave(cuentas)
     acc = acceso(cod)
     if acc is None:
         _crear_acceso(cod)
@@ -231,28 +318,22 @@ def entrar(codigo: str, secreto: str, ip: str = "",
         anotar(cod, "trabado", "", ip, navegador)
         return {**fuera, "mensaje": TRABADO.format(minutos=faltan)}
 
-    # Con clave si ya la eligió; con el RUC si es la primera vez.
-    tiene_clave = bool(acc.get("clave_hash"))
-    if tiene_clave:
-        bien = coincide(secreto, acc.get("clave_hash"))
-        con_que = "clave"
-    else:
-        # El RUC se compara por los 10 primeros dígitos: la ficha a veces tiene
-        # la cédula pelada y el cliente escribe el RUC entero, o al revés.
-        propio = ruc10(fic.get("ruc"))
-        bien = bool(propio) and ruc10(secreto) == propio
-        con_que = "ruc"
+    if not acc.get("clave_hash"):
+        # Nunca eligió clave. No es un error suyo ni cuenta como intento
+        # fallido: es el camino normal de la primera vez.
+        anotar(cod, "primera_vez", "", ip, navegador)
+        return {**fuera, "mensaje": "", "codigo_cli": cod,
+                "cuentas": cuentas, "primera_vez": True}
 
-    if not bien:
+    if not coincide((clave or "").strip(), acc.get("clave_hash")):
         _sumar_fallido(cod)
-        anotar(cod, "clave_mala" if tiene_clave else "ruc_malo",
-               con_que, ip, navegador)
+        anotar(cod, "clave_mala", "clave", ip, navegador)
         return fuera
 
     _limpiar_fallidos(cod)
-    anotar(cod, "ok", con_que, ip, navegador)
+    anotar(cod, "ok", "clave", ip, navegador)
     return {"ok": True, "mensaje": "", "codigo_cli": cod,
-            "elegir_clave": not tiene_clave}
+            "cuentas": cuentas, "primera_vez": False}
 
 
 def guardar_clave(codigo: str, clave: str) -> tuple[bool, str]:
@@ -316,10 +397,10 @@ def guardar_mail(codigo: str, mail: str, mail_previo: str = "") -> None:
 
 #: Lo que se le contesta a TODO el mundo cuando pide un código, exista o no el
 #: cliente y tenga o no correo cargado. Si dijera "ese cliente no tiene correo"
-#: o "ese código no existe", la pantalla de recuperación sería un buscador de
-#: códigos de cliente reales.
-MANDADO = ("Si ese código tiene un correo cargado, le mandamos un código de 6 "
-           "números. Fijate en tu correo — puede tardar un minuto.")
+#: o "ese RUC no existe", esta pantalla sería un buscador de clientes reales.
+MANDADO = ("Si ese RUC tiene un correo cargado, le mandamos un código de 6 "
+           "números. Fíjese en su correo — puede tardar un minuto. Si no le "
+           "llega, llámenos y le abrimos el acceso.")
 
 
 def pedir_codigo(codigo: str) -> tuple[str, str]:
@@ -376,6 +457,27 @@ def _mail_de_asinfo(cod: str) -> str:
         return ((fila or {}).get("email") or "").strip()
     except Exception as e:  # noqa: BLE001 -- sin espejo, no hay mail y ya
         _LOG.warning("portal: no pude buscar el correo en Asinfo (%s)", e)
+        return ""
+
+
+def ultimo_mail_usado(codigo: str) -> str:
+    """A qué correo le mandamos los 6 números la última vez.
+
+    Sirve para llenarle la casilla en la pantalla de elegir la clave: el
+    cliente ve la dirección a la que le llegó el código —que es la que tenemos
+    cargada— y ahí mismo la corrige si es vieja. Preguntarle un correo en
+    blanco cuando acabamos de escribirle a uno es hacerlo tipear de nuevo lo
+    que ya sabemos.
+    """
+    try:
+        fila = db.fetch_one(
+            "SELECT mandado_a FROM scintela.portal_codigo "
+            " WHERE UPPER(TRIM(codigo_cli)) = %s "
+            " ORDER BY id_portal_codigo DESC LIMIT 1",
+            (normalizar_codigo(codigo),))
+        return ((fila or {}).get("mandado_a") or "").strip()
+    except Exception as e:  # noqa: BLE001 -- sin esto la casilla va vacía y ya
+        _LOG.warning("portal: no pude leer a qué correo mandamos (%s)", e)
         return ""
 
 

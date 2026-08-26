@@ -2,23 +2,23 @@
 {% block titulo %}Entrar — Intela{% endblock %}
 {% block contenido %}
   <div class="titulo">Su estado de cuenta</div>
-  <p class="bajada">Entre con el código de cliente que figura en su factura.</p>
+  <p class="bajada">Entre con el RUC que figura en su factura.</p>
 
   <form method="post" autocomplete="on">
     {{ csrf_token_input | safe }}
 
     <div class="campo">
-      <label for="codigo">Código de cliente</label>
-      <input class="cod" type="text" id="codigo" name="codigo" maxlength="3"
-             value="{{ codigo or '' }}" autocapitalize="characters"
+      <label for="identificador">RUC o cédula</label>
+      <input class="ruc" type="text" id="identificador" name="identificador"
+             maxlength="20" inputmode="numeric" value="{{ identificador or '' }}"
              autocomplete="username" spellcheck="false" required autofocus>
     </div>
 
     <div class="campo">
-      <label for="secreto">Clave</label>
-      <input type="password" id="secreto" name="secreto"
-             placeholder="La primera vez, su RUC"
-             autocomplete="current-password" required>
+      <label for="clave">Clave</label>
+      <input type="password" id="clave" name="clave"
+             placeholder="La primera vez, déjela vacía"
+             autocomplete="current-password">
     </div>
 
     <button type="submit" class="btn">Entrar</button>
@@ -26,7 +26,8 @@
 
   <div class="raya"></div>
   <p class="pie-ayuda">
-    ¿Entra por primera vez? Escriba su <b>RUC</b> donde dice Clave.<br>
+    ¿Entra por primera vez? Escriba su RUC y deje la clave vacía:
+    le mandamos un código a su correo.<br>
     <a href="/olvide-la-clave">Olvidé mi clave</a>
   </p>
 {% endblock %}

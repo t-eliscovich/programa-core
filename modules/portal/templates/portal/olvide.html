@@ -7,9 +7,9 @@
   <form method="post">
     {{ csrf_token_input | safe }}
     <div class="campo">
-      <label for="codigo">Código de cliente</label>
-      <input class="cod" type="text" id="codigo" name="codigo" maxlength="3"
-             value="{{ codigo or '' }}" autocapitalize="characters"
+      <label for="identificador">RUC o cédula</label>
+      <input class="ruc" type="text" id="identificador" name="identificador"
+             maxlength="20" inputmode="numeric" value="{{ identificador or '' }}"
              spellcheck="false" required autofocus>
     </div>
     <button type="submit" class="btn">Mandarme el código</button>

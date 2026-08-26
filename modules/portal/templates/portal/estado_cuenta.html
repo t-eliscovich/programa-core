@@ -23,7 +23,8 @@
   <div class="row">
     <div>
       <h1>{{ cli.nombre|title }}</h1>
-      <div class="sub">Cliente {{ codigo }}{% if cli.ruc %} · RUC {{ cli.ruc }}{% endif %}</div>
+      <div class="sub">Cliente {{ codigo }}{% if cli.ruc %} · RUC {{ cli.ruc }}{% endif %}{%
+        if cuentas_del_cliente|length > 1 %} · <a href="/mis-cuentas">Cambiar de cuenta</a>{% endif %}</div>
     </div>
     {# El botón NO lleva un carácter especial: el ⏻ no existe en las
        tipografías de Android y sale el cuadradito del glifo que falta. Mismo
