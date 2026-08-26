@@ -421,6 +421,16 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(debug_maduracion_import_bp)
 
+    # /admin/debug-costo-importacion — lo cargado contra lo que el hilo VALE
+    # según el promedio por TIPO DE HILADO. Para fijar el corte de la alarma
+    # con el dato (26/08: la banda única era el precio del polialgodón).
+    # SOLO LECTURA.
+    from modules.admin_dbase.debug_costo_importacion_view import (
+        bp as debug_costo_importacion_bp,
+    )
+
+    app.register_blueprint(debug_costo_importacion_bp)
+
     # /admin/importaciones-sin-plata — las que llegaron y quedaron sin toda su
     # plata cargada. ?correr=1 fuerza la revisión sin esperar el ciclo de 6 h.
     from modules.admin_dbase.import_sin_plata_view import (
