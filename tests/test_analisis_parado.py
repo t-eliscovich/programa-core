@@ -3929,3 +3929,22 @@ def test_la_factura_es_solo_para_quien_puede_ver_facturas():
         assert "tiene_permiso('facturas.ver')" in antes, (
             f"{nombre}: el link a la factura no está gateado")
         assert "v.numf and" in antes, "sin número no se dibuja el link"
+
+
+def test_la_hoja_impresa_habla_el_mismo_idioma_que_la_pantalla():
+    """Dueña 26/08/2026: *"¿y se ven todas las pantallas iguales?"*. La lista
+    del vendedor sí —es el MISMO template—, pero la hoja imprimible se arma con
+    otra plantilla y se quedó con «Kg en saldo» cuando la tabla pasó a «Queda».
+
+    El que sale a vender con la hoja en la mano y el que mira la pantalla
+    tienen que leer la misma palabra."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for nombre in ("parado.html", "parado_impreso.html"):
+        html = (carpeta / nombre).read_text(encoding="utf-8")
+        import re
+        texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+        assert ">Kg en saldo<" not in texto, (
+            f"{nombre} sigue diciendo «Kg en saldo»; la tabla dice «Queda»")
+        assert ">Queda<" in texto
