@@ -64,31 +64,15 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% else %}
   Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
-{# ⭐ La tela que quedó afuera se dice, no se esconde. Si no, el día que la
-   lista baje de 707 a 600 ítems nadie va a poder decir por qué, y lo primero
-   que se piensa es que el programa se rompió.
-   ⚠ Las dos razones van separadas a propósito: la reciente se arregla sola con
-   el tiempo, la pedida cuando salga el pedido. #}
-{# ⭐ Y se dice SÓLO A LA DUEÑA (25/08/2026: "esto es información para mí, no
-   para todos los que consultan la pantalla"). Es la explicación de por qué la
-   lista tiene 707 ítems y no 4.200: le sirve a quien tiene que confiar en el
-   número, no al vendedor que entra a ver qué ofrecer. `usuarios.admin` lo
-   tienen sólo los roles wildcard —ella y Andrés—; `analisis.ver` ya lo tiene
-   también la oficina. #}
-{% if tiene_permiso('usuarios.admin')
-      and (estado.nuevas or estado.produciendo or estado.pedidas) %}
-  {# ⚠ Una línea y sin kilos (dueña 26/08/2026: "no puede ocupar tanto espacio,
-     todo simplifica"). Eran dos renglones enteros de paréntesis. Lo que hay que
-     poder contestar es por qué la lista tiene 700 ítems y no 4.200: para eso
-     alcanza con CUÁNTAS quedaron afuera y por qué.
-     ⚠⚠ Pero cada motivo tiene que decir DE QUÉ habla. El primer recorte lo dejó
-     en "589 tejiéndose · 351 pedidas" y la dueña preguntó qué quería decir: sin
-     sujeto, "pedidas" puede ser pedidas por un cliente o pedidas a un
-     proveedor. Simplificar es sacar palabras, no sacar el significado. #}
-  <br>Afuera de la lista: {{ estado.nuevas }} recién hechas ·
-  {{ estado.produciendo }} que se siguen tejiendo ·
-  {{ estado.pedidas }} con un pedido esperando
-{% endif %}
+{# ⚠ Acá vivía «Afuera de la lista»: cuántas telas × color quedaron fuera por
+   recién hechas, por seguir tejiéndose o por tener un pedido esperando. Se fue
+   el 26/08/2026 (dueña: "no nos hace falta eso").
+   Explicaba por qué la lista tiene 700 ítems y no 4.200 —una pregunta que se
+   hace UNA vez—, y ocupaba dos renglones arriba de todo, todos los días. El
+   dato se sigue calculando y sigue guardado en `parado_refresh`: si algún día
+   la lista se desploma y hay que explicar por qué, está ahí.
+   ⚠ Se intentó primero acortarlo y después gatearlo sólo para la dueña. Ninguna
+   de las dos alcanzó: lo que sobraba era el renglón, no su largo. #}
 </p>
 
 {# ⭐ Cinco tarjetas grandes eran cinco cifras compitiendo entre sí y con la

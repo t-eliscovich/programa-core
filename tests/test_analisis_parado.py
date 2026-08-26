@@ -2884,26 +2884,6 @@ def test_la_meta_y_los_puntos_se_congelan_sobre_lo_que_se_acaba_de_escribir(
     assert vistas and all(c == "CONN" for c in vistas), vistas
 
 
-def test_la_pantalla_dice_cuanta_tela_quedo_afuera_y_por_que():
-    """Si la lista baja de 707 ítems a 600 sin una palabra, lo primero que se
-    piensa es que el programa se rompió. Las TRES razones van separadas: una se
-    arregla sola con el tiempo, otra cuando salga el pedido, otra cuando el
-    telar pare.
-
-    ⚠ Los KILOS se fueron el 26/08/2026 ("no puede ocupar tanto espacio, todo
-    simplifica"): eran dos renglones enteros de paréntesis. Para contestar por
-    qué la lista tiene 700 ítems y no 4.200 alcanza con cuántas quedaron afuera
-    y por qué; los kilos de lo que NO está en la lista no deciden nada."""
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert ("estado.nuevas or estado.produciendo or estado.pedidas"
-            in html)
-    for cuenta in ("estado.nuevas", "estado.produciendo", "estado.pedidas"):
-        assert "{{ " + cuenta + " }}" in html, f"falta la cuenta de {cuenta}"
-    assert "estado.nuevas_kg" not in html, "los kilos volvieron a ocupar renglón"
-
-
 def test_el_refresco_cuenta_aparte_las_recientes_y_las_pedidas(monkeypatch):
     """En la pantalla no significan lo mismo: la tela reciente vuelve sola
     cuando cumpla los días, la pedida cuando el pedido salga. Un solo número
@@ -3163,25 +3143,19 @@ def test_el_refresco_apaga_tambien_la_que_se_sigue_tejiendo(monkeypatch):
     assert res["produciendo"] == 1 and res["nuevas"] == 0
 
 
-def test_la_pantalla_cuenta_los_tres_motivos_por_separado():
+def test_los_tres_motivos_se_cuentan_por_separado_en_el_refresco():
     """No significan lo mismo: la reciente vuelve sola con el tiempo, la que se
-    teje cuando la fábrica pare, la pedida cuando salga el pedido."""
-    from pathlib import Path
-    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    # ⚠ Desde el 25/08/2026 la línea va SÓLO para la dueña ("esto es información
-    # para mí, no para todos los que consultan la pantalla"), así que el `if`
-    # arranca con el permiso.
-    assert "estado.nuevas or estado.produciendo or estado.pedidas" in html
-    assert "tiene_permiso('usuarios.admin')" in html, (
-        "la línea de lo que quedó afuera es sólo para la dueña")
-    # ⚠ Los kilos se fueron el 26/08/2026: eran dos renglones de paréntesis
-    # ("todo simplifica"). Lo que tiene que estar es la CUENTA de cada motivo.
-    assert "{{ estado.produciendo }}" in html
-    # ⚠ La frase se acortó el 26/08/2026 ("todo simplifica"): lo que el test
-    # cuida es que el motivo se cuente APARTE, no la redacción.
-    assert "tejiéndose" in html
+    teje cuando la fábrica pare, la pedida cuando salga el pedido. Un solo
+    número sumado no dejaría explicar ninguna de las tres.
 
+    ⚠ El 26/08/2026 la línea se fue de la PANTALLA ("no nos hace falta eso"),
+    pero la cuenta se sigue haciendo y guardando en `parado_refresh`: el día que
+    la lista se desplome hay que poder decir por qué."""
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    for cuenta in ('"nuevas"', '"pedidas"', '"produciendo"'):
+        assert cuenta in fuente, f"el refresco dejó de contar {cuenta}"
+    assert "nuevas_kg" in fuente and "pedidas_kg" in fuente
 
 def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
     """Dueña 25/08/2026: *"sacar las que están en 0 también"*. Sin kilos en
@@ -3857,16 +3831,25 @@ def test_la_linea_abierta_se_lleva_su_propia_categoria_vendida():
     assert (seg["kg_vendidos"], seg["kg_vend_pri"], seg["kg_vend_seg"]) == (3, 0, 3)
 
 
-def test_cada_motivo_de_afuera_dice_de_que_habla():
-    """Dueña 26/08/2026, sobre el primer recorte: *"tejiéndose · 351 pedidas.
-    ¿Qué quiere decir esto?"*. Sin sujeto no se entiende: "pedidas" puede ser
-    pedidas por un cliente o pedidas a un proveedor, y "tejiéndose" a secas no
-    dice que sean telas.
 
-    Simplificar es sacar palabras, no sacar el significado."""
+
+def test_afuera_de_la_lista_no_vuelve_a_la_pantalla():
+    """Dueña 26/08/2026: *"no nos hace falta eso"*. La línea explicaba por qué
+    la lista tiene 700 ítems y no 4.200 —una pregunta que se hace UNA vez— y
+    ocupaba dos renglones arriba de todo, todos los días.
+
+    ⚠ Antes de sacarla se intentó acortarla y después gatearla sólo para la
+    dueña. Ninguna de las dos alcanzó: lo que sobraba era el renglón, no su
+    largo.
+
+    El dato se sigue calculando y sigue guardado en `parado_refresh`: si algún
+    día la lista se desploma y hay que explicar por qué, está ahí."""
+    import inspect as _i
     html = _html_parado()
-    i = html.index("Afuera de la lista")
-    trozo = " ".join(html[i:i + 400].split())
-    assert "recién hechas" in trozo
-    assert "que se siguen tejiendo" in trozo, "«tejiéndose» no dice de qué"
-    assert "con un pedido esperando" in trozo, "«pedidas» no dice de quién"
+    sin_comentario = html[html.index("{% block cuerpo %}"):] if "{% block cuerpo %}" in html else html
+    for muerto in ("{{ estado.nuevas", "{{ estado.produciendo", "{{ estado.pedidas"):
+        assert muerto not in sin_comentario, f"volvió {muerto} a la pantalla"
+    assert "dias_quieto" not in _i.getsource(views.parado), (
+        "se pasaba al contexto sólo para ese texto")
+    fuente = _i.getsource(queries.actualizar)
+    assert "nuevas" in fuente and "produciendo" in fuente and "pedidas" in fuente
