@@ -697,9 +697,14 @@ def imprimir_todos():
         queries.mis_clientes(vend),
         key=lambda r: (r.get("codigo_cli") or "").upper(),
     )
+    # ⭐ TMT 2026-08-26 (dueña): *"algo más que dure mucho tiempo y podamos
+    # bajar"*. Una consulta por cliente eran 611 idas y vueltas al RDS para un
+    # vendedor con 87 clientes. `estado_cuenta_lote` hace las mismas seis, una
+    # sola vez, con todos los códigos adentro. Misma hoja: la de la oficina.
+    lote = informes_queries.estado_cuenta_lote([f["codigo_cli"] for f in filas])
     clientes = []
     for f in filas:
-        d = informes_queries.estado_cuenta_cliente(f["codigo_cli"])
+        d = lote.get(f["codigo_cli"])
         if d and d.get("cliente"):
             # El cupo ya no se saca — ver `_cargar_cliente`. (La hoja impresa
             # es la de la oficina y no lo dibuja, pero el dato viaja igual y

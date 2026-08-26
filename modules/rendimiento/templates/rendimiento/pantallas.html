@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Pantallas{% endblock %}
+{% block breadcrumb %}<strong>Admin · Pantallas</strong>{% endblock %}
+{% block content %}
+{#
+   Qué pantalla se lleva el tiempo — y qué consulta se lo lleva adentro.
+
+   TMT 2026-08-26: *"cómo se podría evaluar las pantallas del programa y
+   hacerlas más rápido"*.
+
+   El orden es por TIEMPO TOTAL (visitas × mediana) y no por la más lenta: una
+   pantalla de 3 segundos que se abre una vez por mes molesta menos que una de
+   400 ms que se abre doscientas veces por día. La más lenta se ve igual, al
+   lado.
+
+   La columna que más veces contestó "por qué está lenta" es CONSULTAS: una
+   pantalla con 600 consultas es una consulta adentro de un `for`, y eso se
+   arregla siempre. Los milisegundos dicen QUE duele; las consultas, DÓNDE.
+#}
+<div class="max-w-6xl">
+  {{ page_hero('Pantallas',
+     'Cuánto tarda cada pantalla y cuántas consultas hace. Se mide sola, mientras el programa se usa.') }}
+
+  <div class="bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-lg p-4 mb-5 shadow-sm
+              flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+    <span>Midiendo hace <strong>{{ estado.minutos }}</strong> min</span>
+    <span><strong>{{ '{:,}'.format(estado.visitas).replace(',', '.') }}</strong> visitas</span>
+    <span><strong>{{ estado.pantallas }}</strong> pantallas</span>
+    <span>{{ estado.lentas }} pasaron de {{ lenta_ms }} ms</span>
+    <form method="post" action="{{ url_for('rendimiento.reiniciar') }}" class="ml-auto">
+      {{ csrf_token_input() if csrf_token_input is defined }}
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-600
+                     hover:bg-slate-50 dark:hover:bg-slate-800"
+              title="Empezar a medir de cero — para probar UN cambio sin el arrastre de lo anterior">
+        Empezar de cero
+      </button>
+    </form>
+  </div>
+
+  {% if not filas %}
+    <p class="text-slate-600 dark:text-slate-300">
+      Todavía no hay nada medido. Los números arrancan de cero en cada deploy y
+      se llenan solos a medida que se usa el programa: entrá a unas pantallas y
+      volvé.
+    </p>
+  {% else %}
+  <div class="overflow-x-auto bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-lg shadow-sm">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 text-left">
+        <tr>
+          <th class="px-3 py-2">Pantalla</th>
+          <th class="px-3 py-2 text-right" title="Visitas × lo que tarda: dónde se va el tiempo del día">Se lleva</th>
+          <th class="px-3 py-2 text-right">Visitas</th>
+          <th class="px-3 py-2 text-right" title="La mitad de las veces tarda menos que esto">Tarda</th>
+          <th class="px-3 py-2 text-right">La peor vez</th>
+          <th class="px-3 py-2 text-right" title="Consultas a la base por visita. Muchas = una consulta adentro de un for">Consultas</th>
+          <th class="px-3 py-2 text-right" title="De lo que tarda, cuánto es la base">De eso, base</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for f in filas %}
+        <tr class="border-t dark:border-slate-800 {{ 'bg-amber-50 dark:bg-amber-950/30' if f.mediana_ms >= lenta_ms }}">
+          <td class="px-3 py-2 font-mono text-xs">{{ f.metodo }} {{ f.ruta }}</td>
+          <td class="px-3 py-2 text-right">{{ f.total_s }} s</td>
+          <td class="px-3 py-2 text-right">{{ f.visitas }}</td>
+          <td class="px-3 py-2 text-right font-semibold">{{ f.mediana_ms }} ms</td>
+          <td class="px-3 py-2 text-right text-slate-500">{{ f.ms_max }} ms</td>
+          <td class="px-3 py-2 text-right {{ 'text-rose-700 dark:text-rose-400 font-semibold' if f.consultas_prom >= 30 }}">
+            {{ f.consultas_prom }}
+          </td>
+          <td class="px-3 py-2 text-right text-slate-500">{{ f.ms_sql_prom }} ms</td>
+        </tr>
+        {% if f.peor_sql %}
+        <tr class="border-0">
+          <td colspan="7" class="px-3 pb-2">
+            <details>
+              <summary class="text-xs text-slate-500 cursor-pointer">
+                su consulta más lenta — {{ f.peor_sql_ms }} ms
+              </summary>
+              <pre class="mt-1 bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 rounded
+                          p-2 text-xs overflow-x-auto">{{ f.peor_sql }}</pre>
+            </details>
+          </td>
+        </tr>
+        {% endif %}
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if lentas %}
+  <h2 class="text-lg font-semibold mt-8 mb-2">Las visitas que pasaron de {{ lenta_ms }} ms</h2>
+  <p class="text-sm text-slate-600 dark:text-slate-300 mb-3">
+    Una por una, la más reciente arriba. Sirve para el caso puntual: la misma
+    pantalla puede andar bien todo el día y tardar con UN cliente grande.
+  </p>
+  <div class="overflow-x-auto bg-white dark:bg-slate-900 border dark:border-slate-700 rounded-lg shadow-sm">
+    <table class="w-full text-sm">
+      <tbody>
+      {% for v in lentas %}
+        <tr class="border-t dark:border-slate-800">
+          <td class="px-3 py-2 font-mono text-xs">{{ v.metodo }} {{ v.ruta }}</td>
+          <td class="px-3 py-2 text-right font-semibold">{{ v.ms }} ms</td>
+          <td class="px-3 py-2 text-right text-slate-500">{{ v.consultas }} consultas</td>
+          <td class="px-3 py-2 text-right text-slate-500">{{ v.ms_sql }} ms de base</td>
+          <td class="px-3 py-2 text-xs text-slate-500">
+            {% if v.peor_sql %}la peor: {{ v.peor_sql_ms }} ms{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  <p class="text-xs text-slate-500 mt-6">
+    Se mide en memoria: no se escribe nada en la base y no se guarda ningún dato
+    de clientes — la ruta con sus <code>&lt;id&gt;</code> sin reemplazar, los
+    milisegundos y el texto de la consulta. Los números vuelven a cero en cada
+    deploy.
+  </p>
+</div>
+{% endblock %}

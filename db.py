@@ -19,12 +19,27 @@ _log = logging.getLogger("programa_core.db")
 SLOW_MS = int(os.environ.get("DB_SLOW_MS", "200"))
 
 
+#: Quién más quiere enterarse de cada consulta. Lo pone `create_app` con
+#: `modules._lib.medidor.anotar_consulta`, que las cuenta por request para la
+#: pantalla /admin/pantallas.
+#:
+#: Es un callback y no un `import` a propósito: este módulo es la capa de datos
+#: y no tiene por qué saber que existe una pantalla de rendimiento. Si nadie lo
+#: setea, acá no cambia nada.
+OBSERVADOR = None
+
+
 def _t(sql: str, params, started: float) -> None:
     """Log a slow query. Truncate the SQL to keep the log readable."""
     ms = (time.perf_counter() - started) * 1000
     if ms >= SLOW_MS:
         one_line = " ".join(sql.split())[:180]
         _log.warning("slow %.0fms  %s", ms, one_line)
+    if OBSERVADOR is not None:
+        try:
+            OBSERVADOR(ms, sql)
+        except Exception:  # noqa: BLE001 -- medir NUNCA puede tirar una consulta
+            pass
 
 _pool: pool.ThreadedConnectionPool | None = None
 

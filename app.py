@@ -151,6 +151,26 @@ def create_app() -> Flask:
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
 
+    # ⭐ El navegador de los PDFs y las fotos, prendido de entrada. TMT
+    # 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar imagen, pdf y
+    # whatsapp desde vendedor. tarda mucho tiempo"*. De los 3,5-5,2 s medidos
+    # en producción, casi todo era levantar y matar un navegador por archivo.
+    # Ahora hay UNO prendido y cada hoja es una pestaña suya.
+    #
+    # Corre en los DOS procesos —la oficina y el portal del cliente— porque los
+    # dos mandan hojas. A diferencia del calentador de Asinfo, esto no le
+    # escribe nada a nadie: es un proceso local que se apaga solo a los 15
+    # minutos sin uso.
+    #
+    # ⚠ El hilo NO frena el arranque ni un request: si el navegador no levanta,
+    # las hojas siguen saliendo como salían (un navegador por archivo). Ver
+    # `modules/_lib/navegador.py`.
+    try:
+        from modules._lib import navegador
+        navegador.arrancar_en_segundo_plano()
+    except Exception:  # noqa: BLE001 -- jamás frena el arranque
+        pass
+
     # 🚨 TMT 2026-08-25: el ciclo de fondo corre SÓLO en el programa de la
     # oficina. `run_portal.py` levanta ESTE MISMO código en otro proceso
     # (puerto 5004, misma base), y hasta hoy los dos arrancaban los mismos
@@ -226,9 +246,24 @@ def create_app() -> Flask:
     # bitácora para ver exactamente qué intentó hacer y con qué payload.
     _req_log = logging.getLogger("programa_core.req")
 
+    # ⭐ El termómetro de las pantallas (TMT 2026-08-26: *"cómo se podría
+    # evaluar las pantallas del programa y hacerlas más rápido"*). Los dos
+    # números ya se medían —los ms del request acá abajo y los de cada consulta
+    # en `db._t`— y terminaban en un log que vive en el servidor Windows y que
+    # no lee nadie. `medidor` los junta en memoria y los muestra en
+    # /admin/pantallas. No escribe en la base ni guarda datos de nadie.
+    try:
+        from modules._lib import medidor as _medidor
+
+        db.OBSERVADOR = _medidor.anotar_consulta
+    except Exception:  # noqa: BLE001 -- medir jamás frena el arranque
+        _medidor = None
+
     @app.before_request
     def _start_timer():
         g._t0 = time.perf_counter()
+        if _medidor is not None:
+            _medidor.arrancar()
         # Respetar un X-Request-Id entrante sólo si viene bien formado (36
         # chars, formato UUID). Evita que un cliente inyecte un valor raro
         # o que un proxy intermedio envíe basura.
@@ -255,6 +290,12 @@ def create_app() -> Flask:
             _req_log.warning("slow %.0fms %s %s %s", ms, tag, request.method, request.full_path.rstrip("?"))
         else:
             _req_log.info("  %.0fms %s %s %s", ms, tag, request.method, request.full_path.rstrip("?"))
+        # ⚠ La REGLA (`/facturas/<numf>`) y no la URL: si fuera la URL, cada
+        # factura sería una pantalla distinta y no se podría sumar nada. Y sin
+        # regla —un 404— no se guarda: no es una pantalla del programa.
+        if _medidor is not None and request.url_rule is not None:
+            _medidor.cerrar(request.url_rule.rule, request.method, ms,
+                            response.status_code)
         return response
 
     # Make sure our loggers write to wherever Flask's does.

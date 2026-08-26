@@ -174,13 +174,20 @@ def test_el_total_por_cobrar_del_SQL_usa_la_misma_lista(monkeypatch):
 
     vistos: list[str] = []
 
-    def _fetch_one(sql, params=None, conn=None):
+    def _fetch_all(sql, params=None, conn=None):
+        # ⚠ Los totales salen por `fetch_all` desde el 26/08: la consulta es la
+        # misma pero agrupa por cliente, así que trae una fila por cliente en
+        # vez de una sola. Si este fake volviera a mirar sólo `fetch_one`, el
+        # test no vería el SQL de los totales y pasaría en verde sin revisar
+        # nada.
         vistos.append(sql)
         # Un cliente que existe; los totales caen a 0 por los .get(...) or 0.
-        return {"codigo_cli": "ZZZ", "nombre": "CLIENTE ZZZ"}
+        if "FROM scintela.cliente c" in sql:
+            return [{"codigo_cli": "ZZZ", "nombre": "CLIENTE ZZZ"}]
+        return []
 
-    monkeypatch.setattr(db, "fetch_one", _fetch_one)
-    monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [])
+    monkeypatch.setattr(db, "fetch_all", _fetch_all)
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: None)
     iq.estado_cuenta_cliente("ZZZ")
 
     import re
@@ -408,7 +415,11 @@ def _get_lote(app, fake_db, monkeypatch, fakes, url="/informes/estado-cuenta/imp
         ],
     )
     porcod = {f["cliente"]["codigo_cli"]: f for f in fakes}
-    monkeypatch.setattr(iq, "estado_cuenta_cliente", lambda c, *a, **k: porcod.get(c, {}))
+    # TMT 2026-08-26: la impresión en lote pide los estados de cuenta de TODOS
+    # los clientes de una (`estado_cuenta_lote`) en vez de uno por uno — eran
+    # 3.644 consultas para 520 clientes. El fake sigue siendo el mismo dict.
+    monkeypatch.setattr(iq, "estado_cuenta_lote",
+                        lambda cods, *a, **k: {c: porcod[c] for c in cods if c in porcod})
     r = _login(app, fake_db).get(url)
     assert r.status_code == 200, r.status_code
     return r.get_data(as_text=True)
@@ -605,15 +616,17 @@ def test_estado_cuenta_marca_por_cobrar_en_TODAS_las_filas(monkeypatch):
     import db
     from modules.informes import queries as iq
 
-    cheques = [{"id_cheque": i, "stat": st, "importe": 10.0}
+    cheques = [{"id_cheque": i, "stat": st, "importe": 10.0, "codigo_cli": "ZZZ"}
                for i, st in enumerate("ZP123D9RBACEXVWIJK")]
 
     def _fetch_all(sql, params=None, conn=None):
-        return cheques if "from scintela.cheque c" in " ".join(sql.split()).lower() else []
+        plano = " ".join(sql.split()).lower()
+        if "from scintela.cliente c" in plano:
+            return [{"codigo_cli": "ZZZ", "nombre": "N"}]
+        return cheques if "from scintela.cheque c" in plano else []
 
     monkeypatch.setattr(db, "fetch_all", _fetch_all)
-    monkeypatch.setattr(db, "fetch_one",
-                        lambda *a, **k: {"codigo_cli": "ZZZ", "nombre": "N"})
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: None)
     data = iq.estado_cuenta_cliente("ZZZ")
     for c in data["cheques"]:
         assert "por_cobrar" in c, f"stat {c['stat']} salió sin la marca"

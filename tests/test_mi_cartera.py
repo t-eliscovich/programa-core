@@ -718,13 +718,16 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
     )
     vistos = []
 
-    def _ec(cod):
-        vistos.append(cod)
-        return {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
-                "facturas": [], "cheques": [], "anticipos": [],
-                "totales": _totales()}
+    # TMT 2026-08-26: la hoja se arma con `estado_cuenta_lote` —los estados de
+    # cuenta de todos los clientes en una consulta, no uno por uno—. El fake
+    # recibe la LISTA de códigos, que es además lo que fija el orden.
+    def _ec_lote(cods):
+        vistos.extend(cods)
+        return {cod: {"cliente": {"codigo_cli": cod, "nombre": cod, "cupo": 5},
+                      "facturas": [], "cheques": [], "anticipos": [],
+                      "totales": _totales()} for cod in cods}
 
-    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente", _ec)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_lote", _ec_lote)
     r = vendedor_logueado.get("/mi-cartera/imprimir")
     assert r.status_code == 200
     assert b"Imprimir estados de cuenta" in r.data
@@ -3177,3 +3180,25 @@ def test_la_pantalla_de_prueba_prueba_los_DOS_formatos(app, vendedor_logueado, m
     # Lo que hace falta de esa pantalla es el ERROR EXACTO, no un sí/no.
     assert "comoFalla" in p
     assert "NO se abrió" in p
+
+
+def test_la_ficha_prepara_la_hoja_mientras_el_vendedor_la_lee(
+        app, vendedor_logueado, monkeypatch):
+    """⭐ TMT 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar
+    imagen, pdf y whatsapp desde vendedor. tarda mucho tiempo"*.
+
+    Ésta es la pantalla desde la que el vendedor manda, así que el archivo se
+    va a pedir casi seguro: se empieza a preparar al ABRIR la ficha y no cuando
+    el dedo toca el botón. Cuando toca —tres, cinco segundos después— la hoja
+    ya está, y en el teléfono el PRIMER toque abre WhatsApp.
+    """
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(q, "cliente_es_mio", lambda vend, cod: True)
+    monkeypatch.setattr(views.informes_queries, "estado_cuenta_cliente",
+                        _ec_con_facturas)
+    monkeypatch.setitem(app.jinja_env.globals, "pdf_disponible", lambda: True)
+    ficha = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
+
+    boton = ficha.split("<button", 1)[1].split(">", 1)[0]
+    assert "data-wa-pdf" in boton and "data-precargar" in boton

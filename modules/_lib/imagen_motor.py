@@ -37,6 +37,11 @@ cosa: `--screenshot` en vez de `--print-to-pdf`.
 la plantilla necesita saber que la están sacando como imagen (el `imagen=True`
 de `estado_cuenta_lote_print.html`): el chrome de la app que `@media print`
 esconde solo, en pantalla hay que esconderlo a mano.
+
+⭐ TMT 2026-08-26: si hay un navegador YA PRENDIDO (`modules/_lib/navegador.py`)
+la foto sale de una pestaña suya —`Page.captureScreenshot`, verificado idéntico
+byte por byte al `--screenshot` de acá— y no se levanta nada. El camino de abajo
+queda de piso, para cuando ese navegador no está.
 """
 
 from __future__ import annotations
@@ -49,7 +54,7 @@ from pathlib import Path
 
 from PIL import Image, ImageChops
 
-from modules._lib import pdf_motor
+from modules._lib import cache_hojas, navegador, pdf_motor
 from modules._lib.pdf_motor import SinMotor
 
 _LOG = logging.getLogger("programa_core.imagen")
@@ -128,8 +133,12 @@ def _recortar(png: bytes) -> tuple[bytes, bool]:
         arriba = max(0, caja[1] - _MARGEN)
         abajo = min(im.height, caja[3] + _MARGEN)
         salida = io.BytesIO()
-        im.crop((0, arriba, im.width, abajo)).save(
-            salida, format="PNG", optimize=True)
+        # ⚠ SIN `optimize=True`. TMT 2026-08-26 (*"tarda mucho tiempo"*),
+        # medido sobre una foto de 900x2540: la pasada de optimización tarda
+        # 68 ms de más y el archivo baja de 70 kB a 68. Dos kilobytes, en una
+        # foto que WhatsApp le vuelve a comprimir apenas se manda, no valen
+        # 68 ms de un vendedor esperando en la calle.
+        im.crop((0, arriba, im.width, abajo)).save(salida, format="PNG")
         return salida.getvalue(), cortada
 
 
@@ -139,6 +148,11 @@ def desde_html(html: str, filas: int = 0, static_dir=None) -> bytes:
     `filas` es cuántos renglones tiene la tabla; sale de los datos, no de
     medir el HTML. Ver `alto_para`.
     """
+    k = cache_hojas.clave("png", ANCHO, filas, html)
+    guardada = cache_hojas.obtener(k)
+    if guardada:
+        return guardada
+
     exe = pdf_motor.binario()
     if not exe:
         raise SinMotor(
@@ -160,11 +174,23 @@ def desde_html(html: str, filas: int = 0, static_dir=None) -> bytes:
         _LOG.warning("La imagen salió cortada a %s px; se rehace más alta.", alto)
         png = _sacar_foto(exe, html, static, min(alto * 2, _ALTO_MAX))
         imagen, _ = _recortar(png)
+    cache_hojas.guardar(k, imagen)
     return imagen
 
 
 def _sacar_foto(exe: str, html: str, static: Path, alto: int) -> bytes:
-    """Una corrida del navegador: HTML en disco → PNG en disco → bytes."""
+    """Una corrida del navegador: HTML en disco → PNG en disco → bytes.
+
+    ⭐ TMT 2026-08-26 (*"tarda mucho tiempo"*): si hay un navegador YA PRENDIDO
+    (ver `navegador`), la foto sale de una pestaña suya y no se levanta nada.
+    Verificado: el PNG que devuelve `Page.captureScreenshot` es idéntico, byte
+    por byte, al de `--screenshot`. Si no lo hay —o si falla— sigue el camino
+    de siempre, que es el de acá abajo.
+    """
+    rapida = navegador.png(html, static, ANCHO, alto)
+    if rapida:
+        return rapida
+
     with tempfile.TemporaryDirectory(prefix="pc-img-") as tmp:
         tmpd = Path(tmp)
         entrada = tmpd / "hoja.html"

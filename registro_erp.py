@@ -231,6 +231,12 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(diag_bp)
 
+    # Qué pantalla está lenta — se mide sola mientras el programa se usa
+    # (TMT 2026-08-26). No escribe nada: vive en memoria.
+    from modules.rendimiento.views import bp as rendimiento_bp
+
+    app.register_blueprint(rendimiento_bp)
+
     # Sync dBase en 1-click — TMT 2026-05-28. Reemplaza el dance manual
     # CloudShell+S3+SSM por POST a /admin/dbase-sync (admin-only).
     from modules.admin_dbase.views import bp as admin_dbase_bp

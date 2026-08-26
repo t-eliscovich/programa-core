@@ -107,3 +107,15 @@ def test_integraciones_no_expone_credenciales(app):
     body_str = r.get_data(as_text=True).lower()
     for forbidden in ("password", "secret", "metabase_url", "database_url", "@"):
         assert forbidden not in body_str, f"{forbidden!r} aparece en la respuesta"
+
+
+def test_integraciones_dice_si_el_navegador_esta_prendido(app):
+    """TMT 2026-08-26: si el navegador persistente no levanta en el servidor,
+    todo sigue andando y lo único que se nota es que las hojas tardan como
+    antes. Que se pueda MIRAR es la diferencia entre "está lento" y "está
+    lento por esto"."""
+    r = app.test_client().get("/healthz/integraciones")
+    nav = r.get_json()["navegador"]
+    assert nav["prendido"] is False          # bajo pytest no se prende ninguno
+    assert nav["apagado_por_env"] is False
+    assert nav["hojas_guardadas"] == 0

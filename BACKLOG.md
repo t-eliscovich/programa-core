@@ -225,6 +225,17 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
+### [S] `/comisiones/debug` sigue preguntando el mes con EXTRACT
+
+El 26/08 se pasaron a rango de fechas las 14 consultas de
+`modules/comisiones/queries.py` (ver la migración 0231 y el comentario de
+`_rango_mes`). Las 8 de `modules/comisiones/views.py` quedaron como estaban a
+propósito: son el endpoint `/comisiones/debug`, que existe para comparar cuántos
+cheques caen en el mes según `fechad`, `fecha`, `fechaing` y `fechaout` — cuatro
+columnas de la misma tabla, con `COUNT(*) FILTER`. Eso recorre la tabla entera
+por definición y ningún índice lo cambia. Si algún día ese endpoint molesta, lo
+que hay que revisar es si sigue haciendo falta, no cómo filtra.
+
 ### [M] El piso de /facturas ahora es el SERVIDOR, no el HTML
 
 24/08, medido en producción con 500 filas después de las dos pasadas de peso
