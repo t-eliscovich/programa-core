@@ -195,25 +195,38 @@ def test_un_codigo_repetido_se_pide_una_sola_vez(monkeypatch):
 # ---------------------------------------------------------------------------
 
 
+#: ⚠ IDS FIJOS Y ALTOS, y no `MAX(id) + 1`.
+#:
+#: 🚨 26/08/2026, y me tumbó el CI de `main`: con `MAX(id) + 1` sobre la base de
+#: tests —donde `scintela.cliente` viene VACÍA— este test se llevaba los ids 1,
+#: 2 y 3… que son exactamente los que la secuencia le iba a dar después a
+#: `test_integration_flows`. Tres tests que no tienen nada que ver con éste
+#: fallaban con "duplicate key" y el mensaje no nombraba a nadie.
+#:
+#: La regla, que vale para cualquier test que escriba en la base compartida:
+#: **no le pises los números a la secuencia**. Un id alto y fijo no se lo pelea
+#: con nadie, y de paso se ve de un vistazo que la fila es de un test.
+_ID = 990_000
+
+#: Los tres clientes de este test. Se borran ANTES y DESPUÉS: la base es
+#: compartida y lo que queda sembrado se lo come el test siguiente.
+_CODIGOS = ("LT1", "LT2", "LT3")
+
+
+def _limpiar(cur) -> None:
+    for tabla in ("cheque", "factura", "cliente"):
+        cur.execute(f"DELETE FROM scintela.{tabla} WHERE codigo_cli = ANY(%s)",
+                    (list(_CODIGOS),))
+
+
 def _sembrar(cur) -> None:
-    cur.execute("DELETE FROM scintela.cheque  WHERE codigo_cli IN ('LT1','LT2','LT3')")
-    cur.execute("DELETE FROM scintela.factura WHERE codigo_cli IN ('LT1','LT2','LT3')")
-    cur.execute("DELETE FROM scintela.cliente WHERE codigo_cli IN ('LT1','LT2','LT3')")
-    # ⚠ El id va a mano: `scintela.cliente` viene del dBase y su secuencia
-    # puede estar atrasada respecto de las filas importadas — dejarlo al
-    # default hace que el test falle con "duplicate key" y no por lo que mide.
-    cur.execute("SELECT COALESCE(MAX(id_cliente), 0) FROM scintela.cliente")
-    proximo = cur.fetchone()[0] + 1
+    _limpiar(cur)
     for i, (cod, nombre) in enumerate((("LT1", "CLIENTE UNO"), ("LT2", "CLIENTE DOS"),
                                        ("LT3", "CLIENTE SIN MOVIMIENTOS"))):
         cur.execute(
             "INSERT INTO scintela.cliente (id_cliente, codigo_cli, nombre, ruc,"
             " vend, activo) VALUES (%s, %s, %s, %s, %s, TRUE)",
-            (proximo + i, cod, nombre, "1790000000001", "PPR"))
-    cur.execute("SELECT COALESCE(MAX(id_factura), 0) FROM scintela.factura")
-    id_fac = cur.fetchone()[0]
-    cur.execute("SELECT COALESCE(MAX(id_cheque), 0) FROM scintela.cheque")
-    id_che = cur.fetchone()[0]
+            (_ID + i, cod, nombre, "1790000000001", "PPR"))
     # LT1: dos facturas vivas y una anulada (que NO tiene que salir).
     for i, (numf, imp, saldo, stat) in enumerate((
             (900001, 100.0, 100.0, "Z"), (900002, 250.0, 50.0, "Z"),
@@ -222,32 +235,43 @@ def _sembrar(cur) -> None:
             "INSERT INTO scintela.factura (id_factura, numf, fecha, codigo_cli,"
             " kg, importe, abono, saldo, stat, vencimiento, retencion)"
             " VALUES (%s, %s, %s, 'LT1', %s, %s, %s, %s, %s, %s, 0)",
-            (id_fac + 1 + i, numf, date(2026, 8, 1 + i), 10.0 * (i + 1), imp,
+            (_ID + i, numf, date(2026, 8, 1 + i), 10.0 * (i + 1), imp,
              imp - saldo, saldo, stat, date(2026, 10, 1)))
     # LT2: una factura y un cheque en cartera + un anticipo (espejo NB=98).
     cur.execute(
         "INSERT INTO scintela.factura (id_factura, numf, fecha, codigo_cli, kg,"
         " importe, abono, saldo, stat, vencimiento, retencion)"
         " VALUES (%s, 900010, %s, 'LT2', 7.0, 700.0, 0, 700.0, 'Z', %s, 0)",
-        (id_fac + 10, date(2026, 8, 5), date(2026, 11, 3)))
+        (_ID + 10, date(2026, 8, 5), date(2026, 11, 3)))
     cur.execute(
         "INSERT INTO scintela.cheque (id_cheque, no_cheque, fecha, fechad,"
         " codigo_cli, importe, no_banco, banco, stat)"
         " VALUES (%s, 'C900010', %s, %s, 'LT2', 300.0, 1, 'PICHINCHA', 'Z')",
-        (id_che + 1, date(2026, 8, 5), date(2026, 9, 5)))
+        (_ID, date(2026, 8, 5), date(2026, 9, 5)))
     cur.execute(
         "INSERT INTO scintela.cheque (id_cheque, no_cheque, fecha, fechad,"
         " codigo_cli, importe, no_banco, banco, stat)"
         " VALUES (%s, 'ANTICIPO', %s, %s, 'LT2', -120.0, 98, 'ANTICIPO', 'Z')",
-        (id_che + 2, date(2026, 8, 6), date(2026, 8, 6)))
+        (_ID + 1, date(2026, 8, 6), date(2026, 8, 6)))
 
 
 @pytest.fixture
 def sembrado(real_db_conn, migrated_db):
+    """Siembra los tres clientes y los BORRA al terminar.
+
+    🚨 El `commit` es necesario —las consultas que se miden abren su propia
+    conexión y no verían una transacción abierta— y por eso mismo el borrado
+    del final no es optativo: sin él, estas filas se quedan en la base que
+    comparten todos los tests `@pytest.mark.db`."""
     with real_db_conn.cursor() as cur:
         _sembrar(cur)
     real_db_conn.commit()
-    return real_db_conn
+    try:
+        yield real_db_conn
+    finally:
+        with real_db_conn.cursor() as cur:
+            _limpiar(cur)
+        real_db_conn.commit()
 
 
 @pytest.mark.db
