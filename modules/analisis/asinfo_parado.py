@@ -578,6 +578,13 @@ SELECT pr.nombre_subcategoria_producto AS subcategoria,
        CAST({_FECHA} AS date)          AS fecha,
        {_VENDEDOR}                     AS vendedor,
        {_CALIDAD_LINEA}                AS calidad,
+       -- ⭐ El número de la factura, para poder abrirla desde la pantalla
+       -- (dueña 26/08/2026). Entra al GROUP BY, así que cada renglón pasa a ser
+       -- UNA factura en vez de "todo lo que se vendió ese día de esa tela": es
+       -- más fiel, y sin eso el link no sabría a cuál de las dos ir.
+       -- ⚠ En una nota de crédito el número es el de la NC, no el de la madre:
+       -- es la que hay que abrir para ver la devolución.
+       RTRIM(fc.numero)                AS numero,
        {_KG}                           AS kg
 FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
@@ -588,7 +595,7 @@ WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND {_FECHA} >= '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
-         CAST({_FECHA} AS date), {_VENDEDOR}, {_CALIDAD_LINEA}
+         CAST({_FECHA} AS date), {_VENDEDOR}, {_CALIDAD_LINEA}, RTRIM(fc.numero)
 """
 
 
@@ -760,7 +767,22 @@ def vendido_desde(desde: str) -> list[dict]:
     filas = _filas(_sql_vendido(desde))
     for f in filas:
         f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
+        f["numf"] = _numf(f.get("numero"))
     return filas
+
+
+def _numf(numero) -> int | None:
+    """El número de factura pelado: `001-099-000182637` → `182637`.
+
+    Programa Core busca la factura por `numf`, que es el número sin la serie ni
+    los ceros. Verificado el 26/08/2026: las dos facturas del día de James 1.2
+    BLA (…182637 y …182654) existen en `scintela.factura` con esos números.
+
+    ⚠ Si el formato cambia y no queda ningún dígito, devuelve None y la fila se
+    dibuja sin link — antes que mandar a la dueña a una factura equivocada.
+    """
+    ultimo = str(numero or "").strip().rsplit("-", 1)[-1]
+    return int(ultimo) if ultimo.isdigit() else None
 
 
 def ultima_venta_antes(desde: str) -> dict[tuple[str, str], object]:

@@ -119,7 +119,6 @@ def test_la_factura_tambien_se_manda_como_FOTO():
     fila = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
             / "_acciones_fila.html").read_text(encoding="utf-8")
     assert ">Imagen</span>" in fila
-    assert "mantenela apretada y elegí WhatsApp" in fila, "no dice el gesto"
     # El PDF no se saca: es el botón más chico de la fila.
     assert "mi_cartera.factura_pdf" in t
 

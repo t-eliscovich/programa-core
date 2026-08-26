@@ -1,4 +1,4 @@
--- 0230 · El índice que le faltaba a la fecha con la que se cuenta la cobranza
+-- 0231 · El índice que le faltaba a la fecha con la que se cuenta la cobranza
 --
 -- TMT 2026-08-26 (dueña): *"algo más que dure mucho tiempo y podamos bajar"*.
 --

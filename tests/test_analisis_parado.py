@@ -3334,17 +3334,46 @@ def test_el_renglon_vendido_cuelga_de_su_grupo():
     assert "vlinea" not in base, "el nombre nuevo tiene que seguir libre"
 
 
-def test_el_renglon_colgado_es_una_linea_y_no_repite_el_numero():
-    """Dueña 25/08/2026: *"muy finito tiene que ser, y no me repitas info 64,
-    64"*. Con el color en negrita en su propia celda, cada venta ocupaba tres
-    renglones de alto; y en una tela de 1 punto por kilo, kg y puntos son el
-    mismo número escrito dos veces."""
+def test_el_renglon_colgado_es_una_linea():
+    """Dueña 25/08/2026: *"muy finito tiene que ser"*. Con el color en negrita
+    en su propia celda, cada venta ocupaba tres renglones de alto.
+
+    ⚠ Los puntos estuvieron un día escondidos cuando eran iguales a los kilos
+    ("no me repitas info 64, 64"). Funcionaba mientras todas las telas del grupo
+    valieran 1: en un grupo MEZCLADO la columna quedaba con un solo número
+    —Lycra mostraba 707 en una fila y nada en las otras cuatro— y parecía que
+    sólo un color puntuaba (dueña 26/08/2026). Repetir un número es menos malo
+    que una columna que se lee como un error, y con todos a la vista el total
+    del grupo se puede verificar sumando."""
     from pathlib import Path
     t = (Path("modules/analisis/templates/analisis/competencia.html")
          .read_text(encoding="utf-8"))
-    assert "white-space:nowrap" in t and "tr.vlinea>td *{display:inline" in t
-    assert "{% if v.puntos | round(0) != v.kg | round(0) %}" in t, (
-        "los puntos sólo cuando dicen algo distinto de los kilos")
+    assert "white-space:nowrap" in t
+    assert "{% if v.puntos | round(0) != v.kg | round(0) %}" not in t, (
+        "volvieron a esconderse los puntos que son iguales a los kilos")
+    assert '<td class="n pts">{{ v.puntos | num_es(0) }}</td>' in t
+
+
+def test_desde_el_detalle_se_salta_a_esa_tela_en_saldos():
+    """Dueña 26/08/2026: *"dejame clickear ahí en el producto y me lleve a los
+    saldos de ese producto"*. Los filtros de Saldos viajan en la URL, así que
+    el link deja la lista filtrada por grupo, tela y color.
+
+    ⚠ El vendedor va a SU copia de la lista: `/analisis/parado` no está en su
+    allowlist y le daría 404."""
+    from pathlib import Path
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    i = t.index('class="alista"')
+    link = " ".join(t[i - 400:i].split())
+    assert "/analisis/competencia/telas' if vend" in link
+    assert "else '/analisis/parado'" in link
+    for campo in ("grupo=", "subgrupo=", "q="):
+        assert campo in link, f"el link no filtra por {campo}"
+    # los tres campos existen en el buscador de Saldos
+    parado = (Path("modules/analisis/templates/analisis/parado.html")
+              .read_text(encoding="utf-8"))
+    assert "const CAMPOS = ['q', 'grupo', 'subgrupo'" in parado
 
 
 def test_el_que_no_compite_es_la_casa():
@@ -3853,3 +3882,69 @@ def test_afuera_de_la_lista_no_vuelve_a_la_pantalla():
         "se pasaba al contexto sólo para ese texto")
     fuente = _i.getsource(queries.actualizar)
     assert "nuevas" in fuente and "produciendo" in fuente and "pedidas" in fuente
+
+
+def test_el_numero_de_factura_se_pela_para_buscarla_en_el_programa():
+    """Asinfo la numera `001-099-000182637` y Programa Core la busca por `numf`,
+    que es el número pelado. Verificado el 26/08/2026 contra las dos facturas
+    del día de James 1.2 BLA: 182637 y 182654 existen en `scintela.factura`.
+
+    ⚠ Si el formato cambiara y no quedara ningún dígito, devuelve None y la
+    fila se dibuja sin link — antes que mandar a la dueña a otra factura."""
+    assert asinfo_parado._numf("001-099-000182637") == 182637
+    assert asinfo_parado._numf(" 001-099-000182654 ") == 182654
+    assert asinfo_parado._numf("182637") == 182637
+    assert asinfo_parado._numf(None) is None
+    assert asinfo_parado._numf("") is None
+    assert asinfo_parado._numf("001-099-XXX") is None
+
+
+def test_el_renglon_vendido_guarda_su_factura():
+    """Sin el número no hay a dónde linkear, y con el grain viejo —todo lo
+    vendido de esa tela ese día— un renglón podía venir de dos facturas y el
+    link no sabría a cuál ir. Por eso el número entra al GROUP BY: cada renglón
+    es UNA factura."""
+    sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
+    assert "RTRIM(fc.numero) AS numero" in sql
+    assert sql.count("RTRIM(fc.numero)") == 2, "tiene que estar en el GROUP BY"
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    assert "calidad, cuenta, numf" in fuente
+    assert 'v.get("numf")' in fuente
+
+
+def test_la_factura_es_solo_para_quien_puede_ver_facturas():
+    """Dueña 26/08/2026: *"eso sí, pero el link a la factura no"*. El detalle de
+    los siete lo dejó abierto para los vendedores; la factura no.
+
+    ⚠ Y sin el permiso el link igual daría 404: sería un link roto además de
+    una filtración."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for nombre in ("competencia.html", "parado.html"):
+        html = (carpeta / nombre).read_text(encoding="utf-8")
+        i = html.index("/facturas?q=")
+        antes = html[i - 260:i]
+        assert "tiene_permiso('facturas.ver')" in antes, (
+            f"{nombre}: el link a la factura no está gateado")
+        assert "v.numf and" in antes, "sin número no se dibuja el link"
+
+
+def test_la_hoja_impresa_habla_el_mismo_idioma_que_la_pantalla():
+    """Dueña 26/08/2026: *"¿y se ven todas las pantallas iguales?"*. La lista
+    del vendedor sí —es el MISMO template—, pero la hoja imprimible se arma con
+    otra plantilla y se quedó con «Kg en saldo» cuando la tabla pasó a «Queda».
+
+    El que sale a vender con la hoja en la mano y el que mira la pantalla
+    tienen que leer la misma palabra."""
+    from pathlib import Path
+    carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+               "templates" / "analisis")
+    for nombre in ("parado.html", "parado_impreso.html"):
+        html = (carpeta / nombre).read_text(encoding="utf-8")
+        import re
+        texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+        assert ">Kg en saldo<" not in texto, (
+            f"{nombre} sigue diciendo «Kg en saldo»; la tabla dice «Queda»")
+        assert ">Queda<" in texto

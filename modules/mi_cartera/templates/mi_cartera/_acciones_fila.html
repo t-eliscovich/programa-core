@@ -16,9 +16,8 @@
    llevando para decir una palabra.
 
    WhatsApp queda verde y lleno: es el que se usa todos los días, y el color
-   es la mitad de lo que lo hace reconocible. Imagen lleva el borde verde
-   —es la red que SÍ anda en todos los teléfonos (Alex, 25/08)— y el gesto,
-   que no se adivina, se dice en el renglón de abajo, una vez para los cuatro.
+   es la mitad de lo que lo hace reconocible. Imagen lleva el borde verde: es
+   la red que SÍ anda en todos los teléfonos (Alex, 25/08).
 
    Los íconos van como máscara SVG y NO como carácter especial: Android no
    tiene ⎙ ni el emoji de WhatsApp en sus tipografías y salía el cuadradito
@@ -26,7 +25,12 @@
 
    Contexto que espera:
      pdf_url · img_url · hoja_url · wa_nombre
-     nota      opcional; el renglón de abajo. Sin ella va el gesto de la foto.
+     nota      opcional; un renglón debajo de la fila. SIN nota no va nada:
+               TMT 26/08 mandó borrar el cartelito que explicaba el gesto de la
+               foto —el botón dice "Imagen" y con eso alcanza; el renglón se
+               leía todos los días para algo que se aprende una vez—. Queda
+               para lo que NO se puede adivinar, como el aviso de que con
+               muchas facturas conviene el PDF.
      flojo     opcional; apaga el verde de Imagen (cuando la foto sale chica)
 #}
 {% if pdf_disponible() %}
@@ -45,7 +49,7 @@
   <a class="a4 pdf" target="_blank" rel="noopener" href="{{ pdf_url }}"
      title="Bajar el archivo PDF"><span>PDF</span></a>
 </div>
-<p class="acc4-nota">{{ nota | default('La imagen se manda solita: mantenela apretada y elegí WhatsApp.', true) }}</p>
+{% if nota %}<p class="acc4-nota">{{ nota }}</p>{% endif %}
 {% else %}
 {# Sin motor de PDF en el servidor quedan las acciones que no lo necesitan. #}
 <div class="acc4">

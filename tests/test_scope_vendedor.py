@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 from flask import g
 
+import scope_vendedor
 from scope_vendedor import (
     HOME_VENDEDOR,
     PREFIJOS_HOME,
@@ -258,3 +259,58 @@ def test_un_usuario_normal_no_ve_ningun_redirect_nuevo(app):
     """La invariante de siempre: para quien no es vendedor, no-op exacto."""
     for path in PREFIJOS_HOME:
         assert _con_user(app, path, {"username": "tamara", "vend": None}) is None
+
+
+def test_las_pantallas_de_la_oficina_que_el_vendedor_tiene_con_otra_ruta_redirigen():
+    """Dueña 26/08/2026, mirando la sección como Patricio: *"¿por qué no puedo
+    ver saldos como patricio, o a quién ofrecerle qué?"*. Sí puede: son las
+    MISMAS pantallas con sus clientes adentro, colgadas de
+    /analisis/competencia. Lo que no funcionaba era llegar por la URL de la
+    oficina —un bookmark, un link copiado, o ella previsualizando con «Ver
+    como»—: el allowlist contestaba un 404 seco.
+
+    ⚠ Se redirige SÓLO donde la pantalla existe del otro lado. Para el resto el
+    404 se queda: el vendedor no tiene por qué enterarse de qué hay."""
+    assert scope_vendedor.EQUIVALENTE_VENDEDOR == {
+        "/analisis": "/analisis/competencia",
+        "/analisis/parado": "/analisis/competencia/telas",
+        "/analisis/parado/clientes": "/analisis/competencia/mi-hoja",
+    }
+    # y los tres destinos cuelgan del prefijo que el vendedor sí puede tocar
+    for destino in scope_vendedor.EQUIVALENTE_VENDEDOR.values():
+        assert scope_vendedor._path_permitido(
+            destino, scope_vendedor.PREFIJOS_PERMITIDOS), (
+            f"{destino} redirige a una ruta que el vendedor tampoco puede ver")
+
+
+@pytest.mark.parametrize("path, destino", [
+    ("/analisis", "/analisis/competencia"),
+    ("/analisis/parado", "/analisis/competencia/telas"),
+    ("/analisis/parado/", "/analisis/competencia/telas"),
+    ("/analisis/parado/clientes", "/analisis/competencia/mi-hoja"),
+])
+def test_el_vendedor_que_pide_la_pantalla_de_la_oficina_va_a_la_suya(
+        app, path, destino):
+    """Dueña 26/08/2026, mirando la sección como Patricio: *"¿por qué no puedo
+    ver saldos como patricio, o a quién ofrecerle qué?"*. Sí puede: son las
+    MISMAS pantallas con sus clientes adentro. Lo que no funcionaba era llegar
+    por la URL de la oficina —un bookmark, un link copiado, o ella
+    previsualizando con «Ver como»— y ahí el allowlist contestaba un 404."""
+    resp = _con_user(app, path, {"vend": "PPR"})
+    assert resp is not None and resp.status_code in (301, 302, 308)
+    assert resp.headers["Location"].endswith(destino)
+
+
+def test_para_el_que_no_es_vendedor_el_equivalente_no_existe(app):
+    """La invariante de siempre: el hook no puede cambiar una sola respuesta
+    para Tamara, Andrés o Alex. Un redirect de más los sacaría de su pantalla."""
+    for path in ("/analisis", "/analisis/parado", "/analisis/parado/clientes"):
+        assert _con_user(app, path, {"username": "tamara", "vend": None}) is None
+
+
+def test_lo_que_el_vendedor_no_tiene_sigue_dando_404():
+    """El redirect es una excepción corta, no una puerta: una pantalla de la
+    oficina sin equivalente no puede empezar a contestar algo distinto de 404."""
+    for path in ("/facturas", "/cheques", "/informes/balance",
+                 "/analisis/parado.csv", "/analisis/competencia/telas.csv"):
+        assert path not in scope_vendedor.EQUIVALENTE_VENDEDOR

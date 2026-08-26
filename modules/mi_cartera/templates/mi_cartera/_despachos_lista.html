@@ -50,7 +50,7 @@
   <div class="dsub">
     <b>{{ d.rollos }} rollo{{ '' if d.rollos == 1 else 's' }}</b> en
     {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }}{%
-      if d.unidades %} · {{ d.unidades }} unidades{% endif %} ·
+      if d.unidades %} · {{ d.unidades }} unidad{{ '' if d.unidades == 1 else 'es' }}{% endif %} ·
     desde el {{ d.desde|fecha_es }}{%
       if d.devueltos %} · incluye {{ d.devueltos }} que devolvió{% endif %}
   </div>
@@ -60,7 +60,7 @@
     <div class="val">{{ d.rollos }}</div>
     <div class="sub">
       {{ d.guias|length }} despacho{{ '' if d.guias|length == 1 else 's' }}{%
-        if d.unidades %} · {{ d.unidades }} unidades{% endif %} ·
+        if d.unidades %} · {{ d.unidades }} unidad{{ '' if d.unidades == 1 else 'es' }}{% endif %} ·
       desde el {{ d.desde|fecha_es }}
       {# Lo devuelto se NOMBRA, no se descuenta: la factura cobra lo que salió
          y la devolución se corrige con otro documento. #}

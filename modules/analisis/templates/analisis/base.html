@@ -163,10 +163,20 @@ white-space:nowrap}
 /* Y cuando la pantalla es ancha se va al MARGEN, que está vacío: el contenido
    mide 1120 y recién a partir de 1400 sobra lugar para una columna de 150 sin
    pisar nada. */
+/* Y cuando la pantalla es ancha se va al MARGEN, que está vacío: el contenido
+   mide 1120 y recién a partir de 1400 sobra lugar para una columna sin pisar
+   nada.
+   ⚠ Con FONDO y borde, como el cuadro de filtros (dueña 26/08/2026: "se ve feo
+   acá"). Sin caja son tres links sueltos flotando en el aire al costado de la
+   página: se leen como algo que se descolgó, no como un índice.
+   ⚠ Y `max()` en el `left`: en una pantalla muy ancha el cálculo lo tiraba
+   contra el borde de la ventana. */
 @media (min-width:1400px){
-  .secciones{position:fixed;top:96px;left:calc(50% - 560px - 172px);width:150px;
-  flex-direction:column;gap:4px;padding:0;margin:0;background:none}
-  .secciones a{text-align:left}
+  .secciones{position:fixed;top:96px;left:max(16px, calc(50% - 560px - 180px));
+  width:158px;flex-direction:column;gap:2px;margin:0;
+  padding:8px;border:1px solid var(--l);border-radius:10px;background:#fafafa}
+  .secciones a{text-align:left;border:0;background:none;padding:6px 9px}
+  .secciones a:hover{background:#eef2f7}
 }
 .plegable>summary{cursor:pointer;list-style:none;padding:14px 0 0;
 border-top:1px solid var(--l);margin-top:30px}

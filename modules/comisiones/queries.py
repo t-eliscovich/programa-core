@@ -181,7 +181,7 @@ _CAJA_COBRO_FROM = """
 #
 #   1. Ningún índice se puede usar — y `scintela.cheque` ni siquiera tenía uno
 #      sobre `fechad`, que es la fecha con la que se cuenta TODA la cobranza
-#      (migración 0230).
+#      (migración 0231).
 #   2. El planificador queda CIEGO: no sabe estimar cuántas filas caen en un
 #      mes, calcula 1 donde hay 476, y con esa cuenta elige un nested loop
 #      contra el CTE de clientes — 1,9 millones de comparaciones para juntar
