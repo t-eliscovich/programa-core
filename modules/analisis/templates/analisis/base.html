@@ -270,6 +270,15 @@ font-size:12px;color:var(--g)}
   .filtros .ff:first-child{flex:1 1 100%}
   .filtros input,.filtros select{font-size:16px;max-width:none}
   .filtros .cuenta{flex:1 1 100%;margin:0}
+  /* ⚠⚠ LA PÁGINA NO PUEDE MOVERSE PARA EL COSTADO. Medido el 25/08/2026 a 390,
+     360 y 320 px: el documento medía 492 contra 390 de pantalla, así que TODA
+     la pantalla —encabezado, tarjetas y filtros— se corría en diagonal. La
+     culpa era de las tablas `resumen` (Por grupo y Vendidos), que viven en una
+     `.caja` con `overflow:hidden`: no se recortan ni se pueden correr, empujan.
+     Ahora se corren adentro de su caja y la página queda quieta.
+     ⚠ `:not(.larga)` porque la tabla larga va con `overflow:visible` a
+     propósito — un ancestro que recorta mata su encabezado fijo. */
+  .caja:not(.larga){overflow-x:auto}
   /* ⚠ En el teléfono el índice NO se pega arriba: son tres botones que taparían
      el primer renglón de cada tabla al scrollear. */
   .secciones{position:static;gap:6px;flex-wrap:nowrap;overflow-x:auto;

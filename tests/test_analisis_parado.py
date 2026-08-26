@@ -3608,3 +3608,20 @@ def test_vendidos_no_promete_un_click_que_no_anda():
     assert "Toque una fila para ver esa tela arriba" not in html
     assert "Lo que salió de la lista desde que arrancó la competencia" not in html
     assert 'onclick="verTela(this)"' in html, "el click sigue estando"
+
+
+def test_la_pantalla_no_se_corre_para_el_costado_en_el_telefono():
+    """Medido el 25/08/2026 a 390, 360 y 320 px: el documento medía 492 contra
+    390 de pantalla, así que TODA la pantalla —encabezado, tarjetas y filtros—
+    se corría en diagonal. La culpa eran las tablas `resumen` (Por grupo y
+    Vendidos), que viven en una `.caja` con `overflow:hidden`: ni se recortan ni
+    se pueden correr, empujan.
+
+    ⚠ `:not(.larga)`: la tabla larga va con `overflow:visible` a propósito —un
+    ancestro que recorta mata su encabezado fijo—, así que no puede caer en la
+    misma regla."""
+    from pathlib import Path
+    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
+    movil = base[base.index("@media (max-width: 780px)"):]
+    assert ".caja:not(.larga){overflow-x:auto}" in movil
