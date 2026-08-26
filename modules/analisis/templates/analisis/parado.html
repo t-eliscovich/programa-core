@@ -472,7 +472,15 @@ en {{ vendidos | length }} renglones ·
     <td class="n">{{ v.kg | num_es(1) if v.kg < 1 else v.kg | num_es(0) }}</td>
     <td class="n vale"><span class="pt p{{ v.puntos }}">{{ v.puntos }} × kg</span></td>
     <td class="n pts opt">{{ v.puntos_fila | num_es(0) }}</td>
-    <td>{{ v.vendedor }}</td>
+    {# ⭐ El CÓDIGO de tres letras, no el nombre entero (dueña 26/08/2026:
+       "poner código de vendedor en la columna que arriba está cliente, no
+       todo"). Es la misma columna que arriba dice «Clientes» y trae un número
+       de tres dígitos: con «Proaño Sebastián» adentro, la columna se estiraba
+       y las dos tablas dejaban de leerse en vertical. El nombre completo queda
+       en el `title`.
+       ⚠ La casa no tiene código: va «Intela», que es como se llama en el
+       ranking. #}
+    <td class="g" title="{{ v.vendedor }}">{{ v.vend_pc or 'Intela' }}</td>
     {# ⭐ El día abre la FACTURA (dueña 26/08/2026), sólo para quien puede
        verlas. Ver el comentario en competencia.html. #}
     <td class="g n opt">{% if v.numf and tiene_permiso('facturas.ver')

@@ -3982,3 +3982,18 @@ def test_el_libro_de_excel_sale_con_formato():
     assert ws["B2"].value == 946 and isinstance(ws["B2"].value, int | float)
     assert ws["B2"].number_format == "#,##0.0"
     assert ws["B2"].alignment.horizontal == "right"
+
+
+def test_vendidos_muestra_el_codigo_del_vendedor_y_no_el_nombre_entero():
+    """Dueña 26/08/2026: *"poner código de vendedor en la columna que arriba
+    está cliente, no todo"*. Es la misma columna que en la lista de arriba dice
+    «Clientes» y trae un número de tres dígitos: con «Proaño Sebastián» adentro
+    se estiraba y las dos tablas dejaban de leerse en vertical.
+
+    ⚠ La casa no tiene código de tres letras: va «Intela», que es como se llama
+    en el ranking. Y el nombre completo queda en el `title`, que no ocupa."""
+    html = _html_parado()
+    tabla = html[html.index('id="vendidos"'):]
+    assert "{{ v.vend_pc or 'Intela' }}" in tabla
+    assert 'title="{{ v.vendedor }}"' in tabla, "el nombre entero no se pierde"
+    assert "<td>{{ v.vendedor }}</td>" not in tabla
