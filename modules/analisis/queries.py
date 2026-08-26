@@ -494,6 +494,12 @@ def _linea(f: dict, kg: float, forma: str, cal: str) -> dict:
     g["kg_vendidos"] = (float(f.get("kg_vend_pri") or 0) if cal == "PRI"
                         else float(f.get("kg_vend_seg") or 0) if cal == "SEG"
                         else 0.0)
+    # ⚠ Y los dos detalles también, no sólo el total: la píldora de categoría de
+    # una fila VENDIDA se dibuja mirándolos —del stock no se puede, no queda
+    # lote— y si quedaran los del ítem entero, la línea de primera de un color
+    # que vendió las dos calidades diría "SEG" o se quedaría sin píldora.
+    g["kg_vend_pri"] = g["kg_vendidos"] if cal == "PRI" else 0.0
+    g["kg_vend_seg"] = g["kg_vendidos"] if cal == "SEG" else 0.0
     g["puntos_fila"] = kg * float(f.get("puntos") or 1)
     return g
 

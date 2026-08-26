@@ -3830,3 +3830,20 @@ def test_los_kilos_que_entran_por_bodega_dicen_de_donde_salen():
     assert "la segunda nueva entra" in html[i:i + 200]
     assert "resumen.kg_movido < 0" in html[i:i + 120], (
         "sólo cuando ENTRAN kilos: si salieron, la segunda no explica nada")
+
+
+def test_la_linea_abierta_se_lleva_su_propia_categoria_vendida():
+    """La píldora de categoría de una fila VENDIDA se dibuja mirando
+    `kg_vend_pri` / `kg_vend_seg` —del stock no se puede, no queda lote—. Si al
+    abrir el color en dos líneas quedaran los del ítem entero, la línea de
+    primera de un color que vendió las dos diría "SEG" o se quedaría sin
+    píldora: estaría mostrando lo que vendió la OTRA línea."""
+    fila = {"subcategoria": "Jersey 3", "color": "BLA", "stock_kg": 100,
+            "kg_tub_pri": 60, "kg_tub_seg": 40, "kg_abi_pri": 0, "kg_abi_seg": 0,
+            "kg_vend_pri": 7, "kg_vend_seg": 3, "puntos": 4}
+    lineas = queries.abrir_en_lineas([fila])
+    assert len(lineas) == 2
+    pri = next(x for x in lineas if x["cal_fila"] == "PRI")
+    seg = next(x for x in lineas if x["cal_fila"] == "SEG")
+    assert (pri["kg_vendidos"], pri["kg_vend_pri"], pri["kg_vend_seg"]) == (7, 7, 0)
+    assert (seg["kg_vendidos"], seg["kg_vend_pri"], seg["kg_vend_seg"]) == (3, 0, 3)
