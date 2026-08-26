@@ -278,7 +278,14 @@ font-size:12px;color:var(--g)}
      Ahora se corren adentro de su caja y la página queda quieta.
      ⚠ `:not(.larga)` porque la tabla larga va con `overflow:visible` a
      propósito — un ancestro que recorta mata su encabezado fijo. */
-  .caja:not(.larga){overflow-x:auto}
+  .caja{overflow-x:auto}
+  /* ⚠⚠ Y la LARGA también, aunque en escritorio vaya con `overflow:visible`
+     para no matarle el encabezado fijo. Ésa era la que empujaba: 477 px de
+     tabla asomando de una caja de 362. En el teléfono el encabezado fijo se
+     apaga —un `overflow-x:auto` arrastra el vertical y el sticky muere igual—
+     y se cambia por lo que sirve en una pantalla de 390: poder correr la tabla
+     con el dedo sin que se mueva el resto de la página. */
+  #tabla thead th{position:static}
   /* ⚠ En el teléfono el índice NO se pega arriba: son tres botones que taparían
      el primer renglón de cada tabla al scrollear. */
   .secciones{position:static;gap:6px;flex-wrap:nowrap;overflow-x:auto;

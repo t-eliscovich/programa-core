@@ -3665,4 +3665,8 @@ def test_la_pantalla_no_se_corre_para_el_costado_en_el_telefono():
     base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
     movil = base[base.index("@media (max-width: 780px)"):]
-    assert ".caja:not(.larga){overflow-x:auto}" in movil
+    assert ".caja{overflow-x:auto}" in movil
+    # ⚠ La tabla LARGA era la que empujaba: 477 px asomando de una caja de 362,
+    # porque en escritorio va con `overflow:visible` para no matar su encabezado
+    # fijo. En el teléfono el encabezado fijo se apaga y la tabla se corre.
+    assert "#tabla thead th{position:static}" in movil
