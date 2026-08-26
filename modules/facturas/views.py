@@ -870,9 +870,23 @@ def detalle(id_factura: int):
     except Exception as _e:
         from modules._lib.silencios import avisar
         avisar(__name__, "detalle", _e)
+    # El detalle de la mercadería, si ya está guardado. TMT 2026-08-26 (dueña):
+    # *"tarda mucho en cargarse"*. El bloque se pedía SIEMPRE aparte, así que
+    # aunque la respuesta estuviera en la base había un segundo viaje —y el
+    # cartelito de "buscando el detalle" parpadeando— para algo que ya se
+    # sabía. Cuando está, va pintado de una; cuando no, la ficha lo pide como
+    # antes y no espera a Asinfo para abrir.
+    det = None
+    try:
+        from modules.asinfo import factura_lineas
+        det = factura_lineas.en_cache(fact.get("numf_completo"))
+    except Exception as _e:  # noqa: BLE001 — si falla, se pide aparte
+        from modules._lib.silencios import avisar
+        avisar(__name__, "detalle_en_cache", _e)
     return render_template(
         "facturas/detalle.html",
         fact=fact,
+        det=det,
         aplicaciones=aplicaciones,
         retenciones=retenciones,
         total_aplicado=total_aplicado,

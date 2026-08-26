@@ -47,6 +47,13 @@ def _precargar_facturas() -> int:
     return factura_lineas.precargar()
 
 
+def _rellenar_facturas_viejas() -> int:
+    """Y el de las viejas, de a lotes, hasta que no falte ninguna."""
+    from modules.asinfo import factura_lineas
+
+    return factura_lineas.precargar_faltantes()
+
+
 def _warm_once() -> None:
     import calendar as _cal_mod
     from datetime import date
@@ -98,6 +105,11 @@ def _warm_once() -> None:
         # los últimos días DE UNA y quedan guardadas en la base. La función se
         # limita sola a una corrida cada media hora.
         ("factura_detalle_recientes", lambda: _precargar_facturas()),
+        # TMT 2026-08-26 (dueña): *"tarda mucho en cargarse"*, mirando una
+        # factura de MAYO. Los últimos días ya estaban calientes; la historia
+        # no. Este paso la va llenando para atrás, un lote cada dos minutos,
+        # hasta que no falta ninguna — y ahí deja de cruzar el puente.
+        ("factura_detalle_viejas", lambda: _rellenar_facturas_viejas()),
         ("stock_lote_totales", lambda: asvc.stock_asinfo_lote_totales()),
         ("fabricacion_proceso_52", lambda: asvc.fabricacion_proceso(52)),
         ("fabricacion_proceso_53", lambda: asvc.fabricacion_proceso(53)),

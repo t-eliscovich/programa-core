@@ -149,3 +149,75 @@ def test_la_fila_de_acciones_viaja_CON_SU_CSS():
     # Y no quedó una copia vieja suelta: dos definiciones de lo mismo divergen.
     ficha = (tpl / "_ficha_css.html").read_text(encoding="utf-8")
     assert ".a4{" not in ficha, "quedó la copia vieja en _ficha_css"
+
+
+# --- la ficha de la oficina no espera dos veces ------------------------------
+#
+# TMT 2026-08-26 (dueña): *"tarda mucho en cargarse"*. El bloque se pedía
+# SIEMPRE aparte, aunque la respuesta ya estuviera guardada en la base: un
+# segundo viaje, y el cartelito de "buscando el detalle" parpadeando, para algo
+# que ya se sabía.
+
+FACTURA_PC = {
+    "id_factura": 1, "numf": 175698, "numf_completo": "001-099-000175698",
+    "codigo_cli": "ERZ", "cliente": "ERAZO LOGACHO ALEX DAVID",
+    "fecha": None, "vencimiento": None, "kg": 168.40, "importe": 1537.34,
+    "abono": 0, "retencion": 0, "saldo": 1537.34, "stat": "A",
+    "condic": "", "tipo": "F", "pase": "", "clave": "",
+}
+
+
+@pytest.fixture()
+def oficina(app, fake_db):
+    import bcrypt
+    rid = fake_db.add_role("Oficina detalle", ["facturas.ver"])
+    uid = fake_db.add_user("ofid", bcrypt.hashpw(b"x", bcrypt.gensalt(rounds=4)),
+                           rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    return c
+
+
+def _ficha(oficina, monkeypatch, guardado):
+    from modules.asinfo import factura_lineas
+    from modules.facturas import views as fv
+
+    monkeypatch.setattr(fv.queries, "por_id", lambda n: dict(FACTURA_PC))
+    monkeypatch.setattr(fv.queries, "cheques_aplicados", lambda *a: [])
+    monkeypatch.setattr(fv.queries, "retenciones_aplicadas", lambda *a: [])
+    monkeypatch.setattr(factura_lineas, "en_cache", lambda n: guardado)
+    return oficina.get("/facturas/175698").data.decode()
+
+
+def _detalle_guardado():
+    from modules.asinfo import factura_lineas as fl
+    return {"estado": "ok", **fl._agrupar([{
+        "tela": "Fleece 102", "codigo": "PET", "producto": "Fleece 102 PETROLEO",
+        "categoria": "TELAS", "color": "PETROLEO", "calidad": "PRIMERA",
+        "doc": fl.DOC_FACTURA, "cantidad": 42.8, "precio": 9.25,
+        "bruto": 395.9, "descuento": 64.93, "pct1": 5, "pct2": 14}])}
+
+
+def test_si_el_detalle_ya_esta_guardado_la_ficha_abre_con_el_puesto(
+        oficina, monkeypatch):
+    html = _ficha(oficina, monkeypatch, _detalle_guardado())
+    assert "PETROLEO" in html
+    assert "Buscando el detalle en Asinfo" not in html
+    assert "/facturas/175698/que-se-llevo" not in html   # ni el segundo viaje
+
+
+def test_si_todavia_no_se_sabe_la_ficha_abre_igual_y_lo_pide_aparte(
+        oficina, monkeypatch):
+    """La ficha NUNCA espera a Asinfo para pintar: eso es lo que la hacía lenta
+    todos los días antes de que existiera la caché."""
+    html = _ficha(oficina, monkeypatch, None)
+    assert "/facturas/175698/que-se-llevo" in html
+    assert "Buscando el detalle en Asinfo" in html
+
+
+def test_el_titulo_del_cartelito_tambien_dice_detalle():
+    t = (ROOT / "modules" / "facturas" / "templates" / "facturas"
+         / "detalle.html").read_text(encoding="utf-8")
+    assert ">Detalle</h2>" in t
+    assert "Qué se llevó</h2>" not in t

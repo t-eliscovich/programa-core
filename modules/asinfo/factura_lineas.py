@@ -104,11 +104,15 @@ _DOCS = {
 #: pantallas (oficina, vendedor y cliente) y ya está escrito que las tres
 #: tienen que decir lo mismo: si el cliente y el vendedor vieran dos detalles
 #: distintos de la misma factura, la discusión no se puede tener.
+#:
+#: TMT 2026-08-26 (dueña): *"no me gusta el título. Que se llame detalle"*.
+#: La nota de crédito y la devolución se siguen nombrando: ahí el título es
+#: lo único que dice que ese papel NO es una venta.
 TITULOS = {
     "nota-credito": "Nota de crédito",
     "devolucion": "Qué devolvió",
 }
-TITULO_DEFAULT = "Qué se llevó"
+TITULO_DEFAULT = "Detalle"
 
 #: IVA vigente. El mismo 15% que usa la lista de precios.
 IVA = 0.15
@@ -131,13 +135,21 @@ _CANDADO = threading.Lock()
 #: Cuándo corrió la última precarga (monotonic). 0 = nunca.
 _ULTIMA_PRECARGA = 0.0
 
+#: El relleno de las facturas VIEJAS: cuántas por vuelta, cada cuánto, y hasta
+#: dónde para atrás. Ver `precargar_faltantes`.
+_FALTANTES_LOTE = 120
+_FALTANTES_CADA = 120.0
+_FALTANTES_DIAS = 180
+_ULTIMO_RELLENO = 0.0
+
 
 def reset_cache() -> None:
     """Olvida lo cacheado EN MEMORIA (la base es la caché de verdad)."""
-    global _ULTIMA_PRECARGA
+    global _ULTIMA_PRECARGA, _ULTIMO_RELLENO
     with _CANDADO:
         _CACHE.clear()
     _ULTIMA_PRECARGA = 0.0
+    _ULTIMO_RELLENO = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -185,6 +197,129 @@ def _guardar(numero: str, res: dict) -> None:
             (numero, json.dumps(res)))
     except Exception as e:  # noqa: BLE001 — no poder guardar no rompe la vista
         _LOG.warning("guardando la caché de %s: %s", numero, e)
+
+
+def _marcar_sin_datos(numero: str) -> None:
+    """Deja escrito que Asinfo NO tiene esta factura.
+
+    Sólo lo llama el relleno, y sólo cuando el puente contestó BIEN una
+    pregunta que nombraba a esta factura: ahí el silencio es una respuesta
+    ("no la conozco"), no un error de red. Las facturas viejas del dBase nunca
+    van a estar en Asinfo, y sin esta marca el relleno se quedaría preguntando
+    por las mismas para siempre, sin avanzar nunca hacia las que sí están.
+
+    La pantalla NO lee esta marca (`_de_la_base` sólo devuelve el éxito): quien
+    abra una de éstas le vuelve a preguntar a Asinfo y recién ahí se le dice
+    que no hay detalle. Que la marca sea sólo una anotación del relleno es a
+    propósito — un "no hay nada" guardado para siempre es el error que ya costó
+    el balance del 29/07, y acá no puede llegar a ninguna pantalla.
+    """
+    try:
+        import json
+
+        import db
+
+        db.execute(
+            "INSERT INTO scintela.factura_detalle (numero, datos) "
+            "VALUES (%s, %s::jsonb) ON CONFLICT (numero) DO NOTHING",
+            (numero, json.dumps({"estado": "sin-datos", "formato": FORMATO})))
+    except Exception as e:  # noqa: BLE001 — el relleno nunca rompe nada
+        _LOG.warning("marcando sin-datos %s: %s", numero, e)
+
+
+def _faltantes(limite: int, dias: int) -> list[str]:
+    """Las facturas de los últimos `dias` que todavía no tienen su detalle.
+
+    De la más nueva a la más vieja: si alguien va a abrir una factura vieja,
+    es mucho más probable que sea la del mes pasado que la del año pasado.
+
+    Se dejan afuera los últimos 3 días, que son de `precargar`: esa trae el día
+    entero de una sola vez y además REESCRIBE, que es lo que hace falta
+    mientras una factura recién emitida todavía puede recibir un renglón más.
+    """
+    from datetime import timedelta
+
+    import db
+    from filters import today_ec
+
+    hoy = today_ec()
+    filas = db.fetch_all(
+        "SELECT f.numf_completo AS numero "
+        "  FROM scintela.factura f "
+        "  LEFT JOIN scintela.factura_detalle d ON d.numero = f.numf_completo "
+        " WHERE d.numero IS NULL "
+        "   AND f.fecha >= %s AND f.fecha < %s "
+        "   AND f.numf_completo ~ '^[0-9]{3}-[0-9]{3}-[0-9]{9}$' "
+        " ORDER BY f.fecha DESC, f.id_factura DESC "
+        " LIMIT %s",
+        (hoy - timedelta(days=max(1, int(dias))), hoy - timedelta(days=3),
+         int(limite)))
+    return [(f.get("numero") or "").strip() for f in filas]
+
+
+def precargar_faltantes(limite: int = _FALTANTES_LOTE,
+                        dias: int = _FALTANTES_DIAS,
+                        cada_secs: float = _FALTANTES_CADA) -> int:
+    """El detalle de las facturas VIEJAS, de a lotes, hasta que no falte ninguna.
+
+    TMT 2026-08-26 (dueña): *"qué se llevó tarda mucho en cargarse"* — mirando
+    una factura de MAYO. `precargar` calienta los últimos 3 días, así que la
+    factura de esta semana abre en milésimas; la de hace tres meses pagaba los
+    650 ms del puente igual que el primer día.
+
+    Así que el calentador, además, va llenando la historia para atrás: cada dos
+    minutos pregunta por hasta 120 facturas que todavía no tienen detalle —una
+    sola pregunta, el mismo peaje de 650 ms que pagaría UNA— y las guarda. En
+    unas horas quedan cubiertos los últimos seis meses y nadie vuelve a
+    esperar. Cuando no falta ninguna, la vuelta es una consulta a Postgres que
+    no devuelve nada y ni siquiera cruza el puente.
+
+    Las que Asinfo no conoce (las viejas del dBase) quedan marcadas para que el
+    lote siguiente mire facturas nuevas y no las mismas de siempre.
+    """
+    global _ULTIMO_RELLENO
+
+    from modules._lib import metabase_client
+
+    ahora = time.monotonic()
+    if cada_secs and _ULTIMO_RELLENO and (ahora - _ULTIMO_RELLENO) < cada_secs:
+        return 0
+    if not metabase_client.disponible():
+        return 0
+    try:
+        numeros = [n for n in _faltantes(limite, dias) if _NUMERO_RE.match(n)]
+    except Exception as e:  # noqa: BLE001 — sin base, no hay nada que rellenar
+        _LOG.warning("buscando facturas sin detalle: %s", e)
+        return 0
+    _ULTIMO_RELLENO = ahora
+    if not numeros:
+        return 0
+
+    lista = ", ".join(f"'{n}'" for n in numeros)
+    try:
+        filas, ok = metabase_client.fetch_dataset_estado(
+            DB_ASINFO, _sql_where(f"fc.numero IN ({lista})"), max_results=20000)
+    except Exception as e:  # noqa: BLE001 — fail-soft, como todo el puente
+        _LOG.warning("relleno del detalle falló: %s", e)
+        return 0
+    if not ok:
+        return 0
+
+    por_numero: dict[str, list[dict]] = {}
+    for f in filas:
+        por_numero.setdefault((f.get("numero") or "").strip(), []).append(f)
+
+    guardadas = 0
+    for numero in numeros:
+        suyas = por_numero.get(numero)
+        if suyas:
+            _guardar(numero, {"estado": "ok", "formato": FORMATO,
+                              **_agrupar(suyas)})
+            guardadas += 1
+        else:
+            _marcar_sin_datos(numero)
+    _LOG.info("relleno del detalle: %s de %s facturas", guardadas, len(numeros))
+    return guardadas
 
 
 def precargar(dias: int = 3, cada_secs: float = 1800.0) -> int:
@@ -437,6 +572,42 @@ def _agrupar(filas: list[dict]) -> dict:
     }
 
 
+def _recordar(numero: str, res: dict) -> None:
+    """Guarda en memoria, que es más rápido todavía que ir a Postgres."""
+    with _CANDADO:
+        if len(_CACHE) >= _TOPE_CACHE:
+            _CACHE.clear()
+        _CACHE[numero] = (time.monotonic(), res)
+
+
+def en_cache(numero) -> dict | None:
+    """Lo que ya está guardado de esta factura, SIN preguntarle a Asinfo.
+
+    → el mismo diccionario que `que_se_llevo`, o `None` si todavía no se sabe.
+
+    Existe para que la ficha de la factura pinte el detalle DE UNA cuando ya
+    está guardado (que es casi siempre, porque el calentador lo va llenando):
+    ahí no hace falta el segundo pedido que va a buscarlo, ni el cartelito de
+    "buscando el detalle" que parpadea antes de que llegue. Si todavía no se
+    sabe, devuelve None y la ficha lo pide aparte como siempre — nunca cruza el
+    puente, porque el sentido de esto es no hacer esperar a la pantalla.
+    """
+    num = (numero or "").strip()
+    if not _NUMERO_RE.match(num):
+        return None
+
+    ahora = time.monotonic()
+    with _CANDADO:
+        guardado = _CACHE.get(num)
+        if guardado and (ahora - guardado[0]) < _TTL_SEGS:
+            return guardado[1]
+
+    guardado_base = _de_la_base(num)
+    if guardado_base is not None:
+        _recordar(num, guardado_base)
+    return guardado_base
+
+
 def que_se_llevo(numero) -> dict:
     """Qué salió en esta factura, según Asinfo.
 
@@ -458,17 +629,9 @@ def que_se_llevo(numero) -> dict:
     if not _NUMERO_RE.match(num):
         return {"estado": "sin-numero", **vacio}
 
-    ahora = time.monotonic()
-    with _CANDADO:
-        guardado = _CACHE.get(num)
-        if guardado and (ahora - guardado[0]) < _TTL_SEGS:
-            return guardado[1]
-
-    guardado_base = _de_la_base(num)
-    if guardado_base is not None:
-        with _CANDADO:
-            _CACHE[num] = (ahora, guardado_base)
-        return guardado_base
+    guardado = en_cache(num)
+    if guardado is not None:
+        return guardado
 
     from modules._lib import metabase_client
 
@@ -489,8 +652,5 @@ def que_se_llevo(numero) -> dict:
 
     res = {"estado": "ok", "formato": FORMATO, **_agrupar(filas)}
     _guardar(num, res)
-    with _CANDADO:
-        if len(_CACHE) >= _TOPE_CACHE:
-            _CACHE.clear()
-        _CACHE[num] = (ahora, res)
+    _recordar(num, res)
     return res

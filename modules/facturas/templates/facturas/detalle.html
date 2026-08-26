@@ -119,16 +119,24 @@
     </div>
   </div>
 
-  {# Qué se llevó — la mercadería, que vive en Asinfo. Se pide APARTE para que
-     la ficha abra ya: el ERP tarda entre medio segundo y dos, y una pantalla
-     que espera a Asinfo para pintar es una pantalla lenta todos los días. #}
+  {# El detalle — la mercadería, que vive en Asinfo.
+
+     Si ya está guardado (que es casi siempre: el calentador lo va llenando
+     factura por factura), va pintado acá mismo y la ficha abre con el detalle
+     puesto. Si todavía no, se pide APARTE para que la ficha abra ya: el ERP
+     tarda entre medio segundo y dos, y una pantalla que espera a Asinfo para
+     pintar es una pantalla lenta todos los días. TMT 2026-08-26. #}
+  {% if det %}
+    {% include "facturas/_que_se_llevo.html" %}
+  {% else %}
   <div hx-get="{{ url_for('facturas.que_se_llevo', id_factura=fact.numf or fact.id_factura) }}"
        hx-trigger="load" hx-swap="outerHTML" class="no-print">
-    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Qué se llevó</h2>
+    <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Detalle</h2>
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-3 py-3 text-sm text-slate-400 mb-6">
       Buscando el detalle en Asinfo…
     </div>
   </div>
+  {% endif %}
 
   <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
     Aplicaciones de cheques ({{ aplicaciones | length }} · total aplicado {{ total_aplicado | money_es }})

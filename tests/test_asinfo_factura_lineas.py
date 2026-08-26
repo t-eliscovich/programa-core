@@ -300,7 +300,7 @@ def test_la_factura_sigue_siendo_lo_que_se_llevo():
     f["doc"] = fl.DOC_FACTURA
     res = fl._agrupar([f])
     assert res["doc"] == "factura"
-    assert res["titulo"] == "Qué se llevó"
+    assert res["titulo"] == "Detalle"
     assert res["totales"]["kg"] == 21.8
 
 
@@ -309,7 +309,7 @@ def test_un_documento_que_no_conocemos_se_porta_como_factura():
     f = _fila("Jersey 3", "CELESTE", 21.8, 9.86, 175.53)
     res = fl._agrupar([f])          # sin `doc`
     assert res["doc"] == "otro"
-    assert res["titulo"] == "Qué se llevó"
+    assert res["titulo"] == "Detalle"
     assert res["totales"]["kg"] == 21.8
 
 
@@ -351,3 +351,185 @@ def test_la_pantalla_de_la_factura_sigue_diciendo_kilos(app, plantilla):
     html = _render(app, plantilla, [f])
     assert "Kilos" in html
     assert "21,80" in html
+
+
+# --- el título ---------------------------------------------------------------
+#
+# TMT 2026-08-26 (dueña): *"no me gusta el título. Que se llame detalle"*.
+
+def test_el_bloque_se_llama_detalle():
+    """Un solo rótulo para las tres pantallas: oficina, vendedor y cliente."""
+    assert fl.TITULO_DEFAULT == "Detalle"
+
+
+def test_la_nota_de_credito_y_la_devolucion_se_siguen_nombrando():
+    """Ahí el título es lo único que dice que ese papel NO es una venta."""
+    assert fl.TITULOS["nota-credito"] == "Nota de crédito"
+    assert fl.TITULOS["devolucion"] == "Qué devolvió"
+
+
+# --- lo ya guardado, sin cruzar el puente -----------------------------------
+#
+# TMT 2026-08-26 (dueña): *"tarda mucho en cargarse"*. La ficha pedía el bloque
+# aparte SIEMPRE, aun cuando la respuesta ya estaba en la base.
+
+def test_lo_guardado_se_devuelve_sin_preguntarle_a_asinfo():
+    guardado = {"estado": "ok", "formato": fl.FORMATO, "lineas": [],
+                "servicios": [], "totales": {}}
+    with patch.object(fl, "_de_la_base", return_value=guardado), \
+         patch("modules._lib.metabase_client.disponible") as m:
+        assert fl.en_cache("001-099-000182419") == guardado
+    m.assert_not_called()
+
+
+def test_lo_que_todavia_no_se_sabe_no_se_va_a_buscar():
+    """`en_cache` NUNCA cruza el puente: existe para no hacer esperar a nadie."""
+    with patch.object(fl, "_de_la_base", return_value=None), \
+         patch("modules._lib.metabase_client.disponible") as m:
+        assert fl.en_cache("001-099-000182419") is None
+    m.assert_not_called()
+
+
+def test_lo_guardado_se_lee_de_postgres_una_sola_vez():
+    guardado = {"estado": "ok", "formato": fl.FORMATO, "lineas": [],
+                "servicios": [], "totales": {}}
+    with patch.object(fl, "_de_la_base", return_value=guardado) as m:
+        fl.en_cache("001-099-000182419")
+        fl.en_cache("001-099-000182419")
+    assert m.call_count == 1
+
+
+@pytest.mark.parametrize("numero", [None, "", "182419", "001-099-18"])
+def test_un_numero_que_no_es_del_sri_no_tiene_nada_guardado(numero):
+    with patch.object(fl, "_de_la_base") as m:
+        assert fl.en_cache(numero) is None
+    m.assert_not_called()
+
+
+# --- el relleno de las facturas viejas --------------------------------------
+#
+# TMT 2026-08-26 (dueña), mirando una factura de MAYO: los últimos días estaban
+# calientes y la historia no.
+
+_UNA = "001-099-000175698"
+_OTRA = "001-099-000175699"
+
+
+def _relleno(monkeypatch, faltantes, filas, ok=True):
+    """El relleno con `faltantes` por buscar y `filas` de respuesta."""
+    llamadas = {"sql": [], "guardadas": [], "marcadas": []}
+    monkeypatch.setattr(fl, "_faltantes", lambda limite, dias: faltantes)
+    monkeypatch.setattr(fl, "_guardar",
+                        lambda n, r: llamadas["guardadas"].append((n, r)))
+    monkeypatch.setattr(fl, "_marcar_sin_datos",
+                        lambda n: llamadas["marcadas"].append(n))
+    monkeypatch.setattr("modules._lib.metabase_client.disponible", lambda: True)
+
+    def _pregunta(db, sql, **kw):
+        llamadas["sql"].append(sql)
+        return (filas, ok)
+
+    monkeypatch.setattr("modules._lib.metabase_client.fetch_dataset_estado",
+                        _pregunta)
+    return llamadas
+
+
+def test_el_relleno_pregunta_por_todo_el_lote_de_una(monkeypatch):
+    """Cruzar el puente cuesta 650 ms fijos: 120 facturas salen lo mismo que 1."""
+    fila = _fila("Fleece 102", "PETROLEO", 42.8, 9.25, 330.97)
+    fila["numero"] = _UNA
+    llamadas = _relleno(monkeypatch, [_UNA, _OTRA], [fila])
+
+    assert fl.precargar_faltantes(cada_secs=0) == 1
+    assert len(llamadas["sql"]) == 1
+    assert f"fc.numero IN ('{_UNA}', '{_OTRA}')" in llamadas["sql"][0]
+    assert [n for n, _ in llamadas["guardadas"]] == [_UNA]
+    assert llamadas["guardadas"][0][1]["estado"] == "ok"
+
+
+def test_la_que_asinfo_no_conoce_queda_marcada(monkeypatch):
+    """Sin la marca, el lote siguiente vuelve a mirar las mismas y no avanza."""
+    fila = _fila("Fleece 102", "PETROLEO", 42.8, 9.25, 330.97)
+    fila["numero"] = _UNA
+    llamadas = _relleno(monkeypatch, [_UNA, _OTRA], [fila])
+
+    fl.precargar_faltantes(cada_secs=0)
+    assert llamadas["marcadas"] == [_OTRA]
+
+
+def test_si_el_puente_no_contesta_no_se_marca_nada(monkeypatch):
+    """Un "no pude preguntar" marcado como "no hay nada" dura para siempre."""
+    llamadas = _relleno(monkeypatch, [_UNA, _OTRA], [], ok=False)
+
+    assert fl.precargar_faltantes(cada_secs=0) == 0
+    assert llamadas["marcadas"] == []
+    assert llamadas["guardadas"] == []
+
+
+def test_el_relleno_se_limita_solo(monkeypatch):
+    fila = _fila("Fleece 102", "PETROLEO", 42.8, 9.25, 330.97)
+    fila["numero"] = _UNA
+    llamadas = _relleno(monkeypatch, [_UNA], [fila])
+
+    fl.precargar_faltantes()
+    fl.precargar_faltantes()
+    assert len(llamadas["sql"]) == 1
+
+
+def test_sin_puente_el_relleno_ni_pregunta_cuales_faltan(monkeypatch):
+    """No tiene sentido revolver Postgres si no se le puede preguntar a Asinfo."""
+    llamado = []
+    monkeypatch.setattr(fl, "_faltantes",
+                        lambda limite, dias: llamado.append(1) or [])
+    monkeypatch.setattr("modules._lib.metabase_client.disponible", lambda: False)
+    assert fl.precargar_faltantes(cada_secs=0) == 0
+    assert llamado == []
+
+
+def test_las_que_faltan_son_las_viejas_sin_detalle(monkeypatch):
+    """Y salen de la más nueva a la más vieja: es la que van a abrir."""
+    visto = {}
+
+    def _fetch(sql, params=None, conn=None):
+        visto["sql"], visto["params"] = sql, params
+        return [{"numero": _UNA}]
+
+    monkeypatch.setattr("db.fetch_all", _fetch)
+    assert fl._faltantes(120, 180) == [_UNA]
+    assert "LEFT JOIN scintela.factura_detalle" in visto["sql"]
+    assert "d.numero IS NULL" in visto["sql"]
+    assert "ORDER BY f.fecha DESC" in visto["sql"]
+    desde, hasta, limite = visto["params"]
+    assert (hasta - desde).days == 177   # 180 días, menos los 3 de la precarga
+    assert limite == 120
+
+
+def test_los_ultimos_tres_dias_son_de_la_precarga(monkeypatch):
+    """`precargar` los reescribe cada media hora, que es lo que hace falta
+    mientras una factura recién emitida todavía puede recibir un renglón."""
+    from datetime import date
+
+    visto = {}
+    monkeypatch.setattr("filters.today_ec", lambda: date(2026, 8, 26))
+    monkeypatch.setattr("db.fetch_all",
+                        lambda sql, params=None, conn=None:
+                        visto.setdefault("params", params) and [])
+    fl._faltantes(120, 180)
+    assert visto["params"][1] == date(2026, 8, 23)
+
+
+def test_la_marca_de_sin_datos_no_llega_a_ninguna_pantalla():
+    """La lee el relleno para saltearla; `_de_la_base` sólo devuelve el éxito."""
+    fila = {"datos": {"estado": "sin-datos", "formato": fl.FORMATO}}
+    with patch("db.fetch_one", return_value=fila):
+        assert fl._de_la_base(_UNA) is None
+
+
+def test_la_marca_no_pisa_un_detalle_ya_guardado():
+    """Si otro la guardó bien mientras tanto, la marca no puede borrarla."""
+    visto = {}
+    with patch("db.execute", side_effect=lambda sql, params=None: visto.update(
+            sql=sql, params=params)):
+        fl._marcar_sin_datos(_UNA)
+    assert "ON CONFLICT (numero) DO NOTHING" in visto["sql"]
+    assert '"estado": "sin-datos"' in visto["params"][1]
