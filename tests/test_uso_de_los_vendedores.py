@@ -194,8 +194,8 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
     _login(app, OFICINA, {"bitacora.ver"})
     monkeypatch.setattr(queries, "resumen", lambda d, h: [
         {"usuario": "ppr", "vend": "PPR", "rol": "Vendedor", "activo": True,
-         "visitas": 40, "dias": 5, "entradas": 9, "clientes": 12, "papeles": 3,
-         "celular": 38, "movimientos": 1, "ultima": None},
+         "visitas": 40, "dias": 5, "entradas": 9, "clientes": 12, "cartera": 43,
+         "papeles": 3, "celular": 38, "movimientos": 1, "ultima": None},
     ])
     monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
     r = app.test_client().get("/uso")
@@ -203,6 +203,8 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
     cuerpo = r.get_data(as_text=True)
     assert "PPR" in cuerpo
     assert "Veces que entró" in cuerpo
+    # Los clientes se leen contra la cartera: 12 solos no dicen nada.
+    assert "12" in cuerpo and "de 43" in cuerpo
 
 
 def test_un_vendedor_no_ve_el_uso_de_nadie(app):
@@ -250,6 +252,8 @@ def test_el_detalle_junta_lo_que_miro_con_lo_que_cambio(app, monkeypatch):
     monkeypatch.setattr(queries, "por_dia", lambda u, d, h: [])
     monkeypatch.setattr(queries, "clientes", lambda u, d, h: [])
     monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "vend_de", lambda u: "PPR")
+    monkeypatch.setattr(queries, "no_abiertos", lambda v, u, d, h: [])
     monkeypatch.setattr(queries, "movimientos", lambda u, d, h: [
         {"cuando": datetime(2026, 8, 26, 9, 10), "tipo": "miro",
          "pantalla": "mi_cartera.pdf", "ruta": "/mi-cartera/cliente/TDV/pdf",
@@ -265,3 +269,38 @@ def test_el_detalle_junta_lo_que_miro_con_lo_que_cambio(app, monkeypatch):
 
     csv = app.test_client().get("/uso/ppr?export=csv").get_data(as_text=True)
     assert "miró" in csv and "cambió" in csv
+
+
+def test_los_que_no_abrio_salen_con_lo_que_deben(app, monkeypatch):
+    """La mitad accionable: no «abrió 12» sino «a estos no los miró»."""
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "por_dia", lambda u, d, h: [])
+    monkeypatch.setattr(queries, "clientes", lambda u, d, h: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "movimientos", lambda u, d, h: [])
+    monkeypatch.setattr(queries, "vend_de", lambda u: "PPR")
+    monkeypatch.setattr(queries, "no_abiertos", lambda v, u, d, h: [
+        {"codigo_cli": "TDV", "nombre": "Textiles del Valle",
+         "saldo": 4820.5, "vencido": 1200.0},
+    ])
+    cuerpo = app.test_client().get("/uso/ppr").get_data(as_text=True)
+    assert "Los que no abrió" in cuerpo
+    assert "Textiles del Valle" in cuerpo
+    # Formato EU: punto de miles, coma decimal (ver filters.money_es).
+    assert "4.820,50" in cuerpo
+
+
+def test_un_usuario_sin_vendedor_no_muestra_el_bloque(app, monkeypatch):
+    """Sin código de vendedor no hay cartera contra la cual comparar."""
+    _login(app, OFICINA, {"bitacora.ver"})
+    for nombre in ("por_dia", "clientes", "movimientos"):
+        monkeypatch.setattr(queries, nombre, lambda *a, **k: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "vend_de", lambda u: "")
+
+    def no_deberia(*a, **k):  # pragma: no cover - el test falla si se llama
+        raise AssertionError("no hay que buscar cartera de quien no es vendedor")
+
+    monkeypatch.setattr(queries, "no_abiertos", no_deberia)
+    cuerpo = app.test_client().get("/uso/maribel").get_data(as_text=True)
+    assert "Los que no abrió" not in cuerpo

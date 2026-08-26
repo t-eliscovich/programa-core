@@ -47,7 +47,7 @@ número la discusión se termina acá:
 | **Días** | Días distintos —de Ecuador— en que abrió al menos una pantalla |
 | **Veces que entró** | Cada visita que llega después de **más de 30 minutos** sin tocar nada. Abrir la app, mirar tres pantallas y cerrarla = 1 |
 | **Pantallas** | Todas las pantallas que abrió. Refrescar suma |
-| **Clientes** | Clientes DISTINTOS cuya ficha (o factura, o impresión) abrió |
+| **Clientes** | «12 de 43»: a cuántos de su cartera les abrió la ficha, sobre los que tiene asignados. Cuentan sólo los que HOY son suyos, así los dos números cierran con la lista de «los que no abrió» |
 | **Impresiones** | Las pantallas que terminan en papel: imprimir, PDF, foto, Excel. **Ya están contadas también en Pantallas** — no se suman aparte |
 | **Cambios** | Lo que guardó, de la bitácora. En un vendedor es poco por diseño: casi todo lo que hace es mirar |
 | **Del teléfono** | Qué parte de sus pantallas abrió desde un celular |
@@ -74,11 +74,15 @@ todos los días un rato es trabajar la cartera; 200 pantallas en dos días es
 alguien preparando una reunión o cerrando el mes. Las dos cosas pueden estar
 bien, pero no son lo mismo y la columna que las separa es Días.
 
-**3. Clientes distintos, no pantallas.** El número que dice si mira la cartera
-o mira siempre a los mismos cinco. Se lee **contra el tamaño de su cartera**:
-12 clientes sobre 40 es una cosa, 12 sobre 15 es otra. La lista de los que
-**nunca abrió** está más abajo, en consultas, y suele ser la conversación
-más útil que sale de esta pantalla.
+**3. Clientes, contra su cartera.** El número que dice si mira la cartera o
+mira siempre a los mismos cinco. Por eso viene como **«12 de 43»** y no como
+un 12 suelto: 12 sobre 43 es una cosa, 12 sobre 15 es otra.
+
+Y la mitad que se usa: en el detalle del vendedor está **«Los que no abrió»**,
+con lo que cada uno debe y lo vencido primero. Ahí la pantalla deja de
+describir y empieza a servir — es la conversación más útil que sale de este
+informe. Ojo con el tono: no abrir una ficha no es no haber hablado con el
+cliente.
 
 **4. Impresiones ≈ trabajo de campo.** Cada estado de cuenta impreso, PDF o
 foto es un papel que se le deja a un cliente o un mensaje que se le manda.
@@ -133,8 +137,10 @@ Cuatro bloques, y el orden en que conviene leerlos:
 
 1. **Día por día**, con la primera y la última pantalla de cada día.
 2. **Los clientes que abrió**, ordenados por veces.
-3. **Sus pantallas**, las más abiertas primero.
-4. **Todo lo que hizo**: visitas y cambios mezclados en una sola línea de
+3. **Los que no abrió** — su cartera menos lo que miró, con el saldo y lo
+   vencido. Los que deben plata vencida arriba.
+4. **Sus pantallas**, las más abiertas primero.
+5. **Todo lo que hizo**: visitas y cambios mezclados en una sola línea de
    tiempo, los cambios pintados aparte. Es el bloque para reconstruir un día
    puntual —"¿qué pasó el martes?"—, y también con CSV.
 
@@ -142,7 +148,9 @@ Cuatro bloques, y el orden en que conviene leerlos:
 
 Consola SQL de sólo lectura (`/admin/sql`, ver `programa-core-datos`).
 
-**Los clientes de su cartera que NO abrió en 30 días** — la más útil:
+**Los clientes de su cartera que NO abrió en 30 días.** Esto ya está EN la
+pantalla (bloque «Los que no abrió» del detalle); la consulta queda para
+cruzarlo con algo que la pantalla no trae:
 
 ```sql
 SELECT c.codigo_cli, c.nombre

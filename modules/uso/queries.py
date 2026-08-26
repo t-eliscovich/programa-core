@@ -68,11 +68,21 @@ def resumen(desde: date, hasta: date) -> list[dict]:
     return db.fetch_all(
         f"""
         WITH visitas AS (
-            SELECT usuario, ts, codigo_cli, pantalla, dispositivo,
-                   lag(ts) OVER (PARTITION BY usuario ORDER BY ts) AS anterior
-              FROM scintela.uso_pantalla
-             WHERE ts >= (%(desde)s AT TIME ZONE 'UTC')
-               AND ts <  (%(hasta)s AT TIME ZONE 'UTC')
+            SELECT u.usuario, u.ts, u.codigo_cli, u.pantalla, u.dispositivo,
+                   lag(u.ts) OVER (PARTITION BY u.usuario ORDER BY u.ts) AS anterior,
+                   -- ⭐ Sólo cuentan como «clientes» los que HOY son de su
+                   -- cartera. Así «abrió 12 de 43» y la lista de «los que no
+                   -- abrió» son las dos mitades del mismo 43: si contáramos
+                   -- todas las fichas que tocó, un cliente que le
+                   -- reasignaron a otro vendedor a mitad de mes dejaría un
+                   -- «13 de 43» que no cierra con nada.
+                   (UPPER(TRIM(COALESCE(c.vend, ''))) = UPPER(TRIM(COALESCE(u.vend, ''))))
+                       AS de_su_cartera
+              FROM scintela.uso_pantalla u
+              LEFT JOIN scintela.cliente c
+                     ON UPPER(TRIM(c.codigo_cli)) = u.codigo_cli
+             WHERE u.ts >= (%(desde)s AT TIME ZONE 'UTC')
+               AND u.ts <  (%(hasta)s AT TIME ZONE 'UTC')
         ),
         uso AS (
             SELECT usuario,
@@ -81,12 +91,22 @@ def resumen(desde: date, hasta: date) -> list[dict]:
                    count(*) FILTER (
                        WHERE anterior IS NULL
                           OR ts - anterior > INTERVAL '{CORTE_ENTRADA}')  AS entradas,
-                   count(DISTINCT codigo_cli)                 AS clientes,
+                   count(DISTINCT codigo_cli)
+                       FILTER (WHERE de_su_cartera)           AS clientes,
                    count(*) FILTER (WHERE pantalla = ANY(%(papeles)s))    AS papeles,
                    count(*) FILTER (WHERE dispositivo = 'celular')        AS celular,
                    max({_TS_USO})                             AS ultima
               FROM visitas
              GROUP BY usuario
+        ),
+        cartera AS (
+            -- Cuántos clientes tiene asignados cada vendedor. Sin esto,
+            -- «abrió 12 clientes» no se puede leer: 12 sobre 40 y 12 sobre 15
+            -- son dos cosas distintas.
+            SELECT UPPER(TRIM(c.vend)) AS vend, count(*) AS clientes
+              FROM scintela.cliente c
+             WHERE c.vend IS NOT NULL AND TRIM(c.vend) <> ''
+             GROUP BY 1
         ),
         movs AS (
             SELECT usuario, count(*) AS movimientos
@@ -106,6 +126,7 @@ def resumen(desde: date, hasta: date) -> list[dict]:
                COALESCE(x.dias, 0)        AS dias,
                COALESCE(x.entradas, 0)    AS entradas,
                COALESCE(x.clientes, 0)    AS clientes,
+               COALESCE(k.clientes, 0)    AS cartera,
                COALESCE(x.papeles, 0)     AS papeles,
                COALESCE(x.celular, 0)     AS celular,
                COALESCE(m.movimientos, 0) AS movimientos,
@@ -114,6 +135,7 @@ def resumen(desde: date, hasta: date) -> list[dict]:
           JOIN seguridad.rol r USING (id_rol)
           LEFT JOIN uso  x ON x.usuario = u.username
           LEFT JOIN movs m ON m.usuario = u.username
+          LEFT JOIN cartera k ON k.vend = UPPER(TRIM(u.vend))
          WHERE u.vend IS NOT NULL AND TRIM(u.vend) <> ''
          ORDER BY u.activo DESC, COALESCE(x.visitas, 0) DESC, u.username
         """,
@@ -226,6 +248,57 @@ def movimientos(usuario: str, desde: date, hasta: date, limite: int = 300) -> li
         ) todo
          ORDER BY cuando DESC
          LIMIT %(limite)s
+        """,
+        params,
+    )
+
+
+def vend_de(usuario: str) -> str:
+    """El código de vendedor del usuario. '' si no es vendedor o no existe."""
+    fila = db.fetch_one(
+        "SELECT UPPER(TRIM(COALESCE(vend, ''))) AS vend "
+        "  FROM seguridad.usuario WHERE username = %s", (usuario,))
+    return (fila or {}).get("vend") or ""
+
+
+def no_abiertos(vend: str, usuario: str, desde: date, hasta: date) -> list[dict]:
+    """Los clientes de su cartera cuya ficha NO abrió en el rango.
+
+    Es la lista que convierte el informe en una conversación: no «abrió 12
+    clientes» sino «estos 31 no los miró, y estos cinco le deben plata
+    vencida».
+
+    El saldo se calcula con el MISMO criterio de factura viva que usa el
+    vendedor en su propia pantalla (`mi_cartera.queries`) y que la cartera de
+    la oficina. Si divergen, la dueña y el vendedor discuten sobre números
+    distintos.
+    """
+    params = ventana(desde, hasta)
+    params.update({"vend": (vend or "").strip().upper(), "usuario": usuario})
+    return db.fetch_all(
+        """
+        SELECT c.codigo_cli,
+               COALESCE(NULLIF(TRIM(c.nombre), ''), c.codigo_cli) AS nombre,
+               COALESCE(SUM(f.saldo), 0)                          AS saldo,
+               COALESCE(SUM(CASE WHEN COALESCE(f.vencimiento, f.fecha)
+                                      < CURRENT_DATE
+                                 THEN f.saldo ELSE 0 END), 0)     AS vencido
+          FROM scintela.cliente c
+          LEFT JOIN scintela.factura f
+                 ON f.codigo_cli = c.codigo_cli
+                AND COALESCE(f.saldo, 0) <> 0
+                AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+         WHERE UPPER(TRIM(COALESCE(c.vend, ''))) = %(vend)s
+           AND UPPER(TRIM(c.codigo_cli)) NOT IN (
+                 SELECT codigo_cli
+                   FROM scintela.uso_pantalla
+                  WHERE usuario = %(usuario)s
+                    AND codigo_cli IS NOT NULL
+                    AND ts >= (%(desde)s AT TIME ZONE 'UTC')
+                    AND ts <  (%(hasta)s AT TIME ZONE 'UTC'))
+         GROUP BY c.codigo_cli, c.nombre
+         ORDER BY vencido DESC, saldo DESC, c.codigo_cli
         """,
         params,
     )

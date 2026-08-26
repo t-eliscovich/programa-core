@@ -85,6 +85,7 @@ def lista():
                 ("entradas", "Veces que entró"),
                 ("visitas", "Pantallas"),
                 ("clientes", "Clientes"),
+                ("cartera", "Clientes de su cartera"),
                 ("papeles", "Impresiones"),
                 ("movimientos", "Movimientos"),
                 ("celular", "Pantallas del teléfono"),
@@ -113,9 +114,14 @@ def detalle(usuario: str):
         fichas = queries.clientes(usuario, desde, hasta)
         movs = queries.movimientos(usuario, desde, hasta)
         top = queries.pantallas(desde, hasta, usuario=usuario)
+        # Los de su cartera que NO miró. Es la mitad accionable del informe:
+        # sin esto, «abrió 12 clientes» no lleva a ninguna conversación.
+        vend = queries.vend_de(usuario)
+        sin_abrir = queries.no_abiertos(vend, usuario, desde, hasta) if vend else []
     except Exception as e:  # noqa: BLE001
         _LOG.exception("uso.detalle(%s) falló: %s", usuario, e)
         dias, fichas, movs, top, error = [], [], [], [], str(e)
+        vend, sin_abrir = "", []
 
     if request.args.get("export") == "csv":
         return csv_response(
@@ -135,6 +141,7 @@ def detalle(usuario: str):
     return render_template(
         "uso/detalle.html",
         usuario=usuario, dias=dias, fichas=fichas, movs=movs, top=top,
+        vend=vend, sin_abrir=sin_abrir,
         error=error, desde=desde, hasta=hasta,
         nombre_de=nombre_de, es_papel=es_papel,
     )
