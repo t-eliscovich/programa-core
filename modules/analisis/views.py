@@ -21,7 +21,7 @@ from exports import csv_response
 from filters import today_ec
 from modules._lib import pdf_motor
 
-from . import queries
+from . import excel, queries
 
 analisis_bp = Blueprint("analisis", __name__, template_folder="templates")
 
@@ -141,44 +141,96 @@ def parado():
     )
 
 
-@analisis_bp.route("/analisis/parado.csv")
+@analisis_bp.route("/analisis/parado.xlsx")
 @requiere_login
 @requiere_permiso("analisis.ver")
-def parado_csv():
-    """
-    La lista entera a Excel.
+def parado_xlsx():
+    """La lista entera a Excel, con formato.
 
-    ⭐ Baja SIEMPRE todo, sin aplicar los filtros de la pantalla. Los filtros de
-    arriba son de JavaScript: replicarlos acá sería escribir la misma regla dos
-    veces en dos lenguajes, y el día que una cambie el archivo va a decir algo
-    distinto de la pantalla sin que nadie se entere. Además, el motivo por el
-    que uno baja algo a Excel es justamente filtrarlo y pivotearlo ahí — el
-    archivo trae GRUPO y SUBGRUPO como columnas para eso. El botón lo dice.
+    Dueña 26/08/2026: *"bajar a excel se baja horrible: bajalo a algo con
+    formato"*. Era un CSV armado en el navegador —punto y coma, todo texto,
+    los kilos sin poder sumarse—. Ver `excel.py` para el porqué de bajar todo
+    y no lo filtrado.
     """
-    return csv_response(
-        queries.con_puntos(queries.items()),
-        columnas=[
-            ("categoria", "Grupo"),
-            ("subcategoria", "Subgrupo (tela)"),
-            ("color", "Color"),
-            ("color_nombre", "Nombre del color"),
-            ("stock_kg", "Kg en saldo"),
-            ("nivel", "Nivel"),
-            ("puntos", "Puntos por kilo"),
-            ("puntos_fila", "Puntos de la fila"),
-            ("pct_total", "% del saldo"),
-            ("kg_primera", "Kg de primera"),
-            ("kg_segunda", "Kg de segunda"),
-            ("kg_al_marcar", "Kg al marcarlo"),
-            ("kg_vendidos", "Kg vendidos desde entonces"),
-            ("estado", "Estado"),
-            ("clientes", "Clientes que compran esta tela"),
-            ("anio_pista", "Año de esos clientes"),
-            ("ultima_venta", "Última venta"),
-            ("fecha_marcado", "Marcado el"),
-        ],
-        filename="saldos.csv",
-    )
+    filas = queries.con_puntos(queries.items())
+    cols = [
+        ("Grupo", 12, None), ("Tela", 24, None),
+        ("Color", 8, None), ("Nombre del color", 16, None),
+        ("Forma", 8, None), ("Categoría", 10, None),
+        ("Queda", 11, "#,##0.0"), ("Vendido", 11, "#,##0.0"),
+        ("Vale (puntos por kilo)", 12, "#,##0"),
+        ("Puntos de la fila", 14, "#,##0"),
+        ("Kg de primera", 12, "#,##0.0"), ("Kg de segunda", 12, "#,##0.0"),
+        ("Kg al marcarlo", 13, "#,##0.0"),
+        ("Clientes que compran esta tela", 16, "#,##0"),
+        ("Última venta", 13, "dd/mm/yyyy"), ("Marcado el", 12, "dd/mm/yyyy"),
+    ]
+    datos = [[
+        f.get("categoria"), f.get("subcategoria"), f.get("color"),
+        f.get("color_nombre"), f.get("forma"), _categoria(f),
+        _num(f.get("stock_kg")), _num(f.get("kg_vendidos")),
+        _num(f.get("puntos")), _num(f.get("puntos_fila")),
+        _num(f.get("kg_primera")), _num(f.get("kg_segunda")),
+        _num(f.get("kg_al_marcar")), _num(f.get("clientes")),
+        f.get("ultima_venta"), f.get("fecha_marcado"),
+    ] for f in filas]
+    hoy = today_ec()
+    return excel.respuesta(
+        f"saldos_{hoy:%Y_%m_%d}.xlsx",
+        excel.libro([{"titulo": "Saldos", "columnas": cols, "filas": datos}]))
+
+
+@analisis_bp.route("/analisis/vendidos.xlsx")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def vendidos_xlsx():
+    """Lo vendido desde la largada, renglón por renglón, con formato.
+
+    Dueña 26/08/2026: *"y lo mismo con los vendidos"*.
+    """
+    filas = queries.vendidos(queries.config("largada", "2026-08-25"))
+    cols = [
+        ("Grupo", 12, None), ("Tela", 24, None),
+        ("Color", 8, None), ("Nombre del color", 16, None),
+        ("Forma", 8, None), ("Categoría", 10, None),
+        ("Queda", 11, "#,##0.0"), ("Vendido", 11, "#,##0.0"),
+        ("Vale (puntos por kilo)", 12, "#,##0"),
+        ("Puntos", 11, "#,##0"),
+        ("Vendedor", 20, None), ("Día", 12, "dd/mm/yyyy"),
+        ("Factura", 12, "#,##0"),
+    ]
+    datos = [[
+        v.get("categoria"), v.get("subcategoria"), v.get("color"),
+        v.get("color_nombre"), v.get("forma_fila"), v.get("calidad"),
+        _num(v.get("queda")), _num(v.get("kg")),
+        _num(v.get("puntos")), _num(v.get("puntos_fila")),
+        v.get("vendedor"), v.get("fecha"), _num(v.get("numf")),
+    ] for v in filas]
+    hoy = today_ec()
+    return excel.respuesta(
+        f"vendidos_{hoy:%Y_%m_%d}.xlsx",
+        excel.libro([{"titulo": "Vendidos", "columnas": cols, "filas": datos}]))
+
+
+def _num(v):
+    """Un número de verdad, o None. Excel no puede sumar una cadena."""
+    if v is None or v == "":
+        return None
+    try:
+        n = float(v)
+    except (TypeError, ValueError):
+        return v
+    return int(n) if n == int(n) else round(n, 2)
+
+
+def _categoria(f) -> str:
+    """PRI, SEG o las dos: lo mismo que muestra la píldora de la fila."""
+    if f.get("cal_fila"):
+        return f["cal_fila"]
+    pri, seg = f.get("kg_primera") or 0, f.get("kg_segunda") or 0
+    if pri and seg:
+        return "PRI SEG"
+    return "SEG" if seg else "PRI"
 
 
 @analisis_bp.route("/analisis/parado/clientes")

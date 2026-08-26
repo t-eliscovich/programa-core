@@ -183,7 +183,14 @@ th.ord.desc::after{content:" ↓";opacity:1}
 <div class="titulo-fila">
   <h2 id="tela-por-tela">Tela por tela</h2>
   <span class="acciones">
-    <button type="button" id="excel" onclick="bajarExcel()">Bajar a Excel</button>
+    {# ⭐ El Excel lo arma el SERVIDOR, con formato (dueña 26/08/2026: "bajar a
+       excel se baja horrible: bajalo a algo con formato"). Antes el navegador
+       pegaba las celdas con punto y coma: todo texto, columnas de un caracter
+       y kilos que Excel no podía sumar.
+       ⚠ Baja TODO, no lo filtrado, y el botón lo dice: los filtros son de
+       JavaScript y replicarlos en el servidor sería la misma regla escrita dos
+       veces. Uno baja a Excel justamente para filtrar allá. #}
+    <a href="/analisis/parado.xlsx" id="excel" class="boton">Bajar todo a Excel</a>
     <a href="/analisis/competencia/telas/imprimir" target="_blank">Imprimir</a>
     <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank">PDF</a>
   </span>
@@ -417,7 +424,12 @@ th.ord.desc::after{content:" ↓";opacity:1}
    vendedor"). Arriba estaba el total en una tarjeta, pero qué se vendió, qué
    día y quién había que ir a buscarlo a la Competencia, vendedor por vendedor.
    ⚠ Mismas columnas que la lista de arriba, para leerlas juntas. #}
-<h2 id="vendidos-tabla">Vendidos</h2>
+<div class="titulo-fila">
+  <h2 id="vendidos-tabla">Vendidos</h2>
+  <span class="acciones">
+    <a href="/analisis/vendidos.xlsx">Bajar a Excel</a>
+  </span>
+</div>
 {# ⚠ La bajada se sacó el 25/08/2026 (dueña: "esto borrar, no funciona
    tampoco"). Prometía un click que estaba roto —llevaba a la fila de esa tela
    en la lista de arriba, y esa fila era justamente la que se había ido por
@@ -533,7 +545,6 @@ function filtrar(){
   document.getElementById('cuenta').textContent =
     vistos + (vistos === 1 ? ' tela' : ' telas') + ' · ' +
     kg.toLocaleString('es-EC', {maximumFractionDigits: 0}) + ' kg';
-  document.getElementById('excel').textContent = 'Bajar a Excel (' + vistos + ')';
   guardarFiltros();
 }
 // Elegir un grupo deja SÓLO sus subgrupos en el segundo desplegable. Sin esto
@@ -671,20 +682,11 @@ function ponerFiltros(){
 // Se arma en el navegador desde las filas visibles y no en el servidor: los
 // filtros son del navegador, así que replicarlos allá serían dos reglas que un
 // día se despegan. Leyendo la misma tabla, el archivo no puede decir otra cosa
-// que la pantalla.
-function bajarExcel(){
-  const enc = [...document.querySelectorAll('#tabla thead th')].map(th => th.textContent.trim());
-  const filas = [...document.querySelectorAll('#tabla tr.item')].filter(tr => !tr.classList.contains('oculta'));
-  const limpia = t => '"' + t.replace(/\s+/g, ' ').replace(/"/g, '""').trim() + '"';
-  const lineas = [enc.map(limpia).join(';')];
-  filas.forEach(tr => lineas.push([...tr.children].map(td => limpia(texto(td).replace('▸', ''))).join(';')));
-  const blob = new Blob(['\ufeff' + lineas.join('\n')], {type: 'text/csv;charset=utf-8;'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'saldos_' + filas.length + '_filas.csv';
-  a.click();
-  URL.revokeObjectURL(a.href);
-}
+// ⚠ Acá vivía `bajarExcel()`, que pegaba las celdas de la tabla con punto y
+// coma y las bajaba como CSV. Se fue el 26/08/2026: el archivo lo arma el
+// servidor con openpyxl y formato de verdad (ver modules/analisis/excel.py).
+// Un CSV hecho a mano en el navegador no puede tener anchos, encabezado fijo
+// ni números que Excel sepa sumar.
 
 document.addEventListener('DOMContentLoaded', () => { ponerFiltros(); filtrar(); });
 </script>

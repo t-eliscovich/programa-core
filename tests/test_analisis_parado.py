@@ -423,36 +423,45 @@ def test_elegir_un_grupo_recorta_los_subgrupos():
     assert "o.dataset.g === g" in html
 
 
-def test_el_excel_baja_lo_que_se_ve_y_se_arma_en_el_navegador():
-    """Dueña 18/08/2026: "que el Excel baje lo filtrado".
+def test_el_excel_lo_arma_el_servidor_y_baja_todo():
+    """Dueña 26/08/2026: *"bajar a excel se baja horrible: bajalo a algo con
+    formato"*. Lo que bajaba era un CSV pegado en el navegador con punto y
+    coma: todo texto, columnas de un caracter y kilos que Excel no podía sumar.
 
-    ⭐ Se arma leyendo la MISMA tabla que se está mirando, no consultando de
-    nuevo al servidor. Los filtros son de JavaScript: replicarlos allá serían
-    dos reglas que un día se despegan y el archivo diría algo distinto de la
-    pantalla sin ningún síntoma. Leyendo el DOM eso no puede pasar."""
+    ⚠ Baja TODO, no lo filtrado, y el botón lo dice. Los filtros son de
+    JavaScript: replicarlos en el servidor sería la misma regla escrita dos
+    veces en dos lenguajes, y el día que una cambie el archivo diría algo
+    distinto de la pantalla. Uno baja a Excel justamente para filtrar allá —por
+    eso van Grupo y Tela como columnas propias."""
     html = _html_parado()
-    assert "function bajarExcel()" in html
-    assert "tr.classList.contains('oculta')" in html, (
-        "tiene que saltear justamente las filas que el filtro escondió")
-    assert "ufeff" in html, "sin BOM, Excel abre los acentos rotos"
-
-    # la ruta del servidor sigue existiendo y sigue sin leer filtros
-    import inspect
-
-    from modules.analisis import views
-    assert "request.args" not in inspect.getsource(views.parado_csv)
+    assert "function bajarExcel()" not in html, (
+        "volvió el CSV hecho a mano en el navegador")
+    assert 'href="/analisis/parado.xlsx"' in html
+    assert "Bajar todo a Excel" in html, "el botón tiene que decir que baja todo"
+    assert 'href="/analisis/vendidos.xlsx"' in html, (
+        "y la tabla de Vendidos también se baja (dueña: «y lo mismo con los "
+        "vendidos»)")
 
 
-def test_el_csv_lleva_grupo_y_subgrupo_como_columnas():
-    import inspect
+def test_el_excel_lleva_grupo_y_tela_como_columnas():
+    """Uno baja a Excel para filtrar y pivotear allá: sin Grupo y Tela en
+    columnas propias no se puede."""
+    import inspect as _i
+    fuente = _i.getsource(views.parado_xlsx)
+    for col in ('"Grupo"', '"Tela"', '"Color"', '"Queda"', '"Vendido"'):
+        assert col in fuente, f"falta la columna {col}"
+    assert "excel.respuesta(" in fuente and "excel.libro(" in fuente
 
-    from modules.analisis import views
-    fuente = inspect.getsource(views.parado_csv)
-    for col in (chr(34)+"Grupo"+chr(34), chr(34)+"Subgrupo (tela)"+chr(34), chr(34)+"Kg de segunda"+chr(34), chr(34)+"% del saldo"+chr(34)):
-        assert col in fuente, f"falta la columna {col} en el Excel"
 
+def test_el_excel_manda_numeros_y_no_texto():
+    """El CSV viejo mandaba "1.779" como cadena: Excel lo alineaba a la
+    izquierda y no se podía sumar una columna."""
+    from modules.analisis.views import _num
+    assert _num("1779") == 1779 and isinstance(_num("1779"), int)
+    assert _num(20.5) == 20.5
+    assert _num(None) is None and _num("") is None
+    assert _num("no es un numero") == "no es un numero"
 
-# ── El resumen por grupo y el ordenar por columna ───────────────────────────
 
 def test_el_resumen_por_grupo_suma_100(monkeypatch):
     filas = [
@@ -640,7 +649,7 @@ def test_la_pantalla_de_saldos_muestra_lo_que_vale_cada_tela():
     import re
     col = re.search(r'<th[^>]*>Vale<', " ".join(html.split()))
     assert col and "opt" not in col.group(0)
-    for vista in (views.parado, views.mis_telas, views.parado_csv):
+    for vista in (views.parado, views.mis_telas, views.parado_xlsx):
         assert "con_puntos" in inspect.getsource(vista), (
             f"{vista.__name__} tiene que traer los puntos")
 
@@ -1448,11 +1457,10 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
         "las píldoras se arman en más de un lugar")
     assert parado.count("{{ calidad }}") == 2, (
         "la píldora se dibuja en la columna y, en el celular, pegada a la tela")
-    # el orden y el Excel leen el texto sin la copia
+    # ⚠ El ORDEN lee el texto sin la copia. (El Excel ya no: desde el
+    # 26/08/2026 lo arma el servidor desde la base, así que ni ve el HTML.)
     assert "c.querySelectorAll('.qm').forEach(e => e.remove())" in parado
     assert "return texto(td).trim().toLowerCase();" in parado
-    assert "limpia(texto(td).replace" in parado
-    assert "limpia(td.textContent" not in parado, "el Excel se lleva la píldora"
 
 
 def test_los_kilos_congelados_no_se_mueven_cuando_se_mueve_el_stock(monkeypatch):
@@ -3948,3 +3956,29 @@ def test_la_hoja_impresa_habla_el_mismo_idioma_que_la_pantalla():
         assert ">Kg en saldo<" not in texto, (
             f"{nombre} sigue diciendo «Kg en saldo»; la tabla dice «Queda»")
         assert ">Queda<" in texto
+
+
+def test_el_libro_de_excel_sale_con_formato():
+    """Dueña 26/08/2026: *"bajalo a algo con formato"*. Un .xlsx de verdad:
+    encabezado fijo, filtro automático, anchos pensados y números que Excel
+    pueda sumar. Se prueba abriendo el archivo, no leyendo el código."""
+    import io
+
+    from openpyxl import load_workbook
+
+    from modules.analisis import excel
+    datos = excel.libro([{
+        "titulo": "Saldos",
+        "columnas": [("Tela", 24, None), ("Queda", 11, "#,##0.0")],
+        "filas": [["Jersey Forro Spun", 946], ["Microfibra", 833.5]],
+    }])
+    wb = load_workbook(io.BytesIO(datos))
+    ws = wb["Saldos"]
+    assert ws.freeze_panes == "A2", "sin encabezado fijo, a la fila 200 no se sabe qué es cada columna"
+    assert ws.auto_filter.ref == "A1:B3"
+    assert ws["A1"].value == "Tela" and ws["A1"].font.bold
+    assert ws.column_dimensions["A"].width == 24, "la tela no entra en 8 caracteres"
+    # ⚠ Lo que arreglaba el pedido: los kilos son NÚMEROS, no cadenas.
+    assert ws["B2"].value == 946 and isinstance(ws["B2"].value, int | float)
+    assert ws["B2"].number_format == "#,##0.0"
+    assert ws["B2"].alignment.horizontal == "right"
