@@ -23,6 +23,7 @@ if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
 import reparto_mensual as rm  # noqa: E402
+from filters import today_ec  # noqa: E402
 
 pytestmark = pytest.mark.db
 
@@ -95,8 +96,15 @@ def test_ningun_dia_del_mes_queda_plano(cur):
 
 
 def test_la_proc_mensual_usa_el_mismo_coeficiente(cur):
-    """`actualizar_amortizacion()` no puede tener su propia cuenta."""
-    hoy = date.today()
+    """`actualizar_amortizacion()` no puede tener su propia cuenta.
+
+    ⚠ El día es el de ECUADOR y no el del contenedor. La proc hace
+    `(CURRENT_TIMESTAMP - INTERVAL '5 hours')::date`, y el CI corre en UTC:
+    entre las 19:00 y la medianoche de Ecuador —o sea, de 00:00 a 05:00 UTC—
+    `date.today()` ya está en el día siguiente y el test se caía solo. Pasó el
+    25/08/2026 a las 00:xx UTC: pedía 866,67 (26/30) contra los 833,33 (25/30)
+    que la base calcula bien. Main quedó en rojo y no deployaba nada."""
+    hoy = today_ec()
     cur.execute("DELETE FROM scintela.activos")
     cur.execute(
         "INSERT INTO scintela.activos (concepto, tipo, inicial, amortizac, cuota, "
