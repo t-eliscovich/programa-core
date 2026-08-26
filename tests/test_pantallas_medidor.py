@@ -253,3 +253,32 @@ def test_una_url_que_no_existe_no_es_una_pantalla(app, fake_db):
     medidor.limpiar()
     c.get("/esto-no-existe-en-el-programa")
     assert medidor.resumen() == []
+
+
+# ---------------------------------------------------------------------------
+# Que "volver a empezar" empiece de verdad de cero (26/08/2026).
+#
+# El CI se puso rojo dos veces seguidas con
+# `test_una_consulta_de_un_hilo_de_fondo_no_se_cuenta`, que pasaba local: un
+# test anterior dejaba `arrancar()` sin su `cerrar()` —pasa cuando la respuesta
+# no sale por el after_request— y `limpiar()` no apagaba el thread-local. El
+# `cerrar()` del test siguiente se anotaba como una visita de verdad.
+# ---------------------------------------------------------------------------
+
+def test_limpiar_apaga_la_medicion_a_medio_hacer():
+    """Si quedó un `arrancar()` abierto, `limpiar()` lo cierra: el próximo
+    `cerrar()` no puede anotarse solo."""
+    medidor.arrancar()                       # request que nunca cerró
+    medidor.limpiar()
+    medidor.cerrar("/x", "GET", 10)          # el cerrar del hilo de fondo
+    assert medidor.resumen() == []
+
+
+def test_limpiar_tambien_borra_las_consultas_contadas():
+    medidor.arrancar()
+    medidor.anotar_consulta(50, "SELECT 1")
+    medidor.limpiar()
+    medidor.arrancar()
+    medidor.cerrar("/y", "GET", 10)
+    fila = [f for f in medidor.resumen() if f["ruta"] == "/y"][0]
+    assert fila["consultas"] == 0, "arrastró las consultas de antes de limpiar"

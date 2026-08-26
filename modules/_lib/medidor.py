@@ -178,8 +178,26 @@ def estado() -> dict:
 
 
 def limpiar() -> None:
-    """Volver a empezar de cero (el botón de la pantalla, y los tests)."""
+    """Volver a empezar de cero (el botón de la pantalla, y los tests).
+
+    ⚠ También apaga la medición A MEDIO HACER de este hilo. Sin eso, "volver a
+    empezar" dejaba abierto un request que había llamado a `arrancar()` y nunca
+    a `cerrar()` —pasa cuando la respuesta no sale por el `after_request`: un
+    404, un handler de error—, y el PRÓXIMO `cerrar()` de ese hilo se anotaba
+    como si fuera una visita.
+
+    Lo cazó el CI el 26/08/2026: `test_una_consulta_de_un_hilo_de_fondo_no_se_cuenta`
+    falló en el servidor y pasaba local. La fixture limpiaba las dos tablas pero
+    no el thread-local, así que el `activo=True` que había dejado otro test
+    sobrevivía a la limpieza y el `cerrar()` del test se contaba. Un test que
+    depende de lo que corrió antes deja el CI en rojo y frena el deploy.
+    """
     global _DESDE
+    _LOCAL.activo = False
+    _LOCAL.n = 0
+    _LOCAL.ms = 0.0
+    _LOCAL.peor_ms = 0.0
+    _LOCAL.peor_sql = ""
     with _LOCK:
         _RUTAS.clear()
         _LENTAS.clear()
