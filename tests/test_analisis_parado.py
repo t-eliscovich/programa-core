@@ -3997,3 +3997,42 @@ def test_vendidos_muestra_el_codigo_del_vendedor_y_no_el_nombre_entero():
     assert "{{ v.vend_pc or 'Intela' }}" in tabla
     assert 'title="{{ v.vendedor }}"' in tabla, "el nombre entero no se pierde"
     assert "<td>{{ v.vendedor }}</td>" not in tabla
+
+
+def test_hay_un_boton_para_borrar_los_filtros():
+    """Dueña 26/08/2026: *"poneme un botón para borrar los filtros"*. Con seis
+    filtros, volver a «todo» era tocar seis desplegables.
+
+    ⚠ Y tiene que borrar TAMBIÉN lo guardado: los filtros viven en la dirección
+    y en el navegador, así que dejarlos en blanco en la pantalla sin borrar el
+    recuerdo los traía de vuelta al recargar."""
+    html = _html_parado()
+    assert 'onclick="limpiarFiltros()"' in html
+    js = html[html.index("function limpiarFiltros()"):]
+    assert "localStorage.removeItem(LLAVE)" in js[:400], "no borra lo guardado"
+    assert "history.replaceState" in js[:400], "no borra los filtros de la dirección"
+    assert "grupoCambio();" in js[:400], "no vuelve a dibujar la tabla"
+
+
+def test_se_puede_filtrar_por_lo_que_ya_se_vendio():
+    """Dueña 26/08/2026: *"dejame también filtrar por vendido"*. Son los
+    renglones que la competencia premió: sin el filtro había que buscarlos a
+    ojo entre 709."""
+    html = _html_parado()
+    assert '<select id="vendido"' in html
+    assert 'data-vendido="{{ \'si\' if f.kg_vendidos else \'no\' }}"' in html
+    assert "tr.dataset.vendido === vd" in html, "el filtro no se aplica"
+    assert "'calidad', 'vendido', 'vend'" in html, (
+        "no se recuerda con los demás")
+
+
+def test_el_contador_no_ocupa_un_renglon_propio():
+    """Dueña 26/08/2026: *"el total abajo molesta, en otro lado que no sea un
+    renglón más"*. Abajo del cuadro de filtros se comía un renglón entero para
+    decir dos números; ahora viaja con el título."""
+    html = _html_parado()
+    i = html.index('id="tela-por-tela"')
+    assert 'id="cuenta"' in html[i:i + 220], "el contador no está en el título"
+    fin = html.index("</div>", html.index('<div class="filtros">'))
+    assert 'id="cuenta"' not in html[html.index('<div class="filtros">'):fin], (
+        "quedó también abajo de los filtros")

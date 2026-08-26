@@ -181,7 +181,12 @@ th.ord.desc::after{content:" ↓";opacity:1}
    · Imprimir y PDF pasan al lado del título, chiquitos: se usan una vez cada
      tanto y ocupaban un renglón entero al lado del buscador. #}
 <div class="titulo-fila">
-  <h2 id="tela-por-tela">Tela por tela</h2>
+  {# ⭐ El contador va PEGADO AL TÍTULO (dueña 26/08/2026: "el total abajo
+     molesta, en otro lado que no sea un renglón más"). Abajo del cuadro de
+     filtros se comía un renglón entero para decir dos números; acá viaja con
+     el título y no ocupa nada. #}
+  <h2 id="tela-por-tela">Tela por tela <span class="sub cuenta"
+      id="cuenta">&nbsp;</span></h2>
   <span class="acciones">
     {# ⭐ El Excel lo arma el SERVIDOR, con formato (dueña 26/08/2026: "bajar a
        excel se baja horrible: bajalo a algo con formato"). Antes el navegador
@@ -224,13 +229,27 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <option value="PRI">Sólo PRI</option>
     <option value="SEG">Sólo SEG</option>
   </select></div>
+  {# ⭐ Filtrar por lo que YA SE VENDIÓ (dueña 26/08/2026: "dejame también
+     filtrar por vendido"). Son los renglones que la competencia premió: sin el
+     filtro había que buscarlos a ojo entre 709. #}
+  <div class="ff"><label for="vendido">Vendido</label>
+  <select id="vendido" onchange="filtrar()">
+    <option value="">Todas</option>
+    <option value="si">Ya se vendió</option>
+    <option value="no">Todavía no</option>
+  </select></div>
   <div class="ff" {% if mia %}hidden{% endif %}><label for="vend">Vendedor</label>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos</option>
     {% if not mia %}<option value="INTELA">Intela (mostrador)</option>
     {% for c in ['PPR','FL1','RMY','JQU','EDG','SEP'] %}<option value="{{ c }}">{{ c }}</option>{% endfor %}{% endif %}
   </select></div>
-  <span class="sub cuenta" id="cuenta">&nbsp;</span>
+  {# ⭐ Y un botón para dejarlos todos en blanco (dueña 26/08/2026: "poneme un
+     botón para borrar los filtros"). Con seis filtros, volver a «todo» era
+     tocar seis desplegables — y como se guardan en la dirección y en el
+     navegador, el que se olvidaba uno puesto veía media lista y no entendía
+     por qué. #}
+  <button type="button" id="limpiar" onclick="limpiarFiltros()">Borrar filtros</button>
 </div>
 
 {# ⭐ El botón «Actualizar desde Asinfo» se fue (dueña 25/08/2026: "borra
@@ -296,6 +315,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-color="{{ f.color }}"
+      data-vendido="{{ 'si' if f.kg_vendidos else 'no' }}"
       data-cal="{% if f.cal_fila is defined %}{{ f.cal_fila or 'PRI SEG' }}{% elif f.kg_segunda and f.kg_primera %}PRI SEG{% elif f.kg_segunda %}SEG{% else %}PRI{% endif %}"
       {# INTELA entra al filtro como uno más: sus clientes son los que no
          tienen vend_pc. Sin esto no había forma de aislar el mostrador, que es
@@ -530,6 +550,7 @@ function filtrar(){
   const g = document.getElementById('grupo').value;
   const sg = document.getElementById('subgrupo').value;
   const cal = document.getElementById('calidad').value;
+  const vd = document.getElementById('vendido').value;
   let vistos = 0, kg = 0;
   // ⚠⚠ `#tabla tr.item` y NO `tr.item`: el 25/08/2026 la tabla de Vendidos
   // nació con la misma clase y este filtro se la comió — filas sin `data-grupo`
@@ -542,7 +563,8 @@ function filtrar(){
                (!v || tr.dataset.vend.split(' ').includes(v)) &&
                (!g || tr.dataset.grupo === g) &&
                (!sg || tr.dataset.sub === sg) &&
-               (!cal || tr.dataset.cal.split(' ').includes(cal));
+               (!cal || tr.dataset.cal.split(' ').includes(cal)) &&
+               (!vd || tr.dataset.vendido === vd);
     tr.classList.toggle('oculta', !ok);
     if (!ok) det.classList.remove('abierta');
     det.classList.toggle('oculta', !ok);
@@ -558,6 +580,16 @@ function filtrar(){
 // Elegir un grupo deja SÓLO sus subgrupos en el segundo desplegable. Sin esto
 // se puede pedir "Fleece" + "Jersey 3.5" y la tabla queda vacía sin decir por
 // qué — parece que no hay datos, y lo que hay es una combinación imposible.
+// ⚠ Limpia TAMBIÉN lo guardado: los filtros viven en la dirección y en el
+// navegador, así que dejarlos en blanco en la pantalla sin borrar el recuerdo
+// los traía de vuelta al recargar.
+function limpiarFiltros(){
+  CAMPOS.forEach(c => { const e = document.getElementById(c); if (e) e.value = ''; });
+  try { localStorage.removeItem(LLAVE); } catch (e) { /* modo privado */ }
+  history.replaceState(null, '', location.pathname);
+  grupoCambio();
+}
+
 function grupoCambio(){
   const g = document.getElementById('grupo').value;
   const sel = document.getElementById('subgrupo');
@@ -657,7 +689,7 @@ function abrir(tr){
 // mismo. Se guardan también en el navegador para el que vuelve al día
 // siguiente; la URL gana sobre lo guardado, porque si alguien te mandó un link
 // es porque quiere que veas ESO.
-const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vend'];
+const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vendido', 'vend'];
 const LLAVE = 'saldos-filtros';
 
 function guardarFiltros(){

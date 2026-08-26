@@ -144,7 +144,11 @@ background:#fafafa}
 .filtros label{font-size:11px;font-weight:600;color:var(--g);
 letter-spacing:.02em;text-transform:uppercase}
 .filtros input,.filtros select{width:100%}
-.filtros .cuenta{margin:0 0 6px auto;font-size:13px}
+/* El contador se mudó al renglón del título: acá sólo queda el botón de
+   limpiar, empujado a la derecha. */
+.filtros #limpiar{margin:0 0 0 auto;align-self:flex-end}
+.titulo-fila .cuenta{font-size:13px;font-weight:400;color:var(--g);
+margin-left:10px;white-space:nowrap}
 /* ⭐ EL ÍNDICE DE LA PANTALLA. Por defecto es una tira pegajosa arriba: no le
    saca un pixel de ancho a la tabla, que fue el problema de la primera versión
    ("horrible esto, me achico la tabla"). */
@@ -297,7 +301,7 @@ font-size:12px;color:var(--g)}
   .filtros .ff{min-width:0;flex:1 1 calc(50% - 4px)}
   .filtros .ff:first-child{flex:1 1 100%}
   .filtros input,.filtros select{font-size:16px;max-width:none}
-  .filtros .cuenta{flex:1 1 100%;margin:0}
+  .filtros #limpiar{flex:1 1 100%;margin:0}
   /* ⚠⚠ LA PÁGINA NO PUEDE MOVERSE PARA EL COSTADO. Medido el 25/08/2026 a 390,
      360 y 320 px: el documento medía 492 contra 390 de pantalla, así que TODA
      la pantalla —encabezado, tarjetas y filtros— se corría en diagonal. La
