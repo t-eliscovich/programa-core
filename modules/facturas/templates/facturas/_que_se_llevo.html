@@ -7,11 +7,17 @@
 
    ⚠ Este parcial viaja con las clases de Tailwind del ERP. El portal del
    cliente tiene su propio CSS: allá va su propia hoja, con los mismos números
-   (`modules.asinfo.factura_lineas`). #}
+   (`modules.asinfo.factura_lineas`).
+
+   ⭐ En la misma tabla de Asinfo viven las NOTAS DE CRÉDITO, que acreditan
+   plata y no tienen kilos (punto 7 del módulo). Cuando `totales.kg` viene
+   vacío, las columnas de rollos y kilos no se dibujan: dos columnas de
+   guiones son ruido, y con un número adentro serían mentira. #}
+{% set sin_kg = det.totales.kg is none %}
 <div id="que-se-llevo">
   <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
-    Qué se llevó
-    {% if det.estado == 'ok' %}
+    {{ det.titulo }}
+    {% if det.estado == 'ok' and not sin_kg %}
       <span class="normal-case font-normal tracking-normal text-slate-400">
         · {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }}
         · {{ det.totales.kg | kg_es }} kg
@@ -40,10 +46,12 @@
             <th class="px-3 py-3 text-left font-medium">Código</th>
             <th class="px-3 py-3 text-left font-medium">Color</th>
             <th class="px-3 py-3 text-left font-medium">Calidad</th>
+            {% if not sin_kg %}
             <th class="px-3 py-3 text-right font-medium">Rollos</th>
             <th class="px-3 py-3 text-right font-medium">Kilos</th>
             <th class="px-3 py-3 text-right font-medium">Precio</th>
-            <th class="px-3 py-3 text-right font-medium">Total</th>
+            {% endif %}
+            <th class="px-3 py-3 text-right font-medium">{{ 'Importe' if sin_kg else 'Total' }}</th>
           </tr>
         </thead>
         <tbody>
@@ -53,40 +61,48 @@
             <td class="px-3 py-2 text-mono">{{ l.codigo or '—' }}</td>
             <td class="px-3 py-2">{{ l.color or '—' }}</td>
             <td class="px-3 py-2">{{ l.calidad or '—' }}</td>
+            {% if not sin_kg %}
             <td class="px-3 py-2 text-right text-mono">{{ l.rollos }}</td>
             <td class="px-3 py-2 text-right text-mono">{{ l.kg | kg_es }}</td>
             <td class="px-3 py-2 text-right text-mono">{{ l.precio | money_es }}</td>
+            {% endif %}
             <td class="px-3 py-2 text-right text-mono">{{ l.total | money_es }}</td>
           </tr>
           {% endfor %}
           {% for s in det.servicios %}
           <tr class="border-t border-slate-100 dark:border-slate-800 text-slate-500">
             <td class="px-3 py-2" colspan="4">{{ s.nombre | capitalize }}</td>
+            {% if not sin_kg %}
             <td class="px-3 py-2 text-right text-mono">—</td>
             <td class="px-3 py-2 text-right text-mono">—</td>
             <td class="px-3 py-2 text-right text-mono">—</td>
+            {% endif %}
             <td class="px-3 py-2 text-right text-mono">{{ s.total | money_es }}</td>
           </tr>
           {% endfor %}
         </tbody>
         <tfoot class="border-t-2 border-slate-200 dark:border-slate-700 text-sm">
           <tr>
-            <td class="px-3 py-2 text-slate-500" colspan="4">Bruto</td>
+            <td class="px-3 py-2 text-slate-500" colspan="4">{{ 'Subtotal' if sin_kg else 'Bruto' }}</td>
+            {% if not sin_kg %}
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.rollos }}</td>
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.kg | kg_es }}</td>
             <td class="px-3 py-2"></td>
+            {% endif %}
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.bruto | money_es }}</td>
           </tr>
+          {% if det.totales.descuento %}
           <tr>
-            <td class="px-3 py-1 text-slate-500" colspan="7">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
+            <td class="px-3 py-1 text-slate-500" colspan="{{ 4 if sin_kg else 7 }}">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
             <td class="px-3 py-1 text-right text-mono">−{{ det.totales.descuento | money_es }}</td>
           </tr>
+          {% endif %}
           <tr>
-            <td class="px-3 py-1 text-slate-500" colspan="7">IVA 15%</td>
+            <td class="px-3 py-1 text-slate-500" colspan="{{ 4 if sin_kg else 7 }}">IVA 15%</td>
             <td class="px-3 py-1 text-right text-mono">{{ det.totales.iva | money_es }}</td>
           </tr>
           <tr class="border-t border-slate-200 dark:border-slate-700">
-            <td class="px-3 py-2 font-semibold" colspan="7">Total</td>
+            <td class="px-3 py-2 font-semibold" colspan="{{ 4 if sin_kg else 7 }}">{{ 'Total acreditado' if sin_kg else 'Total' }}</td>
             <td class="px-3 py-2 text-right text-mono font-semibold">{{ det.totales.total | money_es }}</td>
           </tr>
         </tfoot>

@@ -226,3 +226,128 @@ def test_el_cache_tiene_tope():
         for i in range(fl._TOPE_CACHE + 5):
             fl.que_se_llevo(f"001-099-{i:09d}")
     assert len(fl._CACHE) <= fl._TOPE_CACHE
+
+
+# --- la nota de crédito no tiene kilos (punto 7) ---------------------------
+#
+# TMT 2026-08-26 (dueña): *"kilos está mal"*. La 001-099-000011795 (SPI,
+# −377,30) es una NOTA DE CRÉDITO: vive en la misma tabla de Asinfo que las
+# facturas, con su propia numeración, y sus cuatro renglones vienen con
+# `cantidad = 1` —una unidad, no un kilo— y el importe entero en el precio.
+# El bloque decía "4 rollos · 4,00 kg" a 196,84 el kilo.
+
+def _fila_nc(tela, color, importe, doc=17):
+    """Un renglón de la 001-099-000011795, tal cual lo devuelve Asinfo."""
+    return {
+        "tela": tela, "codigo": color[:3].upper(), "producto": f"{tela} {color}",
+        "categoria": "TELAS", "color": color, "calidad": "PRIMERA",
+        "doc": doc, "cantidad": 1, "precio": importe, "bruto": importe,
+        "descuento": 0, "pct1": 0, "pct2": 0,
+    }
+
+
+def _nota_de_credito():
+    return [
+        _fila_nc("Toper", "ELECTRICO", 196.8374),
+        _fila_nc("Toper", "AZUL NOCHE", 98.2197),
+        _fila_nc("Rib Acanalado", "ELECTRICO", 6.8176),
+        _fila_nc("Jersey 3", "CIELO", 26.2153),
+    ]
+
+
+def test_el_sql_pregunta_que_documento_es():
+    """Sin el documento no hay forma de saber si la `cantidad` son kilos."""
+    assert "fc.id_documento" in fl._sql("001-099-000011795")
+
+
+def test_la_nota_de_credito_no_muestra_kilos_ni_rollos():
+    res = fl._agrupar(_nota_de_credito())
+    assert res["doc"] == "nota-credito"
+    assert res["titulo"] == "Nota de crédito"
+    assert res["totales"]["kg"] is None
+    assert res["totales"]["rollos"] is None
+    assert [ln["kg"] for ln in res["lineas"]] == [None, None, None, None]
+    assert [ln["rollos"] for ln in res["lineas"]] == [None, None, None, None]
+
+
+def test_la_plata_de_la_nota_de_credito_es_la_de_la_ficha():
+    """Los kilos se van, la plata queda: 328,09 + 15% = 377,30."""
+    tot = fl._agrupar(_nota_de_credito())["totales"]
+    assert tot["bruto"] == 328.09
+    assert tot["iva"] == 49.21
+    assert tot["total"] == 377.30
+
+
+def test_sin_kilos_manda_el_renglon_que_mas_acredita():
+    """La fila más pesada va primero; sin kilos, la que más plata devuelve."""
+    lineas = fl._agrupar(_nota_de_credito())["lineas"]
+    assert [ln["total"] for ln in lineas] == [196.84, 98.22, 26.22, 6.82]
+
+
+def test_la_devolucion_si_tiene_kilos():
+    """La devolución (doc 20) SÍ mueve mercadería: 001-099-000011778, 21,7 kg."""
+    f = _fila("Fleece Lycra", "JAS.OSCURO", 21.7, 11.07, 212.23)
+    f["doc"] = fl.DOC_DEVOLUCION
+    res = fl._agrupar([f])
+    assert res["doc"] == "devolucion"
+    assert res["titulo"] == "Qué devolvió"
+    assert res["totales"]["kg"] == 21.7
+    assert res["totales"]["rollos"] == 1
+
+
+def test_la_factura_sigue_siendo_lo_que_se_llevo():
+    f = _fila("Jersey 3", "CELESTE", 21.8, 9.86, 175.53)
+    f["doc"] = fl.DOC_FACTURA
+    res = fl._agrupar([f])
+    assert res["doc"] == "factura"
+    assert res["titulo"] == "Qué se llevó"
+    assert res["totales"]["kg"] == 21.8
+
+
+def test_un_documento_que_no_conocemos_se_porta_como_factura():
+    """Una caché vieja o un documento nuevo de Asinfo no puede tapar kilos."""
+    f = _fila("Jersey 3", "CELESTE", 21.8, 9.86, 175.53)
+    res = fl._agrupar([f])          # sin `doc`
+    assert res["doc"] == "otro"
+    assert res["titulo"] == "Qué se llevó"
+    assert res["totales"]["kg"] == 21.8
+
+
+def test_el_formato_del_cache_subio():
+    """Las 23 notas de crédito ya guardadas tienen que reescribirse solas."""
+    assert fl.FORMATO >= 5
+
+
+# --- y lo mismo en las tres pantallas --------------------------------------
+
+def _render(app, plantilla, filas):
+    from flask import g, render_template
+    with app.test_request_context("/facturas/1/que-se-llevo"):
+        g.user = {"username": "test", "nombre_rol": "Accionista", "rol": 1}
+        g.permisos = {"*"}
+        return render_template(plantilla,
+                               det={"estado": "ok", **fl._agrupar(filas)})
+
+
+@pytest.mark.parametrize("plantilla", [
+    "facturas/_que_se_llevo.html",
+    "mi_cartera/_que_se_llevo.html",
+])
+def test_la_pantalla_de_la_nota_de_credito_no_dice_kilos(app, plantilla):
+    html = _render(app, plantilla, _nota_de_credito())
+    assert "Kilos" not in html
+    assert "Rollos" not in html
+    assert "377,30" in html
+    assert "196,84" in html
+
+
+@pytest.mark.parametrize("plantilla", [
+    "facturas/_que_se_llevo.html",
+    "mi_cartera/_que_se_llevo.html",
+])
+def test_la_pantalla_de_la_factura_sigue_diciendo_kilos(app, plantilla):
+    f = _fila("Jersey 3", "CELESTE", 21.8, 9.86, 175.53)
+    f["doc"] = fl.DOC_FACTURA
+    html = _render(app, plantilla, [f])
+    assert "Kilos" in html
+    assert "21,80" in html

@@ -22,8 +22,8 @@
 
 {% block content %}
 <div class="card">
-  <h2 style="margin:0 0 8px;font-size:15px;">Qué se llevó
-    {% if det.estado == 'ok' %}
+  <h2 style="margin:0 0 8px;font-size:15px;">{{ det.titulo }}
+    {% if det.estado == 'ok' and det.totales.kg is not none %}
       <span style="font-weight:400;color:#64748b;font-size:13px;">·
         {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }} ·
         {{ det.totales.kg | kg_es }} kg</span>

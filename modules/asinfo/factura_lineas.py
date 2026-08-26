@@ -44,6 +44,22 @@ color, cuántos rollos. Eso vive en Asinfo y se trae por el puente de Metabase.
    de más (el mismo error que ya se pagó en `dia_despacho`). Acá va aparte,
    sin rollos y sin kilos.
 
+7. **No toda fila de `factura_cliente` es una factura.** En la misma tabla
+   viven las NOTAS DE CRÉDITO (`id_documento = 17`) y las DEVOLUCIONES
+   (`id_documento = 20`), con su propia numeración (001-099-0000117xx contra
+   001-099-0001826xx del mismo día). Y la nota de crédito **no tiene kilos**:
+   acredita PLATA, así que cada renglón viene con `cantidad = 1` —una unidad,
+   la misma trampa del punto 6— y el importe entero metido en el precio. Al
+   contarlos como kilos, la 001-099-000011795 (−377,30 de SPI) decía *"4
+   rollos · 4,00 kg"* con un precio de 196,84 el kilo. Por eso el bloque
+   pregunta QUÉ DOCUMENTO es y, si es nota de crédito, no muestra ni rollos
+   ni kilos. TMT 2026-08-26 (dueña): *"kilos está mal"*.
+
+   La red que lo prueba: los kilos del bloque tienen que dar los mismos que
+   `scintela.factura.kg`. Medido sobre las 243 facturas cacheadas el
+   26/08/2026 — factura 206/206 ✓, devolución 14/14 ✓, nota de crédito
+   **0 de 23**.
+
 Fail-soft, como todo lo que cuelga de Asinfo: si Metabase no contesta, la
 pantalla lo dice y la ficha de la factura sigue viva. Nunca levanta.
 """
@@ -71,6 +87,29 @@ ATRIBUTO_COLOR = 3
 #: Un renglón de esta categoría es un servicio, no mercadería.
 CATEGORIA_SERVICIOS = "SERVICIOS"
 
+#: Los documentos de Asinfo que caen en `factura_cliente` (tabla `documento`).
+#: La factura y la devolución mueven MERCADERÍA —tienen rollos y kilos—; la
+#: nota de crédito mueve PLATA y no tiene ninguno de los dos. Ver el punto 7.
+DOC_FACTURA = 7
+DOC_NOTA_CREDITO = 17
+DOC_DEVOLUCION = 20
+
+_DOCS = {
+    DOC_FACTURA: "factura",
+    DOC_NOTA_CREDITO: "nota-credito",
+    DOC_DEVOLUCION: "devolucion",
+}
+
+#: El rótulo del bloque. Vive acá, y no en cada template, porque son TRES
+#: pantallas (oficina, vendedor y cliente) y ya está escrito que las tres
+#: tienen que decir lo mismo: si el cliente y el vendedor vieran dos detalles
+#: distintos de la misma factura, la discusión no se puede tener.
+TITULOS = {
+    "nota-credito": "Nota de crédito",
+    "devolucion": "Qué devolvió",
+}
+TITULO_DEFAULT = "Qué se llevó"
+
 #: IVA vigente. El mismo 15% que usa la lista de precios.
 IVA = 0.15
 
@@ -79,7 +118,7 @@ IVA = 0.15
 #: se reescriben solas la próxima vez que alguien mire esa factura. Sale más
 #: barato que acordarse de vaciar la tabla en cada deploy — y olvidarse deja
 #: pantallas mostrando la mitad de los datos sin que nada falle.
-FORMATO = 4
+FORMATO = 5
 
 #: Cuánto vale la foto. Una factura vieja no cambia nunca; una de hoy puede
 #: recibir un renglón más en los minutos siguientes a emitirse.
@@ -232,6 +271,7 @@ SELECT LTRIM(RTRIM(ISNULL(fc.numero, '')))                       AS numero,
        LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, '')))    AS categoria,
        LTRIM(RTRIM(ISNULL(col.nombre, '')))                      AS color,
        LTRIM(RTRIM(ISNULL(cal.descripcion, ISNULL(cal.nombre, '')))) AS calidad,
+       fc.id_documento                                           AS doc,
        dfc.cantidad                                              AS cantidad,
        dfc.precio                                                AS precio,
        dfc.precio_linea                                          AS bruto,
@@ -272,6 +312,21 @@ def _calidad_es(texto) -> str:
     return t.capitalize()
 
 
+def _tipo_doc(filas: list[dict]) -> str:
+    """`factura`, `nota-credito`, `devolucion` u `otro`. Ver el punto 7.
+
+    Se mira el primer renglón que traiga un número: todos los renglones son
+    del mismo documento, y un `doc` que no vino (una fila de un test viejo,
+    una caché de antes) cae en `otro`, que se comporta como una factura.
+    """
+    for f in filas:
+        try:
+            return _DOCS.get(int(f.get("doc")), "otro")
+        except (TypeError, ValueError):
+            continue
+    return "otro"
+
+
 def _agrupar(filas: list[dict]) -> dict:
     """Los renglones crudos de Asinfo, agrupados por tela + color + calidad.
 
@@ -279,6 +334,10 @@ def _agrupar(filas: list[dict]) -> dict:
     precios distintos son dos hechos distintos, y promediarlos escondería el
     que se vendió mal.
     """
+    doc = _tipo_doc(filas)
+    # ⭐ La nota de crédito no tiene kilos ni rollos: su `cantidad` es una
+    #    unidad y su precio es el importe entero (punto 7).
+    sin_kilos = doc == "nota-credito"
     grupos: dict[tuple, dict] = {}
     servicios: list[dict] = []
     kg = 0.0
@@ -327,10 +386,16 @@ def _agrupar(filas: list[dict]) -> dict:
         kg += cant
         rollos += 1
 
-    lineas = sorted(grupos.values(), key=lambda g: (-g["kg"], g["tela"], g["color"]))
+    # Sin kilos que ordenar, el renglón que más pesa es el que más plata
+    # acredita: es lo primero que se mira en una nota de crédito.
+    lineas = sorted(grupos.values(),
+                    key=lambda g: (-(g["total"] if sin_kilos else g["kg"]),
+                                   g["tela"], g["color"]))
     for g in lineas:
-        g["kg"] = round(g["kg"], 2)
+        g["kg"] = None if sin_kilos else round(g["kg"], 2)
         g["total"] = round(g["total"], 2)
+        if sin_kilos:
+            g["rollos"] = None
 
     # ⭐ El pie se arma DESDE ARRIBA con las cifras ya redondeadas, en el mismo
     # orden en que se leen. La pantalla muestra bruto, descuento e IVA con dos
@@ -346,11 +411,13 @@ def _agrupar(filas: list[dict]) -> dict:
     neto = round(bruto - descuento, 2)
     iva = round(neto * IVA, 2)
     return {
+        "doc": doc,
+        "titulo": TITULOS.get(doc, TITULO_DEFAULT),
         "lineas": lineas,
         "servicios": servicios,
         "totales": {
-            "rollos": rollos,
-            "kg": round(kg, 2),
+            "rollos": None if sin_kilos else rollos,
+            "kg": None if sin_kilos else round(kg, 2),
             "bruto": bruto,
             "descuento": descuento,
             "neto": neto,
@@ -385,7 +452,8 @@ def que_se_llevo(numero) -> dict:
                         realidad es "no pude preguntar" es la mentira que ya
                         costó el balance del 29/07.
     """
-    vacio = {"lineas": [], "servicios": [], "totales": {}}
+    vacio = {"doc": "", "titulo": TITULO_DEFAULT,
+             "lineas": [], "servicios": [], "totales": {}}
     num = (numero or "").strip()
     if not _NUMERO_RE.match(num):
         return {"estado": "sin-numero", **vacio}

@@ -16,7 +16,12 @@
    es lo que la dueña pidió para la oficina y no hay motivo para que acá diga
    otra cosa.
 
+   ⭐ La NOTA DE CRÉDITO no tiene kilos: acredita plata (punto 7 del módulo
+   `factura_lineas`). Cuando `totales.kg` viene vacío quedan dos columnas —lo
+   que se acreditó y cuánto—, y ninguna columna de guiones.
+
    Espera en el contexto: `det` (lo que devuelve el servicio). #}
+{% set sin_kg = det.totales.kg is none %}
 <style>
   .qsl{width:100%;border-collapse:collapse;font-size:12.5px}
   .qsl th{text-align:right;font-weight:600;color:#64748b;font-size:10.5px;
@@ -47,10 +52,12 @@
     <thead>
       <tr>
         <th class="l">Tela</th>
+        {% if not sin_kg %}
         <th>Rollos</th>
         <th>Kilos</th>
         <th>Precio</th>
-        <th>Total</th>
+        {% endif %}
+        <th>{{ 'Importe' if sin_kg else 'Total' }}</th>
       </tr>
     </thead>
     <tbody>
@@ -60,38 +67,44 @@
           <b>{{ l.tela }}</b>
           <small>{% if l.codigo %}{{ l.codigo }} · {% endif %}{{ l.color or '—' }}{% if l.calidad %} · {{ l.calidad }}{% endif %}</small>
         </td>
+        {% if not sin_kg %}
         <td>{{ l.rollos }}</td>
         <td>{{ l.kg | kg_es }}</td>
         <td>{{ l.precio | money_es }}</td>
+        {% endif %}
         <td>{{ l.total | money_es }}</td>
       </tr>
       {% endfor %}
       {% for s in det.servicios %}
       <tr>
         <td class="l"><b>{{ s.nombre | capitalize }}</b></td>
-        <td>—</td><td>—</td><td>—</td>
+        {% if not sin_kg %}<td>—</td><td>—</td><td>—</td>{% endif %}
         <td>{{ s.total | money_es }}</td>
       </tr>
       {% endfor %}
     </tbody>
     <tfoot>
       <tr>
-        <td class="l">Bruto</td>
+        <td class="l">{{ 'Subtotal' if sin_kg else 'Bruto' }}</td>
+        {% if not sin_kg %}
         <td>{{ det.totales.rollos }}</td>
         <td>{{ det.totales.kg | kg_es }}</td>
         <td></td>
+        {% endif %}
         <td>{{ det.totales.bruto | money_es }}</td>
       </tr>
+      {% if det.totales.descuento %}
       <tr>
-        <td class="l" colspan="4">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
+        <td class="l" colspan="{{ 1 if sin_kg else 4 }}">Descuento{% if det.totales.pct1 %} {{ det.totales.pct1 | num_es(0) }}%{% if det.totales.pct2 %} + {{ det.totales.pct2 | num_es(0) }}%{% endif %}{% elif det.totales.pct_efectivo %} {{ det.totales.pct_efectivo | num_es(1) }}%{% endif %}</td>
         <td>−{{ det.totales.descuento | money_es }}</td>
       </tr>
+      {% endif %}
       <tr>
-        <td class="l" colspan="4">IVA 15%</td>
+        <td class="l" colspan="{{ 1 if sin_kg else 4 }}">IVA 15%</td>
         <td>{{ det.totales.iva | money_es }}</td>
       </tr>
       <tr class="tot">
-        <td class="l" colspan="4">Total</td>
+        <td class="l" colspan="{{ 1 if sin_kg else 4 }}">{{ 'Total acreditado' if sin_kg else 'Total' }}</td>
         <td>{{ det.totales.total | money_es }}</td>
       </tr>
     </tfoot>
