@@ -921,7 +921,8 @@ def papel(id_factura: int):
     from modules.asinfo import factura_papel
     return render_template("informes/factura_papel.html",
                            **factura_papel.hoja(fact.get("numf_completo")),
-                           numero=fact.get("numf"))
+                           numero=fact.get("numf"),
+                           imprimir=request.args.get("imprimir") == "1")
 
 
 def _despachado_hoy(fecha) -> dict:

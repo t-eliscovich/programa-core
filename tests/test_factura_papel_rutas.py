@@ -279,15 +279,46 @@ def test_sin_la_factura_de_asinfo_no_se_arma_un_pdf_vacio(oficina_facturas, monk
     assert "sin-numero" in r.data.decode()
 
 
-def test_los_botones_estan_en_la_ficha():
-    """Sin número del SRI no hay factura de Asinfo que copiar: no aparecen."""
+def test_imprimir_imprime_LA_FACTURA_no_la_pantalla():
+    """🐞 TMT 2026-08-26: *"el imprimir me pone cualquier cosa, no la que
+    diseñamos"*. El botón hacía `window.print()` de la ficha. Ahora abre la
+    hoja de la factura con `imprimir=1`, y sólo se cae a imprimir la pantalla
+    cuando no hay número del SRI, que es cuando no hay factura que copiar.
+    """
     from pathlib import Path
 
     t = Path("modules/facturas/templates/facturas/detalle.html").read_text(
         encoding="utf-8")
     assert "{% if fact.numf_completo %}" in t
-    assert "facturas.papel'" in t or 'facturas.papel"' in t
+    assert "facturas.papel', id_factura=fact.id_factura, imprimir=1" in t
     assert "facturas.papel_pdf" in t
+    # el `window.print()` de la pantalla queda SÓLO para el caso sin número
+    assert t.count("window.print()") == 1
+    assert t.index("{% else %}\n        <button onclick=\"window.print()") > \
+           t.index("facturas.papel_pdf")
+
+
+def test_la_hoja_se_imprime_sola_solo_si_se_lo_piden(app, monkeypatch):
+    """Sin el parámetro no imprime: la misma página sirve para mirarla."""
+    from flask import g, render_template
+
+    from tests.test_factura_papel import _hoja_ok
+
+    with app.test_request_context("/facturas/1/papel"):
+        g.user = {"username": "t", "nombre_rol": "Accionista", "rol": 1}
+        g.permisos = {"*"}
+        hoja = _hoja_ok()
+        sin = render_template(PLANTILLA, numero=182675, **hoja)
+        con = render_template(PLANTILLA, numero=182675, imprimir=True, **hoja)
+    assert "window.print()" not in sin
+    assert "window.print()" in con
+
+
+def test_la_vista_le_pasa_el_pedido_de_imprimir_a_la_hoja():
+    import inspect
+
+    from modules.facturas import views as fv
+    assert 'request.args.get("imprimir") == "1"' in inspect.getsource(fv.papel)
 
 
 # --- el desempate de la nota de entrega -------------------------------------

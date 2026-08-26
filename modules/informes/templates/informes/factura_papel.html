@@ -243,5 +243,14 @@
 {% endif %}
 
 </div>
+{# TMT 2026-08-26 (dueña): *"el imprimir me pone cualquier cosa, no la que
+   diseñamos"*. El botón Imprimir de la ficha manda acá con `?imprimir=1` y la
+   hoja se manda a imprimir sola. Sin el parámetro no imprime nada: la misma
+   página sirve para mirarla. #}
+{% if imprimir %}
+<script>
+  window.addEventListener("load", function () { window.print(); });
+</script>
+{% endif %}
 </body>
 </html>
