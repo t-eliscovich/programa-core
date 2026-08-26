@@ -688,7 +688,7 @@ def test_la_hoja_del_vendedor_dice_lo_que_vale_cada_tela(monkeypatch):
 _TELA_DE = {"Jersey": "Jersey 3", "Fleece": "Fleece 102"}
 
 
-def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100",
+def _competencia_falsa(monkeypatch, vendido=None,
                        semanas=None, meses=None, base=None, puntos=None):
     filas = [
         {"categoria": "Jersey", "subcategoria": "Jersey 3", "color": "NEG",
@@ -715,8 +715,12 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
 
     def fake(sql, params=None, conn=None):
         s = " ".join(sql.split())
-        if "parado_meta" in s:
-            return [{"categoria": k, "pct": v} for k, v in (override or {}).items()]
+        # ⚠ La LISTA se reconoce por su tabla raíz y va PRIMERO: `items()`
+        # joinea el puntaje (para el grupo de la tela vendida entera) y las
+        # ventas (para abrir lo vendido por categoría), así que su consulta
+        # nombra las tres tablas y cualquier rama de abajo se la comía.
+        if "FROM scintela.parado_cohorte" in s:
+            return filas
         if "date_trunc('week'" in s:
             return semanas or []
         if "date_trunc('month'" in s:
@@ -727,7 +731,9 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
         # puntaje y la lista se quedaba sin `stock_kg`.
         if "FROM scintela.parado_punto" in s:
             return pfilas
-        if "parado_venta" in s:
+        # ⚠ `FROM` otra vez: `items()` joinea `parado_venta` para abrir lo
+        # vendido por categoría, así que su consulta también lo nombra.
+        if "FROM scintela.parado_venta" in s:
             return _con_tela(vendido)
         if "parado_share" in s:
             return []
@@ -743,34 +749,13 @@ def _competencia_falsa(monkeypatch, vendido=None, override=None, total_pct="100"
             # ⚠ Devolver lo mismo para toda clave hacía que `cierre` valiera la
             # fecha de largada y el test de la fecha de cierre pasara por el
             # motivo equivocado.
-            return {"valor": {"meta_total_pct": total_pct,
-                              "largada": "2026-08-25",
+            return {"valor": {"largada": "2026-08-25",
                               "cierre": "2026-12-31"}[(params or ("",))[0]]}
         return None
 
     monkeypatch.setattr(queries.db, "fetch_all", fake)
     monkeypatch.setattr(queries.db, "fetch_one", fake_one)
     return queries.competencia()
-
-
-def test_la_dueña_pone_el_total_y_todos_los_grupos_tienen_la_misma_exigencia(monkeypatch):
-    """⭐ La primera versión le ponía a cada grupo SU PROPIO PESO como meta
-    (Jersey 31,5% → sacarle el 31,5%). Daba un total de 21,7% que no decidió
-    nadie y una meta de 4 kg para el grupo más chico: una fórmula que se muerde
-    la cola. Ahora la dueña pone el total y se reparte por tamaño, o sea que
-    todos los grupos quedan con la misma exigencia."""
-    c = _competencia_falsa(monkeypatch, total_pct="40")
-    for g in c["grupos"]:
-        assert g["meta_pct"] == 40
-    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
-    assert jersey["meta_kg"] == 2400          # 40% de 6.000
-    assert c["meta_kg"] == 4000               # 40% de 10.000
-
-
-def test_con_la_meta_en_todo_cada_grupo_despeja_sus_kilos(monkeypatch):
-    """Dueña 17/08/2026, cuánto hay que sacar: "todo"."""
-    c = _competencia_falsa(monkeypatch)
-    assert c["meta_kg"] == c["kg_parado"] == 10000
 
 
 def test_no_hay_meta_por_vendedor(monkeypatch):
@@ -820,14 +805,6 @@ def test_un_vendedor_que_ya_no_esta_suma_al_grupo_pero_no_al_ranking(monkeypatch
         "el kilo salió de la bodega igual: tiene que contar para el grupo")
 
 
-def test_la_meta_a_mano_pisa_la_del_total(monkeypatch):
-    c = _competencia_falsa(monkeypatch, override={"Jersey": 10}, total_pct="40")
-    jersey = next(g for g in c["grupos"] if g["grupo"] == "Jersey")
-    assert jersey["meta_pct"] == 10 and jersey["meta_es_manual"]
-    fleece = next(g for g in c["grupos"] if g["grupo"] == "Fleece")
-    assert fleece["meta_pct"] == 40 and not fleece["meta_es_manual"]
-
-
 def test_la_competencia_sale_de_las_mismas_filas_que_lo_parado():
     """Si saliera de otra consulta, el termómetro de acá y el total de allá
     podrían no coincidir el mismo día."""
@@ -844,11 +821,6 @@ def test_la_competencia_esta_abierta_a_todos():
         "la competencia no lleva gate de permiso a propósito")
 
 
-def test_las_metas_siguen_cerradas():
-    from modules.analisis import views
-    assert getattr(views.competencia_metas, "_permiso", None) == "analisis.ver"
-
-
 def test_el_vendedor_llega_a_la_competencia_desde_su_portal():
     """El link vive en la barra de abajo de /mi-cartera, que es lo único que el
     vendedor ve. Dice "Competencia" y lleva al tablero: el rótulo y el destino
@@ -858,20 +830,6 @@ def test_el_vendedor_llega_a_la_competencia_desde_su_portal():
     barra = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
     assert 'href="/analisis/competencia' in barra
     assert ">Competencia</a>" in barra
-
-
-def test_las_metas_no_cuelgan_del_prefijo_abierto(app):
-    """⚠ El allowlist de vendedores matchea por segmento: todo lo que cuelgue de
-    `/analisis/competencia/` les queda abierto. La pantalla de metas vive
-    afuera para que sean dos cierres y no uno."""
-    import scope_vendedor
-    rutas = {r.rule for r in app.url_map.iter_rules()}
-    assert "/analisis/metas" in rutas
-    assert "/analisis/competencia/metas" not in rutas
-    # ⚠ Con el prefijo ya abierto, lo que hay que fijar es que las metas NO
-    # cuelguen de él: el matcheo es por segmento y las abriría de una.
-    assert not any(p.startswith("/analisis/metas")
-                   for p in scope_vendedor.PREFIJOS_PERMITIDOS)
 
 
 def test_al_vendedor_se_le_abrio_la_competencia_y_nada_mas():
@@ -1039,32 +997,6 @@ def test_la_fila_fantasma_sin_grupo_no_se_dibuja(monkeypatch):
     assert 'if float(f["stock_kg"]) > 0 or f["categoria"]' in \
         inspect.getsource(queries.competencia)
 
-
-def test_el_total_no_se_guarda_como_si_fuera_un_grupo():
-    """El campo del total se llama `meta_total_pct` y el bucle que guarda los
-    grupos toma todo lo que empiece con `meta_`: sin la excepción, se crearía un
-    grupo fantasma llamado "total_pct" con su propia meta."""
-    import inspect
-
-    from modules.analisis import views
-    fuente = inspect.getsource(views.competencia_metas)
-    assert 'clave == "meta_total_pct"' in fuente
-
-
-def test_un_porcentaje_que_no_se_entiende_se_avisa(monkeypatch):
-    """⚠ Tragarse el error y contestar "Metas guardadas" es la peor respuesta:
-    la dueña se va convencida de que cambió algo. Hay un test del repo que
-    prohíbe los `except: pass` mudos y cazó justamente éste."""
-    from modules.analisis import views
-    malos: list[str] = []
-    assert views._numero("40,5", malos, "x") == 40.5
-    assert views._numero("", malos, "x") is None
-    assert malos == []
-    assert views._numero("cuarenta", malos, "Jersey") is None
-    assert malos == ["Jersey"]
-
-
-# ── Lo que necesita el vendedor para poder ofrecer ──────────────────────────
 
 def test_las_telas_a_sacar_no_llevan_un_solo_cliente_adentro():
     """Es lo que le faltaba al vendedor: la pantalla le decía quién le compró
@@ -1514,40 +1446,41 @@ def test_en_el_celular_la_calidad_viaja_pegada_a_la_tela():
     assert "limpia(td.textContent" not in parado, "el Excel se lleva la píldora"
 
 
-def test_la_meta_congelada_no_se_mueve_cuando_se_mueve_el_stock(monkeypatch):
+def test_los_kilos_congelados_no_se_mueven_cuando_se_mueve_el_stock(monkeypatch):
     """Dueña 18/08/2026, después de ver el número moverse solo: el mismo día,
     sin una sola venta, «había al arrancar» pasó de 52.407 a 51.654 kg —753 kg
-    de ajustes de bodega—. Con la meta congelada, el stock de hoy puede hacer
-    lo que quiera: la meta y el % de cada uno salen de los kilos del día de la
-    largada."""
+    de ajustes de bodega—. Congelados, el stock de hoy puede hacer lo que
+    quiera: contra qué se mide sale de los kilos del día de la largada.
+
+    ⚠ Se llamaba `meta_kg` / `meta_fijada_el`. Desde el 25/08/2026 no hay metas
+    y el nombre mentía: es la BASE, no una meta."""
     congelada = {"Jersey": 6000, "Fleece": 4000}
     c = _competencia_falsa(monkeypatch, base=congelada)
     assert c["kg_al_largar"] == 10000
-    assert c["meta_kg"] == 10000            # 100% de lo congelado
-    assert c["meta_fijada_el"] == date(2026, 8, 25)
+    assert c["fijada_el"] == date(2026, 8, 25)
 
-    # ahora la bodega dice otra cosa —un ajuste, no una venta— y la meta NO se
+    # ahora la bodega dice otra cosa —un ajuste, no una venta— y la base NO se
     # entera: sigue valiendo lo mismo
     c2 = _competencia_falsa(monkeypatch, base={"Jersey": 6000, "Fleece": 3000})
-    assert c2["meta_kg"] == 9000            # sólo cambia si cambia la BASE
-    assert c["meta_kg"] != c2["meta_kg"]
+    assert c2["kg_al_largar"] == 9000       # sólo cambia si cambia la BASE
+    assert c["kg_al_largar"] != c2["kg_al_largar"]
     # …y sin base, la pantalla es una previa que se calcula con lo de hoy
     previa = _competencia_falsa(monkeypatch)
-    assert previa["meta_fijada_el"] is None
+    assert previa["fijada_el"] is None
     assert previa["kg_al_largar"] == 10000
 
 
-def test_un_grupo_despejado_entero_conserva_su_meta(monkeypatch):
-    """Si un grupo se vende del todo deja de estar en la foto. Sin esto se
-    caía de la tabla y la meta total se achicaba justo cuando alguien había
-    hecho bien el trabajo — el que lo despejó perdía el puntaje."""
+def test_un_grupo_despejado_entero_no_se_cae_de_la_tabla(monkeypatch):
+    """Si un grupo se vende del todo deja de estar en la foto. Sin esto se caía
+    de la tabla y la base total se achicaba justo cuando alguien había hecho
+    bien el trabajo — el que lo despejó perdía el puntaje."""
     c = _competencia_falsa(monkeypatch,
                            base={"Jersey": 6000, "Fleece": 4000, "Lycra": 2000})
     grupos = {g["grupo"]: g for g in c["grupos"]}
     assert "Lycra" in grupos, "el grupo despejado se cayó de la tabla"
-    assert grupos["Lycra"]["meta_kg"] == 2000
+    assert grupos["Lycra"]["kg_base"] == 2000
     assert grupos["Lycra"]["kg"] == 0
-    assert c["meta_kg"] == 12000
+    assert c["kg_al_largar"] == 12000
 
 
 def test_la_base_se_fija_una_sola_vez_y_recien_desde_la_largada(monkeypatch):
@@ -3289,8 +3222,12 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     assert len(arriba) == len(abajo), "las dos tablas tienen las mismas columnas"
     assert arriba[:5] == abajo[:5], (
         f"el orden de las cinco primeras no coincide: {arriba[:5]} vs {abajo[:5]}")
-    assert abajo[5:8] == ["Kg", "Vale", "Puntos"]
-    assert abajo[8:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
+    # ⭐ Y las dos del medio significan lo MISMO en las dos tablas (dueña
+    # 25/08/2026: "¿qué pasa si se vende 10 kg de 100? … poner para vender 90").
+    # Arriba: lo que queda y lo que salió. Abajo, lo mismo, en el mismo lugar.
+    assert arriba[5:7] == ["Kg en saldo", "Vendido"]
+    assert abajo[5:8] == ["Queda", "Vendido", "Vale"]
+    assert abajo[9:] == ["Vendedor", "Día"], "las dos últimas son las que cambian"
 
     # el día con el mismo formato que la fecha de arriba, y el vendedor
     assert "{{ v.fecha.strftime('%d/%m/%y') }}" in html
@@ -3636,7 +3573,7 @@ def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
     pie = tabla[tabla.index("<tfoot>"):tabla.index("</tfoot>")]
     assert "vendidos | sum(attribute='kg')" in pie
     assert "vendidos | sum(attribute='puntos_fila')" in pie
-    assert pie.count("<td") == 10, "el pie tiene que tener las 10 columnas"
+    assert pie.count("<td") == 11, "el pie tiene que tener las 11 columnas"
     assert '<td class="opt"></td>\n<td><b>Total</b>' in pie
 
 
@@ -3704,3 +3641,30 @@ def test_la_pantalla_no_se_corre_para_el_costado_en_el_telefono():
     # `.caja.larga{overflow:visible}` y la regla no entraba. A 320 px la página
     # seguía midiendo 350.
     assert ".caja.larga{overflow-x:auto}" in movil
+
+
+def test_la_pantalla_de_metas_no_vuelve():
+    """Dueña 25/08/2026: *"borrar página de metas, no sirve para nada"*. Desde
+    el 24/08 la competencia NO tiene metas —gana el que más puntos hace—, así
+    que esa pantalla editaba un número que ya no decide nada.
+
+    ⚠ Lo que se queda es `kg_base`: los kilos congelados del día de la largada.
+    Ésos no son una meta, son contra qué se mide."""
+    import re as _re
+
+    from modules.analisis import views
+    assert not hasattr(views, "competencia_metas")
+    assert "analisis/competencia_metas.html" not in _i_src(views)
+
+    # ⚠ Sin comentarios: los comentarios cuentan lo que se borró y nombran
+    # justamente lo que este test prohíbe.
+    codigo = _re.sub(r"#[^\n]*", "", _i_src(queries))
+    for muerto in ("_meta_pct(", "meta_pct", "meta_kg", "meta_pts",
+                   "parado_meta", "meta_total_pct"):
+        assert muerto not in codigo, (
+            f"volvió {muerto}, que era de la época de las metas")
+
+
+def _i_src(mod):
+    import inspect
+    return inspect.getsource(mod)

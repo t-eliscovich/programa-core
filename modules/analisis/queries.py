@@ -80,6 +80,16 @@ def items(conn=None) -> list[dict]:
                c.fecha_marcado, c.kg_al_marcar,
                COALESCE(f.stock_kg, 0)    AS stock_kg,
                COALESCE(f.kg_vendidos, 0) AS kg_vendidos,
+               -- ⭐ Lo vendido, abierto por CATEGORÍA (dueña 25/08/2026:
+               -- "poneme la categoría de lo vendido"). La fila se abre en dos
+               -- cuando el color tiene kilos de primera y de segunda, así que
+               -- lo vendido tiene que poder abrirse igual: si no, las dos
+               -- líneas mostrarían el mismo total y una de las dos mentiría.
+               -- ⚠ Sólo lo que CUENTA, como en la tabla de Vendidos y en el
+               -- ranking: los kilos que quedaron afuera por el tope no son
+               -- saldo destrabado.
+               COALESCE(v.pri, 0)         AS kg_vend_pri,
+               COALESCE(v.seg, 0)         AS kg_vend_seg,
                f.ultima_venta,
                COALESCE(f.clientes, 0)    AS clientes,
                f.anio_pista,
@@ -127,6 +137,13 @@ def items(conn=None) -> list[dict]:
                  ON f.subcategoria = c.subcategoria AND f.color = c.color
           LEFT JOIN scintela.parado_punto pp
                  ON pp.subcategoria = c.subcategoria
+          LEFT JOIN LATERAL (
+              SELECT SUM(pv.kg) FILTER (WHERE pv.calidad = 'SEG') AS seg,
+                     SUM(pv.kg) FILTER (WHERE pv.calidad IS DISTINCT FROM 'SEG')
+                                                                  AS pri
+                FROM scintela.parado_venta pv
+               WHERE pv.subcategoria = c.subcategoria AND pv.color = c.color
+                 AND pv.cuenta) v ON TRUE
           -- ⚠ LATERAL con LIMIT 1: el catálogo tiene el mismo código repetido
           -- (una fila por clase de color) y sin el tope la fila se duplicaría.
           LEFT JOIN LATERAL (
@@ -470,6 +487,13 @@ def _linea(f: dict, kg: float, forma: str, cal: str) -> dict:
     g["kg_abierta"] = kg if forma == "ABI" else 0
     g["kg_primera"] = kg if cal == "PRI" else 0
     g["kg_segunda"] = kg if cal == "SEG" else 0
+    # ⭐ Y lo vendido de ESA categoría, no el total del color: la línea de
+    # primera no puede llevarse los kilos que se vendieron de segunda.
+    # La línea del resto —la que no tiene calidad— no muestra ninguno: no se
+    # sabe de cuál era.
+    g["kg_vendidos"] = (float(f.get("kg_vend_pri") or 0) if cal == "PRI"
+                        else float(f.get("kg_vend_seg") or 0) if cal == "SEG"
+                        else 0.0)
     g["puntos_fila"] = kg * float(f.get("puntos") or 1)
     return g
 
@@ -1222,27 +1246,11 @@ def config(clave: str, default: str) -> str:
     return (r or {}).get("valor") or default
 
 
-def _meta_pct(grupos: list[dict], override: dict[str, float], total_pct: float) -> None:
-    """
-    La meta de cada grupo, en %.
-
-    ⭐ La dueña pone el TOTAL y ese total se reparte entre los grupos según lo
-    que pesa cada uno — o sea, todos con la misma exigencia. Con el total en
-    100%, cada grupo despeja sus propios kilos.
-
-    La primera versión hacía otra cosa: le ponía a cada grupo su propio peso
-    como meta (Jersey 31,5% → sacarle el 31,5%). Daba un total de 21,7% que
-    nadie decidió y una meta de 4 kg para el grupo más chico. Era una fórmula
-    que se muerde la cola.
-
-    `override` (tabla `parado_meta`) pisa el % de un grupo puntual.
-    """
-    for g in grupos:
-        g["meta_pct"] = float(override.get(g["grupo"], total_pct))
-        g["meta_es_manual"] = g["grupo"] in override
-        # ⭐ Sobre los kilos CONGELADOS del día de la largada, no sobre los de
-        # hoy: si no, un ajuste de bodega le mueve el puntaje a los siete.
-        g["meta_kg"] = g.get("kg_base", g["kg"]) * g["meta_pct"] / 100
+# ⚠ Acá vivía `_meta_pct()`. Se borró el 25/08/2026 con la pantalla de metas:
+# desde el 24/08 no hay metas (dueña: "ya que es por puntos, saquemos la meta,
+# ideal es + puntos gana"), y la función seguía calculando `meta_pct`,
+# `meta_kg` y `meta_pts` para nadie. Lo que sí se usa —y se queda— es
+# `kg_base`, los kilos congelados del día de la largada.
 
 
 def vendido_detalle(desde) -> dict[str, list[dict]]:
@@ -1344,6 +1352,12 @@ def vendidos(desde) -> list[dict]:
                         WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
                         ELSE COALESCE(f.forma, '') END)    AS forma_fila,
                SUM(v.kg)                                   AS kg,
+               -- ⭐ Lo que QUEDA de esa tela × color, para que las dos tablas
+               -- de la pantalla se lean juntas: arriba «Kg en saldo | Vendido»
+               -- y acá lo mismo, en las mismas dos columnas. Sin esto, la
+               -- tabla de abajo no dice si la tela se agotó o si todavía queda
+               -- para seguir ofreciendo.
+               MAX(COALESCE(f.stock_kg, 0))                AS queda,
                MAX(COALESCE(p.puntos, 1))                  AS puntos,
                SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila
           FROM scintela.parado_venta v
@@ -1383,9 +1397,6 @@ def competencia() -> dict:
     # "(sin grupo) · 0 kg" que sólo confunde.
     filas = [f for f in filas if float(f["stock_kg"]) > 0 or f["categoria"]]
     grupos = por_grupo(filas)
-    override = {r["categoria"]: float(r["pct"]) for r in db.fetch_all(
-        "SELECT categoria, pct FROM scintela.parado_meta")}
-    total_pct = float(config("meta_total_pct", "100"))
     largada = date.fromisoformat(config("largada", "2026-08-25"))
     cierre = date.fromisoformat(config("cierre", "2026-12-31"))
     # ⭐ Si la meta ya está congelada, manda ella; antes de la largada la
@@ -1403,7 +1414,6 @@ def competencia() -> dict:
     else:
         for g in grupos:
             g["kg_base"] = g["kg"]
-    _meta_pct(grupos, override, total_pct)
 
     # ⭐ La bolsa de puntos de cada grupo sale de sus TELAS, una por una. No se
     # puede sacar del total de kilos del grupo: adentro de Poliester conviven
@@ -1415,7 +1425,6 @@ def competencia() -> dict:
         pts_base[cat_de[sub]] += p["kg_base"] * p["puntos"]
     for g in grupos:
         g["puntos_base"] = pts_base.get(g["grupo"], 0.0)
-        g["meta_pts"] = g["puntos_base"] * g["meta_pct"] / 100
 
     # ⭐ Sólo cuentan las ventas desde la LARGADA. La cohorte se marcó el 13/08
     # y la competencia arranca el 25: sin el corte, esos días le regalarían
@@ -1536,8 +1545,6 @@ def competencia() -> dict:
     for g in grupos:
         g["liquidado"] = liq_kg.get(g["grupo"], 0.0)
         g["liquidado_pts"] = liq_pts.get(g["grupo"], 0.0)
-        g["pct_meta"] = (100 * g["liquidado_pts"] / g["puntos_base"]
-                         if g["puntos_base"] else 0)
         g["share"] = sorted(
             [s for s in share if s["categoria"] == g["grupo"]],
             key=lambda s: -float(s["pct"] or 0))[:4]
@@ -1551,7 +1558,6 @@ def competencia() -> dict:
         "largada": largada,
         "cierre": cierre,
         "dias_para_el_cierre": (cierre - today_ec()).days,
-        "total_pct": total_pct,
         "grupos": grupos,
         "ranking": ranking,
         "kg_parado": hay_hoy,
@@ -1562,8 +1568,10 @@ def competencia() -> dict:
         # largada): lo que hay hoy más lo que se vendió, que ES lo que había.
         "kg_al_largar": (sum(congelada.values()) if congelada
                          else hay_hoy + liquidado),
-        "meta_fijada_el": fijada_el,
-        "meta_kg": sum(g["meta_kg"] for g in grupos),
+        # ⚠ Se llama `fijada_el` y no `meta_fijada_el`: no es la fecha de una
+        # meta —desde el 24/08 no hay— sino la del día en que se congelaron los
+        # KILOS contra los que corre la competencia.
+        "fijada_el": fijada_el,
         # Los puntos que hay en juego. No es la meta de nadie: es el tamaño
         # de la bolsa, para saber contra qué se lee un 6.700.
         "puntos_en_juego": sum(g["puntos_base"] for g in grupos),

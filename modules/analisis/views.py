@@ -16,7 +16,6 @@ from flask import (
     url_for,
 )
 
-import db
 from auth import requiere_login, requiere_permiso
 from exports import csv_response
 from filters import today_ec
@@ -505,64 +504,12 @@ def _numero(texto: str | None, malos: list[str], donde: str) -> float | None:
         return None
 
 
-@analisis_bp.route("/analisis/metas", methods=["GET", "POST"])
-@requiere_login
-@requiere_permiso("analisis.ver")
-def competencia_metas():
-    """
-    Pisar a mano la meta automática de un grupo. Sólo la dueña y Andrés.
-
-    ⭐ Cuelga de `/analisis/metas` y NO de `/analisis/competencia/metas` a
-    propósito. El allowlist de vendedores matchea por segmento
-    (`path == p or path.startswith(p + "/")`), así que cualquier cosa colgada de
-    `/analisis/competencia/` les quedaría abierta y la única defensa sería el
-    permiso. Con la ruta afuera son dos cierres en vez de uno.
-    """
-    if request.method == "POST":
-        quien = (g.user or {}).get("username")
-        # ⚠ Lo que no se entiende NO se ignora en silencio: se junta y se avisa.
-        # Un "Metas guardadas" sobre un campo que se descartó es la peor de las
-        # respuestas — la dueña se va convencida de que cambió algo.
-        malos: list[str] = []
-
-        total = _numero(request.form.get("meta_total_pct"), malos, "el total")
-        if total is not None:
-            db.execute(
-                """INSERT INTO scintela.parado_config (clave, valor, quien)
-                   VALUES ('meta_total_pct', %s, %s)
-                   ON CONFLICT (clave) DO UPDATE
-                      SET valor = excluded.valor, actualizado = NOW(),
-                          quien = excluded.quien""",
-                (str(total), quien))
-
-        for clave, valor in request.form.items():
-            if not clave.startswith("meta_") or clave == "meta_total_pct":
-                continue
-            grupo = clave[5:]
-            if not (valor or "").strip():
-                # vacío = volver al automático. Guardar un 0 sería otra cosa:
-                # "este grupo no tiene meta", que no es lo que quiso decir.
-                db.execute("DELETE FROM scintela.parado_meta WHERE categoria = %s",
-                           (grupo,))
-                continue
-            pct = _numero(valor, malos, grupo)
-            if pct is None:
-                continue
-            db.execute(
-                """INSERT INTO scintela.parado_meta (categoria, pct, quien)
-                   VALUES (%s, %s, %s)
-                   ON CONFLICT (categoria) DO UPDATE
-                      SET pct = excluded.pct, actualizado = NOW(),
-                          quien = excluded.quien""",
-                (grupo, pct, quien))
-
-        if malos:
-            flash("Guardé lo demás, pero no entendí lo que pusiste en: "
-                  + ", ".join(malos) + ".", "error")
-        else:
-            flash("Metas guardadas.", "success")
-        return redirect(url_for("analisis.competencia"))
-    return render_template("analisis/competencia_metas.html", **queries.competencia())
+# ⚠ Acá vivía `/analisis/metas`, la pantalla para pisar a mano la meta de un
+# grupo. Se borró el 25/08/2026 (dueña: "borrar página de metas, no sirve para
+# nada"): desde el 24/08 la competencia NO TIENE METAS —gana el que más puntos
+# hace— así que la pantalla editaba un número que ya no decide nada. La tabla
+# `scintela.parado_meta` queda en la base sin nadie que la lea ni la escriba;
+# se borra con la limpieza de septiembre.
 
 
 @analisis_bp.route("/analisis/parado/actualizar", methods=["POST"])

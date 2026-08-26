@@ -149,8 +149,10 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
   <div class="barra-fondo"><div style="width:{{ avance }}%"></div></div>
   <div class="chico">{{ liquidado_pts | num_es(0) }} de
     {{ puntos_en_juego | num_es(0) }} puntos · hay hoy
-    {{ kg_parado | num_es(0) }} kg · {% if meta_fijada_el %}la meta se fijó el
-    {{ meta_fijada_el.strftime('%d/%m') }}{% else %}la meta se fija el
+    {# ⚠ "los kilos" y no "la meta": desde el 24/08 no hay meta. Lo que se
+       congela el día de la largada son los kilos contra los que se mide. #}
+    {{ kg_parado | num_es(0) }} kg · {% if fijada_el %}los kilos se fijaron el
+    {{ fijada_el.strftime('%d/%m') }}{% else %}los kilos se fijan el
     {{ largada.strftime('%d/%m') }}{% endif %}</div>
 </div>
 </div>
@@ -347,8 +349,8 @@ cada tela se fijan el día de la largada y no se mueven hasta el cierre.
 {{ kg_fuera_del_ranking | num_es(0) }} kg los vendió alguien que ya no compite:
 suman al grupo, no al ranking.
 {% endif %}
-{% if tiene_permiso('analisis.ver') %}
-<br><a href="/analisis/metas">Cambiar las metas</a>
-{% endif %}
+{# ⚠ Acá estaba el link a «Cambiar las metas». Se fue con la pantalla el
+   25/08/2026 (dueña: "borrar página de metas, no sirve para nada"): desde el
+   24/08 la competencia no tiene metas. #}
 </footer>
 {% endblock %}
