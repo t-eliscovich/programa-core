@@ -265,7 +265,9 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
 </table></div>
 
 <h2>El premio del mes</h2>
-<p class="sub">La otra carrera: <b>kilos totales</b>, sin tope. Gana el que más
+{# ⚠ Decía "sin tope" y no es cierto: cuenta los mismos kilos que puntúan.
+   La frase venía del TOPE POR GRUPO, la regla del 17/08 que se sacó el 24. #}
+<p class="sub">La otra carrera: <b>kilos</b> en vez de puntos. Gana el que más
 venda, vaya donde vaya en el porcentaje.</p>
 {% if meses %}
 {# ⭐ Dueña 20/08/2026: "acá me gustaría tener a todos ordenados por kg". Antes

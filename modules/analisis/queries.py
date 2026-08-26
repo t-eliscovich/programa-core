@@ -1659,11 +1659,15 @@ def _meses(largada: date, cierre: date) -> list[dict]:
     El premio del MES, por kilos totales. Dueña 18/08/2026: "un premio mensual
     por kg totales quizás?".
 
-    ⭐ Va por KILOS y sin tope, al revés del ranking grande. Es a propósito: son
-    dos carreras distintas. La del año premia repartir entre tipos de tela; la
-    del mes premia sacar kilos, y le da algo para ganar al que viene último en
-    el porcentaje. Sin eso, el que se descuelga en octubre no vuelve a mirar la
-    pantalla.
+    ⭐ Va por KILOS y no por puntos, al revés del ranking grande. Es a propósito:
+    son dos carreras distintas. La del año premia repartir entre tipos de tela;
+    la del mes premia sacar kilos, y le da algo para ganar al que viene último.
+    Sin eso, el que se descuelga en octubre no vuelve a mirar la pantalla.
+
+    ⚠ NO es "sin tope". Cuenta los mismos kilos que puntúan (`v.cuenta`): los
+    que quedaron afuera por el tope no son saldo destrabado ni acá ni allá. La
+    frase "sin tope" venía del TOPE POR GRUPO —la regla del 17/08 que se sacó el
+    24— y quedó describiendo otra cosa.
 
     ⚠ Agosto y septiembre cuentan JUNTOS: del 25 al 31 de agosto hay cinco días
     hábiles, y un "premio del mes" por esa semana no es un mes.
@@ -1678,8 +1682,18 @@ def _meses(largada: date, cierre: date) -> list[dict]:
         return []
 
     primer_mes = date(largada.year, largada.month, 1)
+
     def bucket(m):
-        return date(largada.year, largada.month + 1, 1) if m == primer_mes else m
+        """El mes de la largada cuenta junto con el siguiente.
+
+        ⚠ `largada.month + 1` reventaba con una largada en DICIEMBRE: `date(a,
+        13, 1)` tira ValueError y se cae la pantalla entera. Hoy no pasa —la
+        largada es el 25/08— pero es una trampa puesta para el próximo que
+        corra una competencia, y cuesta dos líneas no dejarla."""
+        if m != primer_mes:
+            return m
+        return (date(largada.year + 1, 1, 1) if largada.month == 12
+                else date(largada.year, largada.month + 1, 1))
 
     por_mes: dict = {}
     for f in filas:

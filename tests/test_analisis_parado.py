@@ -1767,11 +1767,19 @@ def test_el_mes_en_curso_se_marca_como_en_juego(monkeypatch):
 
 def test_la_pantalla_explica_las_dos_carreras():
     from pathlib import Path
-    html = " ".join((Path(__file__).resolve().parent.parent / "modules" /
-                     "analisis" / "templates" / "analisis" /
-                     "competencia.html").read_text(encoding="utf-8").split())
+    import re
+    crudo = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
+    # ⚠ Sin comentarios: cuentan qué frase se sacó y por qué, así que nombran
+    # justo lo que este test prohíbe.
+    html = " ".join(re.sub(r"\{#.*?#\}", " ", crudo, flags=re.S).split())
     assert "El premio del mes" in html
-    assert "kilos totales" in html and "sin tope" in html
+    # ⚠ Decía "kilos totales, sin tope". Lo de "sin tope" no era cierto —cuenta
+    # los mismos kilos que puntúan— y venía del TOPE POR GRUPO, la regla del
+    # 17/08 que se sacó el 24. Lo que la pantalla tiene que decir es lo que
+    # DISTINGUE a las dos carreras: una va por kilos y la otra por puntos.
+    assert "sin tope" not in html
+    assert "kilos</b> en vez de puntos" in html
 
 
 def test_la_tabla_semana_a_semana_no_se_dibuja():
@@ -3714,3 +3722,31 @@ def test_el_item_que_asinfo_ya_no_devuelve_igual_recibe_motivo(monkeypatch):
     assert "WHERE motivo IS NULL" in barrido[0], (
         "no puede pisar el motivo de los que ya lo tienen: la regla de un ítem "
         "no cambia en la mitad de la carrera")
+
+
+def test_el_premio_del_mes_no_revienta_con_una_largada_en_diciembre():
+    """`largada.month + 1` con la largada en diciembre da `date(a, 13, 1)`, que
+    tira ValueError y se lleva puesta la pantalla entera. Hoy la largada es el
+    25/08 y no pasa, pero es una trampa puesta para el próximo que corra una
+    competencia."""
+    import inspect as _i
+    fuente = _i.getsource(queries._meses)
+    assert "largada.month == 12" in fuente, (
+        "diciembre + 1 no existe: la pantalla se cae")
+    assert "largada.year + 1" in fuente
+
+
+def test_el_premio_del_mes_no_dice_que_no_tiene_tope():
+    """La pantalla decía "kilos totales, sin tope" y no es cierto: cuenta los
+    mismos kilos que puntúan (`v.cuenta`). La frase venía del TOPE POR GRUPO,
+    la regla del 17/08 que se sacó el 24 — quedó describiendo otra cosa."""
+    from pathlib import Path
+    html = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+             "templates" / "analisis" / "competencia.html")
+            .read_text(encoding="utf-8"))
+    import re
+    texto = re.sub(r"\{#.*?#\}", " ", html, flags=re.S)
+    assert "sin tope" not in texto
+    import inspect as _i
+    assert "v.cuenta" in _i.getsource(queries._meses), (
+        "si algún día cuenta también lo que no puntúa, la frase vuelve a ser cierta")
