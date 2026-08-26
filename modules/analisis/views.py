@@ -21,7 +21,7 @@ from exports import csv_response
 from filters import today_ec
 from modules._lib import pdf_motor
 
-from . import asinfo_parado, queries
+from . import queries
 
 analisis_bp = Blueprint("analisis", __name__, template_folder="templates")
 
