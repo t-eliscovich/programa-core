@@ -364,7 +364,19 @@ def transacciones(desde, hasta) -> dict[str, dict]:
         filas = db.fetch_all(
             """
             SELECT no_banco, documento, concepto, importe,
-                   (fecha_crea AT TIME ZONE 'America/Guayaquil')::date AS dia
+                   -- 🚨 DOS conversiones, y las dos hacen falta. `fecha_crea`
+                   -- de esta tabla es `timestamp` SIN zona (viene del dBase) y
+                   -- guarda hora UTC. Con un solo `AT TIME ZONE
+                   -- 'America/Guayaquil'` Postgres hace lo contrario de lo que
+                   -- parece: LEE el valor como si ya fuera hora de Guayaquil y
+                   -- devuelve un timestamptz, que al castear a date se mira en
+                   -- UTC — o sea que SUMA 5 horas en vez de restarlas. Todo lo
+                   -- cargado después de las 14:00 de Ecuador se iba al día
+                   -- siguiente. Primero se dice "esto es UTC", después se pasa
+                   -- a Ecuador. (En `mov_doble.fecha_creacion`, que SÍ es
+                   -- TIMESTAMPTZ, la conversión simple es la correcta.)
+                   ((fecha_crea AT TIME ZONE 'UTC')
+                        AT TIME ZONE 'America/Guayaquil')::date AS dia
               FROM scintela.transacciones_bancarias
              WHERE fecha_crea >  %s
                AND fecha_crea <= %s
