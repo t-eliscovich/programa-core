@@ -152,7 +152,14 @@ def parado_xlsx():
     los kilos sin poder sumarse—. Ver `excel.py` para el porqué de bajar todo
     y no lo filtrado.
     """
-    filas = queries.con_puntos(queries.items())
+    # ⚠ Las MISMAS líneas que la pantalla: abiertas por forma y calidad. Bajaba
+    # la fila sin abrir, y por eso llevaba «Kg de primera» y «Kg de segunda»
+    # como columnas aparte —dos números para una fila que en la pantalla ya son
+    # dos renglones— (dueña 26/08/2026: "¿por qué tengo esto, si ya tengo la
+    # división entre PRI y SEG?"). Tenía razón: con las líneas abiertas cada
+    # renglón tiene UNA categoría y esas dos columnas dejan de decir nada.
+    # De paso el archivo y la pantalla cuentan lo mismo: eran 700 contra 709.
+    filas = queries.abrir_en_lineas(queries.con_puntos(queries.items()))
     cols = [
         ("Grupo", 12, None), ("Tela", 24, None),
         ("Color", 8, None), ("Nombre del color", 16, None),
@@ -160,17 +167,15 @@ def parado_xlsx():
         ("Queda", 11, "#,##0.0"), ("Vendido", 11, "#,##0.0"),
         ("Vale (puntos por kilo)", 12, "#,##0"),
         ("Puntos de la fila", 14, "#,##0"),
-        ("Kg de primera", 12, "#,##0.0"), ("Kg de segunda", 12, "#,##0.0"),
         ("Kg al marcarlo", 13, "#,##0.0"),
         ("Clientes que compran esta tela", 16, "#,##0"),
         ("Última venta", 13, "dd/mm/yyyy"), ("Marcado el", 12, "dd/mm/yyyy"),
     ]
     datos = [[
         f.get("categoria"), f.get("subcategoria"), f.get("color"),
-        f.get("color_nombre"), f.get("forma"), _categoria(f),
+        f.get("color_nombre"), _forma(f), _categoria(f),
         _num(f.get("stock_kg")), _num(f.get("kg_vendidos")),
         _num(f.get("puntos")), _num(f.get("puntos_fila")),
-        _num(f.get("kg_primera")), _num(f.get("kg_segunda")),
         _num(f.get("kg_al_marcar")), _num(f.get("clientes")),
         f.get("ultima_venta"), f.get("fecha_marcado"),
     ] for f in filas]
@@ -221,6 +226,17 @@ def _num(v):
     except (TypeError, ValueError):
         return v
     return int(n) if n == int(n) else round(n, 2)
+
+
+def _forma(f) -> str:
+    """TUB o ABI: la de la línea si viene abierta, si no la de la tela."""
+    if f.get("forma_fila"):
+        return f["forma_fila"]
+    if f.get("kg_tubular"):
+        return "TUB"
+    if f.get("kg_abierta"):
+        return "ABI"
+    return f.get("forma") or ""
 
 
 def _categoria(f) -> str:

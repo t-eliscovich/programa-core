@@ -4036,3 +4036,31 @@ def test_el_contador_no_ocupa_un_renglon_propio():
     fin = html.index("</div>", html.index('<div class="filtros">'))
     assert 'id="cuenta"' not in html[html.index('<div class="filtros">'):fin], (
         "quedó también abajo de los filtros")
+
+
+def test_el_excel_baja_las_mismas_lineas_que_la_pantalla():
+    """Dueña 26/08/2026, mirando el archivo: *"«Kg de primera», «Kg de
+    segunda», ¿por qué tengo esto? si ya tengo la división entre PRI y SEG"*.
+
+    Tenía razón, y la causa era otra: el Excel bajaba la fila SIN abrir, así
+    que necesitaba las dos columnas de kilos para decir lo que en la pantalla
+    ya son dos renglones. Con las líneas abiertas, cada renglón tiene UNA
+    categoría y esas columnas no dicen nada. De paso el archivo y la pantalla
+    cuentan lo mismo: eran 700 filas contra 709 líneas."""
+    import inspect as _i
+    fuente = _i.getsource(views.parado_xlsx)
+    assert "queries.abrir_en_lineas(" in fuente, (
+        "el archivo baja la fila sin abrir y la pantalla la abre")
+    assert '"Kg de primera"' not in fuente and '"Kg de segunda"' not in fuente
+    assert '"Categoría"' in fuente
+
+
+def test_la_forma_del_excel_sale_de_la_linea():
+    """Con las líneas abiertas, la forma es la de ESA línea y no la de la tela
+    entera: si no, la línea abierta diría la sigla de la tubular."""
+    from modules.analisis.views import _forma
+    assert _forma({"forma_fila": "ABI", "forma": "TUB"}) == "ABI"
+    assert _forma({"kg_tubular": 10, "kg_abierta": 0}) == "TUB"
+    assert _forma({"kg_tubular": 0, "kg_abierta": 10}) == "ABI"
+    assert _forma({"forma": "TUB"}) == "TUB"
+    assert _forma({}) == ""
