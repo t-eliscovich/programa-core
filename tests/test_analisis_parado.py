@@ -1766,8 +1766,8 @@ def test_el_mes_en_curso_se_marca_como_en_juego(monkeypatch):
 
 
 def test_la_pantalla_explica_las_dos_carreras():
-    from pathlib import Path
     import re
+    from pathlib import Path
     crudo = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
              "templates" / "analisis" / "competencia.html").read_text(encoding="utf-8")
     # ⚠ Sin comentarios: cuentan qué frase se sacó y por qué, así que nombran
