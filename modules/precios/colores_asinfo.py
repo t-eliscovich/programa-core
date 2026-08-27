@@ -37,7 +37,8 @@ Qué toca y qué no, por color de Asinfo activo cuyo padre es una de las cinco:
 
 Corre SOLO, sin cron del EC2: el hilo de fondo de `modules/_lib/autocarga_
 facturas.py` llama `correr_si_toca()` y acá se decide, con el MISMO patrón y
-las mismas ventanas que el sync de clientes (11:00 y 16:00 Ecuador). El guard
+las ventanas de las 11:00 y 16:00 Ecuador (el sync de clientes corre
+más seguido desde el 27/08; los colores no lo necesitan). El guard
 mira el log en base, no la memoria, así un restart no lo repite y una corrida
 manual dentro de la ventana también cuenta. `SYNC_COLORES_AUTO=0` lo apaga.
 """
@@ -291,7 +292,7 @@ def ultimas_corridas(limite: int = 10) -> list[dict]:
 
 
 # ---------------------------------------------------------------------------
-# Corre SOLO — mismas ventanas que el sync de clientes (11:00 y 16:00 EC).
+# Corre SOLO — ventanas de 11:00 y 16:00 EC (los colores no necesitan más).
 # ---------------------------------------------------------------------------
 _VENTANAS_UTC = (16, 21)  # 11:00 y 16:00 Ecuador (UTC-5)
 _CHECK_MIN_SECS = 300     # mirar el log a lo sumo cada 5 min

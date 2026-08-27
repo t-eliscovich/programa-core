@@ -109,7 +109,7 @@ def _loop() -> None:
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("tejeduría (fondo): %s", e)
             # TMT 2026-08-05 (dueña): el sync del maestro de CLIENTES con
-            # Asinfo corre solo a las 11:00 y 16:00 EC — sin cron del EC2,
+            # Asinfo corre solo cada hora de 07:00 a 19:00 EC — sin cron del EC2,
             # igual que todo lo demás de este ciclo. El guard de ventana vive
             # en el log del sync (una corrida manual dentro de la ventana
             # también cuenta). SYNC_CLIENTES_AUTO=0 lo apaga.

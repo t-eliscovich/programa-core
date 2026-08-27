@@ -1,8 +1,8 @@
 """Corrida MANUAL del sync de clientes Asinfo → PC (para debug en el server).
 
 ⚠ NO hay Scheduled Task del EC2 para esto (dueña 05/08/2026: "no hacemos
-eso" — nada de este ciclo va por cron del EC2). Las corridas automáticas de
-las 11:00 y 16:00 EC las hace el hilo de fondo de la app
+eso" — nada de este ciclo va por cron del EC2). Las corridas automáticas (cada
+hora de 07:00 a 19:00 EC) las hace el hilo de fondo de la app
 (`modules/_lib/autocarga_facturas.py` → `sync_asinfo.correr_si_toca()`).
 
 Este script queda como entrypoint manual: carga el .env (python-dotenv,

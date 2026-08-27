@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="max-w-4xl">
-  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo a las 11:00 y 16:00 — nombre y RUC se pisan con Asinfo; el descuento también, y pisa el de la ficha; cupo, vendedor y teléfono se conservan') }}
+  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo cada hora de 07:00 a 19:00 — nombre, RUC, descuento, vendedor y dirección se pisan con Asinfo; cupo y teléfono se conservan') }}
 
   <form method="post" action="{{ url_for('clientes_sync_asinfo.correr') }}" class="mt-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -83,6 +83,67 @@
   </div>
   {% endif %}
 
+  {% if vend_cambiado %}
+  <h2 class="mt-8 mb-2 text-sm font-semibold text-slate-600 dark:text-slate-300">
+    Vendedores que cambió Asinfo en la última corrida
+  </h2>
+  <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+    Manda Asinfo. Queda el valor anterior por si hay que volver atrás alguno a mano.
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Cliente</th>
+          <th class="px-4 py-3 text-left font-medium">Antes</th>
+          <th class="px-4 py-3 text-left font-medium">Ahora</th>
+          <th class="px-4 py-3 text-left font-medium"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for d in vend_cambiado %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-2 font-mono">{{ d.cod }}</td>
+          <td class="px-4 py-2">{{ d.nombre or '—' }}</td>
+          <td class="px-4 py-2 font-mono text-slate-400">{{ d.antes or 'sin vendedor' }}</td>
+          <td class="px-4 py-2 font-mono font-semibold">{{ d.ahora or 'sin vendedor' }}</td>
+          <td class="px-4 py-2 text-xs"><a class="underline" href="/clientes/{{ d.cod|urlencode }}/editar">Abrir la ficha</a></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {% if agentes_raros %}
+  <h2 class="mt-8 mb-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
+    Vendedores de Asinfo que no se conocen
+  </h2>
+  <p class="mb-2 text-xs text-slate-500 dark:text-slate-400">
+    El código de agente de Asinfo no está en el mapa de vendedores de PC:
+    no se toca la ficha, para no adivinar.
+  </p>
+  <div class="bg-white dark:bg-slate-900 border border-amber-300 dark:border-amber-700 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-amber-50 dark:bg-amber-900/20 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-4 py-3 text-left font-medium">Código</th>
+          <th class="px-4 py-3 text-left font-medium">Agente en Asinfo</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in agentes_raros %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-4 py-2 font-mono">{{ r.cod }}</td>
+          <td class="px-4 py-2 font-mono">{{ r.agente or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   {% if listas_raras %}
   <h2 class="mt-8 mb-2 text-sm font-semibold text-amber-700 dark:text-amber-300">
     Listas de descuento de Asinfo que no se entienden
@@ -120,6 +181,8 @@
           <th class="px-4 py-3 text-left font-medium">Quién</th>
           <th class="px-4 py-3 text-right font-medium">Actualizados</th>
           <th class="px-4 py-3 text-right font-medium">Descuentos de Asinfo</th>
+          <th class="px-4 py-3 text-right font-medium">Vendedores</th>
+          <th class="px-4 py-3 text-right font-medium">Direcciones</th>
           <th class="px-4 py-3 text-left font-medium">Altas</th>
           <th class="px-4 py-3 text-right font-medium">Conflictos</th>
           <th class="px-4 py-3 text-left font-medium">Estado</th>
@@ -132,24 +195,28 @@
           <td class="px-4 py-2 text-xs">{{ c.usuario or '—' }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('actualizados', '—') }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('descuentos_puestos', '—') }}</td>
+          <td class="px-4 py-2 text-right">{{ c.reporte.get('vend_cambiado', []) | length }}</td>
+          <td class="px-4 py-2 text-right">{{ c.reporte.get('direcciones_cambiadas', '—') }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ ', '.join(c.reporte.get('altas', [])) or '—' }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('conflictos', []) | length }}</td>
           <td class="px-4 py-2">{% if c.ok %}<span class="text-emerald-600 dark:text-emerald-400">✓</span>{% else %}<span class="text-red-600 dark:text-red-400" title="{{ c.reporte.get('error','') }}">✗ {{ c.reporte.get('error','')[:60] }}</span>{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="7" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
+        <tr><td colspan="9" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
 
   <p class="mt-4 text-xs text-slate-400">
-    Qué hace: pisa <strong>nombre</strong> (formato fiscal de Asinfo) y <strong>RUC</strong>;
-    rellena <strong>teléfono</strong> sólo si en la ficha está vacío y el de Asinfo es real;
-    y pisa el <strong>descuento</strong> con el de Asinfo — lo único que no toca es el de los
-    clientes que en Asinfo no tienen lista, o la tienen con un nombre que no se entiende.
-    Los clientes nuevos limpios se dan de alta solos, ya con su descuento, y dejan
-    campanita para cargarles el cupo. Nunca toca cupo, vendedor, correo ni dirección.
+    Qué hace: pisa <strong>nombre</strong> (formato fiscal de Asinfo), <strong>RUC</strong>,
+    <strong>descuento</strong>, <strong>vendedor</strong> y <strong>dirección</strong> con lo
+    que dice Asinfo; rellena <strong>teléfono</strong> sólo si en la ficha está vacío y el
+    de Asinfo es real. Lo que Asinfo no sabe no se toca: clientes sin lista de descuento
+    (o con una que no se entiende), sin dirección, o con un agente que no está en el mapa
+    de vendedores. Los clientes nuevos limpios se dan de alta solos, ya con su descuento,
+    vendedor y dirección, y dejan campanita para cargarles el cupo.
+    Nunca toca cupo ni correo.
   </p>
 </div>
 {% endblock %}

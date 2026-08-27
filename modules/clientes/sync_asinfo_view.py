@@ -1,10 +1,11 @@
 """Pantalla /clientes/sync-asinfo — el sync del maestro de clientes.
 
-Muestra las últimas corridas del sync (las 2 diarias del cron + las manuales),
-los CONFLICTOS que quedaron sin importar (RUC ya en PC bajo otro código,
-códigos duplicados dentro de Asinfo), los DESCUENTOS que Asinfo cambió en la
-última corrida (con el valor anterior, que es la única forma de volver atrás
-uno pisado por error) y un botón "Sincronizar ahora".
+Muestra las últimas corridas del sync (una por hora de 07 a 19 + las
+manuales), los CONFLICTOS que quedaron sin importar (RUC ya en PC bajo otro
+código, códigos duplicados dentro de Asinfo), los DESCUENTOS y VENDEDORES
+que Asinfo cambió en la última corrida (con el valor anterior, que es la
+única forma de volver atrás uno pisado por error), el conteo de DIRECCIONES
+pisadas y un botón "Sincronizar ahora".
 
 La lógica vive en `modules.clientes.sync_asinfo` — esta vista sólo la llama
 por el mismo camino que el cron, para que lo que hace una persona y lo que
@@ -35,6 +36,8 @@ def pantalla():
         dup_asinfo=(ultima or {}).get("reporte", {}).get("dup_asinfo", []),
         desc_cambiado=(ultima or {}).get("reporte", {}).get("desc_cambiado", []),
         listas_raras=(ultima or {}).get("reporte", {}).get("listas_raras", []),
+        vend_cambiado=(ultima or {}).get("reporte", {}).get("vend_cambiado", []),
+        agentes_raros=(ultima or {}).get("reporte", {}).get("agentes_raros", []),
     )
 
 
@@ -52,6 +55,8 @@ def correr():
             f"Sync OK — {r.get('actualizados', 0)} fichas actualizadas, "
             f"{r.get('descuentos_puestos', 0)} descuentos de Asinfo "
             f"({r.get('descuentos_pisados', 0)} pisaron el de la ficha), "
+            f"{len(r.get('vend_cambiado') or [])} vendedores, "
+            f"{r.get('direcciones_cambiadas', 0)} direcciones, "
             f"altas: {altas}, {len(r.get('conflictos') or [])} conflictos.",
             "ok",
         )

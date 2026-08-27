@@ -153,11 +153,17 @@ def test_nombre_largo_no_rompe_el_insert():
     assert ca._MAX_COLOR == 30 and ca._MAX_COD == 5
 
 
-def test_la_ventana_es_la_misma_que_la_del_sync_de_clientes():
-    """11:00 y 16:00 Ecuador. Si alguien mueve una, que se entere acá."""
+def test_la_ventana_de_colores_quedo_en_11_y_16():
+    """Hasta el 27/08/2026 este test afirmaba que colores y clientes
+    compartían ventanas (11:00 y 16:00 EC). Ese día el sync de CLIENTES
+    pasó a correr cada hora de 07 a 19 (Tamara: en Asinfo cambian dirección
+    y vendedor, y tiene que llegar más seguido); los colores no necesitan
+    esa frecuencia y se quedan en 11 y 16. Si alguien mueve la de colores,
+    que se entere acá."""
     from modules.clientes import sync_asinfo as cli
 
-    assert ca._VENTANAS_UTC == cli._VENTANAS_UTC == (16, 21)
+    assert ca._VENTANAS_UTC == (16, 21)
+    assert cli._VENTANA_EC_DESDE == 7 and cli._VENTANA_EC_HASTA == 19
 
 
 def test_apagable_por_env(monkeypatch):

@@ -11,10 +11,23 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
   en formato fiscal "APELLIDO NOMBRE" (3.388 de 3.603 diferían sólo por el
   orden). Asinfo es la autoridad del RUC (68 diferían; varios eran typos PC).
 - **Cupo sólo existe en PC** → este sync no lo toca nunca.
-  Tampoco `vend` (mueve las comisiones), ni `correo` (ya existe el espejo
-  `cliente_mail_asinfo`, con su propio filtro de mails de la casa), ni la
-  dirección (Asinfo no tiene texto de dirección: 0 de 3.635), ni
-  observación/pago/stop.
+  Tampoco `correo` (ya existe el espejo `cliente_mail_asinfo`, con su propio
+  filtro de mails de la casa), ni observación/pago/stop.
+- **VENDEDOR y DIRECCIÓN: manda ASINFO** (TMT 2026-08-27, Tamara: *"los
+  clientes en Asinfo a veces cambian de dirección y de vendedor — lo tiene
+  que agarrar"*). Esto REVIERTE la regla del 05/08 que dejaba `vend` y
+  dirección quietos:
+  · La dirección SÍ está en Asinfo — la medición del 05/08 ("0 de 3.635")
+    miró `direccion_empresa.descripcion`, que está vacía; el texto real vive
+    en `ubicacion.direccion1` vía `direccion_empresa.id_ubicacion` (medido
+    27/08: 3.641 de 3.649 la tienen). Se pisa `direccion1`; si Asinfo no
+    tiene, la ficha queda como está.
+  · El vendedor vive en `cliente.id_agente_comercial` → `usuario.codigo`,
+    y los códigos NO coinciden solos con el `vend` de PC: hay mapa
+    (`_VEND_ASINFO_A_PC` — DEB es BED, DENNYS es DJA, ESTEFY es EVB, y
+    varios llevan prefijo `V-`). Un código que no está en el mapa no se
+    interpreta (misma filosofía que las listas de descuento): se lista y
+    se avisa. Cada cambio guarda el valor anterior en `vend_cambiado`.
 - **Teléfono: PC gana.** 2.640 de 3.635 teléfonos de Asinfo son basura
   (`2222222` o <7 dígitos) y PC tiene 3.833 reales. Sólo se RELLENA el
   teléfono cuando PC está vacío y el de Asinfo parece real.
@@ -43,8 +56,9 @@ teléfono en `direccion_empresa` (la fila principal activa) y el descuento en
 `cliente` (una fila por empresa: medido 25/08, 3.654 empresas cliente activas
 = 3.654 filas en `cliente`, ninguna repetida y ninguna faltante).
 
-Corre 2× por día (11:00 y 16:00 EC) vía `scripts/sync_clientes_asinfo.py`
-en el EC2, y a demanda desde la pantalla /clientes/sync-asinfo.
+Corre solo cada hora de 07:00 a 19:00 EC (TMT 2026-08-27 — antes eran dos
+ventanas, 11:00 y 16:00, y los cambios de Asinfo llegaban tarde), y a
+demanda desde la pantalla /clientes/sync-asinfo.
 """
 from __future__ import annotations
 
@@ -54,7 +68,7 @@ import os
 import re
 import threading
 import time as _time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.parse import quote as _quote
 
 import db
@@ -72,16 +86,22 @@ SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
        LTRIM(RTRIM(COALESCE(e.nombre_fiscal, '')))           AS nombre,
        LTRIM(RTRIM(COALESCE(d.telefono1, '')))               AS tel1,
        LTRIM(RTRIM(COALESCE(d.telefono2, '')))               AS tel2,
-       LTRIM(RTRIM(COALESCE(ld.nombre, '')))                 AS lista_desc
+       LTRIM(RTRIM(COALESCE(ld.nombre, '')))                 AS lista_desc,
+       LTRIM(RTRIM(COALESCE(u.codigo, '')))                  AS agente,
+       LTRIM(RTRIM(COALESCE(ub.direccion1, '')))             AS dir1
   FROM empresa e
   LEFT JOIN direccion_empresa d
          ON d.id_empresa = e.id_empresa
         AND d.indicador_direccion_principal = 1
         AND d.activo = 1
+  LEFT JOIN ubicacion ub
+         ON ub.id_ubicacion = d.id_ubicacion
   LEFT JOIN cliente cl
          ON cl.id_empresa = e.id_empresa
   LEFT JOIN lista_descuentos ld
          ON ld.id_lista_descuentos = cl.id_lista_descuentos
+  LEFT JOIN usuario u
+         ON u.id_usuario = cl.id_agente_comercial
  WHERE e.indicador_cliente = 1
    AND e.activo = 1
 """
@@ -154,6 +174,61 @@ def descuento_a_escribir(pc_val, asi_val) -> float | None:
     return float(asi_val)
 
 
+#: Códigos de agente comercial de Asinfo (`usuario.codigo`) → el `vend` de
+#: PC. NO coinciden solos (medido en vivo 27/08/2026): Asinfo le pone `V-`
+#: a varios, a Héctor Bedón lo llama `DEB` cuando PC lo llama `BED` (852 de
+#: 869 clientes de DEB ya estaban como BED), a Dennys Jaramillo `DENNYS`
+#: (PC: DJA) y a Estefanía `ESTEFY` (PC: EVB). Un código que no está acá no
+#: se interpreta: se lista en `agentes_raros` y se avisa — preferimos no
+#: tocar antes que adivinar (misma filosofía que las listas de descuento).
+_VEND_ASINFO_A_PC = {
+    "PPR": "PPR", "SEP": "SEP", "V-SEP": "SEP", "V-JQU": "JQU",
+    "V-EDG": "EDG", "V-RMY": "RMY", "V-FL1": "FL1",
+    "DEB": "BED", "DENNYS": "DJA", "ESTEFY": "EVB",
+    "EDU": "EDU", "DAN": "DAN",
+}
+
+#: El agente 951 de Asinfo es "Intela Cía. Ltda." — la casa, no un vendedor.
+_AGENTE_LA_CASA = "INT"
+
+
+def vend_de_asinfo(agente: str | None) -> tuple[str | None, bool]:
+    """`(vend de PC, entendido)`. La casa (INT) es entendido con vend ''.
+
+    '' significa "sin vendedor"; None con entendido=False es "no sé quién
+    es" y la ficha no se toca.
+    """
+    cod = (agente or "").strip().upper()
+    if not cod:
+        return None, False
+    if cod == _AGENTE_LA_CASA:
+        return "", True
+    pc = _VEND_ASINFO_A_PC.get(cod)
+    return (pc, True) if pc else (None, False)
+
+
+def _vend_a_escribir(pc_vend: str | None, agente: str | None) -> str | None:
+    """El vend que hay que GRABAR ('' = quitar), o None si no se toca."""
+    nuevo, entendido = vend_de_asinfo(agente)
+    if not entendido:
+        return None
+    actual = (pc_vend or "").strip().upper()
+    if nuevo == "":
+        # La casa: sólo hay algo que hacer si la ficha tiene vendedor, y
+        # sólo si la decisión dice que la casa lo quita.
+        return "" if (actual and _INT_QUITA_VENDEDOR) else None
+    return nuevo if actual != nuevo else None
+
+
+#: ¿Asinfo INT (la casa) le QUITA el vendedor a una ficha que tiene uno?
+#: 27/08/2026: 210 fichas están en ese caso; Tamara los está revisando.
+_INT_QUITA_VENDEDOR = False
+
+
+def _norm_dir(s: str | None) -> str:
+    return re.sub(r"\s+", " ", (s or "").strip()).upper()
+
+
 def _norm_nombre(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).upper()
 
@@ -181,8 +256,9 @@ def sincronizar(usuario: str = "sync-asinfo") -> dict:
 
     Reporte: {ok, actualizados, altas: [cod], conflictos: [...],
     dup_asinfo: [cod], descuentos_puestos, descuentos_pisados,
-    desc_cambiado: [...], listas_raras: [...], sin_tocar, leidas_de_asinfo,
-    error?}.
+    desc_cambiado: [...], listas_raras: [...], vend_cambiado: [...],
+    agentes_raros: [...], dir_cambiado: [...], sin_tocar,
+    leidas_de_asinfo, error?}.
     """
     try:
         return _sincronizar(usuario)
@@ -217,6 +293,8 @@ def _sincronizar(usuario: str) -> dict:
             "tel": telefono_util(f.get("tel1")) or telefono_util(f.get("tel2")),
             "lista_desc": str(f.get("lista_desc") or "").strip()[:60],
             "desc": descuento_de_lista(f.get("lista_desc")),
+            "agente": str(f.get("agente") or "").strip()[:30],
+            "dir": str(f.get("dir1") or "").strip()[:200],
         }
     # Un código que Asinfo tiene repetido no se puede sincronizar: no hay
     # forma de saber cuál de las dos empresas es "la" del código.
@@ -226,7 +304,7 @@ def _sincronizar(usuario: str) -> dict:
     # ── Lado PC ─────────────────────────────────────────────────────────
     pc_rows = db.fetch_all(
         "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, "
-        "       telefono, descuento "
+        "       telefono, descuento, vend, direccion1 "
         "FROM scintela.cliente"
     ) or []
     pc_por_cod = {r["cod"]: r for r in pc_rows if r.get("cod")}
@@ -236,10 +314,14 @@ def _sincronizar(usuario: str) -> dict:
         if clave and r.get("cod"):
             pc_por_ruc.setdefault(clave, []).append(r["cod"])
 
-    # ── Fichas existentes: pisar nombre/RUC, rellenar teléfono ─────────
-    cambios: list[tuple] = []  # (cod, nombre|None, ruc|None, tel|None, desc|None)
+    # ── Fichas existentes: pisar nombre/RUC/descuento/vendedor/dirección,
+    #    rellenar teléfono ────────────────────────────────────────────────
+    cambios: list[tuple] = []  # (cod, nombre, ruc, tel, desc, vend, dir) — None = no tocar
     desc_cambiado: list[dict] = []
     listas_raras: list[dict] = []
+    vend_cambiado: list[dict] = []
+    agentes_raros: list[dict] = []
+    dir_cambiado: list[dict] = []
     for cod, a in por_cod.items():
         p = pc_por_cod.get(cod)
         if p is None:
@@ -263,8 +345,30 @@ def _sincronizar(usuario: str) -> dict:
                 "antes": None if p.get("descuento") is None else float(p["descuento"]),
                 "ahora": float(desc_nuevo),
             })
-        if nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None:
-            cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo))
+        vend_nuevo = _vend_a_escribir(p.get("vend"), a["agente"])
+        _mapeado, entendido = vend_de_asinfo(a["agente"])
+        if not entendido and a["agente"]:
+            agentes_raros.append({"cod": cod, "agente": a["agente"]})
+        if vend_nuevo is not None:
+            # mismo criterio que el descuento: el valor anterior queda
+            vend_cambiado.append({
+                "cod": cod, "nombre": (p.get("nombre") or "")[:60],
+                "antes": ((p.get("vend") or "").strip().upper() or None),
+                "ahora": vend_nuevo or None,
+            })
+        dir_nueva = a["dir"] if (
+            a["dir"] and _norm_dir(a["dir"]) != _norm_dir(p.get("direccion1"))
+        ) else None
+        if dir_nueva is not None:
+            dir_cambiado.append({
+                "cod": cod,
+                "antes": ((p.get("direccion1") or "").strip() or None),
+                "ahora": dir_nueva,
+            })
+        if (nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None
+                or vend_nuevo is not None or dir_nueva is not None):
+            cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo,
+                            vend_nuevo, dir_nueva))
 
     actualizados = _aplicar_cambios(cambios, usuario) if cambios else 0
 
@@ -293,6 +397,7 @@ def _sincronizar(usuario: str) -> dict:
 
     _avisar_conflictos(conflictos, duplicados)
     _avisar_descuentos(desc_cambiado, listas_raras)
+    _avisar_vendedores(vend_cambiado, agentes_raros)
 
     reporte = {
         "ok": True,
@@ -308,6 +413,10 @@ def _sincronizar(usuario: str) -> dict:
         "descuentos_pisados": sum(1 for d in desc_cambiado if d["antes"]),
         "desc_cambiado": sorted(desc_cambiado, key=lambda d: d["cod"]),
         "listas_raras": sorted(listas_raras, key=lambda d: d["cod"]),
+        "vend_cambiado": sorted(vend_cambiado, key=lambda d: d["cod"]),
+        "agentes_raros": sorted(agentes_raros, key=lambda d: d["cod"]),
+        "direcciones_cambiadas": len(dir_cambiado),
+        "dir_cambiado": sorted(dir_cambiado, key=lambda d: d["cod"]),
         "sin_tocar": len(por_cod) - len(cambios) - len(altas) - len(conflictos),
     }
     _guardar_log(usuario, reporte)
@@ -317,11 +426,13 @@ def _sincronizar(usuario: str) -> dict:
 def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
     """UN solo UPDATE con VALUES — un viaje por fila a RDS ya tiró un 502
     en el cron de mails (TMT 2026-08-03); acá el primer pase toca ~3.400."""
-    marcadores = ",".join(["(%s, %s, %s, %s, %s)"] * len(cambios))
+    marcadores = ",".join(["(%s, %s, %s, %s, %s, %s, %s)"] * len(cambios))
     planos = [
         (str(v) if (i == 4 and v is not None) else v)
         for fila in cambios for i, v in enumerate(fila)
     ]
+    # vend: None = no tocar; '' = QUITAR (la casa) — por eso no alcanza el
+    # COALESCE y va con CASE.
     return db.execute(
         f"""
         UPDATE scintela.cliente c
@@ -329,9 +440,14 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
                ruc      = COALESCE(v.ruc, c.ruc),
                telefono = COALESCE(v.telefono, c.telefono),
                descuento = COALESCE(v.descuento::numeric, c.descuento),
+               vend = CASE WHEN v.vend IS NULL THEN c.vend
+                           WHEN v.vend = '' THEN NULL
+                           ELSE v.vend END,
+               direccion1 = COALESCE(v.direccion1, c.direccion1),
                fecha_modifica   = CURRENT_TIMESTAMP,
                usuario_modifica = %s
-          FROM (VALUES {marcadores}) AS v(cod, nombre, ruc, telefono, descuento)
+          FROM (VALUES {marcadores})
+               AS v(cod, nombre, ruc, telefono, descuento, vend, direccion1)
          WHERE UPPER(TRIM(c.codigo_cli)) = v.cod
         """,
         tuple([usuario[:60], *planos]),
@@ -343,10 +459,12 @@ def _alta(a: dict, usuario: str) -> bool:
     from modules.avisos.queries import avisar
     from modules.clientes import queries as cli_q
 
+    vend_alta, _entendido = vend_de_asinfo(a.get("agente"))
     try:
         cli_q.crear(
             codigo_cli=a["cod"], nombre=a["nombre"], ruc=a["ruc"] or None,
             telefono=a["tel"] or None, descuento=a.get("desc"),
+            vend=vend_alta or None, direccion1=a.get("dir") or None,
             usuario=usuario[:50],
         )
     except Exception as e:  # noqa: BLE001 — una alta rota no frena las demás
@@ -428,6 +546,34 @@ def _avisar_descuentos(cambiado: list[dict], raras: list[dict]) -> None:
         )
 
 
+def _avisar_vendedores(cambiado: list[dict], raros: list[dict]) -> None:
+    """Mismo criterio que los descuentos: UNA campanita por día, con el
+    número en el título y el detalle (con el valor anterior) en la pantalla
+    del sync — que es la forma de volver atrás uno pisado por error."""
+    from modules.avisos.queries import avisar
+
+    pisados = [d for d in cambiado if d["antes"]]
+    if pisados:
+        hoy = datetime.now(UTC).strftime("%Y%m%d")
+        cods = ", ".join(d["cod"] for d in sorted(pisados, key=lambda d: d["cod"])[:8])
+        avisar(
+            fuente="clientes", nivel="alerta",
+            titulo=f"Asinfo cambió el vendedor de {len(pisados)} clientes",
+            detalle=f"Se pisó el que tenía la ficha. {cods}"[:200],
+            url="/clientes/sync-asinfo",
+            clave=f"clientes-vend-pisados-{hoy}",
+        )
+    if raros:
+        cods = ", ".join(f"{r['cod']} ({r['agente']})" for r in raros[:5])
+        avisar(
+            fuente="clientes", nivel="alerta",
+            titulo=f"{len(raros)} vendedores de Asinfo que no conozco",
+            detalle=f"No se tocó el vendedor de: {cods}"[:200],
+            url="/clientes/sync-asinfo",
+            clave=f"clientes-agentes-raros-{len(raros)}",
+        )
+
+
 def _para_log(reporte: dict) -> dict:
     """El reporte, recortado para que entre en el log SIN romper el JSON.
 
@@ -436,7 +582,8 @@ def _para_log(reporte: dict) -> dict:
     Por eso se recortan las LISTAS largas, no el texto.
     """
     chico = dict(reporte)
-    for campo in ("desc_cambiado", "listas_raras", "conflictos"):
+    for campo in ("desc_cambiado", "listas_raras", "conflictos",
+                  "vend_cambiado", "agentes_raros", "dir_cambiado"):
         filas = chico.get(campo)
         if isinstance(filas, list) and len(filas) > 300:
             chico[campo] = filas[:300]
@@ -482,8 +629,9 @@ def ultimas_corridas(limite: int = 10) -> list[dict]:
 # las facturas no están hechas por EC2, no hacemos eso"). Mismo patrón que la
 # autocarga de facturas / tejeduría / químicos: el hilo de fondo de
 # modules/_lib/autocarga_facturas.py llama `correr_si_toca()` cada ~2 min y
-# ACÁ se decide si toca. Ventanas pedidas: 11:00 y 16:00 hora Ecuador
-# (= 16:00 y 21:00 UTC; el server y Postgres están en UTC).
+# ACÁ se decide si toca. Ventanas: CADA HORA de 07:00 a 19:00 Ecuador
+# (TMT 2026-08-27, Tamara: los cambios de dirección y vendedor en Asinfo
+# tienen que llegar más seguido; antes eran sólo 11:00 y 16:00).
 #
 # El guard de "ya corrió en esta ventana" NO es en memoria: mira el log
 # (`clientes_sync_asinfo_log`), así un restart del server no lo repite y una
@@ -491,24 +639,26 @@ def ultimas_corridas(limite: int = 10) -> list[dict]:
 # lo apaga.
 # ---------------------------------------------------------------------------
 
-_VENTANAS_UTC = (16, 21)  # 11:00 y 16:00 Ecuador (UTC-5)
-_CHECK_MIN_SECS = 300     # mirar el log a lo sumo cada 5 min
+_VENTANA_EC_DESDE = 7    # primera corrida del día: 07:00 EC
+_VENTANA_EC_HASTA = 19   # última: 19:00 EC (a la noche no cambia nada)
+_CHECK_MIN_SECS = 300    # mirar el log a lo sumo cada 5 min
 _auto_lock = threading.Lock()
 _auto_ultimo_check = 0.0
 
 
 def _inicio_ventana_utc(ahora_utc: datetime) -> datetime | None:
-    """El comienzo de la ventana vigente, o None si todavía no abrió ninguna.
+    """El comienzo (en UTC) de la ventana horaria vigente, o None de noche.
 
-    Después de medianoche UTC (19:00 EC) no abre ninguna: las dos corridas
-    del día ya pasaron.
+    Se calcula en hora Ecuador (UTC−5) y se vuelve a UTC sumando 5 h — ojo
+    que la ventana de las 19:00 EC ya es el día SIGUIENTE en UTC, por eso
+    no sirve el `replace(hour=...)` sobre la hora UTC que se usaba cuando
+    las ventanas eran dos.
     """
-    inicio = None
-    for h in _VENTANAS_UTC:
-        cand = ahora_utc.replace(hour=h, minute=0, second=0, microsecond=0)
-        if cand <= ahora_utc:
-            inicio = cand
-    return inicio
+    ahora_ec = ahora_utc - timedelta(hours=5)
+    if not (_VENTANA_EC_DESDE <= ahora_ec.hour <= _VENTANA_EC_HASTA):
+        return None
+    inicio_ec = ahora_ec.replace(minute=0, second=0, microsecond=0)
+    return inicio_ec + timedelta(hours=5)
 
 
 def correr_si_toca() -> dict:
