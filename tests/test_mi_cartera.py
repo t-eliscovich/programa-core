@@ -2707,7 +2707,9 @@ def test_la_ficha_tecnica_abre_en_otra_pestana(vendedor_logueado, monkeypatch):
     html = vendedor_logueado.get("/mi-cartera").data.decode()
     tabbar = html.split('<nav class="tabbar">')[1].split("</nav>")[0]
 
-    assert "Ficha técnica" in tabbar
+    # TMT 27/08: el rótulo es "F. técnica" — el largo envolvía a dos
+    # renglones con 6 pestañas y agrandaba la barra.
+    assert "F. técnica" in tabbar
     tags = [x for x in tabbar.split("<a ") if "fichas-tecnicas" in x]
     assert len(tags) == 1, "la ficha técnica es UN link del tabbar"
     assert 'target="_blank"' in tags[0]

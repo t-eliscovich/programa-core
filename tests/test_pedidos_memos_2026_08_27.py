@@ -141,56 +141,86 @@ def test_la_etiqueta_del_dueno_lleva_el_codigo_cuando_lo_hay():
     assert service.etiqueta_dueno({"codigo": "", "nombre": "Intela"}) == "Intela"
 
 
-# ── producción por pedido ───────────────────────────────────────────────────
+# ── etapas del pedido (dueña 27/08: sin porcentajes) ───────────────────────
+# enviado → en_tintura (la OFT tiene orden de salida de material) →
+# terminado (todas las OFT Finalizadas, o la X del memo).
 
-def test_la_produccion_junta_la_orden_de_formulas_con_su_oft_de_asinfo():
-    ordenes = [{"pedido_numero": "PDCL-26401", "oft_numero": "OFT-000038020",
-                "numero": "26-08-04", "kil": 280.0}]
-    ofts = [{"numero": "OFT-000038020", "cantidad": 294.0, "fabricada": 120.0}]
+_MEMO = {"PDCL-1": {"estado": "pendiente", "en_proceso_por": None}}
+
+
+def _fila_oft(**kw):
+    """Fila cruda de `_SQL_ETAPA_OFTS` (la forma de la fuente)."""
+    base = {"parent_numero": "OFT-000038020", "estado_produccion": 2,
+            "cantidad": 294.0, "fabricada": 0.0, "es_hija": False,
+            "con_salida": 0}
+    base.update(kw)
+    return base
+
+
+def _etapas(ordenes, ofts, ok_asinfo=True, memo=None):
     from modules._lib import formulas_db
     with patch.object(formulas_db, "fetch_all", return_value=ordenes), \
          patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=(ofts, True)):
-        prod = service.produccion_por_pedido(["PDCL-26401"])
-    o = prod["PDCL-26401"][0]
-    assert o["oft"] == "OFT-000038020"
-    assert o["a_producir"] == 294 and o["producido"] == 120
-    assert o["pct"] == 41
+                      return_value=(ofts, ok_asinfo)):
+        return service.etapas_por_pedido(["PDCL-1"], memo or _MEMO)
 
 
-def test_una_orden_sin_oft_muestra_sus_kilos_sin_porcentaje():
-    ordenes = [{"pedido_numero": "PDCL-26401", "oft_numero": None,
-                "numero": "26-08-05", "kil": 150.0}]
-    from modules._lib import formulas_db
-    with patch.object(formulas_db, "fetch_all", return_value=ordenes), \
-         patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=([], True)):
-        prod = service.produccion_por_pedido(["PDCL-26401"])
-    o = prod["PDCL-26401"][0]
-    assert o["kil"] == 150 and o["pct"] is None
+def test_sin_memo_no_hay_etapa():
+    assert service.etapas_por_pedido(["PDCL-9"], {}) == {}
 
 
-def test_sin_bridge_a_formulas_no_hay_produccion_y_no_rompe():
-    from modules._lib import formulas_db
-    with patch.object(formulas_db, "fetch_all", return_value=[]):
-        assert service.produccion_por_pedido(["PDCL-1"]) == {}
+def test_con_memo_y_sin_ordenes_el_pedido_esta_enviado():
+    assert _etapas([], []) == {"PDCL-1": "enviado"}
 
 
-def test_el_numero_de_oft_se_sanitiza_antes_de_ir_a_la_sql():
-    assert service._oft_segura("oft-000038020") == "OFT-000038020"
-    assert service._oft_segura("X'; DROP TABLE --") == "XDROPTABLE--"
+def test_con_orden_pero_sin_salida_de_material_sigue_enviado():
+    """La OFT existe pero la tela no salió de bodega: planificado no es
+    tinturándose."""
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+    assert _etapas(ordenes, [_fila_oft()]) == {"PDCL-1": "enviado"}
 
 
-def test_una_oft_sobreproducida_no_pasa_del_100_por_ciento():
-    ordenes = [{"pedido_numero": "P", "oft_numero": "OFT-1", "numero": "N",
-                "kil": 1.0}]
-    ofts = [{"numero": "OFT-1", "cantidad": 100.0, "fabricada": 130.0}]
-    from modules._lib import formulas_db
-    with patch.object(formulas_db, "fetch_all", return_value=ordenes), \
-         patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=(ofts, True)):
-        prod = service.produccion_por_pedido(["P"])
-    assert prod["P"][0]["pct"] == 100
+def test_la_salida_de_material_pone_al_pedido_en_tintura():
+    """La salida se cuelga de una HIJA de la OFT — igual cuenta."""
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+    ofts = [_fila_oft(),
+            _fila_oft(es_hija=True, con_salida=1, cantidad=100.0)]
+    assert _etapas(ordenes, ofts) == {"PDCL-1": "en_tintura"}
+
+
+def test_todas_las_oft_finalizadas_es_terminado():
+    """Finalizada = estado 5. Las hojas mandan: el padre puede quedar en 2
+    aunque sus hijas hayan cerrado."""
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+    ofts = [_fila_oft(estado_produccion=2),
+            _fila_oft(es_hija=True, con_salida=1, estado_produccion=5)]
+    assert _etapas(ordenes, ofts) == {"PDCL-1": "terminado"}
+
+
+def test_una_oft_terminada_y_otra_a_medias_es_en_tintura():
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"},
+               {"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038021"}]
+    ofts = [_fila_oft(estado_produccion=5, con_salida=1),
+            _fila_oft(parent_numero="OFT-000038021", con_salida=1)]
+    assert _etapas(ordenes, ofts) == {"PDCL-1": "en_tintura"}
+
+
+def test_al_100_del_plan_tambien_es_terminado_aunque_no_este_cerrada():
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+    ofts = [_fila_oft(fabricada=294.0, con_salida=1)]
+    assert _etapas(ordenes, ofts) == {"PDCL-1": "terminado"}
+
+
+def test_la_x_de_la_fabrica_manda_sobre_todo():
+    memo = {"PDCL-1": {"estado": "terminado", "en_proceso_por": "jonathan"}}
+    assert _etapas([], [], memo=memo) == {"PDCL-1": "terminado"}
+
+
+def test_con_asinfo_caido_la_etapa_no_inventa_avance():
+    """Fail-soft: sin respuesta de Asinfo el pedido queda en enviado —
+    nunca un avance que no se pudo probar."""
+    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+    assert _etapas(ordenes, [], ok_asinfo=False) == {"PDCL-1": "enviado"}
 
 
 # ── formulas_memos (el bridge de escritura) ─────────────────────────────────
@@ -233,12 +263,13 @@ def _fake_asinfo(_db, sql):
     return ([], True)
 
 
-def _get_corte_pedido(c, estados=None):
+def _get_corte_pedido(c, etapas=None):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo), \
          patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
-         patch.object(formulas_memos, "estados", return_value=estados or {}), \
-         patch.object(service, "produccion_por_pedido", return_value={}):
+         patch.object(formulas_memos, "estados", return_value={}), \
+         patch.object(service, "etapas_por_pedido",
+                      return_value=etapas or {}):
         return c.get("/pedidos?corte=pedido")
 
 
@@ -253,14 +284,13 @@ def test_el_corte_pedido_muestra_el_dueno_y_el_boton(app, fake_db):
     assert 'class="btnmemo"' in body
 
 
-def test_un_pedido_ya_enviado_muestra_su_estado_y_no_el_boton(app, fake_db):
-    c = _login(app, fake_db)
-    r = _get_corte_pedido(c, estados={
-        "PDCL-26438": {"estado": "pendiente", "en_proceso_por": None},
-        "PDCL-26401": {"estado": "en_proceso", "en_proceso_por": "jonathan"},
+def test_un_pedido_ya_enviado_muestra_su_etapa_y_no_el_boton(app, fake_db):
+    c = _get_corte_pedido(_login(app, fake_db), etapas={
+        "PDCL-26438": "enviado",
+        "PDCL-26401": "en_tintura",
     })
-    body = r.get_data(as_text=True)
-    assert "ENVIADO" in body and "EN PROCESO" in body
+    body = c.get_data(as_text=True)
+    assert "ENVIADO" in body and "EN TINTURA" in body
     assert 'class="btnmemo"' not in body
 
 
@@ -336,7 +366,7 @@ def test_el_vendedor_ve_solo_sus_pedidos(app, fake_db):
                       return_value=(_FILAS, True)), \
          patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
          patch.object(formulas_memos, "estados", return_value={}), \
-         patch.object(service, "produccion_por_pedido", return_value={}):
+         patch.object(service, "etapas_por_pedido", return_value={}):
         r = c.get("/mi-cartera/pedidos")
     body = r.get_data(as_text=True)
     assert r.status_code == 200
@@ -371,11 +401,9 @@ def test_el_vendedor_manda_lo_suyo_y_queda_registrado_su_usuario(app, fake_db):
 
 
 def test_un_pedido_terminado_muestra_terminado(app, fake_db):
-    """La X de la fábrica (dueña 27/08): cuando el memo se marca terminado,
-    la oficina lo ve como TERMINADO — ni botón ni 'en proceso'."""
-    c = _login(app, fake_db)
-    r = _get_corte_pedido(c, estados={
-        "PDCL-26401": {"estado": "terminado", "en_proceso_por": "jonathan"}})
+    """Etapa final: todas las OFT cerradas (o la X de la fábrica)."""
+    r = _get_corte_pedido(_login(app, fake_db),
+                          etapas={"PDCL-26401": "terminado"})
     body = r.get_data(as_text=True)
     assert "TERMINADO" in body
     assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón

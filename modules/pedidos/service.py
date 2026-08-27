@@ -1075,56 +1075,98 @@ def _oft_segura(numero: str) -> str:
     )[:30]
 
 
-def produccion_por_pedido(numeros: list[str]) -> dict[str, list[dict]]:
-    """`{pedido: [órdenes de tintura del pedido]}` con el avance de su OFT.
+#: `orden_fabricacion.estado_produccion = 5` es FINALIZADA (verificado
+#: 27/08: 6.213 de 6.222 con `fecha_cierre`). ⚠ Las finalizadas promedian
+#: el 90% del plan — "al 100%" estricto (fabricada >= cantidad) casi no se
+#: da, así que "terminado" es Finalizada O fabricada >= plan.
+ESTADO_OF_FINALIZADA = 5
 
-    Cada orden: `{orden, kil, oft, a_producir, producido, pct}` — los tres
-    últimos en None si la orden no tiene OFT o Asinfo no contestó.
-    Fail-soft: {} si el bridge a formulas_app no está.
+#: El árbol de cada OFT (ella misma + sus sub-órdenes) con lo que decide la
+#: etapa: si tiene ORDEN DE SALIDA DE MATERIAL asignada (el vínculo vive en
+#: `orden_fabricacion_orden_salida_material`; la columna
+#: `id_orden_salida_material_principal` de la OFT está SIEMPRE en NULL, y la
+#: salida se cuelga sobre todo de las HIJAS) y si está terminada.
+_SQL_ETAPA_OFTS = """
+SELECT p.numero AS parent_numero,
+       o.estado_produccion, o.cantidad, ISNULL(o.cantidad_fabricada, 0) AS fabricada,
+       ISNULL(o.indicador_suborden, 0) AS es_hija,
+       CASE WHEN EXISTS (SELECT 1 FROM orden_fabricacion_orden_salida_material x
+                          WHERE x.id_orden_fabricacion = o.id_orden_fabricacion)
+            THEN 1 ELSE 0 END AS con_salida
+  FROM orden_fabricacion p
+  JOIN orden_fabricacion o
+    ON o.id_orden_fabricacion = p.id_orden_fabricacion
+    OR o.id_orden_fabricacion_padre = p.id_orden_fabricacion
+ WHERE p.numero IN ({in_list})
+"""
+
+
+def etapas_por_pedido(numeros: list[str],
+                      memo_estados: dict[str, dict]) -> dict[str, str]:
+    """La ETAPA de cada pedido con memo: enviado → en_tintura → terminado.
+
+    Decisión dueña 27/08 (*"ya no mostramos porcentajes"*):
+      - **enviado**: se mandó el memo.
+      - **en_tintura**: alguna OFT del pedido tiene ORDEN DE SALIDA DE
+        MATERIAL asignada (la tela ya está en el jet, no solo planificada).
+      - **terminado**: hay OFTs y TODAS están terminadas (Finalizada en
+        Asinfo, o fabricada >= plan) — o la fábrica puso la X al memo.
+
+    Fail-soft: si un bridge no contesta, la etapa se queda en lo que se pudo
+    probar (como mínimo "enviado" — nunca inventa avance).
     """
-    if not numeros:
+    con_memo = [n for n in numeros if n in memo_estados]
+    if not con_memo:
         return {}
+
     from modules._lib import formulas_db
     filas = formulas_db.fetch_all(
-        "SELECT pedido_numero, oft_numero, numero, kil "
+        "SELECT pedido_numero, oft_numero "
         "  FROM ordenes WHERE pedido_numero = ANY(%s)",
-        (list(numeros),))
-    if not filas:
-        return {}
-
-    ofts = sorted({_oft_segura(str(f.get("oft_numero") or "")) for f in filas} - {""})
-    datos_oft: dict[str, dict] = {}
-    if ofts:
-        in_list = ", ".join(f"'{o}'" for o in ofts)
-        rows, ok = metabase_client.fetch_dataset_estado(
-            ASINFO_DB,
-            "SELECT numero, cantidad, ISNULL(cantidad_fabricada, 0) AS fabricada"
-            f"  FROM orden_fabricacion WHERE numero IN ({in_list})")
-        if ok:
-            for r in rows:
-                n = str(r.get("numero") or "").strip().upper()
-                cant = _f(r.get("cantidad"))
-                fab = _f(r.get("fabricada"))
-                datos_oft[n] = {
-                    "a_producir": round(cant),
-                    "producido": round(fab),
-                    "pct": min(100, round(fab / cant * 100)) if cant else 0,
-                }
-
-    out: dict[str, list[dict]] = {}
+        (list(con_memo),))
+    ofts_por_pedido: dict[str, set] = {}
     for f in filas:
         ped = str(f.get("pedido_numero") or "").strip().upper()
-        if not ped:
-            continue
         oft = _oft_segura(str(f.get("oft_numero") or ""))
-        orden = {
-            "orden": str(f.get("numero") or "").strip(),
-            "kil": round(_f(f.get("kil"))),
-            "oft": oft,
-            "a_producir": None, "producido": None, "pct": None,
-        }
-        d = datos_oft.get(oft)
-        if d:
-            orden.update(d)
-        out.setdefault(ped, []).append(orden)
+        if ped and oft:
+            ofts_por_pedido.setdefault(ped, set()).add(oft)
+
+    datos: dict[str, dict] = {}
+    todas = sorted(set().union(*ofts_por_pedido.values())) if ofts_por_pedido else []
+    if todas:
+        in_list = ", ".join(f"'{o}'" for o in todas)
+        rows, ok = metabase_client.fetch_dataset_estado(
+            ASINFO_DB, _SQL_ETAPA_OFTS.format(in_list=in_list))
+        if ok:
+            arbol: dict[str, list] = {}
+            for r in rows:
+                n = str(r.get("parent_numero") or "").strip().upper()
+                if n:
+                    arbol.setdefault(n, []).append(r)
+            for n, rs in arbol.items():
+                # La salida puede estar en el padre O en una hija; la
+                # terminación se juzga sobre las HOJAS (el padre arrastra
+                # estado propio aunque las hijas ya hayan cerrado).
+                hojas = [r for r in rs if r.get("es_hija")] or rs
+                datos[n] = {
+                    "salida": any(_f(r.get("con_salida")) for r in rs),
+                    "terminada": all(
+                        int(_f(r.get("estado_produccion"))) == ESTADO_OF_FINALIZADA
+                        or (_f(r.get("cantidad")) > 0
+                            and _f(r.get("fabricada")) >= _f(r.get("cantidad")))
+                        for r in hojas),
+                }
+
+    out: dict[str, str] = {}
+    for ped in con_memo:
+        if (memo_estados.get(ped) or {}).get("estado") == "terminado":
+            out[ped] = "terminado"     # la X de la fábrica manda
+            continue
+        info = [datos[o] for o in ofts_por_pedido.get(ped, ()) if o in datos]
+        if info and all(i["terminada"] for i in info):
+            out[ped] = "terminado"
+        elif any(i["salida"] for i in info):
+            out[ped] = "en_tintura"
+        else:
+            out[ped] = "enviado"
     return out

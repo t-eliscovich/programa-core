@@ -39,7 +39,7 @@
   .ped-lineas .k{white-space:nowrap;color:#64748b;font-size:11.5px;font-variant-numeric:tabular-nums}
   .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
   .ped-total{font-size:12px;color:#475569}
-  .ped-prod{font-size:12px;color:#166534;margin-top:8px;background:#f0fdf4;border-radius:8px;padding:7px 10px}
+  .pill.tinto{background:#dbeafe;color:#1e40af}
   .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
 </style>
 
@@ -57,9 +57,11 @@
         <span class="ped-chev" aria-hidden="true"></span>
         <span class="ped-num">{{ p.numero }}</span>
         <span class="ped-cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
-        {% if m and m.estado == 'terminado' %}<span class="pill good">Terminado</span>
-        {% elif m and m.estado == 'en_proceso' %}<span class="pill good">En proceso</span>
-        {% elif m %}<span class="pill warn">Enviado</span>{% endif %}
+        {# Etapas del pedido (dueña 27/08): enviado → en tintura → terminado. #}
+        {% set et = etapas.get(p.numero) %}
+        {% if et == 'terminado' %}<span class="pill good">Terminado</span>
+        {% elif et == 'en_tintura' %}<span class="pill tinto">En tintura</span>
+        {% elif et %}<span class="pill warn">Enviado</span>{% endif %}
         <span class="ped-fecha">{{ p.fecha_es }}</span>
       </summary>
       <ul class="ped-lineas">
@@ -75,18 +77,6 @@
         </li>
         {% endfor %}
       </ul>
-      {# TMT 27/08: "acá hay información de más". La línea dice SOLO el
-         avance; el número de orden y la OFT son jerga de fábrica que el
-         vendedor no usa (viven en /pedidos de la oficina). #}
-      {% for pr in produccion.get(p.numero, []) %}
-        <div class="ped-prod">
-          {%- if pr.pct is not none -%}
-          En tintura: {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg <b>({{ pr.pct }}%)</b>
-          {%- else -%}
-          En tintura: {{ pr.kil|num_es(0) }} kg
-          {%- endif -%}
-        </div>
-      {% endfor %}
       {# Sin memo → el botón. Con memo, nada: el chip de arriba ya lo dice
          (TMT 27/08: "acá hay información de más"). #}
       {% if not m %}

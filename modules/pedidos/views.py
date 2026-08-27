@@ -76,8 +76,7 @@ def lista():
         # se completan según el corte
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
-        pedidos_por_color={}, pedidos_lista=[], memo_estados={},
-        produccion={},
+        pedidos_por_color={}, pedidos_lista=[], etapas={},
     )
 
     if not disponible or not categorias:
@@ -98,12 +97,12 @@ def lista():
         # Qué pedidos ya tienen memo en la fábrica (fail-soft: {} si el
         # bridge no está — los botones se muestran y el UNIQUE de formulas
         # frena un doble envío igual).
-        ctx["memo_estados"] = formulas_memos.estados(
-            [p["numero"] for p in pedidos_lista])
-        # Órdenes de tintura ya creadas para estos pedidos, con el avance de
-        # su OFT en Asinfo (cantidad a producir / producido / %).
-        ctx["produccion"] = service.produccion_por_pedido(
-            [p["numero"] for p in pedidos_lista])
+        numeros = [p["numero"] for p in pedidos_lista]
+        memo_estados = formulas_memos.estados(numeros)
+        # La ETAPA de cada pedido (enviado → en tintura → terminado), armada
+        # con las órdenes de formulas y la OFT en Asinfo. Sin porcentajes
+        # (dueña 27/08).
+        ctx["etapas"] = service.etapas_por_pedido(numeros, memo_estados)
     elif corte == "tela":
         # La pestaña por defecto es la que MÁS falta, no la primera alfabética.
         pedida = (request.args.get("cat") or "").strip()

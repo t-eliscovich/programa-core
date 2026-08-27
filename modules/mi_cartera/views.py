@@ -870,16 +870,15 @@ def pedidos():
     vend = _vend_actual()
     todos, disponible = pedidos_service.por_pedido()
     mios = [p for p in todos if p["dueno"]["codigo"] == vend]
-    memo_estados = formulas_memos.estados([p["numero"] for p in mios])
-    produccion = pedidos_service.produccion_por_pedido(
-        [p["numero"] for p in mios])
+    numeros = [p["numero"] for p in mios]
+    memo_estados = formulas_memos.estados(numeros)
     return render_template(
         "mi_cartera/pedidos.html",
         seccion="pedidos",
         disponible=disponible,
         pedidos=mios,
+        etapas=pedidos_service.etapas_por_pedido(numeros, memo_estados),
         memo_estados=memo_estados,
-        produccion=produccion,
         **_ctx_base(vend),
     )
 

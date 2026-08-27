@@ -79,8 +79,8 @@
   /* corte pedido: estado del memo y botón de envío */
   .pd .memo{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
   .pd .memo.env{background:#e0e7ff;color:#3730a3}
-  .pd .memo.enproc{background:#dcfce7;color:#166534}
-  .pd .memo.term{background:#f1f5f9;color:#475569}
+  .pd .memo.tinto{background:#dbeafe;color:#1e40af}
+  .pd .memo.term{background:#dcfce7;color:#166534}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
@@ -296,12 +296,15 @@
             <td>{{ p.n_lineas }} <span class="u">{{ 'tela' if p.n_lineas == 1 else 'telas' }}</span>
               · {{ p.total_kg|num_es(0) }} <span class="u">kg{% if not p.kg_completo %} + un{% endif %}</span></td>
             <td class="no-print">
-              {% set m = memo_estados.get(p.numero) %}
-              {% if m and m.estado == 'terminado' %}
+              {# Las tres etapas del pedido (dueña 27/08, sin porcentajes):
+                 ENVIADO el memo · EN TINTURA cuando la OFT tiene orden de
+                 salida de material · TERMINADO cuando la OFT se cerró. #}
+              {% set et = etapas.get(p.numero) %}
+              {% if et == 'terminado' %}
                 <span class="memo term">TERMINADO</span>
-              {% elif m and m.estado == 'en_proceso' %}
-                <span class="memo enproc">EN PROCESO</span>
-              {% elif m %}
+              {% elif et == 'en_tintura' %}
+                <span class="memo tinto">EN TINTURA</span>
+              {% elif et %}
                 <span class="memo env">ENVIADO</span>
               {% elif tiene_permiso('pedidos.enviar_memo') %}
                 <form method="post" action="{{ url_for('pedidos.enviar_memo') }}" style="display:inline"
@@ -319,19 +322,6 @@
               <td colspan="2" style="text-align:left">{{ l.tela }}</td>
               <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
               <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }} <span class="u">kg</span>{% else %}—{% endif %}</td>
-            </tr>
-          {% endfor %}
-          {% for pr in produccion.get(p.numero, []) %}
-            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              {# TMT 27/08: sin número de orden ni de OFT — acá importan los
-                 pedidos. Los números viven en el tab Memos de la fábrica. #}
-              <td colspan="6" class="masinfo" style="color:#166534">
-                {%- if pr.pct is not none -%}
-                En tintura: producido {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg ({{ pr.pct }}%)
-                {%- else -%}
-                En tintura: {{ pr.kil|num_es(0) }} kg
-                {%- endif -%}
-              </td>
             </tr>
           {% endfor %}
           {% if p.descripcion %}
