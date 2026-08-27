@@ -473,7 +473,7 @@ def logout():
 
 
 # ---------------------------------------------------------------------------
-# Impersonate — "ver como otro usuario". Solo para Accionista (la dueña).
+# Impersonate — "ver como otro usuario".
 # ---------------------------------------------------------------------------
 # Pedido TMT 2026-05-21: la dueña quiere probar qué ven Alex/Andres/Federico
 # sin tener que loguear con sus cuentas. El flujo:
@@ -483,27 +483,52 @@ def logout():
 #   2) Navegás normalmente como ese usuario.
 #   3) POST /auth/stop-impersonate → restaura tu id real.
 #
-# Seguridad: la única gate es que el id_usuario REAL (`g.user["id_usuario"]`)
-# tenga `nombre_rol == 'Accionista'`. Nadie más puede impersonar — ni un
-# Administrador. Esto evita escalada de privilegios.
+# Seguridad: el gate mira al usuario REAL (si ya estoy impersonando, el de
+# `impersonating_from_id`), nunca al impersonado — no hay cadenas.
+#
+#   - Rol Accionista → puede ver como CUALQUIER usuario (desde 2026-05-21).
+#   - Permiso `vendedores.ver_como` (lo tiene INT, mig 0236; y el wildcard
+#     lo incluye) → puede ver como usuarios que son VENDEDORES (tienen
+#     `vend` cargado) y nada más. TMT 2026-08-27: "¿Podemos autorizar a INT
+#     a ver como los vendedores?". El límite a vendedores no es capricho: un
+#     vendedor tiene MENOS permisos que INT, así que verse como él nunca
+#     escala privilegios. Dejar que INT se vea como un Accionista sí — por
+#     eso el destino se chequea, no sólo el origen.
 #
 # `g.impersonating_from` (set en load_logged_in_user) sirve para que el
 # template muestre el banner amber con "Volver a [user_real]".
 
 
 def _es_accionista(user_row: dict | None) -> bool:
-    """True si el usuario tiene rol Accionista (único que puede impersonar)."""
+    """True si el usuario tiene rol Accionista (impersona sin límite)."""
     if not user_row:
         return False
     return (user_row.get("nombre_rol") or "").lower() == "accionista"
+
+
+def _puede_ver_como_vendedores(real_user: dict | None) -> bool:
+    """True si el rol REAL tiene `vendedores.ver_como` (o wildcard).
+
+    Se consulta el rol del usuario real, no `g.permisos`: cuando ya estás
+    impersonando, `g.permisos` son los del impersonado.
+    """
+    if not real_user or not real_user.get("id_rol"):
+        return False
+    permisos = db.fetch_all(
+        "SELECT nombre_opcion FROM seguridad.permiso WHERE id_rol = %s",
+        (real_user["id_rol"],),
+    )
+    nombres = {p["nombre_opcion"] for p in permisos}
+    return bool({"vendedores.ver_como", "*"} & nombres)
 
 
 @auth_bp.route("/impersonate/<int:id_usuario>", methods=["GET", "POST"])
 def impersonate(id_usuario: int):
     """Cambia la sesión actual para ver el sistema como otro usuario.
 
-    Solo Accionistas. Si ya estás impersonando, primero te tenés que detener
-    (POST /auth/stop-impersonate) — no permitimos cadenas de impersonate.
+    Accionistas a cualquiera; `vendedores.ver_como` (INT) sólo a vendedores
+    — ver el bloque de arriba. Si ya estás impersonando, primero te tenés
+    que detener (POST /auth/stop-impersonate) — no permitimos cadenas.
 
     ⭐ EL **GET** MUESTRA UNA PANTALLA DE CONFIRMACIÓN; sólo el POST cambia la
     sesión. Antes la ruta era POST-only y la confirmación era un `confirm()`
@@ -531,24 +556,41 @@ def impersonate(id_usuario: int):
     real_id = session.get("impersonating_from_id") or g.user["id_usuario"]
     real_user = db.fetch_one(
         """
-        SELECT u.id_usuario, u.username, r.nombre_rol
+        SELECT u.id_usuario, u.username, u.id_rol, r.nombre_rol
           FROM seguridad.usuario u
           JOIN seguridad.rol r USING (id_rol)
          WHERE u.id_usuario = %s
         """,
         (real_id,),
     )
-    if not _es_accionista(real_user):
+    # Accionista impersona a cualquiera; `vendedores.ver_como` (INT) sólo a
+    # vendedores — el chequeo del destino viene después de cargarlo.
+    es_accionista = _es_accionista(real_user)
+    if not es_accionista and not _puede_ver_como_vendedores(real_user):
         flash("Solo un Accionista puede ver como otro usuario.", "warn")
         return redirect(url_for("dashboard.index"))
 
-    # Validar que el destino existe y está activo.
+    # Validar que el destino existe y está activo. Con alias y JOIN a rol
+    # para traer `vend` (feature-flag: la app abre aunque la 0153 no corrió).
+    _vend_col = "u.vend" if _columna_vend_existe() else "NULL::varchar AS vend"
     target = db.fetch_one(
-        "SELECT id_usuario, username, activo FROM seguridad.usuario WHERE id_usuario = %s",
+        f"""
+        SELECT u.id_usuario, u.username, u.activo, {_vend_col}
+          FROM seguridad.usuario u
+          JOIN seguridad.rol r USING (id_rol)
+         WHERE u.id_usuario = %s
+        """,
         (id_usuario,),
     )
     if not target or not target.get("activo"):
         flash("Usuario no encontrado o inactivo.", "warn")
+        return redirect(url_for("dashboard.index"))
+    target.setdefault("vend", None)
+
+    # El que entra por `vendedores.ver_como` sólo puede verse como un
+    # VENDEDOR: verse como un rol más alto sería escalada de privilegios.
+    if not es_accionista and not (target.get("vend") or "").strip():
+        flash("Solo podés ver como un vendedor.", "warn")
         return redirect(url_for("dashboard.index"))
 
     # No impersonarte a vos mismo.
@@ -558,10 +600,18 @@ def impersonate(id_usuario: int):
 
     # GET = pantalla de confirmación. Recién el POST cambia la sesión.
     if request.method == "GET":
+        # El "Cancelar" tiene que volver a una pantalla que el usuario PUEDA
+        # abrir: INT no ve /usuarios (usuarios.admin) — para él la vuelta es
+        # /usuarios/vendedores. Un link a una pantalla prohibida es un 404
+        # sin síntoma en el código.
+        volver = url_for("usuarios.lista") if es_accionista else url_for(
+            "usuarios.ver_como_vendedor"
+        )
         return render_template(
             "auth/confirmar_impersonate.html",
             destino=target,
             real=real_user,
+            volver=volver,
         )
 
     # Guardamos el real (si todavía no lo guardamos) y switcheamos.

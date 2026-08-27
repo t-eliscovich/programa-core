@@ -276,6 +276,12 @@ ROLES: list[tuple[str, list[str]]] = [
             # de stock, tejeduría, Asinfo". Ve la producción por tejedor
             # sin recuperar /compras — por eso el permiso es propio.
             "tejeduria.ver",
+            # TMT 2026-08-27 (dueña): "¿Podemos autorizar a INT a ver como
+            # los vendedores?". Abre /usuarios/vendedores y habilita el
+            # "👁 Ver como" SOLO sobre usuarios vendedores (el gate de
+            # /impersonate rechaza cualquier destino sin `vend` — verse como
+            # un rol más alto sería escalada). Mig 0236.
+            "vendedores.ver_como",
             # TMT 2026-08-25 (dueña): *"poner esta competencia visible para
             # todos los usuarios INT también"*. La migración 0215 se lo dio a
             # INT en la base ese mismo día; acá faltaba (había quedado escrito

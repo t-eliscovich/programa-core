@@ -1499,11 +1499,18 @@
             {% endif %}
 
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
-            {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') or tiene_permiso('bitacora.ver') %}
+            {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') or tiene_permiso('bitacora.ver') or tiene_permiso('vendedores.ver_como') %}
             <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
             <div class="px-3 py-1.5 text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Administración</div>
             {% if tiene_permiso('periodo.cerrar') %}
               <a href="{{ url_for('periodos.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Periodos</a>
+            {% endif %}
+            {# TMT 2026-08-27 (dueña): "¿Podemos autorizar a INT a ver como los
+               vendedores?". INT no tiene usuarios.admin, así que su entrada al
+               "Ver como" es esta pantalla propia. El link no va para quien ya
+               tiene /usuarios (ahí el botón está en cada fila). #}
+            {% if tiene_permiso('vendedores.ver_como') and not tiene_permiso('usuarios.admin') %}
+              <a href="{{ url_for('usuarios.ver_como_vendedor') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Ver como un vendedor</a>
             {% endif %}
             {% if tiene_permiso('usuarios.admin') %}
               <a href="{{ url_for('usuarios.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Usuarios</a>

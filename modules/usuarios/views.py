@@ -69,6 +69,28 @@ def lista():
     )
 
 
+@usuarios_bp.route("/usuarios/vendedores")
+@requiere_login
+@requiere_permiso("vendedores.ver_como")
+def ver_como_vendedor():
+    """Ver como un vendedor — la puerta de INT al "👁 Ver como".
+
+    TMT 2026-08-27 (dueña): "¿Podemos autorizar a INT a ver como los
+    vendedores?". INT no tiene `usuarios.admin`, así que el botón de
+    /usuarios no le sirve; esta pantalla lista SOLO los usuarios vendedores
+    y el gate del cambio real vive en /impersonate (auth.py), que para
+    `vendedores.ver_como` rechaza cualquier destino sin `vend`.
+    """
+    filas = queries.listar_vendedores()
+    real_user = getattr(g, "impersonating_from", None) or getattr(g, "user", None)
+    real_id = real_user.get("id_usuario") if real_user else None
+    return render_template(
+        "usuarios/ver_como_vendedor.html",
+        filas=filas,
+        real_id=real_id,
+    )
+
+
 @usuarios_bp.route("/usuarios/nuevo", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("usuarios.admin")

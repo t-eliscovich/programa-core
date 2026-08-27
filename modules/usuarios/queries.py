@@ -75,6 +75,28 @@ def vendedores_disponibles() -> list[dict]:
         return []
 
 
+def listar_vendedores() -> list[dict]:
+    """Usuarios ACTIVOS que son vendedores (tienen `vend`), para
+    /usuarios/vendedores — la pantalla desde la que INT usa "Ver como".
+
+    El nombre sale del catálogo `scintela.vendedor`; si el código no está
+    ahí, se muestra el código pelado. Orden alfabético por CÓDIGO, como la
+    lista de clientes del portal y la hoja impresa.
+    """
+    if not _columna_vend_disponible():
+        return []
+    return db.fetch_all(
+        """
+        SELECT u.id_usuario, u.username, u.vend,
+               COALESCE(NULLIF(TRIM(v.nombre), ''), u.vend) AS vendedor
+          FROM seguridad.usuario u
+          LEFT JOIN scintela.vendedor v ON v.codigo = u.vend
+         WHERE u.activo = TRUE AND COALESCE(TRIM(u.vend), '') <> ''
+         ORDER BY u.vend, u.username
+        """
+    ) or []
+
+
 def listar() -> list[dict]:
     return db.fetch_all(
         f"""

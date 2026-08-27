@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero %}
+{% block title %}Ver como un vendedor{% endblock %}
+{% block breadcrumb %}<strong>Ver como un vendedor</strong>{% endblock %}
+{% block content %}
+{# TMT 2026-08-27 (dueña): "¿Podemos autorizar a INT a ver como los
+   vendedores?". La pantalla de INT para el "👁 Ver como": lista SOLO los
+   usuarios vendedores. El límite de verdad no está acá — está en el gate de
+   /impersonate, que para `vendedores.ver_como` rechaza destinos sin `vend`. #}
+<div class="max-w-2xl">
+  <div class="mb-6">
+    {{ page_hero('Ver como un vendedor', 'Entrás a la app como ese vendedor, viendo lo mismo que él. Para volver, el botón "← Volver a mi cuenta" del cartel amarillo de arriba.') }}
+  </div>
+
+  <div class="bg-white border rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 border-b text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Código</th>
+          <th class="px-3 py-2">Vendedor</th>
+          <th class="px-3 py-2">Usuario</th>
+          <th class="px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y">
+        {% for u in filas %}
+        <tr class="hover:bg-slate-50">
+          <td class="px-3 py-2 font-mono font-semibold">{{ u.vend }}</td>
+          <td class="px-3 py-2">{{ u.vendedor }}</td>
+          <td class="px-3 py-2 font-mono text-slate-500">{{ u.username }}</td>
+          <td class="px-3 py-2 text-right">
+            {% if u.id_usuario != real_id %}
+              <a href="{{ url_for('auth.impersonate', id_usuario=u.id_usuario) }}"
+                 class="inline-block text-xs px-1.5 py-0.5 rounded border border-amber-300 text-amber-700 hover:bg-amber-50">
+                👁 Ver como
+              </a>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        {{ empty_row(4, 'No hay usuarios vendedores activos.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
