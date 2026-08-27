@@ -111,8 +111,13 @@ python scripts/procesa_provisiones_mensual.py
 
 # Tests y coverage
 make test
-# Gate de CI local; los tests @db corren sólo si hay dump legacy restaurado:
+# Gate de coverage: exactamente lo que corre el job `test` del CI (sin @db).
 make ci
+# Los tests @db, que en el CI van en su propio job en paralelo (necesitan el
+# dump legacy restaurado):
+make ci-db
+# Los dos juntos:
+make ci-todo
 ```
 
 Ver `docs/TESTING_COVERAGE.md` para el alcance del gate de coverage al 100% y

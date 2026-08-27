@@ -59,15 +59,20 @@ def test_si_la_migracion_falla_no_se_reinicia(yml):
     assert "LASTEXITCODE" in entre and "exit 1" in entre
 
 
-def test_las_migraciones_viajan_en_el_tarball(yml):
+def test_las_migraciones_viajan_en_el_tarball():
     """No se puede correr lo que no se subió.
 
     `.github` sí está excluido —el workflow corre en GitHub, no en el EC2—
     pero `migrations/` y `scripts/` tienen que llegar enteros.
+
+    TMT 2026-08-27: el tar se mudó del workflow al script, porque ahora lo
+    llaman dos lugares (el job `paquete` de ci.yml y el redeploy a mano) y la
+    lista de exclusiones escrita dos veces se desactualiza sola.
     """
-    i = yml.index("--exclude")
-    j = yml.index("programa_core.tar.gz", i)
-    excluidos = yml[i:j]
+    empaquetar = Path("scripts/empaquetar_y_subir_deploy.sh").read_text(encoding="utf-8")
+    i = empaquetar.index("--exclude")
+    j = empaquetar.index("-czf", i)
+    excluidos = empaquetar[i:j]
     assert "migrations" not in excluidos
     assert "scripts" not in excluidos
 

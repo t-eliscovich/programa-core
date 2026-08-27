@@ -34,6 +34,18 @@ DEPLOY = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf
 CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
 
+def _sin_comentarios(texto: str) -> str:
+    """Los comentarios de estos workflows EXPLICAN lo que ya no va (el
+    `workflow_run` viejo, el service postgres que se mudó), así que nombran las
+    palabras que varios asserts prohíben. Sin esto, cada test se dispara con su
+    propia explicación."""
+    return "\n".join(l for l in texto.splitlines() if not l.lstrip().startswith("#"))
+
+
+def _job(texto: str, nombre: str, hasta: str) -> str:
+    return _sin_comentarios(texto[texto.index(nombre):texto.index(hasta)])
+
+
 def _cuerpo_del_heredoc() -> str:
     """El PowerShell tal cual está escrito en el YAML, sin el bash de alrededor."""
     return DEPLOY[DEPLOY.index("PSEOF'"):DEPLOY.index("\n          PSEOF\n")]
@@ -102,16 +114,76 @@ def test_el_ci_viejo_se_cancela_cuando_llega_otro_push():
             "  cancel-in-progress: true\n") in CI
 
 
-def test_un_ci_cancelado_no_avisa_que_el_deploy_quedo_bloqueado():
-    """🚨 El job `bloqueado` existe para que un CI ROJO se vea. Un CI cancelado
-    por el `concurrency` de arriba no es un rojo — su commit viaja adentro del
-    CI de la punta — y con `!= 'success'` cada push doble mandaba un mail."""
-    bloque = DEPLOY[DEPLOY.index("  bloqueado:"):]
-    # Sin los comentarios: el de acá al lado EXPLICA por qué no va `!= 'success'`,
-    # así que lo nombra, y el assert se disparaba con su propia explicación.
-    cond = "\n".join(l for l in bloque.splitlines() if not l.lstrip().startswith("#"))
-    assert "github.event.workflow_run.conclusion == 'failure'" in cond
-    assert "!= 'success'" not in cond
+def test_sin_tests_verdes_no_se_deploya():
+    """🚨 EL FRENO. Antes vivía en un `if` de un workflow aparte colgado de
+    `workflow_run`, y hacía falta un job `bloqueado` que fallara a propósito
+    porque un deploy salteado quedaba en gris, sin mail — o sea, igual a que no
+    pase nada. Ahora el deploy es un job de ci.yml que DEPENDE de los dos jobs
+    de tests: si alguno se pone rojo, el deploy ni existe, y el que queda rojo
+    y manda mail es el CI mismo."""
+    assert "needs: [test, test-db, paquete]" in CI
+    assert "uses: ./.github/workflows/deploy.yml" in CI[CI.index("  deploy:"):]
+    # Y no quedó ningún camino que deploye sin pasar por ahí.
+    deploy = _sin_comentarios(DEPLOY)
+    assert "workflow_run" not in deploy, (
+        "volvió el disparador viejo: un deploy colgado del CI TERMINADO "
+        "vuelve a costar los ~9 s del salto y trae de nuevo la trampa del head_sha")
+    assert "bloqueado" not in deploy
+
+
+def test_el_deploy_solo_sale_de_un_push_a_main():
+    """En un PR el CI corre entero, pero no puede tocar producción."""
+    for job, hasta in (("  paquete:", "  deploy:"), ("  deploy:", "\n    with:")):
+        assert ("if: github.event_name == 'push' && "
+                "github.ref == 'refs/heads/main'") in _job(CI, job, hasta), (
+            f"{job.strip()} no está limitado a un push a main: un PR tocaría producción")
+
+
+def test_el_commit_a_deployar_entra_por_parametro():
+    """La trampa vieja: en un `workflow_run`, `github.sha` NO era el commit que
+    se testeó sino la punta de la rama al momento del evento. Ahora el commit
+    viaja explícito desde ci.yml."""
+    assert "sha: ${{ github.sha }}" in CI
+    assert "DEPLOY_SHA: ${{ inputs.sha || github.sha }}" in DEPLOY
+    assert "workflow_run.head_sha" not in _sin_comentarios(DEPLOY)
+
+
+def test_el_tarball_se_sube_en_paralelo_con_los_tests():
+    """El job `paquete` no depende de nadie: arranca junto con los tests, así
+    cuando terminan el tarball ya está en S3 y el deploy sólo firma y manda."""
+    bloque = _job(CI, "  paquete:", "  deploy:")
+    assert "needs:" not in bloque, (
+        "si `paquete` espera a los tests, vuelve a costar ~10 s de camino crítico")
+    assert "empaquetar_y_subir_deploy.sh" in bloque
+    # Y el deploy tiene que saber que no hace falta empaquetar de nuevo.
+    assert "ya_subido: true" in CI
+
+
+def test_el_tar_esta_escrito_una_sola_vez():
+    """Lo llaman ci.yml y deploy.yml. La lista de exclusiones escrita dos veces
+    se desactualiza sola y un día deja afuera algo que el server necesita."""
+    assert "--exclude" not in _sin_comentarios(DEPLOY)
+    assert "--exclude" not in _sin_comentarios(CI)
+    assert "empaquetar_y_subir_deploy.sh" in DEPLOY
+
+
+def test_el_redeploy_a_mano_sigue_existiendo():
+    """Es la salida si un test flaky bloquea un deploy urgente. Y como en ese
+    camino nadie subió el tarball, tiene que empaquetar él."""
+    assert "workflow_dispatch:" in DEPLOY
+    i = DEPLOY.index("- name: Empaquetar y subir a S3")
+    assert "if: ${{ inputs.ya_subido != true }}" in DEPLOY[i - 200:i]
+
+
+def test_los_tests_sin_base_no_levantan_postgres():
+    """🚨 Los 16 s del contenedor estaban en el camino crítico de cada deploy
+    para un job que no lo toca (los `not db` usan el FakeDB del conftest)."""
+    job_test = _job(CI, "  test:", "  test-db:")
+    assert "postgres" not in job_test, (
+        "volvió el service postgres al job que no lo usa")
+    job_db = _job(CI, "  test-db:", "  paquete:")
+    assert "postgres:16-alpine" in job_db
+    assert "ci-db" in job_db
 
 
 # ---------------------------------------------------------------------------

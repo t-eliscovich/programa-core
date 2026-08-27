@@ -83,8 +83,18 @@ make test-db
 Full local CI equivalent:
 
 ```bash
-make ci
+make ci-todo
 ```
+
+`make ci` alone is exactly what the CI's `test` job runs: the `not db` suite
+plus the two coverage gates. Since 2026-08-27 the `-m db` tests live in their
+own parallel job (`make ci-db`), so the `test` job no longer starts a Postgres
+container — 16 s that used to sit on the critical path of every deploy.
+
+> 🚨 The conciliación floor (`COVERAGE_CONCILIACION_MIN`) is measured on
+> `make ci` — the `not db` run only. Raising it with a number taken from a run
+> that includes the `-m db` tests gives a higher percentage and turns CI red
+> without anybody having broken anything.
 
 Ruff remains available as a separate check:
 

@@ -39,20 +39,19 @@ jobs:
     # ARM" de "está caído todo".
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_DB: programa_core_test
-          POSTGRES_USER: app
-          POSTGRES_PASSWORD: app_local_only
-        ports:
-          - "5432:5432"
-        options: >-
-          --health-cmd "pg_isready -U app -d programa_core_test"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 10
+    # ⭐ TMT 2026-08-27 — SIN el service postgres. Levantarlo costaba 16 s en el
+    # camino crítico de CADA deploy, y este job no lo toca: los tests `not db`
+    # usan el FakeDB monkeypatcheado del conftest. Los 63 que sí tocan una base
+    # real se fueron al job `test-db` de abajo, que corre EN PARALELO.
+    #
+    # Medido antes de partirlo: con SOLO los `not db` los dos gates de
+    # cobertura pasan igual (COVERAGE_CORE 100.00%, conciliación 29.32% contra
+    # un piso de 29). O sea que los tests de base no aportaban nada a los gates
+    # y estaban atando el CI a un contenedor que nadie usaba.
+    #   ⚠ Por eso el piso de conciliación se mide SIEMPRE sobre esta corrida
+    #     (`make ci`, sin los db). Si alguien lo sube con un número sacado de
+    #     una corrida que incluya los db, el CI se pone rojo sin que nadie haya
+    #     roto nada.
 
     env:
       ENV: development
@@ -99,9 +98,6 @@ jobs:
         continue-on-error: true
         run: make PY=python lint
 
-      - name: Restore sanitized legacy dump
-        run: python scripts/restaurar_test_legacy_dump.py --allow-reset
-
       - name: Run coverage gate
         run: make PY=python ci
 
@@ -112,3 +108,98 @@ jobs:
           name: coverage-reports
           path: coverage.xml
           if-no-files-found: ignore
+
+  # Los 63 tests que sí tocan una base real. Van SERIALES a propósito (comparten
+  # la base) y sin coverage: los gates se miden en el job de arriba. Tarda menos
+  # que `test`, así que sale gratis en tiempo de pared.
+  test-db:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: programa_core_test
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_local_only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U app -d programa_core_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      ENV: development
+      SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
+      DISABLE_BOOT_SYNC: "1"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: programa_core_test
+      DB_USER: app
+      DB_PASSWORD: app_local_only
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Restore sanitized legacy dump
+        run: python scripts/restaurar_test_legacy_dump.py --allow-reset
+
+      - name: Run db tests
+        run: make PY=python ci-db
+
+  # Empaqueta y sube el tarball MIENTRAS corren los tests, así cuando terminan
+  # el deploy sólo tiene que firmar la URL y mandar el SSM. Antes esto pasaba
+  # después de los tests y costaba ~10 s de camino crítico.
+  #   ⚠ Sube el tarball de un commit cuyos tests todavía no pasaron. Es
+  #     inofensivo: quien decide si se deploya es el job de abajo, que depende
+  #     de `test` y `test-db`. Lo único que queda es un objeto de más en S3.
+  paquete:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Empaquetar y subir a S3
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: scripts/empaquetar_y_subir_deploy.sh "$GITHUB_SHA" "$ROLE_ARN"
+
+  # El freno: sin los tres verdes no se deploya. Antes era un workflow aparte
+  # colgado de `workflow_run`, que esperaba a que el CI TERMINARA de cerrar.
+  deploy:
+    needs: [test, test-db, paquete]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      sha: ${{ github.sha }}
+      ya_subido: true

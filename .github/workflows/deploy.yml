@@ -1,34 +1,55 @@
 name: Deploy to EC2
 
 # Cuando se ejecuta:
-#   - push a main → deploy automático
-#   - manual desde la UI de Actions ("Run workflow") → útil para redeploy
+#   - lo llama ci.yml cuando los tests dieron verde en main (el camino normal)
+#   - manual desde la UI de Actions ("Run workflow") → redeploy sin esperar a nadie
 #
 # Cómo funciona:
-#   1. Empaqueta el repo en tarball (excluye .venv, .git, *.sql, etc.)
-#   2. Sube el tarball a S3 (s3://intela-deploy-<acct>/programa_core_deploy/<sha>.tar.gz)
-#   3. Manda SSM al EC2 que descarga, extrae, pip install -r requirements.txt,
-#      reinicia el Scheduled Task ProgramaCoreApp, y hace health check.
+#   1. Empaqueta el repo en tarball y lo sube a S3 con la key de ESTE commit
+#      (s3://intela-deploy-<acct>/programa_core_deploy/<sha>.tar.gz).
+#      En el camino normal ese paso ya lo hizo el job `paquete` de ci.yml EN
+#      PARALELO con los tests, así que acá se saltea.
+#   2. Manda SSM al EC2 que descarga, extrae, pip install si cambió,
+#      corre las migraciones, reinicia las tareas, y hace health check.
 #
 # Auth: asume el IAM role `programa-core-deploy` via OIDC (sin keys hardcodeadas).
 # El role ARN está en el secret AWS_DEPLOY_ROLE_ARN del repo.
 
 # TMT 2026-08-10 (dueña): *"podemos hacer un future stop para que esto no
-# pase"*. Hasta hoy este workflow arrancaba del MISMO push que el CI y corría
-# EN PARALELO, así que el CI no frenaba nada: el 10/08 el run de `bef582b`
-# quedó rojo y el deploy salió igual, con el código ya en producción. El CI
-# era un aviso, no un freno — y si nadie mira el aviso, no existe.
+# pase"*. Antes este workflow arrancaba del MISMO push que el CI y corría EN
+# PARALELO, así que el CI no frenaba nada: el 10/08 el run de `bef582b` quedó
+# rojo y el deploy salió igual, con el código ya en producción. El CI era un
+# aviso, no un freno — y si nadie mira el aviso, no existe.
 #
-# Ahora el disparador es el CI TERMINADO. Si el CI no pasó, no se deploya.
-#   - `workflow_dispatch` sigue existiendo: redeploy a mano sin esperar a nadie
-#     (y es la salida si un test flaky bloquea un deploy urgente).
-#   - ⚠ El costo: el deploy ahora empieza cuando el CI termina (~4-5 min más).
-#   - ⚠ `workflow_run` sólo dispara desde el workflow de la rama default.
+# TMT 2026-08-27 — de `workflow_run` a WORKFLOW REUSABLE. El freno se mantiene
+# igual (no se deploya sin tests verdes) pero ahora es un `needs:` adentro de
+# ci.yml en vez de un workflow aparte que espera a que el otro TERMINE. Lo que
+# se gana son los ~9 s del salto: GitHub tardaba 4 s en cerrar la corrida del
+# CI, 3 s en despachar el evento y 2 s más en levantar el job.
+#   - Se fue el job `bloqueado`: existía porque un deploy disparado por
+#     `workflow_run` con el CI rojo quedaba en "skipped" — gris, sin mail, o
+#     sea equivalente a que no pase nada. Como job de ci.yml eso ya no puede
+#     pasar: si los tests fallan, el que queda ROJO es el CI mismo.
+#   - Se fue la trampa del `head_sha`: en un `workflow_run`, `github.sha` NO
+#     era el commit testeado sino la punta de la rama al momento del evento.
+#     Ahora el commit entra por `inputs.sha`.
+#   - `workflow_dispatch` sigue existiendo: es la salida si un test flaky
+#     bloquea un deploy urgente.
 on:
-  workflow_run:
-    workflows: ["CI"]
-    branches: [main]
-    types: [completed]
+  workflow_call:
+    inputs:
+      sha:
+        description: El commit a deployar.
+        required: true
+        type: string
+      ya_subido:
+        description: >-
+          true si el tarball de este commit YA está en S3 (lo subió el job
+          `paquete` de ci.yml en paralelo con los tests). Si es false se
+          empaqueta acá, que es lo que pasa en el redeploy a mano.
+        required: false
+        default: false
+        type: boolean
   workflow_dispatch:
 
 permissions:
@@ -51,67 +72,50 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # A mano siempre; automático SÓLO si el CI dio verde.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      github.event.workflow_run.conclusion == 'success'
 
     env:
-      # ⭐ En un `workflow_run`, `github.sha` NO es el commit que se testeó:
-      # apunta a la punta de la rama default cuando se dispara el evento. El
-      # commit real es `workflow_run.head_sha` — deployar otra cosa que la que
-      # el CI aprobó sería exactamente el agujero que estamos tapando.
-      DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+      # Llamado desde ci.yml viene el commit que los tests aprobaron; a mano,
+      # la punta de la rama donde se apretó "Run workflow".
+      DEPLOY_SHA: ${{ inputs.sha || github.sha }}
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-
+      # El OIDC va PRIMERO: sin credenciales no se puede ni firmar la URL, y en
+      # el camino normal ni checkout hace falta (el tarball ya está en S3).
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
           aws-region: us-east-2
 
-      - name: Package repo
-        run: |
-          # Exclusiones: deps locales, git, dumps SQL, archives, caches.
-          # NO incluímos .env (no existe en el repo, vive en el server).
-          tar --exclude='./.venv' --exclude='./venv' \
-              --exclude='./__pycache__' --exclude='./.git' \
-              --exclude='./.pytest_cache' --exclude='./.ruff_cache' \
-              --exclude='./.tw-build' \
-              --exclude='./node_modules' \
-              --exclude='./.github' \
-              --exclude='*.rar' --exclude='./intela12042026.sql' \
-              --exclude='*.pyc' --exclude='*.pyo' \
-              --exclude='./AUDIT_*' --exclude='./BUG_HUNT_*' \
-              --exclude='./E2E_TESTS_*' --exclude='./HALLAZGOS_*' \
-              --exclude='./SMOKE_TEST_*' --exclude='./PLAN_BUG_*' \
-              -czf /tmp/programa_core.tar.gz .
-          ls -lh /tmp/programa_core.tar.gz
+      # Los dos pasos que siguen SÓLO corren en el redeploy a mano. Cuando lo
+      # llama ci.yml, el job `paquete` ya subió el tarball de este commit
+      # mientras corrían los tests, así que acá nos ahorramos el checkout (3 s)
+      # y la subida a S3 (7 s).
+      - name: Checkout
+        if: ${{ inputs.ya_subido != true }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || github.sha }}
 
-      - name: Upload to S3
+      - name: Empaquetar y subir a S3
+        if: ${{ inputs.ya_subido != true }}
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: scripts/empaquetar_y_subir_deploy.sh "$DEPLOY_SHA" "$ROLE_ARN"
+
+      - name: Firmar la URL de descarga
         id: upload
         env:
           ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
         run: |
-          # ⭐ La key va POR COMMIT. Antes era una sola key fija y dos deploys
-          # solapados se pisaban el tarball entre ellos: el que bajaba segundo
-          # se llevaba el código del otro. Con el SHA adentro eso no puede
-          # pasar aunque el `concurrency` de arriba fallara.
-          # El número de cuenta sale del ARN del role (campo 5 de
-          # arn:aws:iam::<cuenta>:role/...) en vez de una llamada a STS: es el
-          # mismo dato y ahorra un viaje de red (~1,5 s) en cada deploy.
+          # Presigned URL para que el EC2 lo baje (más simple que un IAM rol en
+          # el EC2). La key es determinística —el SHA— así que no hace falta que
+          # el job que subió el tarball nos pase nada.
           ACCT=$(printf '%s' "$ROLE_ARN" | cut -d: -f5)
           if [ -z "$ACCT" ]; then
             ACCT=$(aws sts get-caller-identity --query Account --output text)
           fi
           S3_KEY="programa_core_deploy/${DEPLOY_SHA}.tar.gz"
-          aws s3 cp /tmp/programa_core.tar.gz "s3://intela-deploy-${ACCT}/${S3_KEY}" --region us-east-2
-          # Generamos presigned URL para que el EC2 lo descargue (más simple que IAM rol en EC2)
           URL=$(aws s3 presign "s3://intela-deploy-${ACCT}/${S3_KEY}" --expires-in 1800 --region us-east-2)
           echo "url=${URL}" >> "$GITHUB_OUTPUT"
 
@@ -454,22 +458,3 @@ jobs:
             echo "Deploy failed (final status: $STATUS)"
             exit 1
           fi
-
-  # Sin esto, un CI rojo dejaría el deploy en "skipped" — gris, sin mail, y
-  # equivalente a que no pase nada. Este job existe para que el freno se VEA.
-  bloqueado:
-    runs-on: ubuntu-latest
-    # `== 'failure'`, no `!= 'success'`: desde que el CI tiene `concurrency`
-    # (ver ci.yml) un push que pisa a otro deja el CI viejo en `cancelled`, y
-    # eso NO es un freno que haya que avisar — el commit viaja igual dentro del
-    # CI de la punta. Con `!= 'success'` cada push doble mandaba un mail rojo.
-    if: >-
-      github.event_name == 'workflow_run' &&
-      github.event.workflow_run.conclusion == 'failure'
-    steps:
-      - name: Avisar que el deploy NO salió
-        run: |
-          echo "DEPLOY BLOQUEADO: el CI de ${{ github.event.workflow_run.head_sha }} terminó en '${{ github.event.workflow_run.conclusion }}'."
-          echo "El código NO llegó a producción. Arreglá el CI y volvé a pushear,"
-          echo "o corré este workflow a mano (Run workflow) si hay que salir igual."
-          exit 1
