@@ -91,6 +91,8 @@
   .pd .lst{font-size:10px;font-weight:700;white-space:nowrap;margin-left:6px}
   .pd .lst.done{color:#16a34a}
   .pd .lst.tinto{color:#1d4ed8}
+  .pd td.telahead{text-align:left;padding-left:32px;font-size:10.5px;font-weight:700;
+      color:#64748b;text-transform:uppercase;letter-spacing:.04em}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
@@ -334,16 +336,23 @@
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
           </tr>
-          {% for l in p.lineas %}
+          {# TMT 27/08 ("no me separó"): agrupado por TELA — el nombre una
+             vez y sus colores debajo. #}
+          {% for tela, items in p.lineas|groupby('tela') %}
+            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td colspan="6" class="telahead">{{ tela }}</td>
+            </tr>
+            {% for l in items %}
             {% set le = et.lineas.get(l.producto) if et else none %}
             <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              <td class="cod" colspan="2" style="padding-left:32px"><span class="color">{{ l.color }}</span> <span class="prod">{{ l.producto }}</span></td>
-              <td colspan="2" style="text-align:left">{{ l.tela }}
-                {%- if le == 'terminado' %} <span class="lst done">✓ Terminado</span>
-                {%- elif le == 'en_tintura' %} <span class="lst tinto">● En tintura</span>{% endif %}</td>
+              <td class="cod" colspan="2" style="padding-left:44px"><span class="color">{{ l.color }}</span> <span class="prod">{{ l.producto }}</span></td>
+              <td colspan="2" style="text-align:left">
+                {%- if le == 'terminado' %}<span class="lst done">✓ Terminado</span>
+                {%- elif le == 'en_tintura' %}<span class="lst tinto">● En tintura</span>{% endif %}</td>
               <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
               <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }} <span class="u">kg</span>{% else %}—{% endif %}</td>
             </tr>
+            {% endfor %}
           {% endfor %}
           {% if p.descripcion %}
             <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>

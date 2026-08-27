@@ -35,14 +35,17 @@
   .ped-lineas{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid #f1f5f9}
   .ped-lineas li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px}
   .ped-lineas .c{font-weight:700}
-  .ped-lineas .t{color:#64748b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ped-lineas .hueco{flex:1}
+  .ped-lineas li.ped-tela{display:block;border-bottom:none;padding:8px 0 2px;
+      font-size:10.5px;font-weight:700;color:#64748b;text-transform:uppercase;
+      letter-spacing:.04em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ped-lineas .q{white-space:nowrap;font-variant-numeric:tabular-nums}
   .ped-lineas .k{white-space:nowrap;color:#64748b;font-size:11.5px;font-variant-numeric:tabular-nums}
   .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
   .ped-total{font-size:12px;color:#475569}
   .pill.tinto{background:#dbeafe;color:#1e40af}
   /* la etapa de UNA línea: ✓ terminada, ● en tintura (al lado de la tela) */
-  .lst{font-style:normal;font-size:11px;font-weight:700;flex:0 0 auto}
+  .lst{font-style:normal;font-size:10.5px;font-weight:700;flex:0 0 auto;white-space:nowrap}
   .lst.done{color:#16a34a}
   .lst.tinto{color:#1d4ed8}
   /* La tira de etapas del pedido: enviado → en tintura → terminado.
@@ -97,22 +100,27 @@
         </div>
         {% endif %}
       </summary>
+      {# TMT 27/08 ("no me separó"): las líneas van AGRUPADAS por tela — el
+         nombre una sola vez y sus colores debajo, no repetido por renglón. #}
       <ul class="ped-lineas">
-        {% for l in p.lineas %}
+        {% for tela, items in p.lineas|groupby('tela') %}
+        <li class="ped-tela">{{ tela }}</li>
+        {% for l in items %}
         {% set le = et.lineas.get(l.producto) if et else none %}
         <li>
           <span class="c">{{ l.color }}</span>
-          <span class="t">{{ l.tela }}</span>
-          {# El marcador va AFUERA de la tela: la tela se recorta con "…"
-             cuando no entra, y adentro el marcador se cortaba justo él. #}
-          {%- if le == 'terminado' %}<i class="lst done">✓</i>
-          {%- elif le == 'en_tintura' %}<i class="lst tinto">●</i>{% endif %}
+          {# El estado POR RENGLÓN (dueña 27/08): en tintura y terminado son
+             de cada línea; "enviado" es del pedido entero y no se repite. #}
+          {%- if le == 'terminado' %}<i class="lst done">✓ Terminado</i>
+          {%- elif le == 'en_tintura' %}<i class="lst tinto">● En tintura</i>{% endif %}
+          <span class="hueco"></span>
           <span class="q">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span>
           {# En kilos el estimado repetiría el mismo número al lado. #}
           {% if l.unidad != 'kg' %}
           <span class="k">{% if l.kg is not none %}{{ l.kg|num_es(0) }} kg{% else %}—{% endif %}</span>
           {% endif %}
         </li>
+        {% endfor %}
         {% endfor %}
       </ul>
       {# Sin memo → el botón. Con memo, nada: el chip de arriba ya lo dice
