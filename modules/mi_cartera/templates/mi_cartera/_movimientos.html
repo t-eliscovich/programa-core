@@ -76,7 +76,12 @@
           <th>Importe</th>
           <th title="Retención en la fuente que nos retuvo el cliente. Descuenta del saldo igual que un pago, pero no es plata cobrada.">Retenc.</th>
           <th>Abonado</th>
-          <th title="Debajo del saldo, en gris, corre el acumulado leído de arriba hacia abajo">Saldo · acum.</th>
+          {# El rótulo va APILADO ("Saldo" arriba, "· acum." debajo): en una
+             sola línea el encabezado medía 73 px y era LO MÁS ANCHO de su
+             columna (las cifras piden 55) — el rótulo no puede ser el que
+             decide el ancho. Apilado espeja a la celda: saldo grande,
+             acumulado chiquito debajo. #}
+          <th title="Debajo del saldo, en gris, corre el acumulado leído de arriba hacia abajo">Saldo <small>· acum.</small></th>
         </tr>
       </thead>
       <tbody>

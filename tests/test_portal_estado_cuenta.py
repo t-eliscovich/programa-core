@@ -335,7 +335,8 @@ def test_el_acumulado_apilado_es_el_MISMO_para_cliente_y_vendedor():
     le vuelva una columna propia."""
     compartido = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
                   / "_movimientos.html").read_text(encoding="utf-8")
-    assert "Saldo · acum." in compartido
+    # El rótulo va apilado: "Saldo" y, en un <small> debajo, "· acum.".
+    assert "Saldo <small>· acum.</small>" in compartido
     ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
              / "cliente.html").read_text(encoding="utf-8")
     assert "max-width: 560px" not in ficha

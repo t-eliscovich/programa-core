@@ -26,12 +26,17 @@
   .ec th{font-size:8.5px;font-weight:700;letter-spacing:0;text-transform:uppercase;
          color:var(--ink-3);text-align:right;padding:0 0 6px 4px;
          border-bottom:1px solid var(--line);white-space:nowrap}
+  .ec th small{display:block;letter-spacing:0}
   .ec th.l,.ec td.l{text-align:left;padding-left:0}
   /* La celda Factura: el NÚMERO arriba —es como el cliente nombra la factura
      cuando discute un saldo— y debajo, chiquita, la fecha con los días. En
      rojo las dos si está vencida: eso hacía la palabra "Vencida", que ahora
      sobra y se llevó un renglón por fila. */
-  .ec td.fac{line-height:1.15;white-space:nowrap}
+  /* Sin nowrap: la línea de la fecha es la válvula — si una pantalla
+     angosta obliga a ceder, cede esta línea gris y no las cifras. Con la
+     cartera más ancha medida (JUT: retenciones en todas las filas) a 360 px
+     no llega a partirse gracias al sangrado de abajo. */
+  .ec td.fac{line-height:1.15}
   .ec td.fac b{font-weight:600;letter-spacing:-.01em;
                font-variant-numeric:tabular-nums}
   .ec td.fac small{display:block;font-size:9.5px;color:var(--ink-3);
@@ -65,6 +70,13 @@
                padding-top:9px;font-weight:700;font-size:11px}
   .ec tfoot td.l{font-size:8.5px;letter-spacing:.03em;text-transform:uppercase;
                  color:var(--ink-3);font-weight:700}
+  /* En un celular angosto (360 y menos) la tabla se sangra 6 px en el
+     margen de la tarjeta: la cartera más ancha medida pide 311 px y la
+     tarjeta a 360 le da 302 — con el sangrado, 314. Sigue viéndose adentro
+     de la tarjeta. ⚠ Este @media va al final del bloque a propósito. */
+  @media (max-width: 379px){
+    .ec{margin:0 -6px;width:calc(100% + 12px)}
+  }
 
   /* Los tres renglones del cierre, alineados a la derecha como en el dBase. */
   .cierre{margin-top:12px;padding-top:10px;border-top:2px solid var(--ink-3);
