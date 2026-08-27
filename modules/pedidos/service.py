@@ -743,8 +743,18 @@ def por_color(filas: list[dict]) -> list[dict]:
             "codigo": cod,
             "nombre": nombres.get(cod.upper(), ""),
             "variants": fs,
+            "mas_viejo": viejo["mas_viejo"],
             "mas_viejo_es": viejo["mas_viejo_es"],
             "dias_espera": viejo["dias_espera"],
+            # Los kilos, SÓLO para ordenar la tabla. La celda muestra "11 roll ·
+            # 2.000 un" y de ese texto el sorteador saca 11: ordenaba por los
+            # rollos y se comía las unidades. El kilo es la única escala en la
+            # que las dos unidades se comparan (dueña 26/08/2026).
+            "pedido_kg": round(sum(x["pedido_kg"] for x in fs), 1),
+            "stock_kg": round(sum(x["inventario_kg"] for x in fs), 1),
+            "prod_kg_orden": round(sum(x["produccion_kg"] for x in fs), 1),
+            "falta_kg": round(sum(x["faltan_kg"] for x in fs
+                                  if x["faltan_kg"] > 0), 1),
             "mixto": bool(rollos) and bool(unidades),
             "pedido_roll": _s("pedido_d", rollos), "pedido_un": _s("pedido_d", unidades),
             "stock_roll": _s("inventario_d", rollos), "stock_un": _s("inventario_d", unidades),

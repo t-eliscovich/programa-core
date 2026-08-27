@@ -129,15 +129,15 @@
               <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
               <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
-            <td class="{{ 'viejo' if g.dias_espera > 10 else 'muted' }}">{{ g.mas_viejo_es }}</td>
-            <td>{{ celda(g.pedido_roll, g.pedido_un, '—') }}</td>
-            <td>{{ celda(g.stock_roll, g.stock_un, '—') }}</td>
-            <td>{{ celda(g.prod_roll, g.prod_un, '—') }}</td>
-            <td class="{{ 'falta' if g.falta_total > 0 else 'okc' }}">{% if g.falta_total > 0 %}{{ celda(g.falta_roll, g.falta_un, '') }}{% else %}ok{% endif %}</td>
+            <td class="{{ 'viejo' if g.dias_espera > 10 else 'muted' }}" data-sort-value="{{ g.mas_viejo }}">{{ g.mas_viejo_es }}</td>
+            <td data-sort-value="{{ g.pedido_kg }}">{{ celda(g.pedido_roll, g.pedido_un, '—') }}</td>
+            <td data-sort-value="{{ g.stock_kg }}">{{ celda(g.stock_roll, g.stock_un, '—') }}</td>
+            <td data-sort-value="{{ g.prod_kg_orden }}">{{ celda(g.prod_roll, g.prod_un, '—') }}</td>
+            <td class="{{ 'falta' if g.falta_total > 0 else 'okc' }}" data-sort-value="{{ g.falta_kg }}">{% if g.falta_total > 0 %}{{ celda(g.falta_roll, g.falta_un, '') }}{% else %}ok{% endif %}</td>
           </tr>
           {% for f in g.variants %}
             {% set peds = pedidos_por_color.get(f.codigo, []) %}
-            <tr class="vr colv-{{ gi }}">
+            <tr class="vr colv-{{ gi }}" data-fila-hija>
               <td>
                 {% if peds %}
                   <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
@@ -150,16 +150,16 @@
                   <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
                 {% endif %}
               </td>
-              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
+              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ f.mas_viejo_es }}</td>
               <td>{{ f.pedido_d|num_es(0) }} <span class="u">{{ f.u }}</span></td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
               <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}ok{% endif %}</td>
             </tr>
             {% for p in peds %}
-              <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}">
+              <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.codigo }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}" style="margin-left:40px">{{ p.codigo_cliente or p.cliente }}</span></td>
-                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
+                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(0) }} <span class="u">{{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span></td>
                 <td colspan="3" class="npd" style="text-align:left">{{ p.numero }}</td>
               </tr>
@@ -211,25 +211,25 @@
                   <span class="prod">{{ f.codigo }}</span>
                 </button>
               </td>
-              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}">{{ f.mas_viejo_es }}</td>
+              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ f.mas_viejo_es }}</td>
               <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
             </tr>
             {% for p in peds %}
-              <tr class="det" data-grupo="d-{{ f.codigo }}">
+              <tr class="det" data-grupo="d-{{ f.codigo }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
-                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}">{{ p.fecha_es }}</td>
+                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
                 <td colspan="3" class="npd">{{ p.numero }}</td>
               </tr>
             {% endfor %}
             {% if not peds %}
-              <tr class="det" data-grupo="d-{{ f.codigo }}"><td colspan="6" class="muted">Este color no tiene pedidos cargados.</td></tr>
+              <tr class="det" data-grupo="d-{{ f.codigo }}" data-fila-hija><td colspan="6" class="muted">Este color no tiene pedidos cargados.</td></tr>
             {% endif %}
             {% if f.n_ordenes %}
-              <tr class="det" data-grupo="d-{{ f.codigo }}">
+              <tr class="det" data-grupo="d-{{ f.codigo }}" data-fila-hija>
                 <td colspan="6" class="masinfo">
                   <a href="{{ url_for('pedidos.color', codigo=f.codigo) }}">
                     Ver las {{ f.n_ordenes }} {{ 'orden' if f.n_ordenes == 1 else 'órdenes' }} de tinturado de este color</a>
