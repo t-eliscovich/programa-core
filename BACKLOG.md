@@ -340,50 +340,30 @@ La comisión se pagó sobre plata que no entró. Inclinación de la dueña
 ella el detalle antes de implementar (¿resta de la cobranza del mes del
 rebote? ¿y si vuelve a cobrarse después?).
 
-### [M] 50 tests dependen del orden en que corren
-Medido el 13/08 con la suite en orden aleatorio (4 semillas): 50 tests pasan o
-fallan según qué corrió antes, **37 de ellos en `test_mi_cartera.py`** y casi
-todos de permisos/login ("sin permiso → 404"). En el orden de siempre pasan, así
-que hoy están apoyados en algo que les dejó otro test, no en su propio setup.
-Hoy lo tapa `--dist loadfile` (mantiene junto cada archivo); por eso el Makefile
-NO usa `worksteal` aunque sea ~6 s más rápido. Atacarlo por archivo: 37 de 50
-son uno solo, casi seguro es una sola causa. Lista completa y cómo reproducir:
+### [XS] Volver a medir los tests contra el orden, de vez en cuando
+
+⚠ **Re-medido el 26/08/2026: los 50 de la lista del 13/08 YA NO FALLAN.** Cinco
+semillas, en serie y en paralelo con el reparto más agresivo
+(`-n 4 --dist worksteal`): cero. Se arreglaron en el camino, casi seguro con el
+snapshot/restore de hooks que hoy hace la fixture `app` del conftest. El item
+quedó abierto meses sin que nadie volviera a medir.
+
+Lo que sí apareció al re-medir —y se arregló el mismo día— fueron tres tests de
+`test_conciliacion_sesion_orfana_c1379abc.py`: `sesion.tabla_existe()` cachea
+por PROCESO y el primero que preguntaba contestaba por toda la suite. Con la
+base falsa daba `False` y desde ahí banco-v2 redirigía al hub. Ahora hay
+`olvidar_si_existe_la_tabla()` y una fixture autouse que fija la verdad de
+producción.
+
+Lo único que queda es la costumbre: correr la suite barajada cada tanto. Cómo,
+y el atajo para bisecar (dentro del archivo, no entre archivos), en
 `docs/tests_dependientes_del_orden.md`.
 
----
-
-## Decisiones registradas (NO reabrir)
-
-- Las rutas sin control de permisos quedan ABIERTAS a propósito — "está bien
-  que puedan" (05/08, reconfirmado el 09/08). Auditadas una por una el 09/08:
-  de las 26 que se contaban, **doce no eran un agujero** (redirects, el flow
-  de Google que corre antes del login, y las que chequean con un helper). Las
-  demás viven en `modules/usuarios/accesos.py::ACEPTADAS` con el motivo
-  escrito, y un test impide que esa lista se pudra. La lista roja de
-  `/usuarios/accesos` ahora significa "esto apareció y nadie lo miró".
-- Las **Facturas Almacenadas** de Asinfo (documento FCCD, `id_documento` 252)
-  NO entran al programa — dueña, 24/08: *"almacenada no queremos pasar"*. Son
-  unas 15-28 por día ($22k el 24/08, $25k el 13/08) y nunca estuvieron: la
-  card 199 de Metabase trae `id_documento IN (7, 17, 20, 251, 451, 501, 652)`
-  y el 252 no está en esa lista. No es un agujero: es la decisión.
-- **La SEGUNDA casi no se marca al facturar — se deja como está** (dueña,
-  26/08/2026: *"eso lo dejamos como está"*). La calidad del stock vive en el
-  LOTE; la de la venta, en la LÍNEA de factura, que alguien tiene que tildar a
-  mano — y `dfc.id_lote` viene NULL, así que no hay puente. Campo vacío = se
-  asume PRIMERA. Medido: en 12 meses se facturaron 3.509.672 kg y sólo 40.390
-  llevan la marca SEG (**1,15%**), contra un 35% de segunda en la bodega de la
-  lista de saldos. El descuento está limpio (es del cliente, igual en todas las
-  líneas de una factura, tope 18,3%): la segunda se hace bajando el PRECIO
-  BRUTO, −20/−29% según la tela. Quedan 40 líneas / 1.872 kg que dicen
-  "Primera" a precio de segunda y ~1.850 kg de segunda que se fueron entre el
-  18 y el 24/08 sin factura que los explique. Es una decisión, no un pendiente.
-- Compras con kg=0 desde Asinfo: aceptado. Activos sin tipo (~$655k): aceptado.
-- No se cargan más aliases cliente Asinfo↔PC: sucursales por dirección.
-
----
-
-## Inventario rotativo (18/08/2026)
-
+🔴 **Y queda un hallazgo aparte, de PRODUCCIÓN**: `tabla_existe()` también
+cachea el `False` del `except`. Si la app arranca con la base un segundo
+inaccesible, la conciliación v2 queda redirigiendo al hub hasta que alguien
+reinicie el proceso — y no avisa. Es de la familia «algo que no anda y no
+avisa». No se tocó hoy: cambia comportamiento de producción.
 ### [S] La fila no lleva a ningún lado
 En /pedidos el color se abre y muestra quién pidió y qué se está tinturando.
 Acá, cuando algo está en rojo, no hay adónde ir a ver el detalle. El destino

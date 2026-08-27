@@ -365,6 +365,34 @@ def app(_app_de_la_sesion, fake_db, monkeypatch):
         limiter.enabled = limiter_previo
 
 
+@pytest.fixture(autouse=True)
+def _la_migracion_0060_ya_corrio():
+    """`sesion.tabla_existe()` cachea POR PROCESO: el primero que pregunta
+    contesta por todos los tests que vengan atrás.
+
+    Con la base falsa la respuesta salía `False`, y desde ahí toda pantalla de
+    banco-v2 redirigía al hub. Quién preguntaba primero dependía del orden, así
+    que tres tests de `test_conciliacion_sesion_orfana_c1379abc.py` pasaban o
+    fallaban según la semilla — verde en el orden de siempre, rojo con la
+    semilla 4 (26/08/2026). Un CI rojo sin que nadie tocara nada.
+
+    Acá se fija la verdad de producción: la migración 0060 corrió hace meses.
+    El test que quiera probar la rama "falta la migración" que ponga
+    `tabla_existe._cache = False` él mismo — hoy no lo hace ninguno.
+    """
+    try:
+        from modules.conciliacion import sesion as _sesion
+    except Exception:  # pragma: no cover - si el módulo no está, no hay nada que fijar
+        yield
+        return
+    _sesion.olvidar_si_existe_la_tabla()
+    _sesion.tabla_existe._cache = True
+    try:
+        yield
+    finally:
+        _sesion.olvidar_si_existe_la_tabla()
+
+
 @pytest.fixture
 def client(app):
     return app.test_client()

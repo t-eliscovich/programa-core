@@ -11,6 +11,35 @@ pytest -m "not db" -n 4 --dist worksteal --randomly-seed=<SEMILLA>
 para que shufflee por defecto y eso volvería no determinista el CI de todos los
 días. Se instala a mano cuando se quiere hacer esta prueba.)
 
+> ## ✅ RE-MEDIDO EL 26/08/2026 — LOS 50 YA NO FALLAN
+>
+> Cinco semillas, en serie y en paralelo con el reparto más agresivo
+> (`-n 4 --dist worksteal`): **cero** de los 50 de abajo se cae. Se arreglaron
+> solos en el camino, casi seguro con el snapshot/restore de hooks que hoy hace
+> la fixture `app` del conftest (ver su docstring). **La lista de abajo queda
+> como historia, no como pendiente.**
+>
+> Lo que sí apareció al re-medir, y ya está arreglado el mismo día: tres tests
+> de `test_conciliacion_sesion_orfana_c1379abc.py` que fallaban con la
+> **semilla 4**. La causa no era otro archivo — era el orden DENTRO del propio
+> archivo. `modules/conciliacion/sesion.py::tabla_existe()` cachea su respuesta
+> **por proceso** y no se podía tirar desde afuera: el primero que preguntaba
+> contestaba por toda la suite. Si el primero era un test con la base falsa,
+> quedaba `False` y desde ahí toda pantalla de banco-v2 redirigía al hub.
+> Ahora hay `olvidar_si_existe_la_tabla()` y una fixture autouse en el conftest
+> que fija la verdad de producción (la migración 0060 corrió hace meses).
+>
+> **Cómo re-medir** (pytest-randomly no está en `requirements.txt` a propósito):
+>
+> ```
+> pip install pytest-randomly
+> pytest tests/ -q -m "not db" -n 4 --dist worksteal -p randomly --randomly-seed=<N>
+> ```
+>
+> Con un repro determinístico, el atajo que sirvió fue bisecar **dentro** del
+> archivo: `pytest <archivo>::<test_A> <archivo>::<victima>` hasta el par mínimo.
+> Buscar el culpable entre los archivos ANTERIORES fue una vuelta perdida.
+
 **Estos 50 tests pasan o fallan según qué corrió antes.** No es que estén rotos:
 en el orden de siempre pasan. Pero eso significa que hoy no están probando lo
 que dicen probar — están apoyados en algo que les dejó puesto otro test.

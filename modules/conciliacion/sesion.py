@@ -76,8 +76,32 @@ def sha256_bytes(b: bytes) -> str:
 # ─── Detección de migration 0060 ──────────────────────────────────────
 
 
+def olvidar_si_existe_la_tabla() -> None:
+    """Tirar la respuesta cacheada de `tabla_existe`.
+
+    La usa el conftest antes de cada test. El caché es POR PROCESO y no se
+    podía tocar desde afuera, así que en la suite se quedaba con la respuesta
+    que hubiera dado el PRIMER test que pasara por acá, y todos los demás
+    heredaban esa. Ver el comentario de `tabla_existe`.
+    """
+    if hasattr(tabla_existe, "_cache"):
+        del tabla_existe._cache
+
+
 def tabla_existe() -> bool:
-    """¿Corrió la migration 0060? Cacheado por proceso."""
+    """¿Corrió la migration 0060? Cacheado por proceso.
+
+    ⚠ El caché es del PROCESO y no vence: el primero que pregunta contesta por
+    todos. En producción está bien —la migración corrió hace meses y no se va a
+    ir—, pero en la suite hacía que tres tests de este flujo pasaran o fallaran
+    según qué corriera antes: si el primero en preguntar era uno con la base
+    falsa, quedaba `False` y desde ahí toda pantalla de banco-v2 redirigía al
+    hub. Salía a la luz sólo con el orden barajado (semilla 4 del 26/08/2026) y
+    dejaba el CI rojo sin que nadie hubiera tocado nada.
+
+    Por eso existe `olvidar_si_existe_la_tabla()`, que el conftest llama antes
+    de cada test.
+    """
     if hasattr(tabla_existe, "_cache"):
         return tabla_existe._cache
     try:
