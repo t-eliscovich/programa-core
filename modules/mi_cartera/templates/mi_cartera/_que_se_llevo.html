@@ -24,14 +24,20 @@
 {% set sin_kg = det.totales.kg is none %}
 <style>
   .qsl{width:100%;border-collapse:collapse;font-size:12.5px}
-  .qsl th{text-align:right;font-weight:600;color:#64748b;font-size:10.5px;
-          text-transform:uppercase;letter-spacing:.03em;padding:6px 3px;
+  .qsl th{text-align:right;font-weight:600;color:#64748b;font-size:9.5px;
+          text-transform:uppercase;letter-spacing:0;padding:6px 2px 6px 4px;
           border-bottom:1px solid #e2e8f0;white-space:nowrap}
   .qsl th.l,.qsl td.l{text-align:left}
-  .qsl td{text-align:right;padding:7px 3px;border-bottom:1px solid #f1f5f9;
+  .qsl td{text-align:right;padding:7px 2px 7px 4px;border-bottom:1px solid #f1f5f9;
           white-space:nowrap;font-variant-numeric:tabular-nums}
-  .qsl td.l b{display:block;font-weight:600;color:#0f172a;white-space:normal}
-  .qsl td.l small{display:block;color:#64748b;font-size:11px;margin-top:1px}
+  /* 🚨 27/08/2026: el `nowrap` de arriba alcanzaba también a la celda de la
+     tela, así que "NEO · NEGRO OSCURO · Primera" no se partía nunca y la
+     columna TOTAL se salía de la tarjeta (60 px afuera en un celular de 360).
+     La celda de la tela SÍ se parte: para eso está apilada. */
+  .qsl td.l{white-space:normal}
+  .qsl td.l b{display:block;font-weight:600;color:#0f172a}
+  .qsl td.l small{display:block;color:#64748b;font-size:10.5px;margin-top:1px;
+                  line-height:1.3}
   .qsl tfoot td{border-bottom:0;padding:3px;color:#64748b}
   .qsl tfoot tr.tot td{font-weight:700;color:#0f172a;
                        border-top:1px solid #e2e8f0;padding-top:7px}

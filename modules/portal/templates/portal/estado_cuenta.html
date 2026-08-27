@@ -104,22 +104,11 @@
     border:1px solid var(--line);border-radius:12px;padding:11px 14px;
     font-size:14.5px;font-weight:600;color:var(--ink)}
 
-  /* 🚨 LA TABLA EN UN TELÉFONO. Dueña: *"se ven feas las facturas"*.
-     Con retenciones Y abonos la tabla dibuja SEIS columnas de números que no
-     se pueden partir, y a 390 px se sale por la derecha: el saldo, que es el
-     dato, queda cortado.
-
-     Se esconde la columna ACUM. —el saldo acumulado leído de arriba hacia
-     abajo—, que es la que menos le dice al cliente: es una ayuda para seguir
-     la aritmética, y el total ya está abajo y arriba del todo. Las seis
-     columnas siguen enteras en la hoja para imprimir y en el archivo, que es
-     donde se compara contra el papel de la oficina.
-
-     ⚠ Va acá y no en el parcial compartido: la ficha del VENDEDOR no se toca.
-     Él sí usa el acumulado, y es su pantalla de trabajo. */
-  @media (max-width: 560px){
-    .ec th:last-child, .ec td:last-child{display:none}
-  }
+  /* La tabla ya no dibuja el acumulado como columna propia: desde el
+     27/08/2026 corre chiquito bajo el saldo (parcial compartido) y entra
+     entera hasta en un celular de 360. El parche que escondía la columna
+     ACUM. en pantallas angostas se fue con el problema: si hubiera quedado,
+     ahora escondería la columna del SALDO, que es el dato. */
   /* Y si aun así no entra —un importe de siete cifras, un teléfono viejo—,
      que la tabla se deslice adentro de su tarjeta en vez de empujar la
      pantalla entera. */

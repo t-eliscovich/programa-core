@@ -313,25 +313,29 @@ def test_hay_UN_solo_boton_para_el_estado_de_cuenta():
                                     PANTALLA.index("/estado-de-cuenta/imprimir")]
 
 
-def test_en_el_celular_no_se_dibuja_la_columna_del_acumulado():
-    """🚨 Dueña: *"se ven feas las facturas"*. Con retenciones Y abonos la
-    tabla dibuja SEIS columnas de números que no se pueden partir, y a 390 px
-    se sale por la derecha: el saldo —el dato— queda cortado.
+def test_ya_no_se_esconde_ninguna_columna_en_el_celular():
+    """🚨 Dueña 27/08/2026: *"todo tiene que entrar y no salirse así de feo"*.
 
-    Se esconde `Acum.`, el saldo acumulado, que es la que menos le dice al
-    cliente: es una ayuda para seguir la aritmética y el total ya está arriba y
-    abajo. En la hoja para imprimir y en el archivo van las seis, porque ahí se
-    compara contra el papel de la oficina."""
-    assert "@media (max-width: 560px)" in PANTALLA
-    assert ".ec th:last-child, .ec td:last-child{display:none}" in PANTALLA
+    El parche del 24/08 escondía la columna ACUM. en pantallas angostas porque
+    seis columnas no entraban. Desde el 27/08 el acumulado corre en un <small>
+    bajo el saldo (parcial compartido `_movimientos.html`) y la tabla entra
+    entera hasta en un celular de 360 px. Si el parche hubiera quedado, ahora
+    escondería la columna del SALDO — el dato.
+
+    La red de seguridad sí queda: si un caso extremo no entra, la tabla se
+    desliza adentro de su tarjeta en vez de salirse por la derecha."""
+    assert "last-child{display:none}" not in PANTALLA
+    assert ".card:has(> .ec)" in PANTALLA
 
 
-def test_esconder_la_columna_NO_le_toca_la_pantalla_al_vendedor():
-    """Él sí usa el acumulado, y es su pantalla de trabajo. Por eso la regla
-    vive en el portal y no en el parcial compartido."""
+def test_el_acumulado_apilado_es_el_MISMO_para_cliente_y_vendedor():
+    """Dueña 24/08: *"que sea más parecido a como ve el cliente el vendedor"*
+    — no parecido: el mismo. El apilado vive en el parcial compartido, así que
+    las dos pantallas lo dibujan igual; este test impide que a una de las dos
+    le vuelva una columna propia."""
     compartido = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-                  / "_ficha_css.html").read_text(encoding="utf-8")
-    assert "last-child{display:none}" not in compartido
+                  / "_movimientos.html").read_text(encoding="utf-8")
+    assert "Saldo · acum." in compartido
     ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
              / "cliente.html").read_text(encoding="utf-8")
     assert "max-width: 560px" not in ficha

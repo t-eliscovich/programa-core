@@ -429,7 +429,7 @@ def test_la_ficha_tiene_las_columnas_del_estado_de_cuenta(ficha):
     cifras entren cómodas. Ningún dato se pierde — se reacomodan.
     """
     assert _encabezados(ficha) == ["Factura", "Importe", "Retenc.", "Abonado",
-                                   "Saldo", "Acum."]
+                                   "Saldo · acum."]
     assert "Totales (3)" in ficha
 
     # La fecha sigue estando, adentro de la celda de la factura, con los días.
@@ -472,7 +472,7 @@ def test_las_columnas_son_fijas_aunque_el_cliente_no_tenga_el_dato(
     html = vendedor_logueado.get("/mi-cartera/cliente/TDV").data.decode()
 
     assert _encabezados(html) == ["Factura", "Importe", "Retenc.", "Abonado",
-                                  "Saldo", "Acum."]
+                                  "Saldo · acum."]
     # 3 filas + el pie, en las dos columnas, todas con guión.
     tabla = _tabla(html)
     assert tabla.count('class="mono ret"') == 4
@@ -490,12 +490,18 @@ def test_el_acumulado_corre_y_la_ultima_fila_da_el_saldo(ficha):
     """
     import re
 
-    nums = re.findall(r">\s*([\d.]+,\d\d)\s*</td>", ficha)
-    # (importe, abonado, saldo, acum) por fila, en orden. La tercera factura
-    # no tiene abono: ahí va un guión, así que no aporta número.
+    # Desde el 27/08/2026 el acumulado corre en un <small> DENTRO de la celda
+    # del saldo (como columna propia la tabla se salía de la pantalla del
+    # celular). Se leen todas las cifras de la tabla en orden: el orden por
+    # fila sigue siendo importe, abonado, saldo, acum.
+    nums = re.findall(r"([\d.]+,\d\d)", _tabla(ficha))
+    # La tercera factura no tiene abono: ahí va un guión, que no aporta número.
     assert nums[0:4] == ["1.000,00", "1.000,00", "0,00", "0,00"]
     assert nums[4:8] == ["500,00", "200,00", "300,00", "300,00"]
     assert nums[8:11] == ["250,00", "250,00", "550,00"]
+    # Y la estructura: el acumulado de la última fila va apilado bajo el saldo.
+    assert re.search(r'class="mono fuerte">250,00\s*<small[^>]*>550,00</small>',
+                     _tabla(ficha))
     # Y el pie, con el total de la oficina.
     assert "Totales (3)" in ficha
     assert "1.750,00" in ficha
@@ -547,7 +553,7 @@ def test_la_retencion_es_una_columna_y_cierra_la_aritmetica(vendedor_logueado, m
 
     # Y la fila cierra: importe − retención − abono = saldo.
     fila_101 = next(f for f in filas if "500,00" in f)
-    numeros = re.findall(r">\s*([\d.]+,\d\d)\s*</td>", fila_101)
+    numeros = re.findall(r"([\d.]+,\d\d)", fila_101)
     assert numeros[:4] == ["500,00", "98,76", "200,00", "201,24"]
 
 

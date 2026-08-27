@@ -23,8 +23,8 @@
      AGU: la tabla pide 332 px de los 362 que deja un iPhone de 390. */
   .ec{width:100%;border-collapse:collapse;font-size:11px;
       font-variant-numeric:tabular-nums}
-  .ec th{font-size:8.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;
-         color:var(--ink-3);text-align:right;padding:0 0 6px 6px;
+  .ec th{font-size:8.5px;font-weight:700;letter-spacing:0;text-transform:uppercase;
+         color:var(--ink-3);text-align:right;padding:0 0 6px 4px;
          border-bottom:1px solid var(--line);white-space:nowrap}
   .ec th.l,.ec td.l{text-align:left;padding-left:0}
   /* La celda Factura: el NÚMERO arriba —es como el cliente nombra la factura
@@ -37,8 +37,12 @@
   .ec td.fac small{display:block;font-size:9.5px;color:var(--ink-3);
                    margin-top:3px;font-weight:500;letter-spacing:0}
   .ec td.fac small.venc{color:var(--bad)}
-  .ec td{text-align:right;padding:8px 0 8px 6px;border-bottom:1px solid var(--line);
+  .ec td{text-align:right;padding:8px 0 8px 4px;border-bottom:1px solid var(--line);
          vertical-align:top;line-height:1.25}
+  /* Y si aun así no entra —un importe de siete cifras, un teléfono viejo—,
+     que la tabla se deslice adentro de su tarjeta en vez de salirse por la
+     derecha y quedar cortada (que es lo que pasaba con la columna Acum.). */
+  .card:has(> .ec){overflow-x:auto}
   /* Abonado es un dato de CONTRASTE, no un protagonista: se lee contra el
      importe de al lado. Va en gris, como en la hoja de la oficina. */
   .ec td.ab{color:var(--ink-2)}
