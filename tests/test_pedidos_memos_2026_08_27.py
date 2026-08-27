@@ -368,3 +368,14 @@ def test_el_vendedor_manda_lo_suyo_y_queda_registrado_su_usuario(app, fake_db):
                    data={"numero": "PDCL-26438"})
     assert r.status_code == 302
     assert env.call_args.kwargs["enviado_por"] == "patricio"
+
+
+def test_un_pedido_terminado_muestra_terminado(app, fake_db):
+    """La X de la fábrica (dueña 27/08): cuando el memo se marca terminado,
+    la oficina lo ve como TERMINADO — ni botón ni 'en proceso'."""
+    c = _login(app, fake_db)
+    r = _get_corte_pedido(c, estados={
+        "PDCL-26401": {"estado": "terminado", "en_proceso_por": "jonathan"}})
+    body = r.get_data(as_text=True)
+    assert "TERMINADO" in body
+    assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón

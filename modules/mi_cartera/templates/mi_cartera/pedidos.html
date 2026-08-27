@@ -57,7 +57,8 @@
         <span class="ped-chev" aria-hidden="true"></span>
         <span class="ped-num">{{ p.numero }}</span>
         <span class="ped-cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
-        {% if m and m.estado == 'en_proceso' %}<span class="pill good">En proceso</span>
+        {% if m and m.estado == 'terminado' %}<span class="pill good">Terminado</span>
+        {% elif m and m.estado == 'en_proceso' %}<span class="pill good">En proceso</span>
         {% elif m %}<span class="pill warn">Enviado</span>{% endif %}
         <span class="ped-fecha">{{ p.fecha_es }}</span>
       </summary>

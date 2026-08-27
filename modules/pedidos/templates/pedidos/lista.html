@@ -80,6 +80,7 @@
   .pd .memo{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
   .pd .memo.env{background:#e0e7ff;color:#3730a3}
   .pd .memo.enproc{background:#dcfce7;color:#166534}
+  .pd .memo.term{background:#f1f5f9;color:#475569}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
@@ -296,7 +297,9 @@
               · {{ p.total_kg|num_es(0) }} <span class="u">kg{% if not p.kg_completo %} + un{% endif %}</span></td>
             <td class="no-print">
               {% set m = memo_estados.get(p.numero) %}
-              {% if m and m.estado == 'en_proceso' %}
+              {% if m and m.estado == 'terminado' %}
+                <span class="memo term">TERMINADO</span>
+              {% elif m and m.estado == 'en_proceso' %}
                 <span class="memo enproc">EN PROCESO</span>
               {% elif m %}
                 <span class="memo env">ENVIADO</span>
