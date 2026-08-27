@@ -51,7 +51,7 @@ def _armar(monkeypatch, asinfo_rows, pc_rows, contesto=True):
     def fake_execute(sql, params=None, conn=None):
         if "UPDATE scintela.cliente" in sql:
             capturado["updates"].append((sql, params))
-            return len(params or []) // 7  # aprox: filas del VALUES
+            return len(params or []) // 9  # aprox: filas del VALUES
         return 1
 
     monkeypatch.setattr(db, "execute", fake_execute)
@@ -105,7 +105,7 @@ def test_pisa_nombre_y_ruc_y_rellena_telefono_vacio(monkeypatch):
     # descuentos en Asinfo, el descuento viaja en None y COALESCE lo ignora)
     assert params[0] == "sync-asinfo"
     assert list(params[1:]) == ["AAA", "PEREZ JUAN", "1712345678001",
-                                "0984042960", None, None, None]
+                                "0984042960", None, None, None, None, None]
     assert r["altas"] == [] and r["conflictos"] == []
 
 
@@ -221,7 +221,7 @@ def test_el_sync_rellena_el_descuento_vacio(monkeypatch):
     assert "descuento = COALESCE(v.descuento::numeric, c.descuento)" in sql
     # el descuento viaja como TEXTO: si TODAS las filas fueran NULL, Postgres
     # no podría inferir el tipo de la columna del VALUES
-    assert list(params[1:]) == ["AAA", None, None, None, "9.0", None, None]
+    assert list(params[1:]) == ["AAA", None, None, None, "9.0", None, None, None, None]
     assert r["descuentos_puestos"] == 1
     assert r["descuentos_pisados"] == 0          # estaba vacío, no se pisó nada
     assert r["desc_cambiado"] == [
@@ -237,7 +237,7 @@ def test_el_sync_rellena_el_descuento_en_cero(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, "12.0",
-                                              None, None]
+                                              None, None, None, None]
     assert r["descuentos_puestos"] == 1
     assert r["descuentos_pisados"] == 0     # cero cuenta como vacío, no como pisado
 
@@ -251,7 +251,7 @@ def test_asinfo_pisa_el_descuento_cargado_y_guarda_el_anterior(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert list(cap["updates"][0][1][1:]) == ["CAL", None, None, None, "14.0",
-                                              None, None]
+                                              None, None, None, None]
     assert r["descuentos_pisados"] == 1
     # el valor ANTERIOR queda registrado: es la forma de volver atrás
     assert r["desc_cambiado"] == [
@@ -346,7 +346,7 @@ def test_el_sync_pisa_el_vendedor_y_guarda_el_anterior(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
-                                              "BED", None]
+                                              "BED", None, None, None]
     # el valor ANTERIOR queda registrado: es la forma de volver atrás
     assert r["vend_cambiado"] == [
         {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": "PPR", "ahora": "BED"}
@@ -383,7 +383,7 @@ def test_vend_rellena_el_vacio_sin_campanita(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
-                                              "RMY", None]
+                                              "RMY", None, None, None]
     assert r["vend_cambiado"] == [
         {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": None, "ahora": "RMY"}
     ]
@@ -429,7 +429,7 @@ def test_la_casa_si_quita_el_vendedor_cuando_se_decide(monkeypatch):
     r = sa.sincronizar()
     # '' viaja en el VALUES y el CASE del UPDATE lo vuelve NULL
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
-                                              "", None]
+                                              "", None, None, None]
     assert r["vend_cambiado"] == [
         {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": "BED", "ahora": None}
     ]
@@ -452,7 +452,7 @@ def test_el_sync_pisa_la_direccion_y_el_vacio_de_asinfo_no_borra(monkeypatch):
     r = sa.sincronizar()
     assert len(cap["updates"]) == 1
     assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
-                                              None, "BARRIO LA JOSEFINA LOTE 217"]
+                                              None, "BARRIO LA JOSEFINA LOTE 217", None, None]
     assert r["direcciones_cambiadas"] == 1
     assert r["dir_cambiado"] == [
         {"cod": "AAA", "antes": "CALLE VIEJA 1",
@@ -487,6 +487,57 @@ def test_alta_de_la_casa_nace_sin_vendedor(monkeypatch):
     sa.sincronizar()
     assert cap["altas"][0]["vend"] is None
     assert cap["altas"][0]["direccion1"] is None
+
+
+def test_el_sync_pisa_provincia_y_canton_y_el_vacio_no_borra(monkeypatch):
+    """27/08 (segunda pasada): provincia y cantón también vienen de Asinfo
+    (ciudad → provincia). Lo de PC venía del dBase truncado a ~10 letras."""
+    asinfo = [
+        {"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN", "tel1": "", "tel2": "",
+         "provincia": "PICHINCHA", "canton": "QUITO"},
+        {"cod": "BBB", "ruc": "", "nombre": "GOMEZ ANA", "tel1": "", "tel2": "",
+         "provincia": "", "canton": ""},               # Asinfo no sabe
+    ]
+    pc = [
+        {"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN", "ruc": "",
+         "telefono": "1", "vend": None, "direccion1": "",
+         "provincia": "PICHINCHA®", "canton": "QUITO    D"},
+        {"id_cliente": 2, "cod": "BBB", "nombre": "GOMEZ ANA", "ruc": "",
+         "telefono": "1", "vend": None, "direccion1": "",
+         "provincia": "SE QUEDA", "canton": "SE QUEDA"},
+    ]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    assert len(cap["updates"]) == 1
+    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
+                                              None, None, "PICHINCHA", "QUITO"]
+    assert r["geo_cambiadas"] == 2
+    assert r["geo_cambiado"] == [
+        {"cod": "AAA", "campo": "canton", "antes": "QUITO    D", "ahora": "QUITO"},
+        {"cod": "AAA", "campo": "provincia", "antes": "PICHINCHA®",
+         "ahora": "PICHINCHA"},
+    ]
+
+
+def test_provincia_igual_salvo_espacios_no_toca(monkeypatch):
+    asinfo = [{"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN", "tel1": "",
+               "tel2": "", "provincia": "Santo Domingo", "canton": "quito"}]
+    pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN", "ruc": "",
+           "telefono": "1", "vend": None, "direccion1": "",
+           "provincia": "SANTO  DOMINGO", "canton": "QUITO"}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    sa.sincronizar()
+    assert cap["updates"] == []
+
+
+def test_alta_nueva_viene_con_provincia_y_canton(monkeypatch):
+    asinfo = [{"cod": "VA2", "ruc": "1721669206001", "nombre": "VELIZ LUIS",
+               "tel1": "", "tel2": "", "provincia": "TUNGURAHUA",
+               "canton": "AMBATO"}]
+    cap = _armar(monkeypatch, asinfo, [])
+    sa.sincronizar()
+    assert cap["altas"][0]["provincia"] == "TUNGURAHUA"
+    assert cap["altas"][0]["canton"] == "AMBATO"
 
 
 # ─── el hook del auto-create en la carga de facturas ────────────────────────

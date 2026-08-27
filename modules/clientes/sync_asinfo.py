@@ -22,6 +22,11 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
     en `ubicacion.direccion1` vía `direccion_empresa.id_ubicacion` (medido
     27/08: 3.641 de 3.649 la tienen). Se pisa `direccion1`; si Asinfo no
     tiene, la ficha queda como está.
+  · PROVINCIA y CANTÓN (agregados el mismo 27/08, segunda pasada): salen de
+    `direccion_empresa.id_ciudad` → `ciudad` (el cantón) → `provincia`. Lo
+    de PC venía del dBase truncado a ~10 letras y con typos — tanto que el
+    reporte por grupos tiene `_normalizar_provincia()` para adivinarla. Se
+    pisan como la dirección; PC guarda varchar(50) y Asinfo mide ≤32.
   · El vendedor vive en `cliente.id_agente_comercial` → `usuario.codigo`,
     y los códigos NO coinciden solos con el `vend` de PC: hay mapa
     (`_VEND_ASINFO_A_PC` — DEB es BED, DENNYS es DJA, ESTEFY es EVB, y
@@ -88,7 +93,9 @@ SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
        LTRIM(RTRIM(COALESCE(d.telefono2, '')))               AS tel2,
        LTRIM(RTRIM(COALESCE(ld.nombre, '')))                 AS lista_desc,
        LTRIM(RTRIM(COALESCE(u.codigo, '')))                  AS agente,
-       LTRIM(RTRIM(COALESCE(ub.direccion1, '')))             AS dir1
+       LTRIM(RTRIM(COALESCE(ub.direccion1, '')))             AS dir1,
+       LTRIM(RTRIM(COALESCE(pr.nombre, '')))                 AS provincia,
+       LTRIM(RTRIM(COALESCE(ci.nombre, '')))                 AS canton
   FROM empresa e
   LEFT JOIN direccion_empresa d
          ON d.id_empresa = e.id_empresa
@@ -96,6 +103,10 @@ SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
         AND d.activo = 1
   LEFT JOIN ubicacion ub
          ON ub.id_ubicacion = d.id_ubicacion
+  LEFT JOIN ciudad ci
+         ON ci.id_ciudad = d.id_ciudad
+  LEFT JOIN provincia pr
+         ON pr.id_provincia = ci.id_provincia
   LEFT JOIN cliente cl
          ON cl.id_empresa = e.id_empresa
   LEFT JOIN lista_descuentos ld
@@ -295,6 +306,8 @@ def _sincronizar(usuario: str) -> dict:
             "desc": descuento_de_lista(f.get("lista_desc")),
             "agente": str(f.get("agente") or "").strip()[:30],
             "dir": str(f.get("dir1") or "").strip()[:200],
+            "provincia": str(f.get("provincia") or "").strip()[:50],
+            "canton": str(f.get("canton") or "").strip()[:50],
         }
     # Un código que Asinfo tiene repetido no se puede sincronizar: no hay
     # forma de saber cuál de las dos empresas es "la" del código.
@@ -304,7 +317,7 @@ def _sincronizar(usuario: str) -> dict:
     # ── Lado PC ─────────────────────────────────────────────────────────
     pc_rows = db.fetch_all(
         "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, "
-        "       telefono, descuento, vend, direccion1 "
+        "       telefono, descuento, vend, direccion1, provincia, canton "
         "FROM scintela.cliente"
     ) or []
     pc_por_cod = {r["cod"]: r for r in pc_rows if r.get("cod")}
@@ -322,6 +335,7 @@ def _sincronizar(usuario: str) -> dict:
     vend_cambiado: list[dict] = []
     agentes_raros: list[dict] = []
     dir_cambiado: list[dict] = []
+    geo_cambiado: list[dict] = []
     for cod, a in por_cod.items():
         p = pc_por_cod.get(cod)
         if p is None:
@@ -365,10 +379,26 @@ def _sincronizar(usuario: str) -> dict:
                 "antes": ((p.get("direccion1") or "").strip() or None),
                 "ahora": dir_nueva,
             })
+        # Provincia y cantón: mismas reglas que la dirección (27/08, segunda
+        # pasada del día). Lo de PC venía del dBase truncado a ~10 letras.
+        prov_nueva = a["provincia"] if (
+            a["provincia"] and _norm_dir(a["provincia"]) != _norm_dir(p.get("provincia"))
+        ) else None
+        canton_nuevo = a["canton"] if (
+            a["canton"] and _norm_dir(a["canton"]) != _norm_dir(p.get("canton"))
+        ) else None
+        for campo, nuevo, viejo in (("provincia", prov_nueva, p.get("provincia")),
+                                    ("canton", canton_nuevo, p.get("canton"))):
+            if nuevo is not None:
+                geo_cambiado.append({
+                    "cod": cod, "campo": campo,
+                    "antes": ((viejo or "").strip() or None), "ahora": nuevo,
+                })
         if (nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None
-                or vend_nuevo is not None or dir_nueva is not None):
+                or vend_nuevo is not None or dir_nueva is not None
+                or prov_nueva is not None or canton_nuevo is not None):
             cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo,
-                            vend_nuevo, dir_nueva))
+                            vend_nuevo, dir_nueva, prov_nueva, canton_nuevo))
 
     actualizados = _aplicar_cambios(cambios, usuario) if cambios else 0
 
@@ -417,6 +447,8 @@ def _sincronizar(usuario: str) -> dict:
         "agentes_raros": sorted(agentes_raros, key=lambda d: d["cod"]),
         "direcciones_cambiadas": len(dir_cambiado),
         "dir_cambiado": sorted(dir_cambiado, key=lambda d: d["cod"]),
+        "geo_cambiadas": len(geo_cambiado),
+        "geo_cambiado": sorted(geo_cambiado, key=lambda d: (d["cod"], d["campo"])),
         "sin_tocar": len(por_cod) - len(cambios) - len(altas) - len(conflictos),
     }
     _guardar_log(usuario, reporte)
@@ -426,7 +458,7 @@ def _sincronizar(usuario: str) -> dict:
 def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
     """UN solo UPDATE con VALUES — un viaje por fila a RDS ya tiró un 502
     en el cron de mails (TMT 2026-08-03); acá el primer pase toca ~3.400."""
-    marcadores = ",".join(["(%s, %s, %s, %s, %s, %s, %s)"] * len(cambios))
+    marcadores = ",".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(cambios))
     planos = [
         (str(v) if (i == 4 and v is not None) else v)
         for fila in cambios for i, v in enumerate(fila)
@@ -444,10 +476,13 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
                            WHEN v.vend = '' THEN NULL
                            ELSE v.vend END,
                direccion1 = COALESCE(v.direccion1, c.direccion1),
+               provincia = COALESCE(v.provincia, c.provincia),
+               canton   = COALESCE(v.canton, c.canton),
                fecha_modifica   = CURRENT_TIMESTAMP,
                usuario_modifica = %s
           FROM (VALUES {marcadores})
-               AS v(cod, nombre, ruc, telefono, descuento, vend, direccion1)
+               AS v(cod, nombre, ruc, telefono, descuento, vend, direccion1,
+                    provincia, canton)
          WHERE UPPER(TRIM(c.codigo_cli)) = v.cod
         """,
         tuple([usuario[:60], *planos]),
@@ -465,6 +500,8 @@ def _alta(a: dict, usuario: str) -> bool:
             codigo_cli=a["cod"], nombre=a["nombre"], ruc=a["ruc"] or None,
             telefono=a["tel"] or None, descuento=a.get("desc"),
             vend=vend_alta or None, direccion1=a.get("dir") or None,
+            provincia=a.get("provincia") or None,
+            canton=a.get("canton") or None,
             usuario=usuario[:50],
         )
     except Exception as e:  # noqa: BLE001 — una alta rota no frena las demás
@@ -583,7 +620,8 @@ def _para_log(reporte: dict) -> dict:
     """
     chico = dict(reporte)
     for campo in ("desc_cambiado", "listas_raras", "conflictos",
-                  "vend_cambiado", "agentes_raros", "dir_cambiado"):
+                  "vend_cambiado", "agentes_raros", "dir_cambiado",
+                  "geo_cambiado"):
         filas = chico.get(campo)
         if isinstance(filas, list) and len(filas) > 300:
             chico[campo] = filas[:300]

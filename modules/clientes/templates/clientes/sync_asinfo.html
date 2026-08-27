@@ -5,7 +5,7 @@
 
 {% block content %}
 <div class="max-w-4xl">
-  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo cada hora de 07:00 a 19:00 — nombre, RUC, descuento, vendedor y dirección se pisan con Asinfo; cupo y teléfono se conservan') }}
+  {{ page_hero('Sync de clientes con Asinfo', 'Corre solo cada hora de 07:00 a 19:00 — nombre, RUC, descuento, vendedor, dirección, provincia y cantón se pisan con Asinfo; cupo y teléfono se conservan') }}
 
   <form method="post" action="{{ url_for('clientes_sync_asinfo.correr') }}" class="mt-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -183,6 +183,7 @@
           <th class="px-4 py-3 text-right font-medium">Descuentos de Asinfo</th>
           <th class="px-4 py-3 text-right font-medium">Vendedores</th>
           <th class="px-4 py-3 text-right font-medium">Direcciones</th>
+          <th class="px-4 py-3 text-right font-medium">Prov./cantón</th>
           <th class="px-4 py-3 text-left font-medium">Altas</th>
           <th class="px-4 py-3 text-right font-medium">Conflictos</th>
           <th class="px-4 py-3 text-left font-medium">Estado</th>
@@ -197,12 +198,13 @@
           <td class="px-4 py-2 text-right">{{ c.reporte.get('descuentos_puestos', '—') }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('vend_cambiado', []) | length }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('direcciones_cambiadas', '—') }}</td>
+          <td class="px-4 py-2 text-right">{{ c.reporte.get('geo_cambiadas', '—') }}</td>
           <td class="px-4 py-2 font-mono text-xs">{{ ', '.join(c.reporte.get('altas', [])) or '—' }}</td>
           <td class="px-4 py-2 text-right">{{ c.reporte.get('conflictos', []) | length }}</td>
           <td class="px-4 py-2">{% if c.ok %}<span class="text-emerald-600 dark:text-emerald-400">✓</span>{% else %}<span class="text-red-600 dark:text-red-400" title="{{ c.reporte.get('error','') }}">✗ {{ c.reporte.get('error','')[:60] }}</span>{% endif %}</td>
         </tr>
         {% else %}
-        <tr><td colspan="9" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
+        <tr><td colspan="10" class="px-4 py-6 text-center text-slate-400">Todavía no corrió nunca.</td></tr>
         {% endfor %}
       </tbody>
     </table>
@@ -210,7 +212,8 @@
 
   <p class="mt-4 text-xs text-slate-400">
     Qué hace: pisa <strong>nombre</strong> (formato fiscal de Asinfo), <strong>RUC</strong>,
-    <strong>descuento</strong>, <strong>vendedor</strong> y <strong>dirección</strong> con lo
+    <strong>descuento</strong>, <strong>vendedor</strong>, <strong>dirección</strong>,
+    <strong>provincia</strong> y <strong>cantón</strong> con lo
     que dice Asinfo; rellena <strong>teléfono</strong> sólo si en la ficha está vacío y el
     de Asinfo es real. Lo que Asinfo no sabe no se toca: clientes sin lista de descuento
     (o con una que no se entiende), sin dirección, o con un agente que no está en el mapa

@@ -57,6 +57,7 @@ def correr():
             f"({r.get('descuentos_pisados', 0)} pisaron el de la ficha), "
             f"{len(r.get('vend_cambiado') or [])} vendedores, "
             f"{r.get('direcciones_cambiadas', 0)} direcciones, "
+            f"{r.get('geo_cambiadas', 0)} provincias/cantones, "
             f"altas: {altas}, {len(r.get('conflictos') or [])} conflictos.",
             "ok",
         )
