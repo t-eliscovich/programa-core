@@ -225,15 +225,14 @@ def _vend_a_escribir(pc_vend: str | None, agente: str | None) -> str | None:
         return None
     actual = (pc_vend or "").strip().upper()
     if nuevo == "":
-        # La casa: sólo hay algo que hacer si la ficha tiene vendedor, y
-        # sólo si la decisión dice que la casa lo quita.
-        return "" if (actual and _INT_QUITA_VENDEDOR) else None
+        # La casa NUNCA borra al vendedor de la ficha — decisión de Tamara
+        # (27/08/2026, con los 210 casos medidos a la vista): los clientes
+        # con X son de Intela, los de DJA también, los de los vendedores son
+        # de los vendedores, y BED agrupa sus clientes aparte sin perfil de
+        # vendedor. Si un cliente pasa DE VERDAD a la casa, el vendedor se
+        # saca a mano en la ficha: el sync no lo hace.
+        return None
     return nuevo if actual != nuevo else None
-
-
-#: ¿Asinfo INT (la casa) le QUITA el vendedor a una ficha que tiene uno?
-#: 27/08/2026: 210 fichas están en ese caso; Tamara los está revisando.
-_INT_QUITA_VENDEDOR = False
 
 
 def _norm_dir(s: str | None) -> str:
@@ -463,8 +462,6 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
         (str(v) if (i == 4 and v is not None) else v)
         for fila in cambios for i, v in enumerate(fila)
     ]
-    # vend: None = no tocar; '' = QUITAR (la casa) — por eso no alcanza el
-    # COALESCE y va con CASE.
     return db.execute(
         f"""
         UPDATE scintela.cliente c
@@ -472,9 +469,7 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
                ruc      = COALESCE(v.ruc, c.ruc),
                telefono = COALESCE(v.telefono, c.telefono),
                descuento = COALESCE(v.descuento::numeric, c.descuento),
-               vend = CASE WHEN v.vend IS NULL THEN c.vend
-                           WHEN v.vend = '' THEN NULL
-                           ELSE v.vend END,
+               vend     = COALESCE(v.vend, c.vend),
                direccion1 = COALESCE(v.direccion1, c.direccion1),
                provincia = COALESCE(v.provincia, c.provincia),
                canton   = COALESCE(v.canton, c.canton),

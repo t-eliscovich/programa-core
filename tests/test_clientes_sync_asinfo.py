@@ -405,10 +405,14 @@ def test_agente_que_no_se_conoce_no_toca_y_avisa(monkeypatch):
     assert len(raros) == 1
 
 
-def test_la_casa_no_quita_el_vendedor_mientras_no_se_decida(monkeypatch):
-    """27/08/2026: hay 210 fichas con vendedor en PC que Asinfo tiene como
-    INT (la casa). Tamara las está revisando — hasta que decida, INT no
-    borra al vendedor que ya está (`_INT_QUITA_VENDEDOR = False`)."""
+def test_la_casa_nunca_quita_el_vendedor(monkeypatch):
+    """Decisión de Tamara (27/08/2026, con los 210 casos medidos a la
+    vista): los clientes con X son de Intela, los de DJA también, los de
+    los vendedores son de los vendedores, y BED agrupa sus clientes aparte
+    sin perfil de vendedor. INT nunca borra: si un cliente pasa de verdad
+    a la casa, el vendedor se saca a mano en la ficha. (A la mañana esto
+    era un pendiente detrás de un flag `_INT_QUITA_VENDEDOR`, con la rama
+    de pisar testeada; al decidirse se eliminaron flag y rama.)"""
     asinfo = [{"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN",
                "tel1": "", "tel2": "", "agente": "INT"}]
     pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN", "ruc": "",
@@ -417,22 +421,6 @@ def test_la_casa_no_quita_el_vendedor_mientras_no_se_decida(monkeypatch):
     r = sa.sincronizar()
     assert cap["updates"] == []
     assert r["vend_cambiado"] == [] and r["agentes_raros"] == []
-
-
-def test_la_casa_si_quita_el_vendedor_cuando_se_decide(monkeypatch):
-    monkeypatch.setattr(sa, "_INT_QUITA_VENDEDOR", True)
-    asinfo = [{"cod": "AAA", "ruc": "", "nombre": "PEREZ JUAN",
-               "tel1": "", "tel2": "", "agente": "INT"}]
-    pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "PEREZ JUAN", "ruc": "",
-           "telefono": "1", "vend": "BED", "direccion1": ""}]
-    cap = _armar(monkeypatch, asinfo, pc)
-    r = sa.sincronizar()
-    # '' viaja en el VALUES y el CASE del UPDATE lo vuelve NULL
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
-                                              "", None, None, None]
-    assert r["vend_cambiado"] == [
-        {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": "BED", "ahora": None}
-    ]
 
 
 def test_el_sync_pisa_la_direccion_y_el_vacio_de_asinfo_no_borra(monkeypatch):
