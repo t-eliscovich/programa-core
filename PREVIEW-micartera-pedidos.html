@@ -1,16 +1,22 @@
-{# LOS ESTILOS DEL MOBILE DE INTELA — compartidos.
 
-   Vivían adentro de `mi_cartera/base.html`. Se sacaron acá el 24/08/2026 para
-   que el PORTAL DEL CLIENTE use LOS MISMOS y no una copia parecida: dos hojas
-   de estilo del mismo producto se separan a la primera corrección, igual que
-   dos plantillas del mismo documento.
 
-   ⚠ `static/tailwind.css` es un build JIT CONGELADO: las clases nuevas de
-   Tailwind NO renderizan. Por eso todo el estilo del mobile vive acá y no en
-   utilidades.
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mis pedidos · Intela</title>
 
-   El bloque se movió TAL CUAL, sin tocar una línea. Lo cuida
-   `tests/test_portal_estado_cuenta.py::test_el_portal_y_mi_cartera_comparten_los_estilos`. #}
+<link rel="manifest" href="/static/mi-cartera/manifest.webmanifest">
+<meta name="theme-color" content="#4338CA">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Mi Cartera">
+<link rel="apple-touch-icon" href="/static/mi-cartera/icon-180.png">
+<link rel="icon" href="/static/mi-cartera/icon.svg" type="image/svg+xml">
+
+
 <style>
   :root{
     --ink:#0F172A; --ink-2:#475569; --ink-3:#94A3B8;
@@ -223,3 +229,93 @@
   .banner{background:var(--warn-soft);color:var(--warn);font-size:12px;font-weight:600;
           padding:7px 14px;text-align:center}
 </style>
+</head>
+<body>
+
+
+
+<header class="appbar">
+  <div class="row">
+    <div>
+      <h1>Mis pedidos</h1>
+      <div class="sub">1 sin despachar · fuente: Asinfo</div>
+    </div>
+  </div>
+</header>
+
+<main>
+<style>
+  .ped-card{margin-bottom:10px}
+  .ped-card summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:2px 0}
+  .ped-card summary::-webkit-details-marker{display:none}
+  .ped-chev{flex:0 0 auto;width:12px;height:12px;background:center/11px no-repeat;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E")}
+  details[open] .ped-chev{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+  .ped-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:700;color:var(--tinta,#0f172a);white-space:nowrap}
+  .ped-cli{font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ped-fecha{font-size:11.5px;color:#64748b;white-space:nowrap}
+  .ped-lineas{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid #f1f5f9}
+  .ped-lineas li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px}
+  .ped-lineas .c{font-weight:700}
+  .ped-lineas .t{color:#64748b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ped-lineas .q{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ped-lineas .k{white-space:nowrap;color:#64748b;font-size:11.5px;font-variant-numeric:tabular-nums}
+  .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  .ped-total{font-size:12px;color:#475569}
+  .ped-prod{font-size:12px;color:#166534;margin-top:8px;background:#f0fdf4;border-radius:8px;padding:7px 10px}
+  .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
+</style>
+
+
+  
+  
+  <div class="card ped-card">
+    <details>
+      <summary>
+        <span class="ped-chev" aria-hidden="true"></span>
+        <span class="ped-num">PDCL-26401</span>
+        <span class="ped-cli" title="TEXTILES DEL VALLE">TDV</span>
+        <span class="pill good">Terminado</span>
+        
+        <span class="ped-fecha">20 ago</span>
+      </summary>
+      <ul class="ped-lineas">
+        
+        <li>
+          <span class="c">NEG</span>
+          <span class="t">Pique 2.8</span>
+          <span class="q">470 kg</span>
+          
+          
+        </li>
+        
+      </ul>
+      
+      
+      
+      
+    </details>
+  </div>
+  
+
+</main>
+
+<nav class="tabbar">
+  
+  <a href="/mi-cartera"
+     class=""><em>◉</em>Inicio</a>
+  <a href="/mi-cartera/clientes"
+     class=""><em>☰</em>Clientes</a>
+  
+  <a href="/mi-cartera/pedidos"
+     class="on"><em>▤</em>Pedidos</a>
+  <a href="/mi-cartera/comision"
+     class=""><em>◆</em>Comisión</a>
+  
+  <a href="/analisis/competencia"><em>◈</em>Competencia</a>
+  
+  <a href="https://fichas-tecnicas-czvd.onrender.com/" target="_blank"
+     rel="noopener"><em>▣</em>F. técnica</a>
+</nav>
+
+</body>
+</html>
