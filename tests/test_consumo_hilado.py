@@ -52,7 +52,9 @@ def test_pantalla_renderiza_los_dos_cuadros(app, fake_db):
     r = _render(app, fake_db)
     assert r.status_code == 200
     assert b"Despachado por mes" in r.data
-    assert b"Promedio del a" in r.data  # Promedio del año y saldo actual
+    assert b"Promedio y saldo" in r.data
+    # el orden pedido por la dueña: promedio y saldo ARRIBA, el mes a mes abajo
+    assert r.data.index(b"Promedio y saldo") < r.data.index(b"Despachado por mes")
     assert b"22/1" in r.data and b"20/1" in r.data
     # el material sin consumo pero con saldo aparece igual (con su saldo)
     assert b"40 D LYCRA" in r.data
