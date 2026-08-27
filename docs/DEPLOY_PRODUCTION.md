@@ -127,6 +127,14 @@ Después de editar: `cd C:\caddy && .\caddy.exe reload --config Caddyfile`. Cadd
 - IAM role en AWS: `arn:aws:iam::743978811761:role/programa-core-deploy`
 - Trust policy: permite asumir el role a cualquier workflow del repo `t-eliscovich/programa-core` via OIDC
 - Permisos del role: `s3:PutObject` al folder `programa_core_deploy/` del bucket de deploy + `ssm:SendCommand` al instance EC2 (mínimos)
+- El tarball va a `programa_core_deploy/<sha>.tar.gz` — una key POR COMMIT.
+  Antes era una sola key fija y dos deploys solapados se pisaban el tarball
+  entre ellos: el que bajaba segundo se llevaba el código del otro. Ahora
+  además el workflow tiene `concurrency: deploy-ec2`, así que no corren dos.
+  ⚠ **Pendiente**: el bucket no tiene regla de expiración, así que los
+  tarballs viejos se acumulan (~5 MB por deploy). Conviene una lifecycle
+  rule de 30 días sobre el prefijo `programa_core_deploy/`. Se hace en la
+  consola de S3 (Management → Lifecycle rules), no desde el repo.
 - Secret en GitHub: `AWS_DEPLOY_ROLE_ARN` (el ARN de arriba)
 - **No PATs ni access keys** — todo via OIDC
 

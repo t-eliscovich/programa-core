@@ -9,6 +9,19 @@ on:
 permissions:
   contents: read
 
+# TMT 2026-08-27 (dueña): *"el deploy está muy lento"*. Cuando se pushean tres
+# commits seguidos (pasa todo el tiempo: 20:06:31, 20:06:33 y 20:08:24 el
+# 27/08) arrancaban TRES CI enteros y TRES deploys, y el server se reiniciaba
+# tres veces. Los dos primeros no le sirven a nadie: el tercero ya contiene sus
+# commits. Ahora el CI viejo se cancela solo y sólo corre el de la punta.
+#   ⚠ Un CI cancelado NO deploya — es correcto: lo que se deploya es la punta
+#     de main, que incluye lo que había en el cancelado.
+#   ⚠ Por eso el job `bloqueado` de deploy.yml ahora mira `== 'failure'` y no
+#     `!= 'success'`: si no, cada cancelación mandaba un mail de rojo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     # TMT 2026-08-13: los runners arm64 (Cobalt 100) son GRATIS en repos
