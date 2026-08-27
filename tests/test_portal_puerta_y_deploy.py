@@ -90,13 +90,45 @@ def test_el_portal_se_reinicia_DESPUES_de_la_oficina():
 
 def test_el_portal_caido_no_frena_el_deploy_de_la_oficina():
     """🚨 Fail-soft a propósito. Un `exit 1` acá dejaría a la oficina sin
-    deployar por culpa de una pantalla que todavía no usa nadie."""
-    bloque = DEPLOY[DEPLOY.index("5.b El PORTAL"):DEPLOY.index("# 6. Health check")]
-    assert "exit 1" not in bloque
-    assert "ErrorAction SilentlyContinue" in bloque
-    assert re.search(r"if \(Get-ScheduledTask -TaskName PortalClienteApp", bloque), (
+    deployar por culpa de una pantalla que todavía no usa nadie.
+
+    TMT 2026-08-27: el bloque del portal se partió en dos (arranca en 5.b y se
+    le pregunta en 6.b, para que los dos procesos booteén en paralelo), así que
+    el fail-soft se mira en LOS DOS pedazos. Con un solo `index()` este test
+    seguía verde mirando un bloque que ya no tiene el health check adentro."""
+    arranque = DEPLOY[DEPLOY.index("5.b El PORTAL"):DEPLOY.index("# 6. Health check")]
+    espera = DEPLOY[DEPLOY.index("# 6.b Recién ahora el portal"):DEPLOY.index("$fpDespues = '?'")]
+    for bloque in (arranque, espera):
+        assert "exit 1" not in bloque
+    assert "ErrorAction SilentlyContinue" in arranque
+    assert re.search(r"Get-ScheduledTask -TaskName PortalClienteApp", arranque), (
         "sin el chequeo de que la tarea existe, el deploy escupe un error "
         "rojo todos los días hasta que alguien la cree en el server")
+    # El chequeo tiene que GOBERNAR el arranque, no estar suelto en el archivo.
+    assert "$portalHay = [bool](Get-ScheduledTask -TaskName PortalClienteApp" in arranque
+    assert "if ($portalHay) {" in arranque
+    assert "if ($portalHay) {" in espera, (
+        "si se le pregunta al portal sin mirar si la tarea existe, el deploy "
+        "se cuelga 30 s esperando un puerto que nadie va a levantar")
+
+
+def test_los_dos_procesos_arrancan_antes_de_preguntarle_a_ninguno():
+    """TMT 2026-08-27 (dueña): *"el deploy está muy lento"*.
+
+    Antes el portal se paraba, se mataba, se arrancaba y se lo esperaba hasta
+    30 s ANTES de preguntarle a la oficina — y la oficina, mientras tanto, ya
+    estaba sirviendo. En el log del 27/08 se ve el síntoma: *"Health: HTTP 200
+    (contesto a los 1 s)"*, o sea que llegábamos tarde a preguntar. Ahora
+    arrancan los dos y recién después se espera, así el deploy tarda lo que
+    tarda el más lento y no la suma de los dos.
+
+    Este test es el que evita que alguien vuelva a intercalar el health check
+    de la oficina entre el arranque del portal y su espera."""
+    i_start_oficina = DEPLOY.index("Start-ScheduledTask -TaskName ProgramaCoreApp\n")
+    i_start_portal = DEPLOY.index("Start-ScheduledTask -TaskName PortalClienteApp")
+    i_espera_oficina = DEPLOY.index("http://localhost:5002/login")
+    i_espera_portal = DEPLOY.index("http://localhost:5004/")
+    assert i_start_oficina < i_start_portal < i_espera_oficina < i_espera_portal
 
 
 def test_el_portal_no_toca_el_puerto_de_la_oficina():

@@ -9,6 +9,19 @@ on:
 permissions:
   contents: read
 
+# TMT 2026-08-27 (dueña): *"el deploy está muy lento"*. Cuando se pushean tres
+# commits seguidos (pasa todo el tiempo: 20:06:31, 20:06:33 y 20:08:24 el
+# 27/08) arrancaban TRES CI enteros y TRES deploys, y el server se reiniciaba
+# tres veces. Los dos primeros no le sirven a nadie: el tercero ya contiene sus
+# commits. Ahora el CI viejo se cancela solo y sólo corre el de la punta.
+#   ⚠ Un CI cancelado NO deploya — es correcto: lo que se deploya es la punta
+#     de main, que incluye lo que había en el cancelado.
+#   ⚠ Por eso el job `bloqueado` de deploy.yml ahora mira `== 'failure'` y no
+#     `!= 'success'`: si no, cada cancelación mandaba un mail de rojo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     # TMT 2026-08-13: los runners arm64 (Cobalt 100) son GRATIS en repos
@@ -26,6 +39,25 @@ jobs:
     # ARM" de "está caído todo".
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
+    # 🚨 TMT 2026-08-27 — EL POSTGRES NO SE PUEDE IR TODAVÍA, y el intento
+    # quedó documentado acá para que nadie lo vuelva a probar a ciegas.
+    #
+    # La idea era sacarlo: levantarlo cuesta ~16 s en el camino crítico de CADA
+    # deploy, y este job corre los `not db`, que en teoría usan el FakeDB
+    # monkeypatcheado del conftest. Se probó (CI #2519) y el job se puso rojo:
+    #
+    #   psycopg2.OperationalError: connection to server at "127.0.0.1",
+    #   port 5432 failed: Connection refused
+    #
+    # O sea que el marcador `db` NO describe bien quién necesita una base. Hay
+    # `not db` que abren Postgres de verdad: los 12 casos de
+    # tests/test_cheques_link_y_volver_filtrado_2026_08_17.py (dos funciones
+    # parametrizadas). Pasaban porque el contenedor estaba ahí, no porque no lo
+    # necesitaran.
+    #
+    # Para sacarlo hay que arreglar ESOS tests primero (o marcarlos `db`), y
+    # recién ahí borrar este bloque. Lo que sí se ganó por ahora es que los 63
+    # `-m db` se fueron al job `test-db` de abajo, que corre EN PARALELO.
     services:
       postgres:
         image: postgres:16-alpine
@@ -99,3 +131,98 @@ jobs:
           name: coverage-reports
           path: coverage.xml
           if-no-files-found: ignore
+
+  # Los 63 tests que sí tocan una base real. Van SERIALES a propósito (comparten
+  # la base) y sin coverage: los gates se miden en el job de arriba. Tarda menos
+  # que `test`, así que sale gratis en tiempo de pared.
+  test-db:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: programa_core_test
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_local_only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U app -d programa_core_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      ENV: development
+      SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
+      DISABLE_BOOT_SYNC: "1"
+      DB_HOST: 127.0.0.1
+      DB_PORT: "5432"
+      DB_NAME: programa_core_test
+      DB_USER: app
+      DB_PASSWORD: app_local_only
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Restore sanitized legacy dump
+        run: python scripts/restaurar_test_legacy_dump.py --allow-reset
+
+      - name: Run db tests
+        run: make PY=python ci-db
+
+  # Empaqueta y sube el tarball MIENTRAS corren los tests, así cuando terminan
+  # el deploy sólo tiene que firmar la URL y mandar el SSM. Antes esto pasaba
+  # después de los tests y costaba ~10 s de camino crítico.
+  #   ⚠ Sube el tarball de un commit cuyos tests todavía no pasaron. Es
+  #     inofensivo: quien decide si se deploya es el job de abajo, que depende
+  #     de `test` y `test-db`. Lo único que queda es un objeto de más en S3.
+  paquete:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: Empaquetar y subir a S3
+        env:
+          ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+        run: scripts/empaquetar_y_subir_deploy.sh "$GITHUB_SHA" "$ROLE_ARN"
+
+  # El freno: sin los tres verdes no se deploya. Antes era un workflow aparte
+  # colgado de `workflow_run`, que esperaba a que el CI TERMINARA de cerrar.
+  deploy:
+    needs: [test, test-db, paquete]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      id-token: write
+      contents: read
+    uses: ./.github/workflows/deploy.yml
+    secrets: inherit
+    with:
+      sha: ${{ github.sha }}
+      ya_subido: true

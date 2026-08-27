@@ -2,7 +2,7 @@
 #
 # Uso: `make <target>`. Compatible con macOS, Linux, y WSL.
 
-.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci lint fmt test-uv sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
+.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci ci-db ci-todo lint fmt test-uv sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
 
 PYTHON ?= python3
 VENV   ?= .venv
@@ -52,7 +52,9 @@ help:
 	@echo "  test-db        - correr pytest @db contra Postgres con dump legacy"
 	@echo "  restore-test-db - resetear DB test con dump legacy sanitizado"
 	@echo "  test-coverage  - correr unit + db opcional y generar reporte combinado"
-	@echo "  ci             - correr el gate local de coverage"
+	@echo "  ci             - el gate de coverage (lo que corre el job test del CI)"
+	@echo "  ci-db          - los tests contra Postgres (lo que corre el job test-db)"
+	@echo "  ci-todo        - ci + ci-db, todo junto"
 	@echo "  lint           - sólo ruff"
 	@echo "  fmt            - ruff --fix"
 	@echo ""
@@ -120,15 +122,35 @@ restore-test-db:
 COVERAGE_CORE ?= config/roles.py,csv_upload.py,error_messages.py,exports.py,extensions.py,ip_allowlist.py,modules/_lib/formulas_db.py,modules/conciliacion/matcher.py,modules/diag/views.py,modules/healthz/views.py,modules/recientes/queries.py,modules/tintura/service.py,modules/two_fa/core.py,reparto_mensual.py,scope_vendedor.py
 COVERAGE_CONCILIACION_MIN ?= 29
 
+# TMT 2026-08-27 — el `pytest -m db` SALIÓ de acá. Los dos gates pasan igual
+# sin él (medido: COVERAGE_CORE 100.00%, conciliación 29.45% contra el piso de
+# 29), así que esos 63 tests no aportaban a la cobertura y sí alargaban el
+# camino crítico de cada deploy. Ahora corren en su propio job, en paralelo
+# (`ci-db`).
+#
+# ⚠ El contenedor de postgres NO se pudo sacar del job de arriba: hay tests
+#   `not db` que abren una base de verdad (ver el comentario en ci.yml y
+#   tests/test_cheques_link_y_volver_filtrado_2026_08_17.py). Por eso `ci`
+#   sigue necesitando Postgres andando, aunque ya no corra los `-m db`.
+#
+# 🚨 El piso de conciliación se mide SOBRE ESTA CORRIDA, sin los db. Sacarlo de
+#    una corrida que los incluya da un número más alto y deja el CI rojo sin
+#    que nadie haya roto nada.
 test-coverage:
 	$(PY) -m coverage erase
 	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
-	$(PY) -m pytest -q -m db --cov --cov-report= --cov-append
 	$(PY) -m coverage report --include=$(COVERAGE_CORE) --fail-under=$(COVERAGE_FAIL_UNDER)
 	$(PY) -m coverage report --include='modules/conciliacion/*' --fail-under=$(COVERAGE_CONCILIACION_MIN)
 	$(PY) -m coverage xml
 
 ci: test-coverage
+
+# Lo que corre el job `test-db` del CI: la base real, serial, sin coverage.
+ci-db: test-db
+
+# Todo junto, como corría el CI antes de partirse en dos jobs. Para el que
+# quiera una sola pasada local; el CI ya no usa este camino.
+ci-todo: ci ci-db
 
 lint:
 	$(PY) -m ruff check .
