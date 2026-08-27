@@ -39,19 +39,39 @@ jobs:
     # ARM" de "está caído todo".
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 20
-    # ⭐ TMT 2026-08-27 — SIN el service postgres. Levantarlo costaba 16 s en el
-    # camino crítico de CADA deploy, y este job no lo toca: los tests `not db`
-    # usan el FakeDB monkeypatcheado del conftest. Los 63 que sí tocan una base
-    # real se fueron al job `test-db` de abajo, que corre EN PARALELO.
+    # 🚨 TMT 2026-08-27 — EL POSTGRES NO SE PUEDE IR TODAVÍA, y el intento
+    # quedó documentado acá para que nadie lo vuelva a probar a ciegas.
     #
-    # Medido antes de partirlo: con SOLO los `not db` los dos gates de
-    # cobertura pasan igual (COVERAGE_CORE 100.00%, conciliación 29.32% contra
-    # un piso de 29). O sea que los tests de base no aportaban nada a los gates
-    # y estaban atando el CI a un contenedor que nadie usaba.
-    #   ⚠ Por eso el piso de conciliación se mide SIEMPRE sobre esta corrida
-    #     (`make ci`, sin los db). Si alguien lo sube con un número sacado de
-    #     una corrida que incluya los db, el CI se pone rojo sin que nadie haya
-    #     roto nada.
+    # La idea era sacarlo: levantarlo cuesta ~16 s en el camino crítico de CADA
+    # deploy, y este job corre los `not db`, que en teoría usan el FakeDB
+    # monkeypatcheado del conftest. Se probó (CI #2519) y el job se puso rojo:
+    #
+    #   psycopg2.OperationalError: connection to server at "127.0.0.1",
+    #   port 5432 failed: Connection refused
+    #
+    # O sea que el marcador `db` NO describe bien quién necesita una base. Hay
+    # `not db` que abren Postgres de verdad: los 12 casos de
+    # tests/test_cheques_link_y_volver_filtrado_2026_08_17.py (dos funciones
+    # parametrizadas). Pasaban porque el contenedor estaba ahí, no porque no lo
+    # necesitaran.
+    #
+    # Para sacarlo hay que arreglar ESOS tests primero (o marcarlos `db`), y
+    # recién ahí borrar este bloque. Lo que sí se ganó por ahora es que los 63
+    # `-m db` se fueron al job `test-db` de abajo, que corre EN PARALELO.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: programa_core_test
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app_local_only
+        ports:
+          - "5432:5432"
+        options: >-
+          --health-cmd "pg_isready -U app -d programa_core_test"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     env:
       ENV: development
@@ -97,6 +117,9 @@ jobs:
       - name: Run Ruff legacy check
         continue-on-error: true
         run: make PY=python lint
+
+      - name: Restore sanitized legacy dump
+        run: python scripts/restaurar_test_legacy_dump.py --allow-reset
 
       - name: Run coverage gate
         run: make PY=python ci

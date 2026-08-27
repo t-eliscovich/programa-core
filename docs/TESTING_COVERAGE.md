@@ -88,8 +88,14 @@ make ci-todo
 
 `make ci` alone is exactly what the CI's `test` job runs: the `not db` suite
 plus the two coverage gates. Since 2026-08-27 the `-m db` tests live in their
-own parallel job (`make ci-db`), so the `test` job no longer starts a Postgres
-container — 16 s that used to sit on the critical path of every deploy.
+own parallel job (`make ci-db`).
+
+> ⚠ `make ci` still needs Postgres running, even though it no longer runs the
+> `-m db` tests: some `not db` tests open a real database anyway (the 12 cases
+> in `tests/test_cheques_link_y_volver_filtrado_2026_08_17.py`). Dropping the
+> container from the CI's `test` job was tried and turned it red
+> (`psycopg2.OperationalError: Connection refused`, CI #2519). Fixing those
+> tests — or marking them `db` — is what unblocks removing it.
 
 > 🚨 The conciliación floor (`COVERAGE_CONCILIACION_MIN`) is measured on
 > `make ci` — the `not db` run only. Raising it with a number taken from a run

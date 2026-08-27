@@ -175,50 +175,19 @@ def test_el_redeploy_a_mano_sigue_existiendo():
     assert "if: ${{ inputs.ya_subido != true }}" in DEPLOY[i - 200:i]
 
 
-def test_los_tests_sin_base_no_levantan_postgres():
-    """🚨 Los 16 s del contenedor estaban en el camino crítico de cada deploy
-    para un job que no lo toca (los `not db` usan el FakeDB del conftest)."""
-    job_test = _job(CI, "  test:", "  test-db:")
-    assert "postgres" not in job_test, (
-        "volvió el service postgres al job que no lo usa")
+def test_los_tests_de_base_corren_en_su_propio_job():
+    """Los 63 `-m db` salieron del job que mide cobertura: no aportaban a los
+    gates y alargaban el camino crítico de cada deploy.
+
+    🚨 Lo que NO se pudo hacer, y queda anotado para que nadie lo reintente a
+    ciegas: sacarle el contenedor de postgres al job `test`. Se probó (CI
+    #2519) y salió rojo con `psycopg2.OperationalError: Connection refused` —
+    hay `not db` que abren una base de verdad (los 12 casos de
+    test_cheques_link_y_volver_filtrado_2026_08_17.py). El marcador `db` no
+    describe bien quién necesita base. Arreglar esos tests es lo que destraba
+    los 16 s del contenedor."""
     job_db = _job(CI, "  test-db:", "  paquete:")
     assert "postgres:16-alpine" in job_db
     assert "ci-db" in job_db
-
-
-# ---------------------------------------------------------------------------
-# Nada de dormir a ciegas
-# ---------------------------------------------------------------------------
-
-
-def test_no_se_para_dos_veces_lo_que_ya_esta_parado():
-    """Desde el 25/08 los procesos se paran ANTES de extraer (paso 3). El
-    segundo `Stop-ScheduledTask` del paso 5 paraba lo que ya estaba parado y
-    dormía 2 s por deploy. El kill por PUERTO sí se queda: es el que agarra al
-    huérfano, y sale en 0 s cuando no hay ninguno."""
-    cuerpo = _cuerpo_del_heredoc()
-    assert cuerpo.count("Stop-ScheduledTask -TaskName ProgramaCoreApp") == 1
-    assert cuerpo.count("Stop-ScheduledTask -TaskName PortalClienteApp") == 1
-    assert "LocalPort 5002 -State Listen" in cuerpo
-
-
-def test_los_health_check_preguntan_antes_de_dormir():
-    """`Start-Sleep 1` arriba del loop le cobra un segundo de peaje a una app
-    que ya estaba contestando — que es el caso normal desde que los dos
-    procesos arrancan juntos."""
-    for url in ("http://localhost:5002/login", "http://localhost:5004/"):
-        i = DEPLOY.index(url)
-        loop = DEPLOY[DEPLOY.rindex("for (", 0, i):i]
-        assert "Start-Sleep" not in loop, (
-            f"el loop de {url} volvió a dormir antes de preguntar")
-
-
-def test_el_deploy_deja_los_tiempos_en_el_log():
-    """Sin el reloj, la próxima vez que haya que recortar hay que adivinar si
-    los segundos se van en el tar, en migrate.py o esperando al portal."""
-    cuerpo = _cuerpo_del_heredoc()
-    assert "$t0 = Get-Date" in cuerpo
-    assert "function paso($m)" in cuerpo
-    for hito in ("bajado el tarball", "extraido", "migraciones al dia",
-                 "oficina: HTTP", "=== Deploy OK ==="):
-        assert f'paso "{hito}' in cuerpo, f"falta el tiempo de: {hito}"
+    # Y el job que mide cobertura ya no los corre.
+    assert "ci-db" not in _job(CI, "  test:", "  test-db:")

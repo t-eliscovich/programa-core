@@ -123,10 +123,15 @@ COVERAGE_CORE ?= config/roles.py,csv_upload.py,error_messages.py,exports.py,exte
 COVERAGE_CONCILIACION_MIN ?= 29
 
 # TMT 2026-08-27 — el `pytest -m db` SALIÓ de acá. Los dos gates pasan igual
-# sin él (medido: COVERAGE_CORE 100.00%, conciliación 29.32% contra el piso de
-# 29), así que los 63 tests de base no aportaban a la cobertura y obligaban al
-# CI a levantar un contenedor de postgres —16 s— en el camino crítico de cada
-# deploy. Ahora corren en su propio job, en paralelo (`ci-db`).
+# sin él (medido: COVERAGE_CORE 100.00%, conciliación 29.45% contra el piso de
+# 29), así que esos 63 tests no aportaban a la cobertura y sí alargaban el
+# camino crítico de cada deploy. Ahora corren en su propio job, en paralelo
+# (`ci-db`).
+#
+# ⚠ El contenedor de postgres NO se pudo sacar del job de arriba: hay tests
+#   `not db` que abren una base de verdad (ver el comentario en ci.yml y
+#   tests/test_cheques_link_y_volver_filtrado_2026_08_17.py). Por eso `ci`
+#   sigue necesitando Postgres andando, aunque ya no corra los `-m db`.
 #
 # 🚨 El piso de conciliación se mide SOBRE ESTA CORRIDA, sin los db. Sacarlo de
 #    una corrida que los incluya da un número más alto y deja el CI rojo sin
