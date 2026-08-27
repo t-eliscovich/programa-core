@@ -49,6 +49,12 @@ MENU = [
         "listo": True,
     },
     {
+        "url": "/analisis/vendidos",
+        "titulo": "Vendidos",
+        "bajada": "Qué saldo se vendió, qué día y quién lo colocó.",
+        "listo": True,
+    },
+    {
         "url": "/analisis/competencia",
         "titulo": "Competencia",
         "bajada": "Cuánto queda de lo parado y quién va ganando. La ven todos, "
@@ -134,8 +140,6 @@ def parado():
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
-        # ⭐ La tabla de abajo: qué se vendió, qué día y quién.
-        vendidos=queries.vendidos(queries.config("largada", "2026-08-25")),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
         ahora_anio=today_ec().year,
     )
@@ -183,6 +187,24 @@ def parado_xlsx():
     return excel.respuesta(
         f"saldos_{hoy:%Y_%m_%d}.xlsx",
         excel.libro([{"titulo": "Saldos", "columnas": cols, "filas": datos}]))
+
+
+@analisis_bp.route("/analisis/vendidos")
+@requiere_login
+@requiere_permiso("analisis.ver")
+def vendidos():
+    """Lo vendido de la lista, renglón por renglón, en su propia pantalla.
+
+    ⭐ Dueña 26/08/2026: *"para vendidos, mejor pongamos otro tab… y pasamos la
+    tabla para ahí"*. Vivía al pie de Saldos, detrás de 700 telas, y para
+    llegar se le había puesto un índice al costado. El índice funcionaba —
+    scrolleaba— pero el título quedaba tapado por la barra de arriba y parecía
+    muerto. Con la tabla en su propio tab el índice sobra: se fue con esto.
+    """
+    return render_template(
+        "analisis/vendidos.html",
+        vendidos=queries.vendidos(queries.config("largada", "2026-08-25")),
+    )
 
 
 @analisis_bp.route("/analisis/vendidos.xlsx")

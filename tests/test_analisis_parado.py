@@ -438,7 +438,9 @@ def test_el_excel_lo_arma_el_servidor_y_baja_todo():
         "volvió el CSV hecho a mano en el navegador")
     assert 'href="/analisis/parado.xlsx"' in html
     assert "Bajar todo a Excel" in html, "el botón tiene que decir que baja todo"
-    assert 'href="/analisis/vendidos.xlsx"' in html, (
+    # ⚠ El Excel de Vendidos se mudó con su tabla (26/08/2026): ahora vive en
+    # `vendidos.html`, que es la pantalla que lo ofrece.
+    assert 'href="/analisis/vendidos.xlsx"' in _html_vendidos(), (
         "y la tabla de Vendidos también se baja (dueña: «y lo mismo con los "
         "vendidos»)")
 
@@ -571,7 +573,8 @@ def test_las_dos_pantallas_tienen_su_boton_de_excel():
     from pathlib import Path
     carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
                "templates" / "analisis")
-    for archivo, texto in (("parado.html", "Bajar a Excel"),
+    for archivo, texto in (("parado.html", "Bajar todo a Excel"),
+                           ("vendidos.html", "Bajar a Excel"),
                            ("parado_clientes.html", "Bajar a Excel")):
         html = (carpeta / archivo).read_text(encoding="utf-8")
         assert texto in html, f"{archivo} no ofrece bajar a Excel"
@@ -1871,6 +1874,13 @@ def _html_parado():
             "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
 
 
+def _html_vendidos():
+    """La tabla de Vendidos se mudó a su propia pantalla el 26/08/2026."""
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "vendidos.html").read_text(encoding="utf-8")
+
+
 def test_los_indices_de_orden_coinciden_con_las_columnas():
     """⚠ Cada `th` ordena por su `data-i`. Al sacar una columna del medio, si
     los índices no se renumeran, tocar "Clientes" ordena por otra cosa — y no
@@ -1894,7 +1904,7 @@ def test_lo_vendido_no_va_apilado_en_la_celda_de_los_kilos():
     abrir la fila se fue con el resto de la descripción ("estas descripciones
     tmbn borrar"). Lo que este test sigue cuidando es que no vuelva a la celda
     de los kilos."""
-    html = _html_parado()
+    html = _html_vendidos()
     assert ">Vendidos</th>" not in html
     assert "vendidos</div>" not in html
     assert 'id="vendidos"' in html, "la tabla de Vendidos del pie es la que cuenta ahora"
@@ -3226,19 +3236,22 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     import re as _re
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert '<h2 id="vendidos-tabla">Vendidos</h2>' in html
+            "templates" / "analisis" / "vendidos.html").read_text(encoding="utf-8")
+    assert 'id="vendidos-tabla"' in html and ">Vendidos</h2>" in html
 
-    def cabeceras(tabla: str) -> list[str]:
-        trozo = html[html.index(tabla):]
+    # ⚠ Desde el 26/08/2026 las dos tablas viven en pantallas DISTINTAS —
+    # Vendidos se mudó a su tab—, y por eso este test vale más que antes: nadie
+    # las va a ver juntas para notar que se despegaron.
+    def cabeceras(donde: str, tabla: str) -> list[str]:
+        trozo = donde[donde.index(tabla):]
         cab = trozo[trozo.index("<thead>"):trozo.index("</thead>")]
         # ⚠ `<th(?:\s[^>]*)?>` y no `<th[^>]*>`: el segundo matchea `<thead>`
         # y la primera columna sale con media etiqueta adentro.
         return [" ".join(t.split())
                 for t in _re.findall(r"<th(?:\s[^>]*)?>(.*?)</th>", cab, _re.S)]
 
-    arriba = cabeceras('<table id="tabla">')
-    abajo = cabeceras('<table class="resumen" id="vendidos">')
+    arriba = cabeceras(_html_parado(), '<table id="tabla">')
+    abajo = cabeceras(html, '<table class="resumen" id="vendidos">')
     assert arriba[:5] == abajo[:5], (
         f"el orden de las cinco primeras no coincide: {arriba[:5]} vs {abajo[:5]}")
     # ⭐ Y las dos del medio significan lo MISMO en las dos tablas (dueña
@@ -3259,8 +3272,10 @@ def test_la_pantalla_dibuja_la_tabla_de_vendidos():
     # el día con el mismo formato que la fecha de arriba, y el vendedor
     assert "{{ v.fecha.strftime('%d/%m/%y') }}" in html
     assert "{{ v.vendedor }}" in html
-    # forma y calidad salen de los MISMOS macros que la lista de arriba
-    assert html.count('<td class="forma">{{ fm.forma(') == 2
+    # forma y calidad salen de los MISMOS macros que la lista de Saldos
+    # (una vez en cada pantalla desde que Vendidos se mudó, 26/08/2026)
+    assert html.count('<td class="forma">{{ fm.forma(') == 1
+    assert _html_parado().count('<td class="forma">{{ fm.forma(') == 1
     assert "{{ fm.cal(v) }}" in html
     # las dos pantallas que dibujan esta plantilla tienen que pasarle la tabla
     assert _i.getsource(views).count("vendidos=queries.vendidos(") == 2
@@ -3276,22 +3291,28 @@ def test_el_renglon_vendido_lleva_a_su_tela_arriba():
     alguien a una fila invisible es peor que no llevarlo."""
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-            "templates" / "analisis" / "parado.html").read_text(encoding="utf-8")
-    assert 'onclick="verTela(this)"' in html
-    # ⚠⚠ La fila de Vendidos NO puede llamarse `item`: el filtro de la lista
-    # recorría `tr.item` de toda la pantalla y, sin `data-grupo`, las escondía
-    # todas — la tabla salía vacía teniendo renglones (25/08/2026).
+            "templates" / "analisis" / "vendidos.html").read_text(encoding="utf-8")
+    # ⚠⚠ Desde el 26/08/2026 Vendidos es su propia pantalla: acá arriba NO hay
+    # tabla de saldos que scrollear, así que la fila LLEVA a esa tela en Saldos,
+    # ya filtrada. Antes buscaba la fila en la misma página y le hacía scroll;
+    # dejar eso habría sido un click mudo.
+    assert "location.href='/analisis/parado?" in html, (
+        "la fila de Vendidos no lleva a ningún lado")
+    assert "subgrupo={{ v.subcategoria" in html, "no filtra por la tela"
+    assert "q={{ v.color" in html, (
+        "sin el color caería en el primer color de esa tela")
+    # ⚠⚠ La fila de Vendidos NO puede llamarse `item`: cuando las dos tablas
+    # convivían, el filtro recorría `tr.item` de toda la pantalla y las escondía
+    # (25/08/2026). El nombre se mantiene por si algún día vuelven a convivir.
     assert '<tr class="vfila"' in html
-    assert "document.querySelectorAll('#tabla tr.item')" in html
-    assert "document.querySelectorAll('tr.item')" not in html
-    assert "function verTela(tr){" in html
-    # busca por tela Y color: la tela sola llevaría al primer color de la lista
-    assert "x.dataset.sub === tr.dataset.sub && x.dataset.color === tr.dataset.color" in html
-    assert 'data-color="{{ f.color }}"' in html, (
-        "la fila de arriba tiene que poder encontrarse por su color")
-    assert "fila.offsetParent === null" in html, "el caso de la fila filtrada"
-    assert "fila.scrollIntoView" in html and "marcada" in html
-    assert "tr.item.marcada>td{background:" in html, (
+    assert "verTela" not in html, (
+        "quedó el click viejo, que buscaba una tabla que ya no está acá")
+    # ⚠ El destino sigue siendo Saldos, así que la fila de ALLÁ tiene que
+    # poder encontrarse por su tela y su color, y avisar adónde llegó.
+    saldos = _html_parado()
+    assert 'data-color="{{ f.color }}"' in saldos, (
+        "la fila de Saldos tiene que poder encontrarse por su color")
+    assert "tr.item.marcada>td{background:" in saldos, (
         "sin la marca, el salto deja buscando cuál de las 700 filas era")
 
 
@@ -3499,7 +3520,7 @@ def test_vendidos_lleva_su_total_arriba():
     con los que dicen que vendió"*. Es la comprobación de la pantalla: si esta
     suma no da lo mismo que el «Se vendió» del encabezado y que el ranking de la
     Competencia, hay un renglón contándose de más o de menos."""
-    html = _html_parado()
+    html = _html_vendidos()
     i = html.index('id="vendidos-tabla"')
     j = html.index('id="vendidos"')
     arriba = html[i:j]
@@ -3590,32 +3611,20 @@ def test_los_filtros_entran_en_un_telefono():
     assert ".filtros input,.filtros select{font-size:16px" in movil
 
 
-def test_los_titulos_tienen_links_al_costado():
-    """Dueña 25/08/2026: *"poneme links al costado para ir pasando… me refería
-    a títulos, vendidos etc"*. La pantalla tiene tres bloques largos y para
-    llegar a Vendidos había que scrollear 700 telas.
+def test_la_barra_del_costado_se_fue_con_la_mudanza():
+    """Dueña 26/08/2026: *"saquemos esto"*, cuando Vendidos pasó a su tab.
 
-    ⚠ El índice va FUERA del ancho del contenido. La primera versión era una
-    columna al lado de la tabla y le comía el ancho: *"horrible esto, me achico
-    la tabla"*. Ahora es una tira pegajosa arriba y, sólo cuando la pantalla es
-    ancha, se muda al margen, que está vacío."""
+    El índice existía para no scrollear 700 telas hasta Vendidos. Con Vendidos
+    en su propia pantalla no hay nada que saltear — y encima engañaba: los links
+    scrolleaban bien, pero el título quedaba tapado por la barra pegajosa de
+    arriba y parecía que el click no hacía nada.
+    """
     html = _html_parado()
-    assert '<nav class="secciones" id="secciones">' in html
-    for ancla in ("#por-grupo", "#tela-por-tela", "#vendidos-tabla"):
-        assert f'href="{ancla}"' in html, f"falta el link a {ancla}"
-        assert f'id="{ancla[1:]}"' in html, f"el link a {ancla} no lleva a ningún lado"
+    assert '<nav class="secciones"' not in html
+    assert 'href="#vendidos-tabla"' not in html, (
+        "quedó un link a una tabla que ya no está en esta pantalla")
     assert 'class="gnav"' not in html, (
         "volvió la columna de grupos al costado, que achicaba la tabla")
-
-    from pathlib import Path
-    base = ((Path(__file__).resolve().parent.parent / "modules" / "analisis" /
-             "templates" / "analisis" / "base.html").read_text(encoding="utf-8"))
-    i = base.index(".secciones{")
-    assert "position:sticky" in base[i:i + 200], "no se queda a la vista al scrollear"
-    j = base.index("@media (min-width:1400px)")
-    assert "position:fixed" in base[j:j + 300], (
-        "en pantalla ancha tiene que irse al margen, no comerle ancho a la tabla")
-
 
 def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
     """Dueña 25/08/2026: *"totales para la tabla de vendidos"*. Arriba está la
@@ -3624,7 +3633,7 @@ def test_vendidos_lleva_el_total_debajo_de_sus_columnas():
 
     ⚠ El rótulo «Total» va en la columna Tela y no en Grupo: Grupo es `opt` y
     en el teléfono se esconde."""
-    html = _html_parado()
+    html = _html_vendidos()
     tabla = html[html.index('id="vendidos"'):]
     pie = tabla[tabla.index("<tfoot>"):tabla.index("</tfoot>")]
     assert "vendidos | sum(attribute='kg')" in pie
@@ -3668,10 +3677,10 @@ def test_vendidos_no_promete_un_click_que_no_anda():
     "toque una fila para ver esa tela arriba" y el click estaba roto: la fila
     de arriba era justamente la que se había ido por tener 0 kg. Ahora la fila
     existe —tachada— y el click anda; el texto igual sobraba."""
-    html = _html_parado()
+    html = _html_vendidos()
     assert "Toque una fila para ver esa tela arriba" not in html
     assert "Lo que salió de la lista desde que arrancó la competencia" not in html
-    assert 'onclick="verTela(this)"' in html, "el click sigue estando"
+    assert "location.href='/analisis/parado?" in html, "el click sigue estando"
 
 
 def test_la_pantalla_no_se_corre_para_el_costado_en_el_telefono():
@@ -3947,7 +3956,7 @@ def test_la_factura_es_solo_para_quien_puede_ver_facturas():
     from pathlib import Path
     carpeta = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
                "templates" / "analisis")
-    for nombre in ("competencia.html", "parado.html"):
+    for nombre in ("competencia.html", "vendidos.html"):
         html = (carpeta / nombre).read_text(encoding="utf-8")
         i = html.index("/facturas/{{ v.numf }}")
         antes = html[i - 260:i]
@@ -4009,7 +4018,7 @@ def test_vendidos_muestra_el_codigo_del_vendedor_y_no_el_nombre_entero():
 
     ⚠ La casa no tiene código de tres letras: va «Intela», que es como se llama
     en el ranking. Y el nombre completo queda en el `title`, que no ocupa."""
-    html = _html_parado()
+    html = _html_vendidos()
     tabla = html[html.index('id="vendidos"'):]
     assert "{{ v.vend_pc or 'Intela' }}" in tabla
     assert 'title="{{ v.vendedor }}"' in tabla, "el nombre entero no se pierde"
@@ -4174,7 +4183,7 @@ def _html_de(nombre):
 def test_el_dia_abre_la_factura_directo_y_no_la_lista():
     """`/facturas/<numf>`, no `/facturas?q=`: la lista filtrada obliga a un
     click más y con un numf repetido muestra dos."""
-    for nombre in ("parado.html", "competencia.html"):
+    for nombre in ("vendidos.html", "competencia.html"):
         html = _html_de(nombre)
         assert "/facturas?q=" not in html, f"{nombre}: sigue linkeando a la lista"
         assert "/facturas/{{ v.numf }}" in html, nombre
@@ -4182,7 +4191,7 @@ def test_el_dia_abre_la_factura_directo_y_no_la_lista():
 
 def test_el_link_lleva_el_numero_completo_para_desempatar():
     """Sin `?doc=` un numf repetido abre la otra factura."""
-    for nombre in ("parado.html", "competencia.html"):
+    for nombre in ("vendidos.html", "competencia.html"):
         html = _html_de(nombre)
         i = html.index("/facturas/{{ v.numf }}")
         trozo = html[i:i + 200]
@@ -4193,7 +4202,7 @@ def test_el_link_lleva_el_numero_completo_para_desempatar():
 def test_sin_numero_completo_el_link_sigue_andando():
     """Las filas viejas tienen `numero` en NULL hasta el próximo refresco: el
     link cae a `/facturas/<numf>` pelado en vez de romperse."""
-    for nombre in ("parado.html", "competencia.html"):
+    for nombre in ("vendidos.html", "competencia.html"):
         trozo = _html_de(nombre)
         i = trozo.index("/facturas/{{ v.numf }}")
         assert "{% if v.numero %}" in trozo[i:i + 120], nombre
@@ -4202,7 +4211,7 @@ def test_sin_numero_completo_el_link_sigue_andando():
 def test_el_click_en_el_dia_no_abre_tambien_la_fila():
     """La fila entera tiene `onclick=abrir(this)`: sin frenar la propagación,
     tocar el día abría el detalle Y navegaba, y la página saltaba sola."""
-    html = _html_de("parado.html")
+    html = _html_de("vendidos.html")
     i = html.index("/facturas/{{ v.numf }}")
     assert "event.stopPropagation()" in html[i:i + 260], (
         "el click en el día se lo lleva también la fila")

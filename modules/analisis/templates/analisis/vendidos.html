@@ -1,0 +1,121 @@
+{% extends "analisis/base.html" %}
+{% import "analisis/_forma.html" as fm %}
+{% block titulo %}Vendidos{% endblock %}
+{% block contenido %}
+{# ⭐ VENDIDOS, EN SU PROPIA PANTALLA (dueña 26/08/2026: *"para vendidos, mejor
+   pongamos otro tab… y pasamos la tabla para ahí"*).
+
+   Vivía al pie de Saldos, después de 700 telas. Para llegar había que
+   scrollear, y por eso se le había puesto un índice al costado — que resolvía
+   el síntoma: los links scrolleaban bien, pero el título quedaba tapado por la
+   barra pegajosa de arriba y parecía que no pasaba nada. Con la tabla en su
+   propio tab el índice sobra y se fue.
+
+   El nombre es **Vendidos** a secas (ella lo eligió: *"lo que se vendió es muy
+   largo"*).
+#}
+{# ⭐ LO VENDIDO, renglón por renglón (dueña 25/08/2026: "abajo de saldos poné
+   una tabla que se llame vendidos, y ponés la misma info + día vendido +
+   vendedor"). Arriba estaba el total en una tarjeta, pero qué se vendió, qué
+   día y quién había que ir a buscarlo a la Competencia, vendedor por vendedor.
+   ⚠ Mismas columnas que la lista de arriba, para leerlas juntas. #}
+<div class="titulo-fila">
+  <h2 id="vendidos-tabla" style="margin-top:0">Vendidos</h2>
+  <span class="acciones">
+    <a href="/analisis/vendidos.xlsx">Bajar a Excel</a>
+  </span>
+</div>
+{# ⚠ La bajada se sacó el 25/08/2026 (dueña: "esto borrar, no funciona
+   tampoco"). Prometía un click que estaba roto —llevaba a la fila de esa tela
+   en la lista de arriba, y esa fila era justamente la que se había ido por
+   tener 0 kg—. Ahora la fila está, tachada, así que el click funciona; el
+   texto igual sobraba: la tabla se llama Vendidos y tiene las columnas a la
+   vista. #}
+{% if vendidos %}
+{# ⭐ EL TOTAL ARRIBA DE TODO (dueña 25/08/2026: "acá poneme un total arriba de
+   todo: debería coincidir con los que dicen que vendió"). Es la comprobación:
+   si esta suma no da lo mismo que el «Se vendió» del encabezado y que el
+   ranking de la Competencia, hay un renglón contándose de más o de menos. Por
+   eso va acá y no al pie — se lee antes que la tabla, no después. #}
+<p class="sub" style="margin:0 0 10px"><b>{{ vendidos | sum(attribute='kg') | num_es(0) }} kg</b>
+en {{ vendidos | length }} renglones ·
+<b>{{ vendidos | sum(attribute='puntos_fila') | num_es(0) }} puntos</b></p>
+{# ⭐ Las MISMAS columnas que la lista de arriba y en el mismo orden (dueña
+   25/08/2026: "mantené el orden y formato de las de arriba, podés reemplazar
+   clientes por vendedor"). Dos tablas que muestran lo mismo con otro orden se
+   leen como dos cosas distintas. Cambian sólo las dos últimas, que son las que
+   acá significan otra cosa: Clientes → Vendedor y Última venta → Día. #}
+<div class="caja"><table class="resumen" id="vendidos">
+<thead><tr>
+<th class="opt">Grupo</th><th>Tela</th><th>Color</th><th class="forma">Forma</th>
+<th class="cal">Categoría</th><th class="n">Queda</th><th class="n">Vendido</th>
+<th class="n">Vale</th>
+<th class="n opt">Puntos</th><th>Vendedor</th><th class="n opt">Día</th>
+</tr></thead>
+<tbody>
+{% for v in vendidos %}
+  {# ⭐ La fila lleva a esa tela EN SALDOS, ya filtrada (26/08/2026, cuando
+     Vendidos se mudó a su propia pantalla). Antes buscaba la fila en la tabla
+     de arriba y le hacía scroll; acá arriba no hay tabla, así que el click se
+     habría quedado mudo. Los filtros de Saldos se leen de la dirección, así
+     que alcanza con armar la URL. #}
+  <tr class="vfila" style="cursor:pointer"
+      onclick="location.href='/analisis/parado?subgrupo={{ v.subcategoria | urlencode }}&q={{ v.color | urlencode }}'"
+      data-sub="{{ v.subcategoria }}" data-color="{{ v.color }}">
+    <td class="g opt">{{ v.categoria or '—' }}</td>
+    <td class="tela">{{ v.subcategoria }}<span class="qm">{{ fm.cal(v) }}</span></td>
+    <td class="col2"><b>{{ v.color }}</b>{% if v.color_nombre %}
+      <span class="g">{{ v.color_nombre }}</span>{% endif %}</td>
+    <td class="forma">{{ fm.forma(v) }}</td>
+    <td class="cal">{{ fm.cal(v) }}</td>
+    <td class="n g">{% if v.queda %}{{ v.queda | num_es(1) if v.queda < 1
+      else v.queda | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n">{{ v.kg | num_es(1) if v.kg < 1 else v.kg | num_es(0) }}</td>
+    <td class="n vale"><span class="pt p{{ v.puntos }}">{{ v.puntos }} × kg</span></td>
+    <td class="n pts opt">{{ v.puntos_fila | num_es(0) }}</td>
+    {# ⭐ El CÓDIGO de tres letras, no el nombre entero (dueña 26/08/2026:
+       "poner código de vendedor en la columna que arriba está cliente, no
+       todo"). Es la misma columna que arriba dice «Clientes» y trae un número
+       de tres dígitos: con «Proaño Sebastián» adentro, la columna se estiraba
+       y las dos tablas dejaban de leerse en vertical. El nombre completo queda
+       en el `title`.
+       ⚠ La casa no tiene código: va «Intela», que es como se llama en el
+       ranking. #}
+    <td class="g" title="{{ v.vendedor }}">{{ v.vend_pc or 'Intela' }}</td>
+    {# ⭐ El día abre la FACTURA (dueña 26/08/2026), sólo para quien puede
+       verlas. Ver el comentario en competencia.html. #}
+    <td class="g n opt">{% if v.numf and tiene_permiso('facturas.ver')
+      %}<a href="/facturas/{{ v.numf }}{% if v.numero %}?doc={{ v.numero | urlencode }}{% endif %}"
+           title="Factura {{ v.numero or v.numf }}" onclick="event.stopPropagation()"
+           style="color:inherit">{{ v.fecha.strftime('%d/%m/%y') }}</a>{% else
+      %}{{ v.fecha.strftime('%d/%m/%y') }}{% endif %}</td>
+  </tr>
+{% endfor %}
+</tbody>
+{# ⭐ El TOTAL debajo de sus columnas (dueña 25/08/2026: "totales para la tabla
+   de vendidos"). Arriba está la cifra sola, para leerla antes de la tabla;
+   acá cae abajo de Kg y de Puntos, que es donde se la va a buscar cuando se
+   terminó de recorrer los renglones. Mismo pie que «Por grupo». #}
+<tfoot><tr>
+{# ⚠ «Total» va en la columna TELA y no en Grupo: Grupo es `opt` y en el
+   teléfono se esconde, así que el pie se quedaba sin rótulo. #}
+<td class="opt"></td>
+<td><b>Total</b> <span class="g">{% if vendidos | length != 1 %}{{ vendidos | length }} renglones{% else %}1 renglón{% endif %}</span></td>
+<td></td><td class="forma"></td><td class="cal"></td>
+<td class="n"></td>
+<td class="n"><b>{{ vendidos | sum(attribute='kg') | num_es(0) }}</b></td>
+<td class="n"></td>
+<td class="n pts opt"><b>{{ vendidos | sum(attribute='puntos_fila') | num_es(0) }}</b></td>
+<td></td><td class="n opt"></td>
+</tr></tfoot>
+</table></div>
+{% else %}
+<p class="sub">Todavía no se vendió nada de la lista.</p>
+{% endif %}
+
+<footer>
+Se cuenta desde la largada de la competencia. Un renglón es UNA factura: si la
+misma tela se vendió dos veces el mismo día, son dos renglones.
+El día abre la factura.
+</footer>
+{% endblock %}
