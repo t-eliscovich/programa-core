@@ -188,7 +188,11 @@ def test_el_hidden_de_la_pregunta_lleva_la_fecha_ya_pisada(cliente_y_queries):
     html = r.get_data(as_text=True)
 
     assert f'name="fecha" value="{HOY.isoformat()}"' in html
-    assert ANTEAYER.isoformat() not in html, (
+    # 🪤 No buscar la fecha PELADA en todo el HTML: el layout trae comentarios
+    # CSS fechados ("Federico 2026-08-24") y el test explotaba solo el día en
+    # que ANTEAYER coincidía con uno (pasó el 27/08/2026). Lo que protege este
+    # test es que ningún INPUT lleve la fecha descartada.
+    assert f'value="{ANTEAYER.isoformat()}"' not in html, (
         "la fecha vieja seguía colgada del form: el próximo submit la grababa"
     )
 
