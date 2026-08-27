@@ -3481,3 +3481,111 @@ def numero_de_factura(numero_factura: str) -> int | None:
 def reset_locales_cache() -> None:
     """Vaciar el cache de compras_locales_asinfo (tests / deploy)."""
     _LOCALES_CACHE.clear()
+
+
+# ---------------------------------------------------------------------------
+# Consumo de hilado — réplica del Excel "Consumos de Material - Resumen"
+# ---------------------------------------------------------------------------
+# El Excel de la dueña (Power Query directo al SQL Server de Asinfo) arma su
+# consumo con SUM(detalle_orden_salida_material.cantidad_despachada) por mes y
+# material, filtrado a la categoría HILO. Acá se replica esa consulta por el
+# puente Metabase (DB 2). Decisiones tomadas con la dueña el 27/08/2026:
+#   - Igual al Excel: consumo BRUTO (no se resta cantidad_devuelta) y sin
+#     filtrar estado del OSM.
+#   - Sólo categoría HILO (el slicer del Excel estaba en HILO).
+#   - "Material" = producto.nombre_subcategoria_producto (22/1, 20/1 JAS 8%,
+#     100/36 POLIESTER, …), el mismo nivel de fila que usa el pivot del Excel.
+# El saldo actual NO copia la subconsulta del Excel (max(fecha_creacion) por
+# producto, que pisa bodegas): usa el patrón verificado de stock_asinfo() —
+# último snapshot por (producto, bodega) con ROW_NUMBER y saldo > 0.
+
+
+def consumo_hilado_mensual(anio: int) -> tuple[list[dict], bool]:
+    """kg de hilado despachados (OSM) por mes y material, del año pedido.
+
+    Devuelve `(filas, ok)`:
+        filas — [{mes, material, kg, lineas}], mes 1-12.
+        ok    — False si Metabase no contestó (distinto de "sin filas").
+
+    `lineas` (COUNT de renglones de despacho) sirve para reproducir el
+    "Promedio" del pivot del Excel, que es AVG(cantidad_despachada) por
+    renglón — o sea SUM/COUNT.
+    """
+    try:
+        anio = int(anio)
+    except (TypeError, ValueError):
+        return [], False
+    if not (2000 <= anio <= 2100):
+        return [], False
+    sql = f"""
+SELECT MONTH(osm.fecha)                    AS mes,
+       pr.nombre_subcategoria_producto     AS material,
+       SUM(dosm.cantidad_despachada)       AS kg,
+       COUNT(*)                            AS lineas
+  FROM orden_salida_material osm
+  JOIN detalle_orden_salida_material dosm
+    ON dosm.id_orden_salida_material = osm.id_orden_salida_material
+  JOIN producto pr ON pr.id_producto = dosm.id_producto
+ WHERE pr.nombre_categoria_producto = 'HILO'
+   AND YEAR(osm.fecha) = {anio}
+ GROUP BY MONTH(osm.fecha), pr.nombre_subcategoria_producto
+"""
+    try:
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=5000)
+    except Exception as e:  # noqa: BLE001 — fail-soft como todo el bridge
+        _LOG.warning("consumo_hilado_mensual falló: %s", e)
+        return [], False
+    out = []
+    for r in rows or []:
+        try:
+            out.append({
+                "mes": int(r.get("mes")),
+                "material": str(r.get("material") or "(sin subcategoría)").strip(),
+                "kg": float(r.get("kg") or 0),
+                "lineas": int(r.get("lineas") or 0),
+            })
+        except (TypeError, ValueError):
+            continue
+    return out, bool(ok)
+
+
+def consumo_hilado_saldos() -> tuple[list[dict], bool]:
+    """Saldo actual de HILO en inventario por material (todas las bodegas).
+
+    Último snapshot por (producto, bodega) de `saldo_producto`, sólo saldos
+    positivos — mismo patrón verificado al centavo que usa stock_asinfo().
+    Devuelve `(filas, ok)` con filas = [{material, kg}] orden kg DESC.
+    """
+    sql = """
+WITH ult AS (
+    SELECT id_producto, id_bodega, saldo,
+           ROW_NUMBER() OVER (
+               PARTITION BY id_producto, id_bodega
+               ORDER BY fecha DESC, id_saldo_producto DESC
+           ) AS rn
+      FROM saldo_producto
+)
+SELECT pr.nombre_subcategoria_producto AS material,
+       SUM(u.saldo)                    AS kg
+  FROM ult u
+  JOIN producto pr ON pr.id_producto = u.id_producto
+ WHERE u.rn = 1 AND u.saldo > 0
+   AND pr.nombre_categoria_producto = 'HILO'
+ GROUP BY pr.nombre_subcategoria_producto
+ ORDER BY SUM(u.saldo) DESC
+"""
+    try:
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=2000)
+    except Exception as e:  # noqa: BLE001 — fail-soft como todo el bridge
+        _LOG.warning("consumo_hilado_saldos falló: %s", e)
+        return [], False
+    out = []
+    for r in rows or []:
+        try:
+            out.append({
+                "material": str(r.get("material") or "(sin subcategoría)").strip(),
+                "kg": float(r.get("kg") or 0),
+            })
+        except (TypeError, ValueError):
+            continue
+    return out, bool(ok)

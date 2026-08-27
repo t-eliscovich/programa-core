@@ -74,6 +74,13 @@
   .fb details.seccion > summary { cursor: pointer; padding: 11px 14px; font-weight: 600;
                                   font-size: 13px; color: rgb(51 65 85); user-select: none; }
   .fb details.seccion[open] > summary { border-bottom: 1px solid rgb(241 245 249); }
+  .fb .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .fb .tabs a { padding: 6px 14px; border: 1px solid rgb(226 232 240); border-radius: 8px;
+                font-size: 13px; font-weight: 600; color: rgb(51 65 85);
+                text-decoration: none; background: white; }
+  .fb .tabs a:hover { border-color: rgb(148 163 184); }
+  .fb .tabs a.actual { border-color: rgb(2 132 199); background: rgb(240 249 255);
+                       color: rgb(2 132 199); }
 </style>
 {% endblock %}
 
@@ -87,6 +94,12 @@
       <h1 class="text-xl font-semibold">Inventario</h1>
       <p class="text-xs text-slate-500">Hilo → producto terminado · kg · fuente Asinfo</p>
     </div>
+  </div>
+
+  {# Pestañas de la vista Inventario (dueña 27/08/2026): Consumo Hilado #}
+  <div class="tabs">
+    <a class="actual" href="{{ url_for('stock_asinfo.fabricacion_tc') }}">Inventario</a>
+    <a href="{{ url_for('stock_asinfo.consumo_hilado') }}">Consumo Hilado</a>
   </div>
 
   {% if error %}

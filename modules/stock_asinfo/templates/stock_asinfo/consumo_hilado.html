@@ -1,0 +1,159 @@
+{% extends "base.html" %}
+{% block title %}Consumo Hilado{% endblock %}
+{% block breadcrumb %}
+  <span>Stock</span> / <strong>Consumo Hilado</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .ch { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .ch .tabs { display: flex; gap: 6px; margin-bottom: 16px; }
+  .ch .tabs a { padding: 6px 14px; border: 1px solid rgb(226 232 240); border-radius: 8px;
+                font-size: 13px; font-weight: 600; color: rgb(51 65 85);
+                text-decoration: none; background: white; }
+  .ch .tabs a:hover { border-color: rgb(148 163 184); }
+  .ch .tabs a.actual { border-color: rgb(2 132 199); background: rgb(240 249 255);
+                       color: rgb(2 132 199); }
+  .ch .card { background: white; border: 1px solid rgb(226 232 240); border-radius: 10px;
+              overflow: hidden; }
+  .ch .card-title { padding: 10px 14px; font-size: 13px; font-weight: 600;
+                    color: rgb(51 65 85); border-bottom: 1px solid rgb(226 232 240);
+                    background: rgb(248 250 252); }
+  .ch .scroll { overflow-x: auto; }
+  .ch table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .ch th { background: white; text-align: left; padding: 8px 10px; font-weight: 600;
+           font-size: 11px; text-transform: uppercase; color: rgb(100 116 139);
+           letter-spacing: 0.03em; white-space: nowrap;
+           border-bottom: 1px solid rgb(226 232 240); }
+  .ch td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .ch td.num, .ch th.num { text-align: right; }
+  .ch td.num { font-family: ui-monospace, Menlo, monospace; white-space: nowrap; }
+  .ch td .pct { color: rgb(148 163 184); font-size: 10.5px; display: block; }
+  .ch tr.total-row td { font-weight: 700; background: rgb(248 250 252);
+                        border-top: 2px solid rgb(203 213 225); }
+  .ch td.mat { white-space: nowrap; }
+  .ch .acc-excel { display: inline-flex; align-items: center; gap: 5px;
+                   padding: 6px 12px; border: 1px solid rgb(203 213 225);
+                   border-radius: 8px; font-size: 13px; font-weight: 600;
+                   color: rgb(51 65 85); text-decoration: none; background: white; }
+  .ch .acc-excel:hover { border-color: rgb(148 163 184); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell page-shell--full ch">
+
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h1 class="text-xl font-semibold">Consumo Hilado</h1>
+      <p class="text-xs text-slate-500">kg de hilado despachados por orden de salida de material · fuente Asinfo</p>
+    </div>
+    <div class="flex items-center gap-3">
+      <form method="get" class="flex items-center gap-2">
+        <label class="text-xs text-slate-500" for="anio">Año</label>
+        <select id="anio" name="anio" class="border rounded px-2 py-1 text-sm" onchange="this.form.submit()">
+          {% for a in anios %}
+            <option value="{{ a }}" {{ 'selected' if a == anio }}>{{ a }}</option>
+          {% endfor %}
+        </select>
+      </form>
+      {# El Excel se lleva el filtro puesto: baja el MISMO año que se ve. #}
+      <a class="acc-excel" href="{{ url_for('stock_asinfo.consumo_hilado_export', anio=anio) }}">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12M8 11l4 4 4-4M4 19h16"/></svg>
+        Excel</a>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <a href="{{ url_for('stock_asinfo.fabricacion_tc') }}">Inventario</a>
+    <a class="actual" href="{{ url_for('stock_asinfo.consumo_hilado') }}">Consumo Hilado</a>
+  </div>
+
+  {% if not ok %}
+    <div class="mb-4 px-4 py-3 rounded bg-amber-50 text-amber-800 border border-amber-200 text-sm">
+      Sin datos disponibles en este momento — no se pudo consultar Asinfo.
+    </div>
+  {% endif %}
+
+  {# ── Consumo por material y mes (bloque grande del Excel) ────────── #}
+  <div class="card">
+    <div class="card-title">Despachado por mes (kg y % del mes) — {{ anio }}</div>
+    <div class="scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Material</th>
+            {% for n, nombre in meses %}<th class="num">{{ nombre }}</th>{% endfor %}
+            <th class="num">Total</th>
+            <th class="num">%</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for m in materiales %}
+          <tr>
+            <td class="mat">{{ m.material }}</td>
+            {% for n, _ in meses %}
+              <td class="num">{{ m.por_mes[n].kg | num_es(0) }}
+                <span class="pct">{{ m.por_mes[n].pct | num_es(1) }}%</span></td>
+            {% endfor %}
+            <td class="num">{{ m.total | num_es(0) }}</td>
+            <td class="num">{{ m.pct | num_es(1) }}%</td>
+          </tr>
+          {% endfor %}
+          {% if materiales %}
+          <tr class="total-row">
+            <td>Total</td>
+            {% for n, _ in meses %}<td class="num">{{ tot_mes[n] | num_es(0) }}</td>{% endfor %}
+            <td class="num">{{ total | num_es(0) }}</td>
+            <td class="num">100%</td>
+          </tr>
+          {% else %}
+          <tr><td colspan="3" class="text-slate-400">Sin despachos en {{ anio }}.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  {# ── Promedio y saldo, pegados en una tabla (dueña 27/08/2026) ──── #}
+  <div class="card" style="margin-top: 20px; max-width: 760px;">
+    <div class="card-title">Promedio del año y saldo actual, por material</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Material</th>
+          <th class="num">Promedio por despacho</th>
+          <th class="num">Promedio mensual (total ÷ {{ n_meses }})</th>
+          <th class="num">Saldo en inventario</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in combinado %}
+        <tr>
+          <td class="mat">{{ c.material }}</td>
+          <td class="num">{{ c.prom_linea | num_es(0) if c.prom_linea is not none else '—' }}</td>
+          <td class="num">{{ c.prom_mes | num_es(0) if c.prom_mes is not none else '—' }}</td>
+          <td class="num">{{ c.saldo | num_es(0) if c.saldo is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if combinado %}
+        <tr class="total-row">
+          <td>Total</td>
+          <td class="num"></td>
+          <td class="num">{{ (total / n_meses) | num_es(0) if n_meses else '' }}</td>
+          <td class="num">{{ total_saldos | num_es(0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-slate-400">Sin datos disponibles en este momento.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
+      "Promedio por despacho" = kg promedio de cada renglón de despacho (el promedio del Excel).
+      "Promedio mensual" = total del año ÷ meses transcurridos.
+      Saldo = último saldo por producto y bodega, sólo saldos positivos.
+      — = sin consumo en {{ anio }} o sin saldo.
+    </p>
+  </div>
+</div>
+{% endblock %}

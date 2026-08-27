@@ -616,3 +616,260 @@ def fabricacion_tc():
 @requiere_permiso("stock.ver")
 def fabricacion_pt():
     return _fabricacion_page("pt")
+
+
+# ---------------------------------------------------------------------------
+# Consumo Hilado — pestaña de Inventario (dueña 27/08/2026)
+# ---------------------------------------------------------------------------
+# Réplica del Excel "Consumos de Material - Resumen" (Power Query a Asinfo):
+# kg de HILO despachados por orden de salida de material, por material y mes,
+# más el promedio mensual y el saldo actual en inventario. Igual al Excel:
+# consumo bruto (sin restar devoluciones), sólo categoría HILO.
+
+_MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun",
+                 "jul", "ago", "sep", "oct", "nov", "dic"]
+
+
+def _consumo_hilado_arma(rows, anio, hoy):
+    """Pivotea las filas (mes, material, kg, lineas) del servicio.
+
+    Devuelve dict con:
+        meses      — [(nro, 'ene'), …] sólo los meses con data, en orden.
+        materiales — [{material, por_mes: {mes: {kg, pct}}, total, pct,
+                       prom_linea, prom_mes}] orden total DESC.
+        tot_mes    — {mes: kg} totales por columna.
+        total      — kg del año.
+        n_meses    — divisor del promedio mensual (meses transcurridos).
+    """
+    por_mat: dict = {}
+    tot_mes: dict = {}
+    for r in rows:
+        m = por_mat.setdefault(r["material"], {"por_mes": {}, "total": 0.0, "lineas": 0})
+        m["por_mes"][r["mes"]] = m["por_mes"].get(r["mes"], 0.0) + r["kg"]
+        m["total"] += r["kg"]
+        m["lineas"] += r["lineas"]
+        tot_mes[r["mes"]] = tot_mes.get(r["mes"], 0.0) + r["kg"]
+
+    meses = [(n, _MESES_CORTOS[n - 1]) for n in sorted(tot_mes)]
+    total = sum(tot_mes.values())
+
+    # Divisor del promedio mensual: igual que la columna "Promedio Mensual
+    # Real (Total ÷ 8)" del Excel — meses transcurridos del año en curso,
+    # 12 para años cerrados.
+    if anio == hoy.year:
+        n_meses = max(hoy.month, 1)
+    elif anio < hoy.year:
+        n_meses = 12
+    else:
+        n_meses = 1
+
+    materiales = []
+    for nombre, m in sorted(por_mat.items(), key=lambda kv: -kv[1]["total"]):
+        por_mes = {}
+        for n, _ in meses:
+            kg = m["por_mes"].get(n, 0.0)
+            t = tot_mes.get(n) or 0.0
+            por_mes[n] = {"kg": kg, "pct": (kg / t * 100) if t else 0.0}
+        materiales.append({
+            "material": nombre,
+            "por_mes": por_mes,
+            "total": m["total"],
+            "pct": (m["total"] / total * 100) if total else 0.0,
+            # "Promedio" del pivot del Excel: AVG por renglón de despacho.
+            "prom_linea": (m["total"] / m["lineas"]) if m["lineas"] else 0.0,
+            # "Promedio Mensual Real": total ÷ meses transcurridos.
+            "prom_mes": m["total"] / n_meses,
+        })
+    return {"meses": meses, "materiales": materiales, "tot_mes": tot_mes,
+            "total": total, "n_meses": n_meses}
+
+
+def _consumo_hilado_datos():
+    """Trae y arma TODO lo que muestran la pantalla y el export (mismo
+    filtro de año: lo que se baja es lo que se ve)."""
+    from filters import today_ec
+    from modules.asinfo import service as asinfo_service
+
+    hoy = today_ec()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    anio = min(max(anio, 2022), hoy.year)  # Asinfo tiene data desde 2022
+
+    rows, ok = asinfo_service.consumo_hilado_mensual(anio)
+    saldos, saldos_ok = asinfo_service.consumo_hilado_saldos()
+
+    data = _consumo_hilado_arma(rows, anio, hoy)
+    total_saldos = sum(s["kg"] for s in saldos)
+
+    # Promedio y saldo PEGADOS en una sola tabla (dueña 27/08/2026): mismas
+    # filas de material que el cuadro grande, con el saldo al lado. Los
+    # materiales que solo tienen saldo (sin consumo en el año) van al final.
+    saldo_por_mat = {s["material"]: s["kg"] for s in saldos}
+    combinado = [{
+        "material": m["material"],
+        "prom_linea": m["prom_linea"],
+        "prom_mes": m["prom_mes"],
+        "saldo": saldo_por_mat.pop(m["material"], None),
+    } for m in data["materiales"]]
+    combinado += [{"material": mat, "prom_linea": None, "prom_mes": None,
+                   "saldo": kg}
+                  for mat, kg in sorted(saldo_por_mat.items(),
+                                        key=lambda kv: -kv[1])]
+
+    return {
+        "anio": anio,
+        "anios": list(range(hoy.year, 2021, -1)),
+        "ok": ok,
+        "saldos_ok": saldos_ok,
+        "combinado": combinado,
+        "total_saldos": total_saldos,
+        **data,
+    }
+
+
+@stock_asinfo_bp.route("/consumo-hilado")
+@requiere_login
+@requiere_permiso("stock.ver")
+def consumo_hilado():
+    return render_template("stock_asinfo/consumo_hilado.html",
+                           **_consumo_hilado_datos())
+
+
+@stock_asinfo_bp.route("/consumo-hilado/export.xlsx")
+@requiere_login
+@requiere_permiso("stock.ver")
+def consumo_hilado_export():
+    """Excel del Consumo Hilado, con el MISMO año que la pantalla.
+
+    Una hoja con los dos cuadros: despachado por mes (kg y % del mes) y,
+    abajo, promedio + saldo por material — formato de la casa (encabezado
+    oscuro, kg sin decimales, % con un decimal, panes congelados)."""
+    import io
+
+    from flask import Response
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    d = _consumo_hilado_datos()
+    meses = d["meses"]
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"Consumo Hilado {d['anio']}"
+
+    hdr_font = Font(bold=True, color="FFFFFF")
+    hdr_fill = PatternFill("solid", fgColor="0F172A")
+    tot_fill = PatternFill("solid", fgColor="F1F5F9")
+    tot_border = Border(top=Side(style="medium", color="94A3B8"))
+    kg_fmt = "#,##0"
+    pct_fmt = "0.0%"
+
+    def _hdr(row, col, texto):
+        c = ws.cell(row=row, column=col, value=texto)
+        c.font = hdr_font
+        c.fill = hdr_fill
+        c.alignment = Alignment(horizontal="center")
+        return c
+
+    # ── Cuadro 1: despachado por mes (kg + % del mes) ──────────────────
+    ws.cell(row=1, column=1,
+            value=f"Consumo Hilado — {d['anio']}").font = Font(bold=True, size=14)
+    ws.cell(row=2, column=1,
+            value="kg de hilado despachados por orden de salida de material · fuente Asinfo"
+            ).font = Font(size=9, color="64748B")
+
+    fila_hdr = 4
+    _hdr(fila_hdr, 1, "Material")
+    col = 2
+    for _, nombre in meses:
+        _hdr(fila_hdr, col, nombre)
+        _hdr(fila_hdr, col + 1, "%")
+        col += 2
+    _hdr(fila_hdr, col, "Total")
+    _hdr(fila_hdr, col + 1, "%")
+    n_cols = col + 1
+
+    r = fila_hdr + 1
+    for m in d["materiales"]:
+        ws.cell(row=r, column=1, value=m["material"])
+        col = 2
+        for n, _ in meses:
+            ws.cell(row=r, column=col,
+                    value=round(m["por_mes"][n]["kg"])).number_format = kg_fmt
+            ws.cell(row=r, column=col + 1,
+                    value=m["por_mes"][n]["pct"] / 100).number_format = pct_fmt
+            col += 2
+        ws.cell(row=r, column=col, value=round(m["total"])).number_format = kg_fmt
+        ws.cell(row=r, column=col + 1, value=m["pct"] / 100).number_format = pct_fmt
+        r += 1
+
+    if d["materiales"]:
+        ws.cell(row=r, column=1, value="Total")
+        col = 2
+        for n, _ in meses:
+            ws.cell(row=r, column=col,
+                    value=round(d["tot_mes"][n])).number_format = kg_fmt
+            col += 2
+        ws.cell(row=r, column=col, value=round(d["total"])).number_format = kg_fmt
+        ws.cell(row=r, column=col + 1, value=1).number_format = "0%"
+        for c in range(1, n_cols + 1):
+            cell = ws.cell(row=r, column=c)
+            cell.font = Font(bold=True)
+            cell.fill = tot_fill
+            cell.border = tot_border
+        r += 1
+
+    # ── Cuadro 2: promedio y saldo, pegados ────────────────────────────
+    r += 2
+    ws.cell(row=r, column=1,
+            value="Promedio del año y saldo actual, por material"
+            ).font = Font(bold=True, size=12)
+    r += 1
+    _hdr(r, 1, "Material")
+    _hdr(r, 2, "Promedio por despacho")
+    _hdr(r, 3, f"Promedio mensual (total ÷ {d['n_meses']})")
+    _hdr(r, 4, "Saldo en inventario")
+    r += 1
+    for c_ in d["combinado"]:
+        ws.cell(row=r, column=1, value=c_["material"])
+        if c_["prom_linea"] is not None:
+            ws.cell(row=r, column=2,
+                    value=round(c_["prom_linea"])).number_format = kg_fmt
+        if c_["prom_mes"] is not None:
+            ws.cell(row=r, column=3,
+                    value=round(c_["prom_mes"])).number_format = kg_fmt
+        if c_["saldo"] is not None:
+            ws.cell(row=r, column=4,
+                    value=round(c_["saldo"])).number_format = kg_fmt
+        r += 1
+    if d["combinado"]:
+        ws.cell(row=r, column=1, value="Total")
+        if d["n_meses"]:
+            ws.cell(row=r, column=3,
+                    value=round(d["total"] / d["n_meses"])).number_format = kg_fmt
+        ws.cell(row=r, column=4,
+                value=round(d["total_saldos"])).number_format = kg_fmt
+        for c in range(1, 5):
+            cell = ws.cell(row=r, column=c)
+            cell.font = Font(bold=True)
+            cell.fill = tot_fill
+            cell.border = tot_border
+
+    ws.column_dimensions["A"].width = 22
+    for i in range(2, max(n_cols, 4) + 1):
+        letra = get_column_letter(i)
+        ws.column_dimensions[letra].width = 9.5 if i % 2 == 0 else 7
+    ws.freeze_panes = "B5"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        buf.getvalue(),
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition":
+                 f'attachment; filename="consumo_hilado_{d["anio"]}.xlsx"'},
+    )
