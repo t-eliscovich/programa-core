@@ -87,3 +87,16 @@ def test_deshacer_protesto_suelta_el_match_de_la_nd():
     assert "romper_match" in src
     # va DESPUES de la transaccion del deshacer (romper_match abre la suya)
     assert src.index("with db.tx()") < src.index("romper_match")
+
+
+def test_reclasificar_un_devuelto_viejo_no_cuenta():
+    """MTV (D→1): re-clasificar un devuelto del dBase no mueve el banco.
+
+    El vigia filtra por el stat del que SALIO el cheque (metadata del
+    protesto): si ya estaba devuelto (D/1/2/9/R) o nunca se deposito (Z),
+    no le corresponde ND. El filtro vive en el SQL del endpoint.
+    """
+    from modules.admin_dbase.health_audit_view import devuelto_sin_nd
+    src = inspect.getsource(devuelto_sin_nd)
+    assert "stat_prev" in src
+    assert "NOT IN ('D', '1', '2', '9', 'R', 'Z')" in src

@@ -1527,6 +1527,14 @@ def devuelto_sin_nd():
            AND m.tipo = 'cheque_devuelto' AND m.estado = 'activo'
          WHERE m.fecha_creacion >= %s
            AND UPPER(TRIM(COALESCE(c.stat, ''))) IN ('1', '2', '9')
+           -- TMT 2026-08-27: solo cuenta si el cheque venia de estar
+           -- DEPOSITADO (B/A/V) o si el protesto no anoto de donde salio.
+           -- Un D->1 (re-clasificar un devuelto del dBase, caso MTV) o un
+           -- Z->1 (rebota antes de depositarse) no movieron el banco y no
+           -- les corresponde ND: contarlos es un ⚠ diario por algo
+           -- legitimo, que entrena a ignorar el panel.
+           AND COALESCE(m.metadata->>'stat_prev', '')
+               NOT IN ('D', '1', '2', '9', 'R', 'Z')
          GROUP BY 1, 2
         """,
         (_CORTE_FECHAOUT,),
