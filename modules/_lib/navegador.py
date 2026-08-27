@@ -460,6 +460,27 @@ class _Navegador:
             time.sleep(0.02)
         raise OSError("la hoja no terminó de cargar")
 
+    def _alto_del_contenido(self, sesion: str) -> int | None:
+        """Cuántos píxeles de alto tiene lo DIBUJADO, preguntado a la página.
+
+        `scrollHeight` del `<html>` no sirve: devuelve el alto de la ventana
+        cuando el contenido es más corto. El del `<body>` sí mide el
+        contenido (verificado contra la hoja real de una factura: 953 px de
+        contenido en una ventana de 1988). `None` si no contesta un número —
+        el que llama sigue con la ventana estimada.
+        """
+        try:
+            r = self._cmd("Runtime.evaluate", {
+                "expression": "String(document.body ? Math.ceil(Math.max("
+                              "document.body.scrollHeight, "
+                              "document.body.getBoundingClientRect().bottom)) : 0)",
+                "returnByValue": True,
+            }, sesion)
+            alto = int((r.get("result") or {}).get("value") or "")
+            return alto if alto > 0 else None
+        except (OSError, ValueError, TypeError):
+            return None
+
     def hoja(self, html: str, static: Path, *, medidas: tuple[int, int] | None,
              formato: str) -> bytes:
         """Una pestaña: abre el HTML, saca el archivo y se cierra.
@@ -489,6 +510,32 @@ class _Navegador:
             self._cmd("Page.navigate", {"url": entrada.resolve().as_uri()}, sesion)
             self._esperar_carga(sesion, limite)
             if formato == "png":
+                # ⭐ TMT 2026-08-27 (dueña: "¿podemos mejorar?"). La ventana se
+                # abría con el alto ESTIMADO por `alto_para` — que estima para
+                # arriba a propósito, porque lo que falta se corta. Medido en
+                # producción con una factura real: contenido de 953 px en una
+                # ventana de 1988. El navegador dibuja y codifica un bitmap
+                # del DOBLE de lo que hay, y la PIL de después lo recorre
+                # entero para recortarlo.
+                #
+                # Acá el navegador está PRENDIDO y se le puede PREGUNTAR a la
+                # página cuánto mide, que es la diferencia con el camino de
+                # `--screenshot` (una corrida ciega). Se mide, se achica la
+                # ventana al contenido más un margen, y recién ahí la foto.
+                # El margen evita además que lo dibujado toque el borde de
+                # abajo — que es la alarma por la que `imagen_motor` rehace
+                # la hoja al doble: con la medida real no se rehace nunca.
+                #
+                # Si la página no contesta un número (no debería pasar), la
+                # foto sale con la ventana estimada, como hasta hoy.
+                if medidas:
+                    alto_real = self._alto_del_contenido(sesion)
+                    if alto_real:
+                        alto_real = max(300, min(alto_real + 60, 20000))
+                        if alto_real != medidas[1]:
+                            self._cmd("Emulation.setDeviceMetricsOverride", {
+                                "width": medidas[0], "height": alto_real,
+                                "deviceScaleFactor": 1, "mobile": False}, sesion)
                 r = self._cmd("Page.captureScreenshot", {"format": "png"}, sesion)
             else:
                 # ⚠ Estos tres parámetros son los que hacen que el archivo salga

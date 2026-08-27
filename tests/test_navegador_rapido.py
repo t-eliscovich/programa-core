@@ -290,6 +290,74 @@ def test_la_foto_pide_la_ventana_del_tamano_de_la_hoja(tmp_path):
                for p in nav.ws.pedidos), "la barra de scroll se dibuja encima"
 
 
+def test_la_foto_se_achica_al_alto_REAL_del_contenido(tmp_path):
+    """TMT 2026-08-27: la ventana se abre con el alto estimado (que estima
+    para arriba a propósito), pero antes de la foto se le pregunta a la
+    página cuánto mide y se achica la ventana al contenido más un margen.
+    Medido en producción: 953 px de contenido en una ventana de 1988."""
+    class _Ws(_WsCdp):
+        def enviar(self, texto):
+            msg = json.loads(texto)
+            if (msg["method"] == "Runtime.evaluate"
+                    and "document.body" in msg["params"]["expression"]):
+                self.respuestas["Runtime.evaluate"] = {"result": {"value": "953"}}
+            else:
+                self.respuestas["Runtime.evaluate"] = {
+                    "result": {"value": "complete|file:///hoja.html"}}
+            super().enviar(texto)
+
+    nav = navegador._Navegador()
+    nav.ws = _Ws(dict(_RESPUESTAS))
+    datos = nav.hoja("<html></html>", tmp_path, medidas=(900, 1988), formato="png")
+    assert datos == b"\x89PNG rapido"
+    medidas = [p["params"] for p in nav.ws.pedidos
+               if p["method"] == "Emulation.setDeviceMetricsOverride"]
+    assert len(medidas) == 2, "no se reajusto la ventana al contenido"
+    assert medidas[0]["height"] == 1988          # la estimada, para cargar
+    assert medidas[1]["height"] == 953 + 60      # la real, para la foto
+    assert medidas[1]["width"] == 900
+
+
+def test_si_la_pagina_no_contesta_su_alto_la_foto_sale_igual(tmp_path):
+    """El fake contesta el readyState para TODAS las evaluaciones: el alto no
+    se puede leer (no es un numero) y la foto tiene que salir con la ventana
+    estimada, sin segundo override y sin error — como hasta hoy."""
+    nav = _nav_falso()
+    datos = nav.hoja("<html></html>", tmp_path, medidas=(900, 1400), formato="png")
+    assert datos == b"\x89PNG rapido"
+    medidas = [p["params"] for p in nav.ws.pedidos
+               if p["method"] == "Emulation.setDeviceMetricsOverride"]
+    assert len(medidas) == 1
+    assert medidas[0]["height"] == 1400
+
+
+def test_el_alto_medido_no_pasa_del_techo_ni_del_piso(tmp_path):
+    """Una pagina que mide 30000 px no puede pedir un bitmap de 30000
+    (memoria del servidor); una de 10 px no puede pedir una ventana de 70."""
+    class _Ws(_WsCdp):
+        def __init__(self, respuestas, alto):
+            super().__init__(respuestas)
+            self.alto = alto
+
+        def enviar(self, texto):
+            msg = json.loads(texto)
+            if (msg["method"] == "Runtime.evaluate"
+                    and "document.body" in msg["params"]["expression"]):
+                self.respuestas["Runtime.evaluate"] = {"result": {"value": self.alto}}
+            else:
+                self.respuestas["Runtime.evaluate"] = {
+                    "result": {"value": "complete|file:///hoja.html"}}
+            super().enviar(texto)
+
+    for alto, esperado in (("30000", 20000), ("10", 300)):
+        nav = navegador._Navegador()
+        nav.ws = _Ws(dict(_RESPUESTAS), alto)
+        nav.hoja("<html></html>", tmp_path, medidas=(900, 1988), formato="png")
+        medidas = [p["params"] for p in nav.ws.pedidos
+                   if p["method"] == "Emulation.setDeviceMetricsOverride"]
+        assert medidas[-1]["height"] == esperado
+
+
 def test_el_pdf_sale_sin_encabezado_del_navegador(tmp_path):
     """Nada de "1/2" ni la URL del archivo temporal en la hoja que ve el
     cliente — es lo que hace `--no-pdf-header-footer` en el otro camino."""
@@ -747,9 +815,15 @@ def test_el_archivo_del_navegador_prendido_es_EL_MISMO(tmp_path):
     """La pregunta que decide si esto se puede prender: ¿sale el mismo archivo?
 
     Se dibuja la misma hoja por los dos caminos y se comparan. La foto tiene
-    que salir IDÉNTICA, byte por byte. El PDF cambia sólo en la hora que Skia
-    le escribe adentro (`/CreationDate`), así que se compara el largo y el
-    cuerpo salteando esa línea.
+    que salir IDÉNTICA después del recorte — que es lo que sale del programa:
+    `desde_html` recorta SIEMPRE, venga la foto del camino que venga. En crudo
+    ya no pueden ser iguales a propósito: al navegador prendido se le pregunta
+    cuánto mide el contenido y saca la foto con la ventana justa (TMT
+    2026-08-27, "¿podemos mejorar?"), mientras que `--screenshot` es una
+    corrida ciega con la ventana estimada. El recorte de ambas termina en el
+    mismo cajón de píxeles, y ahí sí: byte por byte. El PDF cambia sólo en la
+    hora que Skia le escribe adentro (`/CreationDate`), así que se compara el
+    largo y el cuerpo salteando esa línea.
 
     Si algún día un Chrome nuevo cambia esto, este test se pone rojo ANTES de
     que un cliente reciba una hoja distinta.
@@ -776,7 +850,8 @@ def test_el_archivo_del_navegador_prendido_es_EL_MISMO(tmp_path):
     viejo_png = imagen_motor._sacar_foto(
         pdf_motor.binario(), html, estatico, 1200)
 
-    assert rapido_png == viejo_png, "la foto NO es la misma"
+    assert (imagen_motor._recortar(rapido_png)[0]
+            == imagen_motor._recortar(viejo_png)[0]), "la foto NO es la misma"
     assert len(rapido_pdf) == len(viejo_pdf), "el PDF cambió de tamaño"
     def sin_fecha(b: bytes) -> bytes:
         """El PDF sin la línea de la hora: es lo único que cambia entre los dos."""
