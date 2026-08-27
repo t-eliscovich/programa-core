@@ -837,6 +837,31 @@ def detalle(id_factura: int):
     #    *"las notas de entrega tienen mal el link"*.
     doc = (request.args.get("doc") or "").strip()
     fact = queries.por_numf_completo(doc) if doc else None
+    # ⭐ SI EL NÚMERO NO ALCANZA, NO SE ADIVINA (dueña 26/08/2026: *"el link me
+    # manda a cualquier lado, es hasta otro cliente"*).
+    #
+    # El `numf` no es único: 2.064 números repetidos entre 4.416 facturas, el
+    # 12% del total. El 10919 es la nota de entrega del mostrador del 26/08 por
+    # $5,53 Y una devolución de AGL del 03/06 por −$462,15. `por_id` elegía sola
+    # con `ORDER BY id_factura ASC` —o sea SIEMPRE la más vieja— y abría la otra
+    # sin avisar que existía.
+    #
+    # El arreglo va ACÁ y no en cada link: hay diez lugares que linkean una
+    # factura y el próximo que se escriba también se equivocaría. Cuando el
+    # número da para dos, se muestra la lista con ese número y elige la persona.
+    # Quien tenga el número completo manda `?doc=` y ni ve esta pantalla.
+    if not fact:
+        candidatas = queries.las_del_mismo_numero(id_factura)
+        if len(candidatas) > 1:
+            flash(
+                f"Hay {len(candidatas)} documentos con el número {id_factura}. "
+                "Elegí cuál querés abrir.", "info")
+            return redirect(url_for("facturas.lista", q=id_factura,
+                                    vista="estado"))
+    # ⚠ `las_del_mismo_numero` sólo se usa para CONTAR: devuelve una fila
+    # liviana (para la lista) y el detalle necesita la cabecera entera. Con una
+    # sola candidata —o ninguna— sigue resolviendo `por_id`, que ya no puede
+    # equivocarse porque no hay dos.
     if not fact:
         fact = queries.por_id(id_factura)
     if not fact:

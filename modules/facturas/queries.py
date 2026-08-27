@@ -836,6 +836,33 @@ def por_id(id_factura: int) -> dict | None:
     )
 
 
+def las_del_mismo_numero(numf: int) -> list[dict]:
+    """Todas las facturas que comparten ese número visible. Casi siempre una.
+
+    ⭐ Existe para poder NO ADIVINAR. El `numf` no es único —al 26/08/2026 hay
+    **2.064 números repetidos entre 4.416 facturas**, el 12% del total— porque
+    las notas de entrega (NTEN) y las notas de crédito llevan su propia
+    numeración y chocan con las facturas viejas. Ejemplo real: el 10919 es la
+    NTEN del mostrador del 26/08 por $5,53 **y** una devolución de AGL del
+    03/06 por −$462,15.
+
+    Hasta hoy `por_id` elegía sola con `ORDER BY id_factura ASC`, o sea SIEMPRE
+    la más vieja, sin decirle a nadie que había otra. La dueña lo cazó el
+    26/08/2026: *"el link me manda a cualquier lado, es hasta otro cliente"*.
+    """
+    return db.fetch_all(
+        """
+        SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.tipo,
+               f.importe, f.codigo_cli, COALESCE(c.nombre, '') AS cliente
+          FROM scintela.factura f
+          LEFT JOIN scintela.cliente c ON c.codigo_cli = f.codigo_cli
+         WHERE f.numf = %s
+         ORDER BY f.fecha DESC, f.id_factura DESC
+        """,
+        (numf,),
+    ) or []
+
+
 def por_numf_completo(numf_completo: str) -> dict | None:
     """Cabecera de factura por su número VISIBLE completo, sin ambigüedad.
 

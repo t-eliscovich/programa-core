@@ -40,7 +40,12 @@ def test_en_la_oficina_el_link_pide_el_permiso_de_facturas():
     """Un link a una pantalla que el usuario no puede abrir es un 404 servido."""
     t = HOJA_OFI.read_text(encoding="utf-8")
     assert "tiene_permiso('facturas.ver')" in t
-    assert "url_for('facturas.detalle', id_factura=f.numf)" in t
+    # ⚠ La IDEA, no la firma: el 26/08/2026 el link pasó a llevar también
+    # `doc=` (el número completo) para no abrir la factura equivocada cuando el
+    # numf está repetido. Pedir la llamada textual obligaba a elegir entre el
+    # test y el arreglo.
+    assert "url_for('facturas.detalle'" in t
+    assert "id_factura=f.numf" in t
 
 
 def test_el_papel_de_la_oficina_no_lleva_link():
