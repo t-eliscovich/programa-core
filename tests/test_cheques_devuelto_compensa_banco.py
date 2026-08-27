@@ -246,3 +246,23 @@ def test_no_duplica_la_nd_tipeada_a_mano(monkeypatch):
         "sin el match por importe exacto, cualquier ND del cliente cancelaría "
         "la compensación"
     )
+
+
+def test_la_nd_de_otro_cheque_no_bloquea_la_nueva():
+    """GUG y ADI (27/08/2026): dos cheques del MISMO cliente e importe.
+
+    El guard encontraba la ND del PRIMER rebote y decidia "ya compensado"
+    para el segundo ("nd_ya_existia": true) — cero ND nueva y los libros
+    arriba del banco. Ahora la consulta excluye las ND que ya figuran como
+    compensacion de OTRO cheque en la metadata de su protesto.
+    """
+    import inspect
+
+    from modules.cheques import queries as q
+    src = inspect.getsource(q.compensar_deposito_devuelto)
+    i = src.find("nd_post = db.fetch_one")
+    bloque = src[i:i + 1400]
+    assert "NOT EXISTS" in bloque
+    assert "md.tipo = 'cheque_devuelto'" in bloque
+    assert "md.origen_id <> %s" in bloque, "la ND del PROPIO cheque si bloquea"
+    assert "'compensacion'->>'id_nd'" in bloque

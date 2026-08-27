@@ -1393,15 +1393,29 @@ def compensar_deposito_devuelto(
     # CJE se cargó con prov='PROT' y concepto "ND ch. prot. CJE 1", así que
     # exigir prov=cliente no alcanzaba y la duplicaba igual.
     _cli = (codigo_cli or "").strip().upper()
+    # TMT 2026-08-27 (GUG y ADI, el mismo dia): si la ND que encontramos ya es
+    # la COMPENSACION de OTRO cheque (quedo anotada en la metadata de su
+    # protesto), no cuenta — un cliente con DOS cheques del mismo importe
+    # rebotados necesita DOS notas de debito, y el guard se comia la segunda
+    # ("nd_ya_existia": true) dejando los libros arriba del banco. El vigia
+    # /admin/health/devuelto-sin-nd lo canta al dia siguiente; esto evita
+    # crear el agujero.
     nd_post = db.fetch_one(
-        "SELECT MAX(id_transaccion) AS m FROM scintela.transacciones_bancarias "
-        " WHERE UPPER(TRIM(COALESCE(documento,''))) = 'ND' "
+        "SELECT MAX(tb.id_transaccion) AS m FROM scintela.transacciones_bancarias tb "
+        " WHERE UPPER(TRIM(COALESCE(tb.documento,''))) = 'ND' "
         "   AND ( numreferencia = %s "
         "         OR ( no_banco = %s "
         "              AND ABS(COALESCE(importe, 0) - %s) <= 0.01 "
         "              AND ( UPPER(TRIM(COALESCE(prov,''))) = %s "
-        "                    OR UPPER(COALESCE(concepto,'')) LIKE %s ) ) )",
-        (id_cheque, int(links[0]["no_banco"]), imp, _cli, f"%{_cli}%"),
+        "                    OR UPPER(COALESCE(concepto,'')) LIKE %s ) ) ) "
+        "   AND NOT EXISTS ( "
+        "     SELECT 1 FROM scintela.mov_doble md "
+        "      WHERE md.tipo = 'cheque_devuelto' AND md.estado = 'activo' "
+        "        AND md.origen_id <> %s "
+        "        AND (md.metadata->'compensacion'->>'id_nd')::bigint "
+        "            = tb.id_transaccion )",
+        (id_cheque, int(links[0]["no_banco"]), imp, _cli, f"%{_cli}%",
+         id_cheque),
         conn=conn,
     )
     if nd_post and nd_post["m"] is not None and int(nd_post["m"]) > max_de:
