@@ -17,17 +17,19 @@ def _fila(kg, precio, neto):
             "descuento": round(bruto - neto, 4), "pct1": 5, "pct2": 7}
 
 
-def test_bruto_menos_descuento_mas_iva_da_el_total():
+def test_bruto_menos_descuento_da_el_total():
+    # Desde el 27/08/2026 el pie va CON IVA y sin renglón de IVA:
+    # Subtotal − Descuento = Total, exacto.
     t = fl._agrupar([_fila(21.65, 7.93, 151.69)])["totales"]
-    assert round(t["bruto"] - t["descuento"], 2) == t["neto"]
-    assert round(t["neto"] + t["iva"], 2) == t["total"]
+    assert round(t["bruto"] - t["descuento"], 2) == t["total"]
 
 
-def test_el_iva_es_el_15_del_neto_que_se_muestra():
+def test_el_total_sigue_siendo_lo_que_paga_el_cliente():
     t = fl._agrupar([_fila(10, 10.0, 90.0)])["totales"]
-    assert t["neto"] == 90.0
+    assert t["bruto"] == 115.0      # 100 + IVA
+    assert t["descuento"] == 11.5   # 10 + IVA
     assert t["iva"] == 13.5
-    assert t["total"] == 103.5
+    assert t["total"] == 103.5      # 90 + 15% — NO cambia con la vista
 
 
 def test_la_cache_con_el_total_viejo_no_se_lee():

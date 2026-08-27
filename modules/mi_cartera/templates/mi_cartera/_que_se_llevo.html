@@ -105,10 +105,7 @@
         <td>−{{ det.totales.descuento | money_es }}</td>
       </tr>
       {% endif %}
-      <tr>
-        <td class="l" colspan="{{ 1 if sin_kg else 4 }}">IVA 15%</td>
-        <td>{{ det.totales.iva | money_es }}</td>
-      </tr>
+      {# Desde el 27/08/2026 TODO va con IVA: el renglón de IVA se fue. #}
       <tr class="tot">
         <td class="l" colspan="{{ 1 if sin_kg else 4 }}">{{ 'Total acreditado' if sin_kg else 'Total' }}</td>
         <td>{{ det.totales.total | money_es }}</td>

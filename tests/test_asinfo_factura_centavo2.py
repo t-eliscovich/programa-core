@@ -20,12 +20,13 @@ def _fila(bruto, descuento):
 
 
 @pytest.mark.parametrize("bruto,descuento,esperado", [
-    (171.6845, 19.9945, (171.68, 19.99, 151.69, 22.75, 174.44)),
-    (210.1480, 34.4643, (210.15, 34.46, 175.69, 26.35, 202.04)),
+    # Desde el 27/08/2026 el pie va CON IVA: Subtotal − Descuento = Total.
+    # El Total es EL MISMO de antes (el importe que ya tenía Programa Core).
+    (171.6845, 19.9945, (197.43, 22.99, 22.75, 174.44)),
+    (210.1480, 34.4643, (241.67, 39.63, 26.35, 202.04)),
 ])
 def test_el_pie_cierra_con_las_cifras_que_se_ven(bruto, descuento, esperado):
     t = fl._agrupar([_fila(bruto, descuento)])["totales"]
-    assert (t["bruto"], t["descuento"], t["neto"], t["iva"], t["total"]) == esperado
+    assert (t["bruto"], t["descuento"], t["iva"], t["total"]) == esperado
     # y la comprobación que hace el ojo, paso por paso
-    assert round(t["bruto"] - t["descuento"], 2) == t["neto"]
-    assert round(t["neto"] + t["iva"], 2) == t["total"]
+    assert round(t["bruto"] - t["descuento"], 2) == t["total"]

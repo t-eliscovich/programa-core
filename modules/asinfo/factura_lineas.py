@@ -22,6 +22,12 @@ color, cuántos rollos. Eso vive en Asinfo y se trae por el puente de Metabase.
        IVA       = (bruto − descuento) × 15% = fc.impuesto
        a pagar   = bruto − descuento + IVA
 
+   ⭐ Ésa es la aritmética NETA de Asinfo. En PANTALLA todo va con IVA
+   (dueña 27/08/2026: "todo con IVA, no dos precios"), la misma regla que la
+   lista de precios y el papel: precios y totales ×1,15, pie sin renglón de
+   IVA, y Subtotal − Descuento = Total (el "a pagar" de siempre, que no
+   cambia).
+
 3. **El descuento viene en CASCADA** (`porcentaje_descuento` y
    `porcentaje_descuento_2`): 5% y después 14% sobre lo que quedó. Por eso el
    pie muestra los dos por separado y no un porcentaje sumado, que no existe.
@@ -122,7 +128,7 @@ IVA = 0.15
 #: se reescriben solas la próxima vez que alguien mire esa factura. Sale más
 #: barato que acordarse de vaciar la tabla en cada deploy — y olvidarse deja
 #: pantallas mostrando la mitad de los datos sin que nada falle.
-FORMATO = 5
+FORMATO = 6
 
 #: Cuánto vale la foto. Una factura vieja no cambia nunca; una de hoy puede
 #: recibir un renglón más en los minutos siguientes a emitirse.
@@ -492,7 +498,8 @@ def _agrupar(filas: list[dict]) -> dict:
             servicios.append({
                 "nombre": (f.get("producto") or "").strip(),
                 "cantidad": cant,
-                "total": round(b - d, 2),
+                # ⭐ CON IVA, como todo lo que se muestra (dueña 27/08/2026).
+                "total": round((b - d) * (1 + IVA), 2),
             })
             continue
 
@@ -526,9 +533,16 @@ def _agrupar(filas: list[dict]) -> dict:
     lineas = sorted(grupos.values(),
                     key=lambda g: (-(g["total"] if sin_kilos else g["kg"]),
                                    g["tela"], g["color"]))
+    # ⭐ TODO CON IVA (dueña 27/08/2026: "el precio es sin IVA, tiene que
+    # tener IVA. Todo con IVA, no dos precios"). La base y Asinfo guardan
+    # NETO, pero lo que se muestra va con el 15% — la misma regla que la
+    # lista de precios y que el papel (`factura_papel`: "en el papel TODO va
+    # con IVA"). El agrupado de arriba sigue siendo por precio NETO, que es
+    # el hecho; acá se convierte lo que se ve.
     for g in lineas:
         g["kg"] = None if sin_kilos else round(g["kg"], 2)
-        g["total"] = round(g["total"], 2)
+        g["precio"] = round(g["precio"] * (1 + IVA), 2)
+        g["total"] = round(g["total"] * (1 + IVA), 2)
         if sin_kilos:
             g["rollos"] = None
 
@@ -545,6 +559,13 @@ def _agrupar(filas: list[dict]) -> dict:
     descuento = round(descuento, 2)
     neto = round(bruto - descuento, 2)
     iva = round(neto * IVA, 2)
+    # ⭐ El pie va CON IVA y sin renglón de IVA: Subtotal − Descuento = Total,
+    # exacto. El Total es el de siempre (neto + IVA, lo que paga el cliente:
+    # NO se recalcula); el descuento se saca POR RESTA de los dos que están a
+    # la vista, para que la columna cierre al centavo (la lección de la 182382).
+    total_iva = round(neto + iva, 2)
+    bruto_iva = round(bruto * (1 + IVA), 2)
+    descuento_iva = round(bruto_iva - total_iva, 2) if descuento else 0.0
     return {
         "doc": doc,
         "titulo": TITULOS.get(doc, TITULO_DEFAULT),
@@ -553,11 +574,10 @@ def _agrupar(filas: list[dict]) -> dict:
         "totales": {
             "rollos": None if sin_kilos else rollos,
             "kg": None if sin_kilos else round(kg, 2),
-            "bruto": bruto,
-            "descuento": descuento,
-            "neto": neto,
+            "bruto": bruto_iva,
+            "descuento": descuento_iva,
             "iva": iva,
-            "total": round(neto + iva, 2),
+            "total": total_iva,
             # Los dos tramos, sólo si TODOS los renglones llevan los mismos.
             # Con dos escalones distintos en la misma factura un solo par
             # mentiría — mejor no decir nada que decir el de una fila sola.
@@ -567,7 +587,7 @@ def _agrupar(filas: list[dict]) -> dict:
             # distintos en la misma factura no hay un par que nombrar, y un
             # renglón que dice "Descuento" y nada más obliga a sacar la cuenta
             # a mano. Éste siempre se puede decir.
-            "pct_efectivo": round(descuento / bruto * 100, 1) if bruto else 0.0,
+            "pct_efectivo": round(descuento / bruto * 100, 1) if bruto else 0.0,  # sobre el neto: el % es el mismo con o sin IVA
         },
     }
 

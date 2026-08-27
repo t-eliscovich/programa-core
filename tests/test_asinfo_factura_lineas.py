@@ -123,7 +123,7 @@ def test_cuatro_rollos_de_la_misma_tela_son_una_fila_con_cuatro_rollos():
     fila = res["lineas"][0]
     assert fila["rollos"] == 4
     assert fila["kg"] == 85.60
-    assert fila["total"] == 646.90
+    assert fila["total"] == 743.94   # 646,90 neto + 15% IVA
     assert fila["codigo"] == "FRE"
     assert res["totales"]["rollos"] == 4
 
@@ -134,7 +134,7 @@ def test_el_mismo_color_a_dos_precios_no_se_promedia():
              _fila("Jersey 3", "MARINO", 20.0, 8.00, 150.0)]
     res = fl._agrupar(filas)
     assert len(res["lineas"]) == 2
-    assert {x["precio"] for x in res["lineas"]} == {9.82, 8.0}
+    assert {x["precio"] for x in res["lineas"]} == {11.29, 9.2}   # con IVA
 
 
 def test_primera_y_segunda_son_dos_filas():
@@ -157,7 +157,7 @@ def test_el_servicio_de_logistica_no_es_un_rollo_ni_un_kilo():
     assert res["totales"]["rollos"] == 1
     assert res["totales"]["kg"] == 22.45
     assert res["servicios"] == [
-        {"nombre": "SERVICIO DE LOGISTICA", "cantidad": 1.0, "total": 2.61}]
+        {"nombre": "SERVICIO DE LOGISTICA", "cantidad": 1.0, "total": 3.0}]   # con IVA
 
 
 def test_los_totales_son_los_de_la_factura_de_verdad():
@@ -185,8 +185,9 @@ def test_los_totales_son_los_de_la_factura_de_verdad():
     t = res["totales"]
     assert t["rollos"] == 14
     assert t["kg"] == 235.40
-    assert abs(t["bruto"] - 2282.71) < 0.05
-    assert abs(t["descuento"] - 417.73) < 0.05
+    # En pantalla TODO va con IVA (dueña 27/08/2026); el total es el mismo.
+    assert abs(t["bruto"] - 2625.12) < 0.05
+    assert abs(t["descuento"] - 480.40) < 0.05
     assert abs(t["iva"] - 279.74) < 0.05
     assert abs(t["total"] - 2144.72) < 0.05
     assert len(res["lineas"]) == 7
@@ -286,7 +287,7 @@ def test_la_nota_de_credito_no_muestra_kilos_ni_rollos():
 def test_la_plata_de_la_nota_de_credito_es_la_de_la_ficha():
     """Los kilos se van, la plata queda: 328,09 + 15% = 377,30."""
     tot = fl._agrupar(_nota_de_credito())["totales"]
-    assert tot["bruto"] == 328.09
+    assert tot["bruto"] == 377.30   # con IVA: 328,09 + 15%
     assert tot["iva"] == 49.21
     assert tot["total"] == 377.30
 
@@ -294,7 +295,7 @@ def test_la_plata_de_la_nota_de_credito_es_la_de_la_ficha():
 def test_sin_kilos_manda_el_renglon_que_mas_acredita():
     """La fila más pesada va primero; sin kilos, la que más plata devuelve."""
     lineas = fl._agrupar(_nota_de_credito())["lineas"]
-    assert [ln["total"] for ln in lineas] == [196.84, 98.22, 26.22, 6.82]
+    assert [ln["total"] for ln in lineas] == [226.36, 112.95, 30.15, 7.84]   # con IVA
 
 
 def test_la_devolucion_si_tiene_kilos():
@@ -327,8 +328,8 @@ def test_un_documento_que_no_conocemos_se_porta_como_factura():
 
 
 def test_el_formato_del_cache_subio():
-    """Las 23 notas de crédito ya guardadas tienen que reescribirse solas."""
-    assert fl.FORMATO >= 5
+    """Lo guardado con precios netos tiene que reescribirse solo (IVA 27/08)."""
+    assert fl.FORMATO >= 6
 
 
 # --- y lo mismo en las tres pantallas --------------------------------------
@@ -351,7 +352,7 @@ def test_la_pantalla_de_la_nota_de_credito_no_dice_kilos(app, plantilla):
     assert "Kilos" not in html
     assert "Rollos" not in html
     assert "377,30" in html
-    assert "196,84" in html
+    assert "226,36" in html   # 196,84 + IVA: en pantalla todo va con IVA
 
 
 @pytest.mark.parametrize("plantilla", [
