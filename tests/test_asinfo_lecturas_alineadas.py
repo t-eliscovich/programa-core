@@ -108,3 +108,60 @@ def test_el_balance_alinea_antes_de_calcular():
     src = inspect.getsource(q.informe_balance)
     cabeza = src[:src.index("_totf = totf()")]
     assert "alinear_lecturas_del_balance" in cabeza
+
+
+# --- y quien alinea es el CALENTADOR, no la dueña --------------------------
+#
+# TMT 2026-08-26 (dueña): *"resultados tarda en cargar"*. Medido con el puente
+# cobrando su peaje real (650 ms por consulta): la pantalla en caliente son
+# 15 ms, pero cada 5 minutos vence el reloj de acá y el PRIMERO que la abría
+# pagaba las dos consultas —1.315 ms— adentro de su request. El calentador no
+# podía evitarlo: él sólo LEÍA las dos cachés y le daban HIT, mientras que
+# alinear las TIRA a propósito. O sea que su trabajo se descartaba y lo
+# terminaba haciendo el usuario.
+
+def test_el_calentador_alinea_antes_de_leer_las_dos_patas():
+    """Si lee las cachés sin alinear primero, su trabajo lo tira el balance."""
+    import inspect
+
+    from modules._lib import warmup
+
+    src = inspect.getsource(warmup._warm_once)
+    assert "alinear_lecturas_del_balance" in src
+    assert src.index("alinear_lecturas_del_balance") < src.index(
+        "asvc.inventario_por_etapa"), (
+        "alinear tiene que ir ANTES: si va después, tira lo que el "
+        "calentador acaba de leer y el usuario paga la relectura")
+
+
+def test_una_vuelta_del_calentador_deja_el_reloj_en_hora():
+    """El enganche de verdad: que la vuelta del hilo llame a esto."""
+    from modules._lib import warmup
+
+    with patch.object(sv, "alinear_lecturas_del_balance",
+                      return_value=True) as m:
+        warmup._warm_once()
+    assert m.call_count == 1
+
+
+def test_tres_que_abren_juntos_cruzan_el_puente_una_sola_vez():
+    """Sin candado, los tres ven el reloj vencido, los tres tiran las cachés
+    del otro y los tres pagan el puente para llegar al mismo número."""
+    import threading
+
+    def _lento():
+        import time as _t
+        _t.sleep(0.05)
+        return {"disponible": True}
+
+    resultados = []
+    with patch.object(sv, "inventario_por_etapa", side_effect=_lento) as m_inv, \
+         patch.object(sv, "importaciones_asinfo", return_value=[]):
+        hilos = [threading.Thread(target=lambda: resultados.append(
+            sv.alinear_lecturas_del_balance())) for _ in range(3)]
+        for h in hilos:
+            h.start()
+        for h in hilos:
+            h.join()
+    assert m_inv.call_count == 1
+    assert sorted(resultados) == [False, False, True]

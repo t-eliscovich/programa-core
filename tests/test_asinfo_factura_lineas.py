@@ -14,8 +14,21 @@ from modules.asinfo import factura_lineas as fl
 
 @pytest.fixture(autouse=True)
 def _limpiar_cache():
+    """Sin la caché de memoria, y SIN la de la base.
+
+    🐞 Los tests de acá llaman a `que_se_llevo`, que guarda lo que trae en
+    `scintela.factura_detalle`. Con una base a mano (la del CI, o la local de
+    `vista_local.py`) esas filas quedan escritas: la corrida SIGUIENTE las
+    encuentra y `que_se_llevo` contesta desde la base sin preguntarle a nadie,
+    así que media docena de tests que cuentan llamadas a Asinfo fallan sin que
+    nadie haya tocado el código. Acá la caché de la base se desconecta; el test
+    que la quiera mirar la vuelve a enchufar con su propio `patch`, que manda
+    sobre éste. TMT 2026-08-26.
+    """
     fl.reset_cache()
-    yield
+    with patch.object(fl, "_de_la_base", return_value=None), \
+         patch.object(fl, "_guardar"):
+        yield
     fl.reset_cache()
 
 

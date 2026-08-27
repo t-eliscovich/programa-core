@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import threading as _threading
 import time as _time
 
 from modules._lib import metabase_client
@@ -1333,13 +1334,30 @@ def _cache_ok(cache: dict, clave) -> bool:
 _PAR_BALANCE_TTL_SECS = 300
 _PAR_BALANCE_TS = 0.0
 
+#: Alinea UNO SOLO a la vez. Sin esto, los tres que abren Resultados en el
+#: mismo segundo en que vence el TTL cruzan el puente los tres: cada uno ve el
+#: reloj vencido, tira las cachés que el otro acaba de llenar y vuelve a
+#: preguntar. Con el candado, el primero alinea y los demás esperan esos dos
+#: segundos UNA vez y se encuentran la pantalla lista. TMT 2026-08-26.
+_PAR_BALANCE_CANDADO = _threading.Lock()
+
 
 def alinear_lecturas_del_balance() -> bool:
     """Deja el inventario y las importaciones leídos en la MISMA vuelta.
 
-    Se llama al principio del balance. Devuelve True si esta llamada disparó el
-    refresco (útil para los tests). Nunca lanza: si Asinfo no está armado, no
-    hace nada y el balance sigue su camino de siempre.
+    La llama el CALENTADOR cada vuelta (`modules/_lib/warmup.py`), y también el
+    balance por las dudas. Devuelve True si esta llamada disparó el refresco
+    (útil para los tests). Nunca lanza: si Asinfo no está armado, no hace nada
+    y el balance sigue su camino de siempre.
+
+    ⭐ TMT 2026-08-26 (dueña): *"resultados tarda en cargar"*. Medido: en
+    caliente la pantalla son 15 ms, pero cada 5 minutos el reloj de acá vence y
+    el PRIMERO que la abre pagaba las dos consultas —1,3 s— adentro de su
+    request. El calentador no podía evitarlo: él sólo leía las dos cachés (y le
+    daban HIT), mientras que esto las TIRA a propósito para leerlas juntas. O
+    sea que el trabajo del calentador se descartaba y lo terminaba haciendo el
+    usuario. Ahora el calentador llama a esto, que es lo que refresca de
+    verdad, y el que abre Resultados se encuentra el reloj en hora.
     """
     global _PAR_BALANCE_TS
     import time as _t
@@ -1347,6 +1365,19 @@ def alinear_lecturas_del_balance() -> bool:
     ahora = _t.time()
     if (ahora - _PAR_BALANCE_TS) < _PAR_BALANCE_TTL_SECS:
         return False
+    with _PAR_BALANCE_CANDADO:
+        # El de al lado pudo alinear mientras se esperaba el candado: si lo
+        # hizo, esto ya está en hora y volver a tirar las cachés sería pagar
+        # el puente dos veces para llegar al mismo número.
+        if (_t.time() - _PAR_BALANCE_TS) < _PAR_BALANCE_TTL_SECS:
+            return False
+        return _alinear_ahora(ahora)
+
+
+def _alinear_ahora(ahora: float) -> bool:
+    """El refresco propiamente dicho. Se entra con el candado tomado."""
+    global _PAR_BALANCE_TS
+
     try:
         _INVENTARIO_ETAPA_CACHE.pop("all", None)
         _STOCK_LOTE_TOTALES_CACHE.pop("all", None)

@@ -65,6 +65,15 @@ def _warm_once() -> None:
     yy, mm = hoy.year, hoy.month
     corte = date(yy, mm, 1)
     pasos = [
+        # ⭐ VA PRIMERO, y no es un paso más. El balance lee el inventario y las
+        # importaciones ALINEADOS: cada 5 minutos tira las dos cachés y las
+        # vuelve a leer una atrás de la otra. Mientras eso lo hacía el balance,
+        # el calentador no servía de nada para esta pantalla —él sólo leía las
+        # cachés, y el que abría Resultados justo después del vencimiento
+        # pagaba los 1,3 s de las dos consultas—. Ahora refresca acá, en el
+        # hilo de atrás, y los dos pasos que siguen le dan HIT.
+        # TMT 2026-08-26 (dueña): *"resultados tarda en cargar"*.
+        ("balance_alineado", lambda: asvc.alinear_lecturas_del_balance()),
         ("inventario_por_etapa", lambda: asvc.inventario_por_etapa()),
         ("inventario_asof", lambda: asvc.inventario_por_etapa_a_fecha(corte)),
         ("mov_bodega_51", lambda: asvc.movimiento_bodega_mes(51, corte)),
