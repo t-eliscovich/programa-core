@@ -3504,12 +3504,14 @@ def consumo_hilado_mensual(anio: int) -> tuple[list[dict], bool]:
     """kg de hilado despachados (OSM) por mes y material, del año pedido.
 
     Devuelve `(filas, ok)`:
-        filas — [{mes, material, kg, lineas}], mes 1-12.
+        filas — [{mes, material, kg, productos}], mes 1-12.
         ok    — False si Metabase no contestó (distinto de "sin filas").
 
-    `lineas` (COUNT de renglones de despacho) sirve para reproducir el
-    "Promedio" del pivot del Excel, que es AVG(cantidad_despachada) por
-    renglón — o sea SUM/COUNT.
+    `productos` (COUNT DISTINCT de productos con despacho ese mes) sirve
+    para reproducir el "Promedio Mensual" del pivot del Excel, que es
+    AVG(cantidad_mes) sobre las filas producto×mes — o sea
+    total ÷ Σ productos-con-despacho-por-mes (verificado en vivo:
+    22/1 = 733.954 ÷ 13 = 56.458, igual a la hoja).
     """
     try:
         anio = int(anio)
@@ -3521,7 +3523,7 @@ def consumo_hilado_mensual(anio: int) -> tuple[list[dict], bool]:
 SELECT MONTH(osm.fecha)                    AS mes,
        pr.nombre_subcategoria_producto     AS material,
        SUM(dosm.cantidad_despachada)       AS kg,
-       COUNT(*)                            AS lineas
+       COUNT(DISTINCT dosm.id_producto)    AS productos
   FROM orden_salida_material osm
   JOIN detalle_orden_salida_material dosm
     ON dosm.id_orden_salida_material = osm.id_orden_salida_material
@@ -3542,7 +3544,7 @@ SELECT MONTH(osm.fecha)                    AS mes,
                 "mes": int(r.get("mes")),
                 "material": str(r.get("material") or "(sin subcategoría)").strip(),
                 "kg": float(r.get("kg") or 0),
-                "lineas": int(r.get("lineas") or 0),
+                "productos": int(r.get("productos") or 0),
             })
         except (TypeError, ValueError):
             continue

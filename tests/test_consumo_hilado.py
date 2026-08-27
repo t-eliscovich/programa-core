@@ -30,9 +30,9 @@ def _login_stock(app, fake_db):
 
 
 _ROWS = [
-    {"mes": 1, "material": "22/1", "kg": 600.0, "lineas": 3},
-    {"mes": 1, "material": "20/1", "kg": 400.0, "lineas": 2},
-    {"mes": 2, "material": "22/1", "kg": 300.0, "lineas": 1},
+    {"mes": 1, "material": "22/1", "kg": 600.0, "productos": 2},
+    {"mes": 1, "material": "20/1", "kg": 400.0, "productos": 1},
+    {"mes": 2, "material": "22/1", "kg": 300.0, "productos": 1},
 ]
 _SALDOS = [
     {"material": "22/1", "kg": 5000.0},
@@ -79,8 +79,8 @@ def test_arma_pivot_porcentajes_y_promedios():
     assert m22["total"] == 900.0
     assert m22["por_mes"][1]["pct"] == 60.0  # 600 de 1000 en enero
     assert m22["por_mes"][2]["pct"] == 100.0
-    # promedio del pivot del Excel: total / renglones de despacho
-    assert m22["prom_linea"] == 900.0 / 4
+    # promedio del pivot del Excel: total / filas producto×mes
+    assert m22["prom_hoja"] == 900.0 / 3
     # promedio mensual real: total / meses transcurridos
     assert m22["prom_mes"] == 900.0 / 8
 

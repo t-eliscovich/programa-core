@@ -636,7 +636,7 @@ def _consumo_hilado_arma(rows, anio, hoy):
     Devuelve dict con:
         meses      — [(nro, 'ene'), …] sólo los meses con data, en orden.
         materiales — [{material, por_mes: {mes: {kg, pct}}, total, pct,
-                       prom_linea, prom_mes}] orden total DESC.
+                       prom_hoja, prom_mes}] orden total DESC.
         tot_mes    — {mes: kg} totales por columna.
         total      — kg del año.
         n_meses    — divisor del promedio mensual (meses transcurridos).
@@ -644,10 +644,10 @@ def _consumo_hilado_arma(rows, anio, hoy):
     por_mat: dict = {}
     tot_mes: dict = {}
     for r in rows:
-        m = por_mat.setdefault(r["material"], {"por_mes": {}, "total": 0.0, "lineas": 0})
+        m = por_mat.setdefault(r["material"], {"por_mes": {}, "total": 0.0, "productos": 0})
         m["por_mes"][r["mes"]] = m["por_mes"].get(r["mes"], 0.0) + r["kg"]
         m["total"] += r["kg"]
-        m["lineas"] += r["lineas"]
+        m["productos"] += r["productos"]
         tot_mes[r["mes"]] = tot_mes.get(r["mes"], 0.0) + r["kg"]
 
     meses = [(n, _MESES_CORTOS[n - 1]) for n in sorted(tot_mes)]
@@ -675,8 +675,9 @@ def _consumo_hilado_arma(rows, anio, hoy):
             "por_mes": por_mes,
             "total": m["total"],
             "pct": (m["total"] / total * 100) if total else 0.0,
-            # "Promedio" del pivot del Excel: AVG por renglón de despacho.
-            "prom_linea": (m["total"] / m["lineas"]) if m["lineas"] else 0.0,
+            # "Promedio Mensual" del pivot del Excel: AVG(cantidad_mes)
+            # sobre las filas producto×mes (total ÷ Σ productos por mes).
+            "prom_hoja": (m["total"] / m["productos"]) if m["productos"] else 0.0,
             # "Promedio Mensual Real": total ÷ meses transcurridos.
             "prom_mes": m["total"] / n_meses,
         })
@@ -709,11 +710,11 @@ def _consumo_hilado_datos():
     saldo_por_mat = {s["material"]: s["kg"] for s in saldos}
     combinado = [{
         "material": m["material"],
-        "prom_linea": m["prom_linea"],
+        "prom_hoja": m["prom_hoja"],
         "prom_mes": m["prom_mes"],
         "saldo": saldo_por_mat.pop(m["material"], None),
     } for m in data["materiales"]]
-    combinado += [{"material": mat, "prom_linea": None, "prom_mes": None,
+    combinado += [{"material": mat, "prom_hoja": None, "prom_mes": None,
                    "saldo": kg}
                   for mat, kg in sorted(saldo_por_mat.items(),
                                         key=lambda kv: -kv[1])]
@@ -829,15 +830,15 @@ def consumo_hilado_export():
             ).font = Font(bold=True, size=12)
     r += 1
     _hdr(r, 1, "Material")
-    _hdr(r, 2, "Promedio por despacho")
+    _hdr(r, 2, "Promedio por producto y mes")
     _hdr(r, 3, f"Promedio mensual (total ÷ {d['n_meses']})")
     _hdr(r, 4, "Saldo en inventario")
     r += 1
     for c_ in d["combinado"]:
         ws.cell(row=r, column=1, value=c_["material"])
-        if c_["prom_linea"] is not None:
+        if c_["prom_hoja"] is not None:
             ws.cell(row=r, column=2,
-                    value=round(c_["prom_linea"])).number_format = kg_fmt
+                    value=round(c_["prom_hoja"])).number_format = kg_fmt
         if c_["prom_mes"] is not None:
             ws.cell(row=r, column=3,
                     value=round(c_["prom_mes"])).number_format = kg_fmt
