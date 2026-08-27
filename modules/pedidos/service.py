@@ -1088,6 +1088,7 @@ ESTADO_OF_FINALIZADA = 5
 #: salida se cuelga sobre todo de las HIJAS) y si está terminada.
 _SQL_ETAPA_OFTS = """
 SELECT p.numero AS parent_numero,
+       ISNULL(pr.codigo, '') AS producto,
        o.estado_produccion, o.cantidad, ISNULL(o.cantidad_fabricada, 0) AS fabricada,
        ISNULL(o.indicador_suborden, 0) AS es_hija,
        CASE WHEN EXISTS (SELECT 1 FROM orden_fabricacion_orden_salida_material x
@@ -1097,33 +1098,43 @@ SELECT p.numero AS parent_numero,
   JOIN orden_fabricacion o
     ON o.id_orden_fabricacion = p.id_orden_fabricacion
     OR o.id_orden_fabricacion_padre = p.id_orden_fabricacion
+  LEFT JOIN producto pr ON pr.id_producto = o.id_producto
  WHERE p.numero IN ({in_list})
 """
 
 
-def etapas_por_pedido(numeros: list[str],
-                      memo_estados: dict[str, dict]) -> dict[str, str]:
-    """La ETAPA de cada pedido con memo: enviado → en_tintura → terminado.
+def etapas_por_pedido(pedidos: list[dict],
+                      memo_estados: dict[str, dict]) -> dict[str, dict]:
+    """La etapa de cada pedido con memo, POR LÍNEA y en resumen.
 
-    Decisión dueña 27/08 (*"ya no mostramos porcentajes"*):
-      - **enviado**: se mandó el memo.
-      - **en_tintura**: alguna OFT del pedido tiene ORDEN DE SALIDA DE
-        MATERIAL asignada (la tela ya está en el jet, no solo planificada).
-      - **terminado**: hay OFTs y TODAS están terminadas (Finalizada en
-        Asinfo, o fabricada >= plan) — o la fábrica puso la X al memo.
+    Dueña 27/08: *"el pedido puede tener varias ofts, así que hay que
+    trackearlo por línea del pedido el proceso, no global"*. Cada línea
+    (producto = tela+color) se matchea con las OFTs del pedido por el
+    PRODUCTO de la OFT (o de sus hijas). Devuelve, por pedido:
 
-    Fail-soft: si un bridge no contesta, la etapa se queda en lo que se pudo
-    probar (como mínimo "enviado" — nunca inventa avance).
+        {"pedido": 'enviado'|'en_tintura'|'terminado',
+         "lineas": {codigo de producto: la etapa de ESA línea}}
+
+    - Línea EN TINTURA: alguna OFT de su producto tiene orden de salida de
+      material (una salida colgada del PADRE, sin producto, vale para todas
+      las líneas de esa OFT).
+    - Línea TERMINADA: tiene OFT y todas sus hojas de ese producto están
+      Finalizadas (o al plan).
+    - Resumen del pedido: TERMINADO sólo si TODAS las líneas terminaron (o
+      la X del memo); EN TINTURA si alguna línea avanzó; si no, ENVIADO.
+
+    Fail-soft: sin respuesta de un bridge, todo queda en "enviado".
     """
-    con_memo = [n for n in numeros if n in memo_estados]
+    con_memo = [p for p in pedidos if p["numero"] in memo_estados]
     if not con_memo:
         return {}
 
     from modules._lib import formulas_db
+    numeros = [p["numero"] for p in con_memo]
     filas = formulas_db.fetch_all(
         "SELECT pedido_numero, oft_numero "
         "  FROM ordenes WHERE pedido_numero = ANY(%s)",
-        (list(con_memo),))
+        (numeros,))
     ofts_por_pedido: dict[str, set] = {}
     for f in filas:
         ped = str(f.get("pedido_numero") or "").strip().upper()
@@ -1131,42 +1142,72 @@ def etapas_por_pedido(numeros: list[str],
         if ped and oft:
             ofts_por_pedido.setdefault(ped, set()).add(oft)
 
-    datos: dict[str, dict] = {}
+    # El árbol de cada OFT, resumido POR PRODUCTO.
+    arbol: dict[str, list] = {}
     todas = sorted(set().union(*ofts_por_pedido.values())) if ofts_por_pedido else []
     if todas:
         in_list = ", ".join(f"'{o}'" for o in todas)
         rows, ok = metabase_client.fetch_dataset_estado(
             ASINFO_DB, _SQL_ETAPA_OFTS.format(in_list=in_list))
         if ok:
-            arbol: dict[str, list] = {}
             for r in rows:
                 n = str(r.get("parent_numero") or "").strip().upper()
                 if n:
                     arbol.setdefault(n, []).append(r)
-            for n, rs in arbol.items():
-                # La salida puede estar en el padre O en una hija; la
-                # terminación se juzga sobre las HOJAS (el padre arrastra
-                # estado propio aunque las hijas ya hayan cerrado).
-                hojas = [r for r in rs if r.get("es_hija")] or rs
-                datos[n] = {
-                    "salida": any(_f(r.get("con_salida")) for r in rs),
-                    "terminada": all(
-                        int(_f(r.get("estado_produccion"))) == ESTADO_OF_FINALIZADA
-                        or (_f(r.get("cantidad")) > 0
-                            and _f(r.get("fabricada")) >= _f(r.get("cantidad")))
-                        for r in hojas),
-                }
 
-    out: dict[str, str] = {}
-    for ped in con_memo:
+    def _fila_terminada(r) -> bool:
+        return (int(_f(r.get("estado_produccion"))) == ESTADO_OF_FINALIZADA
+                or (_f(r.get("cantidad")) > 0
+                    and _f(r.get("fabricada")) >= _f(r.get("cantidad"))))
+
+    # {oft: {producto: {"salida", "terminada"}}} — hojas por producto; una
+    # salida sin producto (colgada del padre) vale para todo el árbol.
+    info_oft: dict[str, dict] = {}
+    for n, rs in arbol.items():
+        salida_arbol = any(_f(r.get("con_salida")) for r in rs
+                           if not str(r.get("producto") or "").strip())
+        hojas = [r for r in rs if r.get("es_hija")] or rs
+        por_prod: dict[str, dict] = {}
+        for r in hojas:
+            prod = str(r.get("producto") or "").strip().upper()
+            if not prod:
+                continue
+            d = por_prod.setdefault(prod, {"salida": salida_arbol,
+                                           "terminada": True})
+            d["salida"] = d["salida"] or bool(_f(r.get("con_salida")))
+            d["terminada"] = d["terminada"] and _fila_terminada(r)
+        info_oft[n] = por_prod
+
+    out: dict[str, dict] = {}
+    for p in con_memo:
+        ped = p["numero"]
+        # Lo que las OFTs de ESTE pedido dicen de cada producto. Si dos OFTs
+        # producen el mismo, la línea termina cuando terminan TODAS.
+        prods: dict[str, dict] = {}
+        for oft in ofts_por_pedido.get(ped, ()):
+            for prod, d in info_oft.get(oft, {}).items():
+                acc = prods.setdefault(prod, {"salida": False, "terminada": True})
+                acc["salida"] = acc["salida"] or d["salida"]
+                acc["terminada"] = acc["terminada"] and d["terminada"]
+
+        lineas: dict[str, str] = {}
+        for ln in p.get("lineas", []):
+            prod = str(ln.get("producto") or "").strip().upper()
+            d = prods.get(prod)
+            if d and d["terminada"]:
+                lineas[prod] = "terminado"
+            elif d and d["salida"]:
+                lineas[prod] = "en_tintura"
+            else:
+                lineas[prod] = "enviado"
+
         if (memo_estados.get(ped) or {}).get("estado") == "terminado":
-            out[ped] = "terminado"     # la X de la fábrica manda
-            continue
-        info = [datos[o] for o in ofts_por_pedido.get(ped, ()) if o in datos]
-        if info and all(i["terminada"] for i in info):
-            out[ped] = "terminado"
-        elif any(i["salida"] for i in info):
-            out[ped] = "en_tintura"
+            etapa = "terminado"    # la X de la fábrica manda
+        elif lineas and all(e == "terminado" for e in lineas.values()):
+            etapa = "terminado"
+        elif any(e != "enviado" for e in lineas.values()):
+            etapa = "en_tintura"
         else:
-            out[ped] = "enviado"
+            etapa = "enviado"
+        out[ped] = {"pedido": etapa, "lineas": lineas}
     return out

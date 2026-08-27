@@ -4418,6 +4418,54 @@ def banco_sacar_del_grupo():
 # ─── Deshacer conciliados (pantalla minimalista) ──────────────────────
 
 
+
+def _deshacer_filtro_buscar(buscar):
+    """WHERE extra de la pantalla Deshacer cuando se busca texto.
+
+    TMT 2026-08-27 (Tamara): el cheque 246 CG3 conciliado el 19/08 no
+    aparecia — la pantalla lista los ultimos 500 matches y lo viejo queda
+    afuera. Con el buscador el filtro corre ANTES del LIMIT, asi que lo
+    viejo se alcanza sin agrandar la lista.
+
+    Devuelve (fragmento_sql, params). Filtra por GRUPO entero: si UN item
+    del grupo pega, el grupo se muestra COMPLETO — "Deshacer grupo" libera
+    todos sus items, mostrarlo a medias mentiria. Busca en el concepto y
+    documento del banco, el concepto del programa, el codigo de cliente y
+    el nombre del cliente.
+    """
+    buscar = (buscar or "").strip()
+    if not buscar:
+        return "", []
+    like = f"%{buscar}%"
+    cond = (
+        "(COALESCE(m2.real_concepto,'') ILIKE %s"
+        " OR COALESCE(m2.real_documento,'') ILIKE %s"
+        " OR COALESCE(t2.concepto,'') ILIKE %s"
+        " OR COALESCE(t2.prov,'') ILIKE %s"
+        " OR EXISTS (SELECT 1 FROM scintela.cliente c2"
+        " WHERE c2.codigo_cli = t2.prov AND c2.nombre ILIKE %s))"
+    )
+    sub = (
+        "SELECT m2.confirm_batch_id"
+        " FROM scintela.banco_conciliacion_match m2"
+        " LEFT JOIN scintela.transacciones_bancarias t2"
+        " ON t2.id_transaccion = m2.id_transaccion"
+        " WHERE m2.no_banco = m.no_banco AND m2.deshecho_en IS NULL"
+        " AND m2.confirm_batch_id IS NOT NULL AND " + cond
+    )
+    solo = (
+        "SELECT 1 FROM scintela.banco_conciliacion_match m2"
+        " LEFT JOIN scintela.transacciones_bancarias t2"
+        " ON t2.id_transaccion = m2.id_transaccion"
+        " WHERE m2.id = m.id AND " + cond
+    )
+    frag = (
+        " AND (m.confirm_batch_id IN (" + sub + ")"
+        " OR (m.confirm_batch_id IS NULL AND EXISTS (" + solo + ")))"
+    )
+    return frag, [like] * 10
+
+
 @conciliacion_bp.route("/banco-v2/deshacer", methods=["GET"])
 @requiere_login
 @requiere_permiso("bancos.conciliar")
@@ -4433,6 +4481,8 @@ def banco_deshacer_v2():
       - Grupos BANCSIS creados por la propia conciliación (las ND/NC
         del flujo de Impuestos): para borrarlos completamente.
     """
+    buscar = (request.args.get("buscar") or "").strip()
+    _frag_buscar, _params_buscar = _deshacer_filtro_buscar(buscar)
     matches = []
     grupos = []
     batches = []
@@ -4460,10 +4510,11 @@ def banco_deshacer_v2():
                      ON t.id_transaccion = m.id_transaccion
              WHERE m.no_banco = %s
                AND m.deshecho_en IS NULL
+            """ + _frag_buscar + """
              ORDER BY m.creado_en DESC
              LIMIT 500
             """,
-            (_BANCO_PICHINCHA,),
+            tuple([_BANCO_PICHINCHA] + _params_buscar),
         ) or []
     except Exception as e:
         _LOG.warning("listar matches activos falló: %s", e)
@@ -4536,6 +4587,7 @@ def banco_deshacer_v2():
         matches=matches,
         grupos=grupos,
         batches=batches,
+        buscar=buscar,
     )
 
 

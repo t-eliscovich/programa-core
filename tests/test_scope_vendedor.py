@@ -78,6 +78,9 @@ def test_es_vendedor():
         ("/analisis/competencia/telas", True),
         ("/analisis/competencia/mi-hoja", True),
         ("/analisis/competencia/mi-hoja.csv", True),
+        # ⭐ El Excel de Saldos del vendedor (27/08/2026): antes el botón iba a
+        # /analisis/parado.xlsx y les daba 404.
+        ("/analisis/competencia/telas.xlsx", True),
         # ⚠ Éstas tienen los clientes de TODOS y los puntos editables: si
         # alguna vez dan True, es un bug y no una mejora.
         ("/analisis/parado", False),

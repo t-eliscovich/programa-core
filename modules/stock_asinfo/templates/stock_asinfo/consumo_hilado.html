@@ -37,6 +37,7 @@
                    border-radius: 8px; font-size: 13px; font-weight: 600;
                    color: rgb(51 65 85); text-decoration: none; background: white; }
   .ch .acc-excel:hover { border-color: rgb(148 163 184); }
+  .ch .card--angosta td, .ch .card--angosta th { padding: 6px 9px; }
 </style>
 {% endblock %}
 
@@ -74,6 +75,47 @@
       Sin datos disponibles en este momento — no se pudo consultar Asinfo.
     </div>
   {% endif %}
+
+  {# ── Promedio y saldo ARRIBA, el mes a mes abajo (dueña 27/08) ──── #}
+  <div class="card card--angosta" style="margin-bottom: 20px;">
+    <div class="card-title">Promedio y saldo</div>
+    <table>
+      <thead>
+        <tr>
+          <th>Material</th>
+          <th class="num">Prom. por producto</th>
+          <th class="num">Prom. mensual (total ÷ {{ n_meses }})</th>
+          <th class="num">Saldo hoy</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in combinado %}
+        <tr>
+          <td class="mat">{{ c.material }}</td>
+          <td class="num">{{ c.prom_hoja | num_es(0) if c.prom_hoja is not none else '—' }}</td>
+          <td class="num">{{ c.prom_mes | num_es(0) if c.prom_mes is not none else '—' }}</td>
+          <td class="num">{{ c.saldo | num_es(0) if c.saldo is not none else '—' }}</td>
+        </tr>
+        {% endfor %}
+        {% if combinado %}
+        <tr class="total-row">
+          <td>Total</td>
+          <td class="num"></td>
+          <td class="num">{{ (total / n_meses) | num_es(0) if n_meses else '' }}</td>
+          <td class="num">{{ total_saldos | num_es(0) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="4" class="text-slate-400">Sin datos disponibles en este momento.</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
+      Prom. por producto = el promedio del pivot de la hoja (lo que consumió
+      cada producto en un mes). Prom. mensual = total ÷ {{ n_meses }} meses.
+      Saldo hoy = último saldo por producto y bodega, en kg.
+      — = sin consumo en {{ anio }} o sin saldo.
+    </p>
+  </div>
 
   {# ── Consumo por material y mes (bloque grande del Excel) ────────── #}
   <div class="card">
@@ -115,45 +157,5 @@
     </div>
   </div>
 
-  {# ── Promedio y saldo, pegados en una tabla (dueña 27/08/2026) ──── #}
-  <div class="card" style="margin-top: 20px; max-width: 760px;">
-    <div class="card-title">Promedio del año y saldo actual, por material</div>
-    <table>
-      <thead>
-        <tr>
-          <th>Material</th>
-          <th class="num">Promedio por producto y mes</th>
-          <th class="num">Promedio mensual (total ÷ {{ n_meses }})</th>
-          <th class="num">Saldo en inventario</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for c in combinado %}
-        <tr>
-          <td class="mat">{{ c.material }}</td>
-          <td class="num">{{ c.prom_hoja | num_es(0) if c.prom_hoja is not none else '—' }}</td>
-          <td class="num">{{ c.prom_mes | num_es(0) if c.prom_mes is not none else '—' }}</td>
-          <td class="num">{{ c.saldo | num_es(0) if c.saldo is not none else '—' }}</td>
-        </tr>
-        {% endfor %}
-        {% if combinado %}
-        <tr class="total-row">
-          <td>Total</td>
-          <td class="num"></td>
-          <td class="num">{{ (total / n_meses) | num_es(0) if n_meses else '' }}</td>
-          <td class="num">{{ total_saldos | num_es(0) }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="4" class="text-slate-400">Sin datos disponibles en este momento.</td></tr>
-        {% endif %}
-      </tbody>
-    </table>
-    <p class="text-[11px] text-slate-400 px-3 py-2 m-0">
-      "Por producto y mes" = el promedio del pivot de la hoja: lo que consumió en promedio cada producto en un mes.
-      "Promedio mensual" = total del año ÷ meses transcurridos.
-      Saldo = último saldo por producto y bodega, sólo saldos positivos.
-      — = sin consumo en {{ anio }} o sin saldo.
-    </p>
-  </div>
 </div>
 {% endblock %}

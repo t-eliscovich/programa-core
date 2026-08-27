@@ -68,6 +68,17 @@
       Conciliaciones hechas
       <span class="text-xs text-slate-500 font-normal">— deshacer un grupo libera TODOS sus items. O seleccioná items y "Sacar al sub-grupo" para deshacer solo esos.</span>
     </h2>
+    {# TMT 2026-08-27: la lista trae los últimos 500 — el buscador filtra en la
+       base ANTES del corte, así lo conciliado viejo también se alcanza. #}
+    <form method="GET" class="mb-3 flex items-center gap-2">
+      <input type="text" name="buscar" value="{{ buscar or '' }}"
+             placeholder="Cliente, concepto o N° de documento"
+             class="border border-slate-200 dark:border-slate-700 rounded-md px-3 py-1.5 text-sm bg-white dark:bg-slate-900 w-80">
+      <button class="bg-sky-600 hover:bg-sky-700 text-white text-xs rounded-md px-3 py-1.5 font-medium">Buscar en todo lo conciliado</button>
+      {% if buscar %}
+      <a href="{{ url_for('conciliacion.banco_deshacer_v2') }}" class="text-xs text-slate-500 hover:underline">✕ Limpiar</a>
+      {% endif %}
+    </form>
     <div class="space-y-3">
       {% for b in batches %}
       {% set _es_grupo = b.batch_id and b['items']|length > 1 %}

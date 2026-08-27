@@ -750,6 +750,43 @@ def test_imprimir_todos_usa_el_template_de_la_oficina(vendedor_logueado, monkeyp
     assert vistos == ["AAA", "BBB"]
 
 
+def test_el_volver_de_la_hoja_no_manda_al_vendedor_a_un_404(vendedor_logueado,
+                                                             monkeypatch):
+    """⭐ TMT 2026-08-27: "a veces clickean algo como ver estado de cuenta y al
+    volver para atrás dice error 404".
+
+    El respaldo del botón «← Volver» de la hoja compartida era
+    /informes/estado-cuenta — la landing de la OFICINA, que el allowlist le
+    404ea al vendedor — y `volver_a` cae al respaldo EXACTAMENTE cuando el
+    navegador no manda referrer: la PWA, una pestaña nueva, un arranque en
+    frío. Por eso era "a veces": navegando normal, el referrer lo salvaba y el
+    botón volvía bien. Para un vendedor el respaldo es SU lista de clientes;
+    para la oficina no cambia nada."""
+    import re
+
+    from modules.mi_cartera import views
+
+    monkeypatch.setattr(
+        q, "mis_clientes",
+        lambda vend: [{"codigo_cli": "AAA", "nombre": "Uno", "saldo": 100.0,
+                       "vencido": 0, "provincia": "", "n_facturas": 1,
+                       "vence_mas_viejo": None}],
+    )
+    monkeypatch.setattr(
+        views.informes_queries, "estado_cuenta_lote",
+        lambda cods: {cod: {"cliente": {"codigo_cli": cod, "nombre": cod,
+                                        "cupo": 5},
+                            "facturas": [], "cheques": [], "anticipos": [],
+                            "totales": _totales()} for cod in cods})
+    # SIN referrer, que es el caso que rompía.
+    r = vendedor_logueado.get("/mi-cartera/imprimir")
+    assert r.status_code == 200
+    m = re.search(r'href="([^"]+)"[^>]*>← Volver', r.data.decode())
+    assert m, "no está el botón Volver"
+    assert m.group(1) == "/mi-cartera/clientes", (
+        f"el Volver del vendedor manda a {m.group(1)}, que su allowlist 404ea")
+
+
 def test_la_lista_de_clientes_sale_alfabetica_por_codigo(vendedor_logueado, monkeypatch):
     """TMT 2026-08-11: *"que se ordene alfabéticamente"* + *"ordena por codigo todo"*.
 

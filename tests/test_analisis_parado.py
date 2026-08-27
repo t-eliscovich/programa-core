@@ -436,7 +436,12 @@ def test_el_excel_lo_arma_el_servidor_y_baja_todo():
     html = _html_parado()
     assert "function bajarExcel()" not in html, (
         "volvió el CSV hecho a mano en el navegador")
-    assert 'href="/analisis/parado.xlsx"' in html
+    # ⚠ El botón elige la ruta según quién mira: la de la oficina para la
+    # oficina, y la del vendedor —que cuelga de su allowlist— para el
+    # vendedor. Apuntar los dos a /analisis/parado.xlsx le daba 404 al
+    # vendedor (reportado 27/08/2026: "no pueden bajar bien el excel").
+    assert "/analisis/parado.xlsx" in html
+    assert "'/analisis/competencia/telas.xlsx'" in html and "if mia" in html
     assert "Bajar todo a Excel" in html, "el botón tiene que decir que baja todo"
     # ⚠ El Excel de Vendidos se mudó con su tabla (26/08/2026): ahora vive en
     # `vendidos.html`, que es la pantalla que lo ofrece.
@@ -449,7 +454,7 @@ def test_el_excel_lleva_grupo_y_tela_como_columnas():
     """Uno baja a Excel para filtrar y pivotear allá: sin Grupo y Tela en
     columnas propias no se puede."""
     import inspect as _i
-    fuente = _i.getsource(views.parado_xlsx)
+    fuente = _i.getsource(views.parado_xlsx) + _i.getsource(views._excel_saldos)
     for col in ('"Grupo"', '"Tela"', '"Color"', '"Queda"', '"Vendido"'):
         assert col in fuente, f"falta la columna {col}"
     assert "excel.respuesta(" in fuente and "excel.libro(" in fuente
@@ -1274,6 +1279,39 @@ def test_el_vendedor_ve_la_misma_pantalla_con_sus_clientes():
     assert 'f["clientes"] = len(llamados.get(f["subcategoria"], []))' in fuente, (
         "la columna tiene que contar SUS clientes: con el total de la fábrica "
         "diría 137 y al abrir la fila aparecerían tres")
+
+
+def test_el_excel_del_vendedor_cuenta_lo_mismo_que_su_pantalla():
+    """⭐ Reportado 27/08/2026: "no pueden bajar bien el excel los vendedores".
+    El botón de la pantalla compartida apuntaba a /analisis/parado.xlsx —la
+    ruta de la oficina— y el allowlist se la 404eaba. La ruta del vendedor
+    cuelga de /analisis/competencia y baja LO MISMO que su pantalla: sus
+    clientes, el vendido incluido, el ajuste de bodega afuera."""
+    import inspect
+
+    from modules.analisis import views
+    fuente = inspect.getsource(views.mis_telas_xlsx)
+    # el mismo pipeline que mis_telas — si divergen, el archivo y la pantalla
+    # dejan de contar lo mismo
+    assert "cartera_de=vend" in fuente
+    assert 'f["clientes"] = len(llamados.get(f["subcategoria"], []))' in fuente
+    assert "queries.abrir_en_lineas(" in fuente and "con_puntos" in fuente
+    assert "_excel_saldos(" in fuente, "el archivo se arma en UN solo lugar"
+    assert '"Sus clientes' in fuente, (
+        "la columna dice de quién son los clientes: con el rótulo de la "
+        "fábrica, 3 parece un error al lado de los 137 de la oficina")
+    # ⚠ sin requiere_permiso: el rol Vendedor no tiene analisis.ver — igual
+    # que mis_telas, lo cierra el allowlist
+    assert "requiere_permiso" not in fuente
+
+
+def test_el_vend_del_excel_sale_de_la_sesion():
+    """El ?vend= del botón es sólo para la preview de la dueña: la ruta usa
+    _vend_actual(), que a un vendedor real le ignora el querystring."""
+    import inspect
+
+    from modules.analisis import views
+    assert "_vend_actual()" in inspect.getsource(views.mis_telas_xlsx)
 
 
 def test_los_candidatos_se_pueden_acotar_a_una_cartera(monkeypatch):
@@ -4080,7 +4118,7 @@ def test_el_excel_baja_las_mismas_lineas_que_la_pantalla():
     categoría y esas columnas no dicen nada. De paso el archivo y la pantalla
     cuentan lo mismo: eran 700 filas contra 709 líneas."""
     import inspect as _i
-    fuente = _i.getsource(views.parado_xlsx)
+    fuente = _i.getsource(views.parado_xlsx) + _i.getsource(views._excel_saldos)
     assert "queries.abrir_en_lineas(" in fuente, (
         "el archivo baja la fila sin abrir y la pantalla la abre")
     assert '"Kg de primera"' not in fuente and '"Kg de segunda"' not in fuente

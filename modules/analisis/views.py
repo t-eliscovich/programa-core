@@ -164,6 +164,13 @@ def parado_xlsx():
     # renglón tiene UNA categoría y esas dos columnas dejan de decir nada.
     # De paso el archivo y la pantalla cuentan lo mismo: eran 700 contra 709.
     filas = queries.abrir_en_lineas(queries.con_puntos(queries.items()))
+    return _excel_saldos(filas, "Clientes que compran esta tela")
+
+
+def _excel_saldos(filas, rotulo_clientes):
+    """El armado del archivo de Saldos, compartido por la oficina y el
+    vendedor. Una sola lista de columnas: si mañana se agrega una, los dos
+    archivos la traen — dos copias divergen a la primera corrección."""
     cols = [
         ("Grupo", 12, None), ("Tela", 24, None),
         ("Color", 8, None), ("Nombre del color", 16, None),
@@ -172,7 +179,7 @@ def parado_xlsx():
         ("Vale (puntos por kilo)", 12, "#,##0"),
         ("Puntos de la fila", 14, "#,##0"),
         ("Kg al marcarlo", 13, "#,##0.0"),
-        ("Clientes que compran esta tela", 16, "#,##0"),
+        (rotulo_clientes, 16, "#,##0"),
         ("Última venta", 13, "dd/mm/yyyy"), ("Marcado el", 12, "dd/mm/yyyy"),
     ]
     datos = [[
@@ -187,6 +194,37 @@ def parado_xlsx():
     return excel.respuesta(
         f"saldos_{hoy:%Y_%m_%d}.xlsx",
         excel.libro([{"titulo": "Saldos", "columnas": cols, "filas": datos}]))
+
+
+@analisis_bp.route("/analisis/competencia/telas.xlsx")
+@requiere_login
+def mis_telas_xlsx():
+    """El mismo Excel de Saldos, para el VENDEDOR, con SUS clientes contados.
+
+    ⭐ Reportado 27/08/2026: "no pueden bajar bien el excel los vendedores".
+    Cuando el 26/08 el CSV del navegador pasó a ser un .xlsx armado en el
+    servidor, el botón de la pantalla compartida quedó apuntando a
+    /analisis/parado.xlsx — la ruta de la OFICINA — y el allowlist de
+    vendedores se la 404eaba. Cuelga de /analisis/competencia para entrar por
+    su prefijo, igual que Imprimir y PDF, y el botón elige la ruta según quién
+    mira (ver parado.html).
+
+    ⚠ Las MISMAS filas que su pantalla, en el mismo orden: los clientes son los
+    de SU cartera, el vendido va incluido (en pantalla está tachado) y el que
+    quedó en cero sin vender nada no va. Un archivo que dice otra cosa que la
+    pantalla de la que salió es un número menos en el que confiar.
+    """
+    vend = _vend_actual()
+    base = queries.con_puntos(queries.items())
+    llamados = queries.llamados_por_tela(cartera_de=vend)
+    for f in base:
+        f["clientes"] = len(llamados.get(f["subcategoria"], []))
+    filas = queries.abrir_en_lineas(base)
+    filas = [f for f in filas
+             if float(f.get("stock_kg") or 0) > 0
+             or float(f.get("kg_vendidos") or 0) > 0]
+    filas.sort(key=lambda f: -float(f.get("puntos_fila") or 0))
+    return _excel_saldos(filas, "Sus clientes que compran esta tela")
 
 
 @analisis_bp.route("/analisis/vendidos")

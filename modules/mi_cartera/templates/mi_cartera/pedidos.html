@@ -41,14 +41,23 @@
   .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
   .ped-total{font-size:12px;color:#475569}
   .pill.tinto{background:#dbeafe;color:#1e40af}
-  /* La tira de etapas del pedido: enviado → en tintura → terminado. */
-  .ped-steps{display:flex;align-items:center;gap:6px;margin:8px 2px 2px 20px}
-  .ped-steps .st{display:inline-flex;align-items:center;gap:4px;font-size:11.5px;
-                 font-weight:600;color:#94a3b8;white-space:nowrap}
-  .ped-steps .st b{font-weight:400;font-size:12px}
+  /* la etapa de UNA línea: ✓ terminada, ● en tintura (al lado de la tela) */
+  .lst{font-style:normal;font-size:11px;font-weight:700}
+  .lst.done{color:#16a34a}
+  .lst.tinto{color:#1d4ed8}
+  /* La tira de etapas del pedido: enviado → en tintura → terminado.
+     TMT 27/08 (celular de Edgar): "Terminado" se salía de la pantalla —
+     la tira tiene que entrar hasta en 320px Y con la letra del sistema
+     agrandada. Por eso: sin margen izquierdo, letra 10.5, separadores que
+     pueden achicarse a 2px, y los rótulos no se encogen (min-width:0 en el
+     contenedor para que los separadores absorban todo el ajuste). */
+  .ped-steps{display:flex;align-items:center;gap:4px;margin:7px 2px 2px;min-width:0}
+  .ped-steps .st{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;
+                 font-weight:600;color:#94a3b8;white-space:nowrap;flex:0 0 auto}
+  .ped-steps .st b{font-weight:400;font-size:10.5px}
   .ped-steps .st.done{color:#16a34a}
   .ped-steps .st.on{color:#1d4ed8;font-weight:700}
-  .ped-steps .sep{flex:1;height:2px;border-radius:1px;background:#e2e8f0;min-width:14px}
+  .ped-steps .sep{flex:1 1 0;height:2px;border-radius:1px;background:#e2e8f0;min-width:2px}
   .ped-steps .sep.done{background:#86efac}
   .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
 </style>
@@ -74,7 +83,9 @@
            ficha abierta o cerrada. #}
         {% set et = etapas.get(p.numero) %}
         {% if et %}
-        {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et, 0) %}
+        {# El resumen del pedido; cada línea lleva el suyo adentro
+           (dueña 27/08: "trackearlo por línea, no global"). #}
+        {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et.pedido, 0) %}
         <div class="ped-steps">
           {% for rot in ['Enviado', 'En tintura', 'Terminado'] %}
             {% set i = loop.index0 %}
@@ -88,9 +99,12 @@
       </summary>
       <ul class="ped-lineas">
         {% for l in p.lineas %}
+        {% set le = et.lineas.get(l.producto) if et else none %}
         <li>
           <span class="c">{{ l.color }}</span>
-          <span class="t">{{ l.tela }}</span>
+          <span class="t">{{ l.tela }}
+            {%- if le == 'terminado' %} <i class="lst done">✓</i>
+            {%- elif le == 'en_tintura' %} <i class="lst tinto">●</i>{% endif %}</span>
           <span class="q">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span>
           {# En kilos el estimado repetiría el mismo número al lado. #}
           {% if l.unidad != 'kg' %}
