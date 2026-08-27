@@ -1389,7 +1389,8 @@ def vendidos(desde) -> list[dict]:
                -- viene en NULL. El LATERAL la completa sola cuando ese número
                -- tiene UN solo documento —la enorme mayoría—; cuando tiene
                -- dos, manda el guardado, que sabe de cuál era la venta.
-               COALESCE(v.numero, uno.numf_completo)        AS numero,
+               COALESCE(v.numero, dia.numf_completo,
+                        uno.numf_completo)                  AS numero,
                COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                           AS color_nombre,
                -- ⚠ El grupo sale de la foto y, si la tela ya no tiene foto
@@ -1423,7 +1424,17 @@ def vendidos(desde) -> list[dict]:
                MAX(COALESCE(p.puntos, 1))                  AS puntos,
                SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila
           FROM scintela.parado_venta v
-          LEFT JOIN LATERAL (  -- sólo si NO hay ambigüedad (ver `numero`)
+          -- ⭐ Primero por NÚMERO + DÍA, que es lo que desempata de verdad: el
+          -- 10919 es la nota de entrega del 26/08 y también una devolución del
+          -- 03/06, y la venta sabe de qué día es la suya.
+          LEFT JOIN LATERAL (
+              SELECT MIN(fa.numf_completo) AS numf_completo
+                FROM scintela.factura fa
+               WHERE fa.numf = v.numf AND fa.fecha = v.fecha
+              HAVING COUNT(*) = 1) dia ON TRUE
+          -- Y si el día no alcanza, por el número solo — pero sólo cuando ese
+          -- número tiene UN documento. Adivinar acá sería el bug de origen.
+          LEFT JOIN LATERAL (
               SELECT MIN(fa.numf_completo) AS numf_completo
                 FROM scintela.factura fa
                WHERE fa.numf = v.numf
@@ -1439,7 +1450,7 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, v.numf, v.numero, uno.numf_completo,
+                  v.vend_pc, v.numf, v.numero, dia.numf_completo, uno.numf_completo,
                   nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC

@@ -2337,13 +2337,14 @@ def test_las_pantallas_respetan_la_bandera_cuenta():
     # Cada lectura de parado_venta o FILTRA por la bandera (las tres que suman)
     # o la SELECCIONA para mostrarla (el detalle de qué vendió cada uno). Lo que
     # no puede pasar es que una lectura la ignore y sume kilos que no puntúan.
-    # ⚠ La ventana es de 1.100 caracteres y no de 700: el 26/08/2026 la
-    # consulta de Vendidos sumó un LATERAL para traer el número completo de la
-    # factura —el `numf` corto se repite y abría la equivocada— y eso empujó su
-    # WHERE a 808 caracteres del FROM. La ventana es el instrumento, no la
-    # regla; la regla es que ninguna lectura ignore la bandera.
+    # ⚠ Se mira hasta el FINAL de la consulta, no una ventana de N caracteres.
+    # La ventana fija ya obligó a agrandarla dos veces el 26/08/2026 —cada
+    # LATERAL nuevo empuja el WHERE más lejos del FROM— y agrandarla es aflojar
+    # el test: con la ventana muy grande empieza a ver el `v.cuenta` de la
+    # consulta de al lado y deja de probar nada.
     for m in re.finditer(r"FROM scintela\.parado_venta v", fuente):
-        trozo = fuente[m.start():m.start() + 1100]
+        fin = fuente.find('"""', m.start())
+        trozo = fuente[m.start():fin if fin > 0 else len(fuente)]
         assert "AND v.cuenta" in trozo or "v.cuenta," in trozo, trozo[:220]
 
 
