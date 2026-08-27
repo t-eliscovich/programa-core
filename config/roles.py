@@ -84,6 +84,12 @@ ROLES: list[tuple[str, list[str]]] = [
             # veían sólo los roles wildcard. Es información de fábrica: telas,
             # colores, kilos y a qué cliente ofrecerle qué. No hay plata adentro.
             # La pantalla de METAS no entra: sigue detrás de su propio gate.
+            # ⚠ Esa vez el permiso se escribió acá, en Gerente, pero la
+            # migración 0215 se lo dio a INT: el archivo y la base decían cosas
+            # distintas y la alarma de permisos lo cantó el 2026-08-27.
+            # TMT 2026-08-27 (dueña): *"yo quiero que INT tenga acceso
+            # también"* → lo tienen los DOS. INT queda como estaba (mig 0215)
+            # y Gerente lo recibe de verdad con la migración 0234.
             "analisis.ver",
             "bitacora.ver",
             "clientes.ver",
@@ -270,6 +276,13 @@ ROLES: list[tuple[str, list[str]]] = [
             # de stock, tejeduría, Asinfo". Ve la producción por tejedor
             # sin recuperar /compras — por eso el permiso es propio.
             "tejeduria.ver",
+            # TMT 2026-08-25 (dueña): *"poner esta competencia visible para
+            # todos los usuarios INT también"*. La migración 0215 se lo dio a
+            # INT en la base ese mismo día; acá faltaba (había quedado escrito
+            # en Gerente por error). Abre Saldos, la hoja de a quién ofrecerle
+            # qué y la Competencia. NO abre /analisis/metas, que tiene su
+            # propio gate.
+            "analisis.ver",
             # Operativa diaria — todo el flujo de cheques, caja, bancos.
             "caja.ver",
             "caja.crear",
