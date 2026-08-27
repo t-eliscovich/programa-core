@@ -582,8 +582,15 @@ def test_el_numero_de_factura_es_el_mismo_que_en_la_oficina(ficha):
 
     Dos rótulos para la misma factura obligan al vendedor a traducir mientras
     discute con el cliente. Se usa la misma expresión que el parcial impreso.
+
+    ⚠ Se mira lo que se VE, no el HTML crudo: desde el 26/08/2026 el link lleva
+    el número completo en el `href` para no abrir la factura equivocada
+    —`numf` se repite y en 288 documentos vale cero—. Eso no se lee en
+    pantalla; lo que no puede aparecer es el número largo en el TEXTO.
     """
-    assert "001-099" not in ficha
+    import re as _re
+    visible = _re.sub(r"<[^>]+>", " ", ficha)
+    assert "001-099" not in visible
 
 
 def test_la_ficha_cierra_como_el_dbase(ficha):

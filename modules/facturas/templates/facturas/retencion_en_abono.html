@@ -135,7 +135,7 @@
           </td>
           <td class="px-3 py-1.5 font-mono text-xs whitespace-nowrap">
             {% if f.numf %}
-              <a href="{{ url_for('facturas.detalle', id_factura=f.numf) }}" class="hover:text-blue-600">{{ f.numf }}</a>
+              <a href="{{ url_for('facturas.detalle', id_factura=f.numf, doc=f.numf_completo or None) }}" class="hover:text-blue-600">{{ f.numf }}</a>
             {% else %}{{ f.numero }}{% endif %}
             {% if f.via_numf %}<span class="text-slate-400" title="Encontrada por número, no por el SRI completo">&middot; por N&deg;</span>{% endif %}
           </td>

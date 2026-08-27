@@ -1139,7 +1139,7 @@
              rol INT. #}
           {% set url = None %}
           {% if r.tipo == 'factura' %}
-            {% set url = url_for('facturas.detalle', id_factura=r.id_ref) %}
+            {% set url = url_for('facturas.detalle', id_factura=r.id_ref, id=r.id_ref) %}
           {% elif r.tipo == 'cheque' %}
             {% set url = url_for('cheques.detalle', id_cheque=r.id_ref) %}
           {% elif r.tipo == 'cliente' %}

@@ -837,6 +837,16 @@ def detalle(id_factura: int):
     #    *"las notas de entrega tienen mal el link"*.
     doc = (request.args.get("doc") or "").strip()
     fact = queries.por_numf_completo(doc) if doc else None
+    # ⭐ `?id=` — la otra puerta sin ambigüedad, para los links que NO tienen el
+    # número completo. Al 26/08/2026 hay **1.833 documentos sin `numf_completo`
+    # y 288 con `numf` en CERO** (256 notas de entrega): para ésos el único
+    # identificador que existe es la PK interna. Sin esta puerta, un link con
+    # el id caía en `por_id`, que prefiere el `numf` — y el id de una factura
+    # coincide con el numf de OTRA en **6.426 casos**. O sea: abría otra.
+    if not fact:
+        _id = (request.args.get("id") or "").strip()
+        if _id.isdigit():
+            fact = queries.por_id_interno(int(_id))
     # ⭐ SI EL NÚMERO NO ALCANZA, NO SE ADIVINA (dueña 26/08/2026: *"el link me
     # manda a cualquier lado, es hasta otro cliente"*).
     #
@@ -873,8 +883,12 @@ def detalle(id_factura: int):
     if fact.get("numf") and int(id_factura) != int(fact["numf"]):
         # El desempate viaja con el redirect: sin él la URL canónica volvería
         # a ser ambigua y abriría la otra factura del mismo número.
+        # ⚠ El desempate viaja con el redirect —el que sea—: sin él la URL
+        # canónica volvería a ser ambigua y abriría la otra.
+        _extra = {"doc": doc} if doc else (
+            {"id": fact["id_factura"]} if request.args.get("id") else {})
         return redirect(url_for("facturas.detalle", id_factura=fact["numf"],
-                                **({"doc": doc} if doc else {})))
+                                **_extra))
     # TMT 2026-06-07: el param de la URL puede venir como numf (el número del
     # dBase, el ÚNICO visible) y `por_id` lo resuelve a la fila real. Las
     # aplicaciones de cheques se buscan por el id_factura INTERNO resuelto

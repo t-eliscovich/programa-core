@@ -351,14 +351,26 @@ def factura(numf: int):
     if not cod:
         return _pedir_entrar()
     data = _cargar_estado_cuenta(cod)
+    # ⭐ Primero por el NÚMERO COMPLETO, que no se repite nunca. `numf` es el
+    # corto: se repite y en 288 documentos vale CERO (casi todos notas de
+    # entrega). Buscando sólo por él, el cliente abría el PRIMER documento de
+    # su cuenta con ese número — y podía ser otro. El vendedor mira la MISMA
+    # factura por la misma puerta (26/08/2026).
+    doc = (request.args.get("doc") or "").strip()
     elegida = None
-    for f in (data.get("facturas") or []):
-        try:
-            if int(f.get("numf") or 0) == int(numf):
+    if doc:
+        for f in (data.get("facturas") or []):
+            if (f.get("numf_completo") or "").strip() == doc:
                 elegida = f
                 break
-        except (TypeError, ValueError):
-            continue
+    if elegida is None:
+        for f in (data.get("facturas") or []):
+            try:
+                if int(f.get("numf") or 0) == int(numf):
+                    elegida = f
+                    break
+            except (TypeError, ValueError):
+                continue
     if elegida is None:
         abort(404)
     numero = (elegida.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)

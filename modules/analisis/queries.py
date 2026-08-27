@@ -1380,7 +1380,16 @@ def vendidos(desde) -> list[dict]:
     return db.fetch_all(
         """
         SELECT v.subcategoria, v.color, v.calidad, v.fecha,
-               v.vendedor, v.vend_pc, v.numf, v.numero,
+               v.vendedor, v.vend_pc, v.numf,
+               -- ⭐ El NÚMERO COMPLETO, que es lo único que identifica un
+               -- documento: `numf` se repite (2.064 números entre 4.416
+               -- facturas) y con él solo el link abría la otra.
+               -- Se resuelve ACÁ y no sólo desde lo guardado: la columna
+               -- `numero` se llena en el refresco (mig 0233) y hasta que corra
+               -- viene en NULL. El LATERAL la completa sola cuando ese número
+               -- tiene UN solo documento —la enorme mayoría—; cuando tiene
+               -- dos, manda el guardado, que sabe de cuál era la venta.
+               COALESCE(v.numero, uno.numf_completo)        AS numero,
                COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                           AS color_nombre,
                -- ⚠ El grupo sale de la foto y, si la tela ya no tiene foto
@@ -1414,6 +1423,11 @@ def vendidos(desde) -> list[dict]:
                MAX(COALESCE(p.puntos, 1))                  AS puntos,
                SUM(v.kg * COALESCE(p.puntos, 1))           AS puntos_fila
           FROM scintela.parado_venta v
+          LEFT JOIN LATERAL (  -- sólo si NO hay ambigüedad (ver `numero`)
+              SELECT MIN(fa.numf_completo) AS numf_completo
+                FROM scintela.factura fa
+               WHERE fa.numf = v.numf
+              HAVING COUNT(*) = 1) uno ON TRUE
           LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
           LEFT JOIN scintela.parado_foto f
                  ON f.subcategoria = v.subcategoria AND f.color = v.color
@@ -1425,7 +1439,8 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, v.numf, v.numero, nom.n, f.categoria, p.categoria
+                  v.vend_pc, v.numf, v.numero, uno.numf_completo,
+                  nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC
         """, (desde,)) or []
