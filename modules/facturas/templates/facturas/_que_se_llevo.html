@@ -83,7 +83,7 @@
         </tbody>
         <tfoot class="border-t-2 border-slate-200 dark:border-slate-700 text-sm">
           <tr>
-            <td class="px-3 py-2 text-slate-500" colspan="4">{{ 'Subtotal' if sin_kg else 'Bruto' }}</td>
+            <td class="px-3 py-2 text-slate-500" colspan="4">Subtotal</td>
             {% if not sin_kg %}
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.rollos }}</td>
             <td class="px-3 py-2 text-right text-mono">{{ det.totales.kg | kg_es }}</td>
