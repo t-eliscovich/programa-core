@@ -320,11 +320,14 @@
           {% endfor %}
           {% for pr in produccion.get(p.numero, []) %}
             <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              {# TMT 27/08: sin número de orden ni de OFT — acá importan los
+                 pedidos. Los números viven en el tab Memos de la fábrica. #}
               <td colspan="6" class="masinfo" style="color:#166534">
-                En tintura: orden {{ pr.orden }} · {{ pr.kil|num_es(0) }} kg
-                {%- if pr.oft %} · {{ pr.oft }}{% endif %}
-                {%- if pr.pct is not none %} — a producir {{ pr.a_producir|num_es(0) }} kg,
-                  producido {{ pr.producido|num_es(0) }} kg ({{ pr.pct }}%){% endif %}
+                {%- if pr.pct is not none -%}
+                En tintura: producido {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg ({{ pr.pct }}%)
+                {%- else -%}
+                En tintura: {{ pr.kil|num_es(0) }} kg
+                {%- endif -%}
               </td>
             </tr>
           {% endfor %}

@@ -75,31 +75,32 @@
         </li>
         {% endfor %}
       </ul>
+      {# TMT 27/08: "acá hay información de más". La línea dice SOLO el
+         avance; el número de orden y la OFT son jerga de fábrica que el
+         vendedor no usa (viven en /pedidos de la oficina). #}
       {% for pr in produccion.get(p.numero, []) %}
         <div class="ped-prod">
-          En tintura: orden {{ pr.orden }} · {{ pr.kil|num_es(0) }} kg
-          {%- if pr.pct is not none %} — producido {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg
-            <b>({{ pr.pct }}%)</b>{% endif %}
+          {%- if pr.pct is not none -%}
+          En tintura: {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg <b>({{ pr.pct }}%)</b>
+          {%- else -%}
+          En tintura: {{ pr.kil|num_es(0) }} kg
+          {%- endif -%}
         </div>
       {% endfor %}
       {% if p.descripcion %}<div class="ped-obs"><b>Nota:</b> {{ p.descripcion }}</div>{% endif %}
+      {# Sin memo → el botón. Con memo, nada: el chip de arriba ya lo dice
+         (TMT 27/08: "acá hay información de más"). #}
+      {% if not m %}
       <div class="ped-pie">
-        <span class="ped-total">{{ p.n_lineas }} {{ 'tela' if p.n_lineas == 1 else 'telas' }}
-          · {{ p.total_kg|num_es(0) }} kg{% if not p.kg_completo %} + unidades{% endif %}</span>
-        {% if m and m.estado == 'en_proceso' %}
-          <span class="pill good">En proceso en la fábrica</span>
-        {% elif m %}
-          <span class="pill warn">Memo enviado</span>
-        {% else %}
-          <form method="post" action="{{ url_for('mi_cartera.pedidos_enviar_memo') }}"
-                onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">
-            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="numero" value="{{ p.numero }}">
-            {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
-            <button type="submit" class="btn-memo">Enviar memo</button>
-          </form>
-        {% endif %}
+        <form method="post" action="{{ url_for('mi_cartera.pedidos_enviar_memo') }}"
+              onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="numero" value="{{ p.numero }}">
+          {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+          <button type="submit" class="btn-memo">Enviar memo</button>
+        </form>
       </div>
+      {% endif %}
     </details>
   </div>
   {% endfor %}
