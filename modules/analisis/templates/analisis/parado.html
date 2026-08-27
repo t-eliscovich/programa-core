@@ -184,7 +184,13 @@ th.ord.desc::after{content:" ↓";opacity:1}
        ⚠ Baja TODO, no lo filtrado, y el botón lo dice: los filtros son de
        JavaScript y replicarlos en el servidor sería la misma regla escrita dos
        veces. Uno baja a Excel justamente para filtrar allá. #}
-    <a href="/analisis/parado.xlsx" id="excel" class="boton">Bajar todo a Excel</a>
+    {# ⚠ El vendedor baja SU copia: /analisis/parado.xlsx es la ruta de la
+       oficina, no está en su allowlist y le daba 404 (reportado 27/08/2026).
+       El ?vend= es sólo para la preview de la dueña: a un vendedor real la
+       ruta le ignora el querystring y usa el suyo. #}
+    <a href="{{ ('/analisis/competencia/telas.xlsx' ~ (('?vend=' ~ vend) if vend else ''))
+                if mia else '/analisis/parado.xlsx' }}"
+       id="excel" class="boton">Bajar todo a Excel</a>
     <a href="/analisis/competencia/telas/imprimir" target="_blank">Imprimir</a>
     <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank">PDF</a>
   </span>
