@@ -3934,6 +3934,8 @@ def test_el_renglon_vendido_guarda_su_factura():
     fuente = _i.getsource(queries.actualizar)
     assert "calidad, cuenta, numf" in fuente
     assert 'v.get("numf")' in fuente
+    # ⭐ Y el número ENTERO, que es el que desempata (mig 0233).
+    assert 'v.get("numero")' in fuente
 
 
 def test_la_factura_es_solo_para_quien_puede_ver_facturas():
@@ -3947,7 +3949,7 @@ def test_la_factura_es_solo_para_quien_puede_ver_facturas():
                "templates" / "analisis")
     for nombre in ("competencia.html", "parado.html"):
         html = (carpeta / nombre).read_text(encoding="utf-8")
-        i = html.index("/facturas?q=")
+        i = html.index("/facturas/{{ v.numf }}")
         antes = html[i - 260:i]
         assert "tiene_permiso('facturas.ver')" in antes, (
             f"{nombre}: el link a la factura no está gateado")
@@ -4150,3 +4152,68 @@ def test_el_excel_dice_lo_mismo_que_la_pantalla():
     fila = {"kg_primera": 0, "kg_segunda": 0,
             "kg_vend_pri": 0, "kg_vend_seg": 42.5}
     assert views._categoria(fila) == queries.categoria_de(fila) == "SEG"
+
+
+# ---------------------------------------------------------------------------
+# El link del día abre LA factura, no una lista ni la factura de al lado
+# (dueña 26/08/2026: *"clickeo en el día y me lleva a la factura equivocada"*).
+#
+# `numf` es el número PELADO y no es único: la venta de Jersey Listado VIN de
+# ese día era `NTEN-10919` (nota de entrega, VPM, $5,53) y en la base había otra
+# con el mismo 10919 — `001-099-000010919`, AGL, una devolución de junio—. La
+# pantalla de la factura desempata con `?doc=<número completo>`; lo único que
+# faltaba era guardarlo.
+# ---------------------------------------------------------------------------
+
+def _html_de(nombre):
+    from pathlib import Path
+    return (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / nombre).read_text(encoding="utf-8")
+
+
+def test_el_dia_abre_la_factura_directo_y_no_la_lista():
+    """`/facturas/<numf>`, no `/facturas?q=`: la lista filtrada obliga a un
+    click más y con un numf repetido muestra dos."""
+    for nombre in ("parado.html", "competencia.html"):
+        html = _html_de(nombre)
+        assert "/facturas?q=" not in html, f"{nombre}: sigue linkeando a la lista"
+        assert "/facturas/{{ v.numf }}" in html, nombre
+
+
+def test_el_link_lleva_el_numero_completo_para_desempatar():
+    """Sin `?doc=` un numf repetido abre la otra factura."""
+    for nombre in ("parado.html", "competencia.html"):
+        html = _html_de(nombre)
+        i = html.index("/facturas/{{ v.numf }}")
+        trozo = html[i:i + 200]
+        assert "?doc=" in trozo, f"{nombre}: el link no desempata"
+        assert "v.numero" in trozo, f"{nombre}: no manda el número completo"
+
+
+def test_sin_numero_completo_el_link_sigue_andando():
+    """Las filas viejas tienen `numero` en NULL hasta el próximo refresco: el
+    link cae a `/facturas/<numf>` pelado en vez de romperse."""
+    for nombre in ("parado.html", "competencia.html"):
+        trozo = _html_de(nombre)
+        i = trozo.index("/facturas/{{ v.numf }}")
+        assert "{% if v.numero %}" in trozo[i:i + 120], nombre
+
+
+def test_el_click_en_el_dia_no_abre_tambien_la_fila():
+    """La fila entera tiene `onclick=abrir(this)`: sin frenar la propagación,
+    tocar el día abría el detalle Y navegaba, y la página saltaba sola."""
+    html = _html_de("parado.html")
+    i = html.index("/facturas/{{ v.numf }}")
+    assert "event.stopPropagation()" in html[i:i + 260], (
+        "el click en el día se lo lleva también la fila")
+
+
+def test_lo_vendido_guarda_el_numero_completo():
+    """De nada sirve el link si la columna no está."""
+    import inspect as _i
+    fuente = _i.getsource(queries.vendidos)
+    assert "v.numero" in fuente, "la consulta no trae el número completo"
+    from pathlib import Path
+    mig = (Path(__file__).resolve().parent.parent / "migrations" /
+           "0233_parado_venta_numero_completo.sql").read_text(encoding="utf-8")
+    assert "ADD COLUMN IF NOT EXISTS numero" in mig

@@ -1178,11 +1178,16 @@ def actualizar() -> dict:
                 db.execute(
                     """INSERT INTO scintela.parado_venta
                            (subcategoria, color, vend_pc, vendedor, fecha, kg,
-                            calidad, cuenta, numf)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            calidad, cuenta, numf, numero)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (k[0], k[1], v.get("vend_pc"), _quien_vendio(v),
                      _fecha(v["fecha"]), parte,
-                     v.get("calidad"), cuenta, v.get("numf")), conn=conn)
+                     v.get("calidad"), cuenta, v.get("numf"),
+                     # ⭐ El número ENTERO, no sólo el pelado: el `numf` se
+                     # repite entre una nota de entrega y una factura vieja de
+                     # otro cliente, y sin esto el link abría la que no era
+                     # (mig 0233).
+                     v.get("numero")), conn=conn)
 
         db.execute("DELETE FROM scintela.parado_share", conn=conn)
         for s in asinfo_parado.share_por_grupo():
@@ -1375,7 +1380,7 @@ def vendidos(desde) -> list[dict]:
     return db.fetch_all(
         """
         SELECT v.subcategoria, v.color, v.calidad, v.fecha,
-               v.vendedor, v.vend_pc, v.numf,
+               v.vendedor, v.vend_pc, v.numf, v.numero,
                COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                           AS color_nombre,
                -- ⚠ El grupo sale de la foto y, si la tela ya no tiene foto
@@ -1420,7 +1425,7 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, v.numf, nom.n, f.categoria, p.categoria
+                  v.vend_pc, v.numf, v.numero, nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC
         """, (desde,)) or []

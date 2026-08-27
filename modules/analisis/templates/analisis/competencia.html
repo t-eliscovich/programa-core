@@ -276,7 +276,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
              no: *"eso sí, pero el link a la factura no"*. Y sin el permiso el
              link les daría 404, así que además sería un link roto. #}
           <td class="opt">{% if v.fecha %}{% if v.numf and tiene_permiso('facturas.ver')
-            %}<a href="/facturas?q={{ v.numf }}" title="Factura {{ v.numf }}"
+            %}<a href="/facturas/{{ v.numf }}{% if v.numero %}?doc={{ v.numero | urlencode }}{% endif %}"
+           title="Factura {{ v.numero or v.numf }}" onclick="event.stopPropagation()"
                  class="alista">{{ v.fecha.strftime('%d/%m') }}</a>{% else
             %}{{ v.fecha.strftime('%d/%m') }}{% endif %}{% else %}—{% endif %}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>

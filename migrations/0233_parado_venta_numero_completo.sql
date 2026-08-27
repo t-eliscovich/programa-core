@@ -1,0 +1,22 @@
+-- 0233 · El número COMPLETO de la factura en lo vendido
+--
+-- Dueña 26/08/2026, en la tabla de Vendidos: *"clickeo en el día y me lleva a
+-- la factura equivocada"*.
+--
+-- El link salía con `numf`, el número pelado. Y el numf NO es único: la venta
+-- de Jersey Listado VIN de ese día es `NTEN-10919` (nota de entrega, cliente
+-- VPM, $5,53) y en la base hay otra factura con el MISMO 10919 —
+-- `001-099-000010919`, cliente AGL, del 03/06, una devolución de −$462,15—.
+-- Con el número pelado no hay forma de elegir, y abría la que no era.
+--
+-- La pantalla de la factura ya sabe desempatar: `/facturas/<numf>?doc=<numero
+-- completo>` (`modules/facturas/views.py::detalle`, agregado el mismo día por
+-- el mismo motivo con las notas de entrega). Lo único que faltaba era guardar
+-- el número entero — Asinfo ya lo devuelve en `_sql_vendido`, se tiraba al
+-- calcular el `numf` y no se persistía.
+--
+-- ⚠ Las filas que ya están quedan con `numero` en NULL hasta el próximo
+-- refresco. El link cae entonces a `/facturas/<numf>` sin desempate, que es
+-- exactamente lo de hoy: no empeora nada mientras tanto.
+ALTER TABLE scintela.parado_venta
+    ADD COLUMN IF NOT EXISTS numero VARCHAR(24);

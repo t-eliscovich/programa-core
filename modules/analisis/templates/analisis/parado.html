@@ -506,7 +506,8 @@ en {{ vendidos | length }} renglones ·
     {# ⭐ El día abre la FACTURA (dueña 26/08/2026), sólo para quien puede
        verlas. Ver el comentario en competencia.html. #}
     <td class="g n opt">{% if v.numf and tiene_permiso('facturas.ver')
-      %}<a href="/facturas?q={{ v.numf }}" title="Factura {{ v.numf }}"
+      %}<a href="/facturas/{{ v.numf }}{% if v.numero %}?doc={{ v.numero | urlencode }}{% endif %}"
+           title="Factura {{ v.numero or v.numf }}" onclick="event.stopPropagation()"
            style="color:inherit">{{ v.fecha.strftime('%d/%m/%y') }}</a>{% else
       %}{{ v.fecha.strftime('%d/%m/%y') }}{% endif %}</td>
   </tr>
