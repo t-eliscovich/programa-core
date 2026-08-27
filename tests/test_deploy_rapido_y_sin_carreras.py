@@ -23,13 +23,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import yaml
-
+# ⚠ Sin `yaml`: PyYAML NO está en requirements.txt y nadie lo arrastra, así que
+# en el CI no se instala y el `import` rompía la corrida entera en la
+# recolección (CI #2513, 27/08). Traerlo sólo para leer un workflow sería meter
+# una dependencia en PRODUCCIÓN por un test — y encima dispararía el pip
+# install del próximo deploy. Los otros tests de deploy de este repo leen el
+# YAML como texto; este hace lo mismo.
 ROOT = Path(__file__).resolve().parents[1]
 DEPLOY = (ROOT / ".github" / "workflows" / "deploy.yml").read_text(encoding="utf-8")
 CI = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
-DEPLOY_YML = yaml.safe_load(DEPLOY)
-CI_YML = yaml.safe_load(CI)
 
 
 def _cuerpo_del_heredoc() -> str:
@@ -87,25 +89,28 @@ def test_el_tarball_va_a_una_key_por_commit():
 def test_los_deploys_se_serializan_sin_cortar_el_que_esta_corriendo():
     """Cortar un deploy a la mitad deja el server con el tar a medio extraer y
     la app parada: `cancel-in-progress` tiene que ser False."""
-    conc = DEPLOY_YML["concurrency"]
-    assert conc["group"] == "deploy-ec2"
-    assert conc["cancel-in-progress"] is False
+    assert ("\nconcurrency:\n"
+            "  group: deploy-ec2\n"
+            "  cancel-in-progress: false\n") in DEPLOY
 
 
 def test_el_ci_viejo_se_cancela_cuando_llega_otro_push():
     """Tres pushes seguidos daban tres CI y tres deploys, y el server se
     reiniciaba tres veces. El de la punta ya contiene a los otros dos."""
-    conc = CI_YML["concurrency"]
-    assert conc["cancel-in-progress"] is True
-    assert "github.ref" in conc["group"]
+    assert ("\nconcurrency:\n"
+            "  group: ci-${{ github.ref }}\n"
+            "  cancel-in-progress: true\n") in CI
 
 
 def test_un_ci_cancelado_no_avisa_que_el_deploy_quedo_bloqueado():
     """🚨 El job `bloqueado` existe para que un CI ROJO se vea. Un CI cancelado
     por el `concurrency` de arriba no es un rojo — su commit viaja adentro del
     CI de la punta — y con `!= 'success'` cada push doble mandaba un mail."""
-    cond = DEPLOY_YML["jobs"]["bloqueado"]["if"]
-    assert "workflow_run.conclusion == 'failure'" in cond
+    bloque = DEPLOY[DEPLOY.index("  bloqueado:"):]
+    # Sin los comentarios: el de acá al lado EXPLICA por qué no va `!= 'success'`,
+    # así que lo nombra, y el assert se disparaba con su propia explicación.
+    cond = "\n".join(l for l in bloque.splitlines() if not l.lstrip().startswith("#"))
+    assert "github.event.workflow_run.conclusion == 'failure'" in cond
     assert "!= 'success'" not in cond
 
 
