@@ -35,6 +35,28 @@ _log = logging.getLogger("programa_core.formulas_memos")
 _pool: pool.ThreadedConnectionPool | None = None
 
 
+def _url_configurada() -> str:
+    """FORMULAS_MEMOS_DATABASE_URL, del entorno o del registro de Windows.
+
+    La variable la escribe el deploy de formulas_app como variable de MÁQUINA
+    (scripts/setup_programa_core_memos_role.py de ese repo). El Task Scheduler
+    de Windows a veces arranca el proceso con un bloque de entorno cacheado
+    que no la trae — mismo motivo por el que el launcher de formulas hidrata
+    sus variables a mano. Leer el registro directo saca esa duda del medio.
+    En Linux (tests, vista_local) el registro no existe y vale el entorno.
+    """
+    url = os.environ.get("FORMULAS_MEMOS_DATABASE_URL", "").strip()
+    if url or os.name != "nt":
+        return url
+    try:
+        import winreg
+        clave = r"SYSTEM\CurrentControlSet\Control\Session Manager\Environment"
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, clave) as k:
+            return str(winreg.QueryValueEx(k, "FORMULAS_MEMOS_DATABASE_URL")[0]).strip()
+    except OSError:
+        return ""
+
+
 def init_pool() -> None:
     """Abre el pool si FORMULAS_MEMOS_DATABASE_URL está seteada.
 
@@ -44,7 +66,7 @@ def init_pool() -> None:
     global _pool
     if _pool is not None:
         return
-    url = os.environ.get("FORMULAS_MEMOS_DATABASE_URL", "").strip()
+    url = _url_configurada()
     if not url:
         _log.info("FORMULAS_MEMOS_DATABASE_URL vacío — envío de memos deshabilitado")
         return
