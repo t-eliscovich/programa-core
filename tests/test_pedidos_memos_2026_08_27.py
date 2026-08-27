@@ -141,18 +141,21 @@ def test_la_etiqueta_del_dueno_lleva_el_codigo_cuando_lo_hay():
     assert service.etiqueta_dueno({"codigo": "", "nombre": "Intela"}) == "Intela"
 
 
-# ── etapas del pedido (dueña 27/08: sin porcentajes) ───────────────────────
-# enviado → en_tintura (la OFT tiene orden de salida de material) →
-# terminado (todas las OFT Finalizadas, o la X del memo).
+# ── etapas del pedido, POR LÍNEA (dueña 27/08) ──────────────────────────────
+# Cada línea (producto) se matchea con las OFTs del pedido por el producto de
+# la OFT. El resumen del pedido: terminado sólo si TODAS las líneas.
 
 _MEMO = {"PDCL-1": {"estado": "pendiente", "en_proceso_por": None}}
+
+_PEDIDO = {"numero": "PDCL-1",
+           "lineas": [{"producto": "PI28NEG"}, {"producto": "FE96HAB"}]}
 
 
 def _fila_oft(**kw):
     """Fila cruda de `_SQL_ETAPA_OFTS` (la forma de la fuente)."""
-    base = {"parent_numero": "OFT-000038020", "estado_produccion": 2,
-            "cantidad": 294.0, "fabricada": 0.0, "es_hija": False,
-            "con_salida": 0}
+    base = {"parent_numero": "OFT-000038020", "producto": "PI28NEG",
+            "estado_produccion": 2, "cantidad": 294.0, "fabricada": 0.0,
+            "es_hija": False, "con_salida": 0}
     base.update(kw)
     return base
 
@@ -162,65 +165,82 @@ def _etapas(ordenes, ofts, ok_asinfo=True, memo=None):
     with patch.object(formulas_db, "fetch_all", return_value=ordenes), \
          patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(ofts, ok_asinfo)):
-        return service.etapas_por_pedido(["PDCL-1"], memo or _MEMO)
+        return service.etapas_por_pedido([dict(_PEDIDO)], memo or _MEMO)
+
+
+_ORDEN = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
 
 
 def test_sin_memo_no_hay_etapa():
-    assert service.etapas_por_pedido(["PDCL-9"], {}) == {}
+    assert service.etapas_por_pedido([{"numero": "PDCL-9", "lineas": []}], {}) == {}
 
 
-def test_con_memo_y_sin_ordenes_el_pedido_esta_enviado():
-    assert _etapas([], []) == {"PDCL-1": "enviado"}
+def test_con_memo_y_sin_ordenes_todo_esta_enviado():
+    r = _etapas([], [])["PDCL-1"]
+    assert r["pedido"] == "enviado"
+    assert r["lineas"] == {"PI28NEG": "enviado", "FE96HAB": "enviado"}
 
 
-def test_con_orden_pero_sin_salida_de_material_sigue_enviado():
-    """La OFT existe pero la tela no salió de bodega: planificado no es
-    tinturándose."""
-    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
-    assert _etapas(ordenes, [_fila_oft()]) == {"PDCL-1": "enviado"}
-
-
-def test_la_salida_de_material_pone_al_pedido_en_tintura():
-    """La salida se cuelga de una HIJA de la OFT — igual cuenta."""
-    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
+def test_la_salida_de_material_avanza_SOLO_la_linea_de_ese_producto():
+    """La OFT es del NEG: el NEG pasa a en tintura, el HAB sigue enviado, y
+    el resumen del pedido dice en tintura."""
     ofts = [_fila_oft(),
             _fila_oft(es_hija=True, con_salida=1, cantidad=100.0)]
-    assert _etapas(ordenes, ofts) == {"PDCL-1": "en_tintura"}
+    r = _etapas(_ORDEN, ofts)["PDCL-1"]
+    assert r["lineas"] == {"PI28NEG": "en_tintura", "FE96HAB": "enviado"}
+    assert r["pedido"] == "en_tintura"
 
 
-def test_todas_las_oft_finalizadas_es_terminado():
-    """Finalizada = estado 5. Las hojas mandan: el padre puede quedar en 2
-    aunque sus hijas hayan cerrado."""
-    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
-    ofts = [_fila_oft(estado_produccion=2),
+def test_una_salida_colgada_del_padre_vale_para_las_lineas_de_esa_oft():
+    """El padre no tiene producto; su salida cuenta para las hijas."""
+    ofts = [_fila_oft(producto="", con_salida=1),
+            _fila_oft(es_hija=True)]
+    r = _etapas(_ORDEN, ofts)["PDCL-1"]
+    assert r["lineas"]["PI28NEG"] == "en_tintura"
+
+
+def test_la_linea_termina_cuando_sus_hojas_estan_finalizadas():
+    ofts = [_fila_oft(estado_produccion=2, producto=""),
             _fila_oft(es_hija=True, con_salida=1, estado_produccion=5)]
-    assert _etapas(ordenes, ofts) == {"PDCL-1": "terminado"}
+    r = _etapas(_ORDEN, ofts)["PDCL-1"]
+    assert r["lineas"]["PI28NEG"] == "terminado"
+    # La otra línea sigue enviada → el pedido NO está terminado.
+    assert r["pedido"] == "en_tintura"
 
 
-def test_una_oft_terminada_y_otra_a_medias_es_en_tintura():
+def test_el_pedido_termina_cuando_TODAS_sus_lineas_terminaron():
+    ofts = [_fila_oft(es_hija=True, con_salida=1, estado_produccion=5),
+            _fila_oft(es_hija=True, con_salida=1, estado_produccion=5,
+                      producto="FE96HAB")]
+    r = _etapas(_ORDEN, ofts)["PDCL-1"]
+    assert r["lineas"] == {"PI28NEG": "terminado", "FE96HAB": "terminado"}
+    assert r["pedido"] == "terminado"
+
+
+def test_dos_ofts_del_mismo_producto_terminan_cuando_terminan_las_dos():
     ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"},
                {"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038021"}]
-    ofts = [_fila_oft(estado_produccion=5, con_salida=1),
-            _fila_oft(parent_numero="OFT-000038021", con_salida=1)]
-    assert _etapas(ordenes, ofts) == {"PDCL-1": "en_tintura"}
+    ofts = [_fila_oft(es_hija=True, con_salida=1, estado_produccion=5),
+            _fila_oft(parent_numero="OFT-000038021", es_hija=True,
+                      con_salida=1, estado_produccion=2)]
+    r = _etapas(ordenes, ofts)["PDCL-1"]
+    assert r["lineas"]["PI28NEG"] == "en_tintura"
 
 
 def test_al_100_del_plan_tambien_es_terminado_aunque_no_este_cerrada():
-    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
-    ofts = [_fila_oft(fabricada=294.0, con_salida=1)]
-    assert _etapas(ordenes, ofts) == {"PDCL-1": "terminado"}
+    ofts = [_fila_oft(es_hija=True, con_salida=1, fabricada=294.0)]
+    r = _etapas(_ORDEN, ofts)["PDCL-1"]
+    assert r["lineas"]["PI28NEG"] == "terminado"
 
 
 def test_la_x_de_la_fabrica_manda_sobre_todo():
     memo = {"PDCL-1": {"estado": "terminado", "en_proceso_por": "jonathan"}}
-    assert _etapas([], [], memo=memo) == {"PDCL-1": "terminado"}
+    assert _etapas([], [], memo=memo)["PDCL-1"]["pedido"] == "terminado"
 
 
 def test_con_asinfo_caido_la_etapa_no_inventa_avance():
-    """Fail-soft: sin respuesta de Asinfo el pedido queda en enviado —
-    nunca un avance que no se pudo probar."""
-    ordenes = [{"pedido_numero": "PDCL-1", "oft_numero": "OFT-000038020"}]
-    assert _etapas(ordenes, [], ok_asinfo=False) == {"PDCL-1": "enviado"}
+    r = _etapas(_ORDEN, [], ok_asinfo=False)["PDCL-1"]
+    assert r["pedido"] == "enviado"
 
 
 # ── formulas_memos (el bridge de escritura) ─────────────────────────────────
@@ -286,8 +306,9 @@ def test_el_corte_pedido_muestra_el_dueno_y_el_boton(app, fake_db):
 
 def test_un_pedido_ya_enviado_muestra_su_etapa_y_no_el_boton(app, fake_db):
     c = _get_corte_pedido(_login(app, fake_db), etapas={
-        "PDCL-26438": "enviado",
-        "PDCL-26401": "en_tintura",
+        "PDCL-26438": {"pedido": "enviado", "lineas": {}},
+        "PDCL-26401": {"pedido": "en_tintura",
+                       "lineas": {"PI28NEG": "en_tintura"}},
     })
     body = c.get_data(as_text=True)
     # La tira de pasos: los dos pedidos la llevan, con su paso actual.
@@ -404,7 +425,8 @@ def test_el_vendedor_manda_lo_suyo_y_queda_registrado_su_usuario(app, fake_db):
 def test_un_pedido_terminado_muestra_terminado(app, fake_db):
     """Etapa final: todas las OFT cerradas (o la X de la fábrica)."""
     r = _get_corte_pedido(_login(app, fake_db),
-                          etapas={"PDCL-26401": "terminado"})
+                          etapas={"PDCL-26401": {"pedido": "terminado",
+                                                 "lineas": {"PI28NEG": "terminado"}}})
     body = r.get_data(as_text=True)
     assert "Terminado" in body
     assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón

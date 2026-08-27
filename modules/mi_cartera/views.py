@@ -877,7 +877,7 @@ def pedidos():
         seccion="pedidos",
         disponible=disponible,
         pedidos=mios,
-        etapas=pedidos_service.etapas_por_pedido(numeros, memo_estados),
+        etapas=pedidos_service.etapas_por_pedido(mios, memo_estados),
         memo_estados=memo_estados,
         **_ctx_base(vend),
     )

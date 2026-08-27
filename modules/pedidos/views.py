@@ -102,7 +102,7 @@ def lista():
         # La ETAPA de cada pedido (enviado → en tintura → terminado), armada
         # con las órdenes de formulas y la OFT en Asinfo. Sin porcentajes
         # (dueña 27/08).
-        ctx["etapas"] = service.etapas_por_pedido(numeros, memo_estados)
+        ctx["etapas"] = service.etapas_por_pedido(pedidos_lista, memo_estados)
     elif corte == "tela":
         # La pestaña por defecto es la que MÁS falta, no la primera alfabética.
         pedida = (request.args.get("cat") or "").strip()

@@ -41,6 +41,10 @@
   .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
   .ped-total{font-size:12px;color:#475569}
   .pill.tinto{background:#dbeafe;color:#1e40af}
+  /* la etapa de UNA línea: ✓ terminada, ● en tintura (al lado de la tela) */
+  .lst{font-style:normal;font-size:11px;font-weight:700}
+  .lst.done{color:#16a34a}
+  .lst.tinto{color:#1d4ed8}
   /* La tira de etapas del pedido: enviado → en tintura → terminado.
      TMT 27/08 (celular de Edgar): "Terminado" se salía de la pantalla —
      la tira tiene que entrar hasta en 320px Y con la letra del sistema
@@ -79,7 +83,9 @@
            ficha abierta o cerrada. #}
         {% set et = etapas.get(p.numero) %}
         {% if et %}
-        {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et, 0) %}
+        {# El resumen del pedido; cada línea lleva el suyo adentro
+           (dueña 27/08: "trackearlo por línea, no global"). #}
+        {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et.pedido, 0) %}
         <div class="ped-steps">
           {% for rot in ['Enviado', 'En tintura', 'Terminado'] %}
             {% set i = loop.index0 %}
@@ -93,9 +99,12 @@
       </summary>
       <ul class="ped-lineas">
         {% for l in p.lineas %}
+        {% set le = et.lineas.get(l.producto) if et else none %}
         <li>
           <span class="c">{{ l.color }}</span>
-          <span class="t">{{ l.tela }}</span>
+          <span class="t">{{ l.tela }}
+            {%- if le == 'terminado' %} <i class="lst done">✓</i>
+            {%- elif le == 'en_tintura' %} <i class="lst tinto">●</i>{% endif %}</span>
           <span class="q">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span>
           {# En kilos el estimado repetiría el mismo número al lado. #}
           {% if l.unidad != 'kg' %}
