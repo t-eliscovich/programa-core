@@ -4,18 +4,20 @@ import db
 # Columnas de tela en el orden del dBase (PRECIOS.DBF). Cada tupla es
 # (columna en la tabla scintela.precios, etiqueta que ve el usuario).
 TELAS: list[tuple[str, str]] = [
+    # TMT 2026-08-27 (dueña): orden pedido — Jersey, Rib, Pique, Cuellos,
+    # Toper, Fleece, Lycra; después el resto. Ya no es el orden del dBase.
     ("jersey", "JERSEY"),
-    ("pique", "PIQUE"),
-    ("toper", "TOPER"),
-    ("alemania", "ALEMANIA"),
     ("rib", "RIB"),
+    ("pique", "PIQUE"),
     ("cuellos", "CUELLOS"),
-    ("lycra", "LYCRA"),
+    ("toper", "TOPER"),
     # TMT 2026-08-04 (dueña: "no es Falso es fleece"): `falso` es el NOMBRE DE
     # COLUMNA que viene de PRECIOS.DBF, no la tela. La tela es FLEECE — así ya
     # estaba etiquetada en Proformas (modules/proformas/queries.py). La columna
     # sigue llamándose `falso` en la tabla; sólo cambia lo que ve el usuario.
     ("falso", "FLEECE"),
+    ("lycra", "LYCRA"),
+    ("alemania", "ALEMANIA"),
     ("kiana", "KIANA"),
     # TMT 2026-08-04, dueña: "borrar medical". La tela salió de la lista de
     # precios (pantalla, hoja impresa y proforma). La COLUMNA `medical` de
