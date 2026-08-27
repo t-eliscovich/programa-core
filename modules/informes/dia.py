@@ -1122,7 +1122,7 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
     if pm:
         pie.append(f"{_n(pm)} kg producidos")
     if vm.get("us"):
-        pie.append(f"$ {_n(vm['us'])} vendidos")
+        pie.append(f"{_n(vm['kg'])} kg vendidos · $ {_n(vm['us'])}")
 
     L = [
         '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
