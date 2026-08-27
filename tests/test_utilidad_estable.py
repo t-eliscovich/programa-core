@@ -117,16 +117,30 @@ def test_el_inventario_de_apertura_bueno_se_cachea_normal():
 
 # ── El stock de QUÍMICOS: la cadena de tres escalones tiene red ─────────────
 
-def test_el_stock_de_quimicos_usa_el_ultimo_bueno_si_formulas_no_contesta():
-    """Sin esto, un timeout bajaba el Stock Quí. ~70k de una recarga a la otra."""
+def test_el_stock_de_quimicos_usa_el_ultimo_bueno_si_formulas_no_contesta(
+        monkeypatch):
+    """Sin esto, un timeout bajaba el Stock Quí. ~70k de una recarga a la otra.
+
+    La red vive en `_vqx_de_los_quimicos`, que desde el 26/08 es una función
+    aparte (adentro del balance no se podía ni leer ni probar). Antes esto
+    miraba el TEXTO del balance; ahora corre la red y mira el resultado, que es
+    lo que importa.
+    """
     import inspect
+    from unittest.mock import patch
 
     from modules.informes import queries as q
 
+    monkeypatch.setattr(q, "_VQX_ULTIMO_BUENO", 411_000.0)
+    with patch("modules.informes.quimico_inv_formulas.quimico_total_fisico",
+               return_value=None):
+        r = q._vqx_de_los_quimicos(338_000.0)
+    assert r["vqx"] == 411_000.0, "se bajó de escalón teniendo un valor bueno"
+    assert "no contestó el stock de químicos" in r["aviso"]
+
+    # …y el balance sigue enganchado a esa red, con su aviso.
     src = inspect.getsource(q.informe_balance)
-    assert "_VQX_ULTIMO_BUENO" in src
-    assert "no contestó el stock de químicos" in src
-    # …y el aviso viaja con las advertencias, que la pantalla muestra.
+    assert "_vqx_de_los_quimicos" in src
     assert "_quim_aviso" in src
 
 

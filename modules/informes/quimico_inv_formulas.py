@@ -22,11 +22,47 @@ recibimos el corte (= "hasta"). Fail-soft: devuelve None si formulas_db no está
 from __future__ import annotations
 
 import logging
+import os
+import time
 from datetime import date
 
 from modules._lib import formulas_db
 
 _LOG = logging.getLogger("programa_core.quimico_inv_formulas")
+
+# ── La misma cuenta, una sola vez ──────────────────────────────────────────
+# TMT 2026-08-26 (dueña): *"resultados tarda en cargar"* y *"historia
+# también"*. Esta consulta cruza a formulas_app (otra base, otra app) y no es
+# barata, y el balance la pide DOS veces por foto para el mismo día: una para
+# el "Stock Quí." de la pantalla y otra para el guard que decide si la foto se
+# puede guardar. Con la caché, la segunda es gratis — y la visita siguiente
+# también, mientras el calentador la mantiene fresca.
+#
+# 240 s, igual que `quimicos_flujo`: menos que los 300 de Asinfo, así que el
+# número no queda nunca más viejo que el resto de la pantalla. Bajo pytest no
+# cachea NADA: un test que mockea el puente tiene que ver su propio mock.
+_TTL_SECS = 240
+_CACHE: dict = {}
+
+
+def reset_quimico_cache() -> None:
+    """Vaciar la caché (tests / después de un deploy)."""
+    _CACHE.clear()
+
+
+def _cache_get(key):
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return None
+    hit = _CACHE.get(key)
+    if hit and (time.time() - hit[0]) < _TTL_SECS:
+        return hit[1]
+    return None
+
+
+def _cache_put(key, valor) -> None:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    _CACHE[key] = (time.time(), valor)
 
 # IVA de químicos — mismo criterio que tintura.service (15%, sal exenta). La sal
 # se identifica por nombre ('SAL'), igual que formulas_app (match por nombre, no
@@ -131,6 +167,10 @@ def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> 
     from filters import today_ec
 
     _corte = (corte or today_ec())
+    _clave = (str(_corte), bool(detalle))
+    _hit = _cache_get(_clave)
+    if _hit is not None:
+        return _hit
     try:
         rows = formulas_db.fetch_all(_SQL, {"corte": _corte.isoformat()})
     except Exception as e:  # noqa: BLE001 -- fail-soft, sin cachear
@@ -203,6 +243,10 @@ def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> 
     if detalle:
         filas.sort(key=lambda x: (x["tipo"], -x["monto_iva"]))
         out["filas"] = filas
+    # Sólo se guarda el ÉXITO: los caminos de arriba devuelven None sin cachear
+    # (misma regla que el resto del programa — un "no pude preguntar" guardado
+    # es una mentira que dura toda la ventana).
+    _cache_put(_clave, out)
     return out
 
 

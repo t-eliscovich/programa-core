@@ -4481,6 +4481,85 @@ def resultados_costos_tabla(
 _VQX_ULTIMO_BUENO: float | None = None
 
 
+def _vqx_de_los_quimicos(vqx_vivo: float) -> dict:
+    """El "Stock Quí." del balance: cuánto vale hoy el químico de la fábrica.
+
+    → `{"vqx": float, "aviso": str}`. El aviso sale vacío salvo que se esté
+    mostrando el último valor bueno porque formulas no contestó.
+
+    Vive afuera del balance porque tiene tres escalones y una red, y adentro de
+    una función de 900 líneas no se puede ni leer ni probar.
+
+    QUÍMICO = COLORANTE FÍSICO REAL de formulas (dueña 2026-07-12). Decisión:
+    el "Stock Quí." se mide como el físico de COLORANTE (familias POLI+ALG) de
+    formulas, NO el VQ del dBase (que subvalúa) ni el VQX vivo (VQ0 junio +
+    compras Q − ITIN). Se excluyen los AUXILIARES (AUX): son un stock a granel
+    de ~55k que se da vuelta solo (compras≈consumo) y que el dBase no valúa —
+    al sacarlos, el colorante físico (~338.614) queda a solo +26k del dBase
+    (311.953), no +82k. El VQX vivo de arriba queda como fallback si formulas
+    no está disponible.
+    MISMA variable que el FLUJO (banda STOCK DE QUÍMICOS + tabla COLOR $):
+    tintura_service.stock_colorante_fisico (POLI+ALG, sin AUX, ≈ 338). Que
+    salga de acá y no se recalcule → el químico es idéntico en balance y flujo.
+    Dueña 2026-07-13: "stock quimicos idem que hilado, la variable del flujo".
+    Dueña 2026-07-24: los AUXILIARES ahora CUENTAN en la utilidad. "Stock Quí."
+    = químico TOTAL (POLI+ALG+AUX, lo que muestra formulas_app) y ese total entra
+    a patrimonio Y a la utilidad. El patrimonio de junio (patant) NO se toca →
+    la utilidad pega el salto por incorporar los auxiliares (aceptado por la dueña;
+    reemplaza la neutralización `_quim_increment` del 21/07).
+    ⚠ TMT 2026-07-31 — LA RED DE LOS QUÍMICOS. Esta cadena tiene TRES
+    escalones (total con auxiliares ≈411k → sólo colorante ≈338k → VQ0 +
+    compras − ITIN) y las dos consultas van a formulas_app SIN CACHÉ: son un
+    volado por request. Un timeout en la de arriba bajaba el Stock Quí. ~70k
+    de una recarga a la otra, sin decir nada — otra pieza de los saltos de
+    utilidad que reportó Alex. Ahora, si formulas no contesta, se usa el
+    ÚLTIMO valor bueno y se avisa; sólo se baja de escalón cuando no hay
+    ningún valor bueno todavía (app recién arrancada).
+    ⭐ EL TOTAL PRIMERO, y el colorante SÓLO si hace falta. TMT 2026-08-26
+    (dueña): *"resultados tarda en cargar"*. Las dos lecturas van a
+    formulas_app y no son baratas, y el colorante se preguntaba SIEMPRE para
+    tirarlo un renglón después: alcanza con que el total conteste —el caso
+    normal— para que su valor no se use nunca. Ahora se pregunta recién
+    cuando el total no contestó Y todavía no hay ningún valor bueno guardado,
+    que es el único escenario donde ese número llega a la pantalla.
+    El resultado es el mismo en los cuatro casos; lo que cambia es cuántas
+    veces se cruza a la otra base.
+    """
+    global _VQX_ULTIMO_BUENO
+
+    vqx = vqx_vivo
+    _vqx_bueno = False
+    try:
+        # TOTAL (incluye auxiliares) = mismo número que el flujo / formulas.
+        from modules.informes.quimico_inv_formulas import quimico_total_fisico
+        _vqx_tot = quimico_total_fisico(today_ec())
+    except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
+        _vqx_tot = None
+    if _vqx_tot is not None and _vqx_tot > 0:
+        vqx = float(_vqx_tot)   # Stock Quí. = químico total (con aux)
+        _vqx_bueno = True
+        _VQX_ULTIMO_BUENO = vqx
+    elif not _VQX_ULTIMO_BUENO:
+        # Sin total y sin ningún valor bueno todavía (app recién arrancada):
+        # recién acá se baja de escalón al colorante físico.
+        try:
+            from modules.tintura import service as _tsvc_q
+            _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
+            if _vqx_col > 0:
+                vqx = _vqx_col   # fallback: colorante físico
+        except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
+            pass
+    if not _vqx_bueno and _VQX_ULTIMO_BUENO:
+        return {
+            "vqx": _VQX_ULTIMO_BUENO,
+            "aviso": (
+                "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos: se está "
+                "usando el último valor bueno. El número es de hace unos minutos."
+            ),
+        }
+    return {"vqx": vqx, "aviso": ""}
+
+
 def informe_balance(comp_mes_override: dict | None = None) -> dict:
     """Arma el BALANCE equivalente al del INFORMES.PRG screen.
 
@@ -5416,55 +5495,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         vqx = round(_vq0_prev + float(_vqq_mes.get("importe") or 0) - ITIN, 2)
     # si no hay iniciales del mes anterior, queda el fallback del snapshot
 
-    # QUÍMICO = COLORANTE FÍSICO REAL de formulas (dueña 2026-07-12). Decisión:
-    # el "Stock Quí." se mide como el físico de COLORANTE (familias POLI+ALG) de
-    # formulas, NO el VQ del dBase (que subvalúa) ni el VQX vivo (VQ0 junio +
-    # compras Q − ITIN). Se excluyen los AUXILIARES (AUX): son un stock a granel
-    # de ~55k que se da vuelta solo (compras≈consumo) y que el dBase no valúa —
-    # al sacarlos, el colorante físico (~338.614) queda a solo +26k del dBase
-    # (311.953), no +82k. El VQX vivo de arriba queda como fallback si formulas
-    # no está disponible.
-    # MISMA variable que el FLUJO (banda STOCK DE QUÍMICOS + tabla COLOR $):
-    # tintura_service.stock_colorante_fisico (POLI+ALG, sin AUX, ≈ 338). Que
-    # salga de acá y no se recalcule → el químico es idéntico en balance y flujo.
-    # Dueña 2026-07-13: "stock quimicos idem que hilado, la variable del flujo".
-    # Dueña 2026-07-24: los AUXILIARES ahora CUENTAN en la utilidad. "Stock Quí."
-    # = químico TOTAL (POLI+ALG+AUX, lo que muestra formulas_app) y ese total entra
-    # a patrimonio Y a la utilidad. El patrimonio de junio (patant) NO se toca →
-    # la utilidad pega el salto por incorporar los auxiliares (aceptado por la dueña;
-    # reemplaza la neutralización `_quim_increment` del 21/07).
-    # ⚠ TMT 2026-07-31 — LA RED DE LOS QUÍMICOS. Esta cadena tiene TRES
-    # escalones (total con auxiliares ≈411k → sólo colorante ≈338k → VQ0 +
-    # compras − ITIN) y las dos consultas van a formulas_app SIN CACHÉ: son un
-    # volado por request. Un timeout en la de arriba bajaba el Stock Quí. ~70k
-    # de una recarga a la otra, sin decir nada — otra pieza de los saltos de
-    # utilidad que reportó Alex. Ahora, si formulas no contesta, se usa el
-    # ÚLTIMO valor bueno y se avisa; sólo se baja de escalón cuando no hay
-    # ningún valor bueno todavía (app recién arrancada).
-    global _VQX_ULTIMO_BUENO
-    _vqx_bueno = False
-    try:
-        from modules.tintura import service as _tsvc_q
-        _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
-        if _vqx_col > 0:
-            vqx = _vqx_col   # fallback: colorante físico
-        # TOTAL (incluye auxiliares) = mismo número que el flujo / formulas.
-        from modules.informes.quimico_inv_formulas import quimico_total_fisico
-        _vqx_tot = quimico_total_fisico(today_ec())
-        if _vqx_tot is not None and _vqx_tot > 0:
-            vqx = float(_vqx_tot)   # Stock Quí. = químico total (con aux) → entra a la utilidad
-            _vqx_bueno = True
-            _VQX_ULTIMO_BUENO = vqx
-    except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
-        pass
-    if not _vqx_bueno and _VQX_ULTIMO_BUENO:
-        vqx = _VQX_ULTIMO_BUENO
-        _quim_aviso = (
-            "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos: se está "
-            "usando el último valor bueno. El número es de hace unos minutos."
-        )
-    else:
-        _quim_aviso = ""
+    _quim = _vqx_de_los_quimicos(vqx)
+    vqx, _quim_aviso = _quim["vqx"], _quim["aviso"]
 
     # ─── UTILIDAD (fórmula explícita TMT 2026-05-06) ───
     #   utility = patrimonio_mayo - patrimonio_abril + dividendos
@@ -8641,7 +8673,13 @@ def tomar_snapshot_mes_actual(
         # Si ya existía (skipped), forzamos insert nuevo manual — queremos
         # MÚLTIPLES snapshots del mismo mes para comparar.
         if r.get("accion") == "skipped":
-            kpis = _snap.calcular_kpis(hoy)
+            # ⭐ Los KPIs YA VIENEN CALCULADOS adentro de `r`: `ejecutar` los
+            # calcula siempre, antes de mirar si la foto del mes ya existía.
+            # Volver a pedirlos calculaba el balance ENTERO dos veces por
+            # visita —y del mes 2 en adelante la foto siempre existe, así que
+            # eran siempre dos—. Medido: 2 cálculos completos donde va 1.
+            # TMT 2026-08-26 (dueña): *"historia también carga"*.
+            kpis = r.get("kpis") or _snap.calcular_kpis(hoy)
             new_id = _snap.insertar_snapshot(kpis, usuario=usuario)
             return {"accion": "inserted", "id_historia": new_id, "kpis": kpis}
     except ValueError as e:

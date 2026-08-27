@@ -146,6 +146,7 @@ def _warm_once() -> None:
         import calendar as _cal
         from datetime import timedelta
 
+        from modules.informes import quimico_inv_formulas as _qif
         from modules.informes import quimicos_flujo as _qf
         _last = date(yy, mm, _cal.monthrange(yy, mm)[1])
         _corte_fin = min(_last, hoy)
@@ -164,6 +165,11 @@ def _warm_once() -> None:
             ("quimicos_consumo_term", lambda: _qf.consumo_terminadas_mes(yy, mm)),
             ("quimicos_familias", lambda: _qf.color_familias_valuadas()),
             ("quimicos_color_mov", lambda: _qf.color_movimiento_mes(yy, mm)),
+            # El "Stock Quí." del balance y el guard de la foto del Historial
+            # preguntan LO MISMO a formulas_app. Caliente acá, ninguno de los
+            # dos cruza a la otra base adentro del request.
+            # TMT 2026-08-26 (dueña): *"historia también carga"*.
+            ("quimico_total_hoy", lambda: _qif.quimico_total_fisico(hoy)),
         ]
     except Exception as e:  # noqa: BLE001 -- fail-soft
         _LOG.warning("warmup quimicos setup: %s", e)
