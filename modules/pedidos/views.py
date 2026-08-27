@@ -35,6 +35,7 @@ from flask import (
 )
 
 from auth import requiere_login, requiere_permiso
+from modules._lib import formulas_memos
 
 from . import service
 
@@ -42,11 +43,12 @@ pedidos_bp = Blueprint("pedidos", __name__, template_folder="templates")
 
 #: Los cortes disponibles, EN EL ORDEN del Excel de la dueña. El primero es el
 #: default: la pantalla abre en Color.
-CORTES = ("color", "tela", "cliente", "categoria")
+CORTES = ("color", "tela", "cliente", "pedido", "categoria")
 CORTES_LBL = {
     "color": "Color",
     "tela": "Tipo de tela",
     "cliente": "Cliente",
+    "pedido": "Pedido",
     "categoria": "Categoría",
 }
 
@@ -74,7 +76,8 @@ def lista():
         # se completan según el corte
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
-        pedidos_por_color={},
+        pedidos_por_color={}, pedidos_lista=[], memo_estados={},
+        produccion={},
     )
 
     if not disponible or not categorias:
@@ -88,6 +91,19 @@ def lista():
         ctx["pedidos_por_color"] = service.pedidos_por_color()
     elif corte == "cliente":
         ctx["clientes"] = service.por_cliente()
+    elif corte == "pedido":
+        pedidos_lista, disp_ped = service.por_pedido()
+        ctx["pedidos_lista"] = pedidos_lista
+        ctx["disponible"] = disponible and disp_ped
+        # Qué pedidos ya tienen memo en la fábrica (fail-soft: {} si el
+        # bridge no está — los botones se muestran y el UNIQUE de formulas
+        # frena un doble envío igual).
+        ctx["memo_estados"] = formulas_memos.estados(
+            [p["numero"] for p in pedidos_lista])
+        # Órdenes de tintura ya creadas para estos pedidos, con el avance de
+        # su OFT en Asinfo (cantidad a producir / producido / %).
+        ctx["produccion"] = service.produccion_por_pedido(
+            [p["numero"] for p in pedidos_lista])
     elif corte == "tela":
         # La pestaña por defecto es la que MÁS falta, no la primera alfabética.
         pedida = (request.args.get("cat") or "").strip()
@@ -240,3 +256,41 @@ def color(codigo: str):
         disponible=disponible,
         kg_por_rollo=service.KG_POR_ROLLO,
     )
+
+
+@pedidos_bp.route("/pedidos/enviar-memo", methods=["POST"])
+@requiere_login
+@requiere_permiso("pedidos.enviar_memo")
+def enviar_memo():
+    """Manda UN pedido como memo al tab Memos de formulas_app.
+
+    El memo es la foto del pedido al momento de enviar. Si ya estaba enviado
+    (por quien sea), avisa y no duplica — lo garantiza el UNIQUE de
+    `pedido_numero` del lado de formulas_app, no esta vista.
+    """
+    from flask import g
+
+    numero = (request.form.get("numero") or "").strip()
+    detalle = service.armar_memo(numero) if numero else None
+    if detalle is None:
+        flash("No encontré ese pedido entre los pendientes, así que no mandé "
+              "el memo. Recargá la pantalla y probá de nuevo.", "error")
+        return redirect(url_for("pedidos.lista", corte="pedido"))
+
+    usuario = g.user["username"] if getattr(g, "user", None) else ""
+    ok, motivo = formulas_memos.enviar(
+        numero=numero,
+        cliente=detalle["cliente"]["nombre"],
+        vendedor=service.etiqueta_dueno(detalle["vendedor"]),
+        enviado_por=usuario,
+        detalle=detalle,
+    )
+    if ok:
+        flash(f"Memo del pedido {numero} enviado a la fábrica.", "success")
+    elif motivo == "ya_enviado":
+        flash(f"El pedido {numero} ya tenía memo enviado — no se mandó otro.",
+              "warning")
+    else:
+        flash("No pude hablar con formulas_app — el memo NO se envió. "
+              "Probá de nuevo en un rato.", "error")
+    return redirect(url_for("pedidos.lista", corte="pedido"))

@@ -1,0 +1,107 @@
+{# Mis pedidos — lo que mis clientes pidieron y todavía no se despachó,
+   con el botón de mandarlo como MEMO a la fábrica.
+
+   El dueño del pedido es el AGENTE COMERCIAL de Asinfo (no quien lo cargó):
+   acá entran también los pedidos que la oficina cargó a nombre de este
+   vendedor. Mismo universo que /pedidos de la oficina.
+
+   El botón de enviar vive ADENTRO del pedido desplegado, no en la fila: para
+   mandar un memo primero hay que estar viendo qué se manda. Enviado una vez,
+   el pedido muestra su estado (enviado / en proceso) y el botón no vuelve. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'pedidos' %}
+{% block title %}Mis pedidos{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Mis pedidos</h1>
+      <div class="sub">{{ pedidos|length }} sin despachar · fuente: Asinfo</div>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+<style>
+  .ped-card{margin-bottom:10px}
+  .ped-card summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:2px 0}
+  .ped-card summary::-webkit-details-marker{display:none}
+  .ped-chev{flex:0 0 auto;width:12px;height:12px;background:center/11px no-repeat;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E")}
+  details[open] .ped-chev{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+  .ped-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:700;color:var(--tinta,#0f172a);white-space:nowrap}
+  .ped-cli{font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ped-fecha{font-size:11.5px;color:#64748b;white-space:nowrap}
+  .ped-lineas{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid #f1f5f9}
+  .ped-lineas li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px}
+  .ped-lineas .c{font-weight:700}
+  .ped-lineas .t{color:#64748b;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ped-lineas .q{white-space:nowrap;font-variant-numeric:tabular-nums}
+  .ped-lineas .k{white-space:nowrap;color:#64748b;font-size:11.5px;font-variant-numeric:tabular-nums}
+  .ped-pie{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px}
+  .ped-total{font-size:12px;color:#475569}
+  .ped-obs{font-size:12px;color:#475569;margin-top:8px}
+  .ped-prod{font-size:12px;color:#166534;margin-top:8px;background:#f0fdf4;border-radius:8px;padding:7px 10px}
+  .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
+</style>
+
+{% if not disponible %}
+  <div class="card"><div class="vacio">No pude consultar los pedidos en este momento.
+    No es que no tengas: es que no se pudo preguntar. Probá de nuevo en un rato.</div></div>
+{% elif not pedidos %}
+  <div class="card"><div class="vacio">No tenés pedidos pendientes.</div></div>
+{% else %}
+  {% for p in pedidos %}
+  {% set m = memo_estados.get(p.numero) %}
+  <div class="card ped-card">
+    <details>
+      <summary>
+        <span class="ped-chev" aria-hidden="true"></span>
+        <span class="ped-num">{{ p.numero }}</span>
+        <span class="ped-cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
+        {% if m and m.estado == 'en_proceso' %}<span class="pill good">En proceso</span>
+        {% elif m %}<span class="pill warn">Enviado</span>{% endif %}
+        <span class="ped-fecha">{{ p.fecha_es }}</span>
+      </summary>
+      <ul class="ped-lineas">
+        {% for l in p.lineas %}
+        <li>
+          <span class="c">{{ l.color }}</span>
+          <span class="t">{{ l.tela }}</span>
+          <span class="q">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span>
+          {# En kilos el estimado repetiría el mismo número al lado. #}
+          {% if l.unidad != 'kg' %}
+          <span class="k">{% if l.kg is not none %}{{ l.kg|num_es(0) }} kg{% else %}—{% endif %}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+      {% for pr in produccion.get(p.numero, []) %}
+        <div class="ped-prod">
+          En tintura: orden {{ pr.orden }} · {{ pr.kil|num_es(0) }} kg
+          {%- if pr.pct is not none %} — producido {{ pr.producido|num_es(0) }} de {{ pr.a_producir|num_es(0) }} kg
+            <b>({{ pr.pct }}%)</b>{% endif %}
+        </div>
+      {% endfor %}
+      {% if p.descripcion %}<div class="ped-obs"><b>Nota:</b> {{ p.descripcion }}</div>{% endif %}
+      <div class="ped-pie">
+        <span class="ped-total">{{ p.n_lineas }} {{ 'tela' if p.n_lineas == 1 else 'telas' }}
+          · {{ p.total_kg|num_es(0) }} kg{% if not p.kg_completo %} + unidades{% endif %}</span>
+        {% if m and m.estado == 'en_proceso' %}
+          <span class="pill good">En proceso en la fábrica</span>
+        {% elif m %}
+          <span class="pill warn">Memo enviado</span>
+        {% else %}
+          <form method="post" action="{{ url_for('mi_cartera.pedidos_enviar_memo') }}"
+                onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="numero" value="{{ p.numero }}">
+            {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+            <button type="submit" class="btn-memo">Enviar memo</button>
+          </form>
+        {% endif %}
+      </div>
+    </details>
+  </div>
+  {% endfor %}
+{% endif %}
+{% endblock %}

@@ -56,6 +56,10 @@
      class="{% if seccion == 'inicio' %}on{% endif %}"><em>◉</em>Inicio</a>
   <a href="{{ url_for('mi_cartera.clientes') }}{{ qp }}"
      class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
+  {# ⭐ La sexta pestaña, 27/08/2026 (dueña): SUS pedidos, con el dueño tal
+     como lo tiene Asinfo, y el botón de mandarlos como memo a la fábrica. #}
+  <a href="{{ url_for('mi_cartera.pedidos') }}{{ qp }}"
+     class="{% if seccion == 'pedidos' %}on{% endif %}"><em>▤</em>Pedidos</a>
   <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
      class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
   {# ⭐ La cuarta pestaña, 25/08/2026: la Competencia. Va acá y no adentro de

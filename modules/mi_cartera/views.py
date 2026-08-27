@@ -35,8 +35,10 @@ from flask import (
 
 from auth import requiere_login, requiere_permiso, tiene_permiso
 from filters import today_ec
+from modules._lib import formulas_memos
 from modules.informes import queries as informes_queries
 from modules.informes import views as informes_views
+from modules.pedidos import service as pedidos_service
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
@@ -846,3 +848,77 @@ def metas():
             hoy.month if anio == hoy.year else None),
         hoy=hoy,
     )
+
+
+# ── Mis pedidos y el envío de memos (2026-08-27) ─────────────────────────────
+
+def _url_mis_pedidos() -> str:
+    qp = "" if vendedor_de(g.get("user")) else f"?vend={request.form.get('vend') or request.args.get('vend') or ''}"
+    return url_for("mi_cartera.pedidos") + (qp if qp != "?vend=" else "")
+
+
+@mi_cartera_bp.route("/mi-cartera/pedidos")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def pedidos():
+    """Los pedidos pendientes del vendedor, tal como los tiene Asinfo.
+
+    El dueño del pedido es el AGENTE COMERCIAL de Asinfo, no quien lo cargó:
+    un pedido que la oficina cargó a nombre de PPR es de PPR. Mismo universo y
+    mismos números que /pedidos de la oficina (modules/pedidos/service).
+    """
+    vend = _vend_actual()
+    todos, disponible = pedidos_service.por_pedido()
+    mios = [p for p in todos if p["dueno"]["codigo"] == vend]
+    memo_estados = formulas_memos.estados([p["numero"] for p in mios])
+    produccion = pedidos_service.produccion_por_pedido(
+        [p["numero"] for p in mios])
+    return render_template(
+        "mi_cartera/pedidos.html",
+        seccion="pedidos",
+        disponible=disponible,
+        pedidos=mios,
+        memo_estados=memo_estados,
+        produccion=produccion,
+        **_ctx_base(vend),
+    )
+
+
+@mi_cartera_bp.route("/mi-cartera/pedidos/enviar-memo", methods=["POST"])
+@requiere_login
+@requiere_permiso("micartera.ver")
+def pedidos_enviar_memo():
+    """El vendedor manda UN pedido SUYO como memo a la fábrica.
+
+    Mismo cerco que todo el portal: si el pedido no es del vendedor de la
+    sesión, 404 — como si no existiera (regla `cliente_es_mio`, acá con el
+    dueño del pedido). El POST de la oficina es otra ruta con otro permiso
+    (`pedidos.enviar_memo` en /pedidos).
+    """
+    vend = _vend_actual()
+    numero = (request.form.get("numero") or "").strip()
+    detalle = pedidos_service.armar_memo(numero) if numero else None
+    if detalle is None:
+        flash("No encontré ese pedido entre los pendientes, así que no mandé "
+              "el memo. Recargá la pantalla y probá de nuevo.", "error")
+        return redirect(_url_mis_pedidos())
+    if detalle["vendedor"]["codigo"] != vend:
+        abort(404)
+
+    usuario = g.user["username"] if g.get("user") else ""
+    ok, motivo = formulas_memos.enviar(
+        numero=numero,
+        cliente=detalle["cliente"]["nombre"],
+        vendedor=pedidos_service.etiqueta_dueno(detalle["vendedor"]),
+        enviado_por=usuario,
+        detalle=detalle,
+    )
+    if ok:
+        flash(f"Memo del pedido {numero} enviado a la fábrica.", "success")
+    elif motivo == "ya_enviado":
+        flash(f"El pedido {numero} ya tenía memo enviado — no se mandó otro.",
+              "warning")
+    else:
+        flash("No pude hablar con el programa de fórmulas — el memo NO se "
+              "envió. Probá de nuevo en un rato.", "error")
+    return redirect(_url_mis_pedidos())

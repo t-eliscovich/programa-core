@@ -850,3 +850,281 @@ def marcar_acabado(filas: list[dict]) -> list[dict]:
         f["acabado"] = m.get(f["codigo"], "")
     return filas
 
+
+# ── Corte por PEDIDO, dueño y memos (2026-08-27) ─────────────────────────────
+# La dueña pidió ver los pedidos como PEDIDOS (no agrupados por color) con su
+# DUEÑO —el vendedor— presentado igual que en Asinfo, y poder mandarlos como
+# MEMO a la fábrica (tab Memos de formulas_app).
+#
+# El dueño en Asinfo es `pedido_cliente.id_agente_comercial` → `v_vendedor`.
+# NO es `usuario_creacion`: la oficina carga pedidos a nombre de un vendedor
+# (verificado 27/08: `dproducto` cargó 22 pedidos pendientes con agente PPR).
+# El agente 951 es "Cía. Ltda. Intela": pedidos de la casa, sin vendedor.
+
+_SQL_POR_PEDIDO = """
+SELECT v.numero, v.fecha, v.cliente,
+       ISNULL(e.nombre_comercial, '')           AS codigo_cliente,
+       p.id_agente_comercial                    AS agente_id,
+       ISNULL(vd.nombre_vendedor, '')           AS agente_nombre,
+       ISNULL(p.descripcion, '')                AS descripcion,
+       pr.codigo, {color} AS color, ISNULL(sub.nombre, 'Sin tela') AS tela,
+       v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad
+  FROM v_saldos_comprometidos_detallado v
+  JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
+  JOIN producto pr ON pr.id_producto = v.id_producto
+  LEFT JOIN subcategoria_producto sub
+         ON sub.id_subcategoria_producto = pr.id_subcategoria_producto
+  LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
+  LEFT JOIN v_vendedor vd ON vd.id_vendedor = p.id_agente_comercial
+ WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias}
+ ORDER BY v.fecha DESC, v.numero, pr.codigo
+"""
+
+#: El nombre con el que Asinfo marca los pedidos de la casa (agente 951).
+_NOMBRE_CASA_TOKEN = "INTELA"
+
+
+def _sin_tildes(s: str) -> str:
+    out = s
+    for a, b in (("Á", "A"), ("É", "E"), ("Í", "I"), ("Ó", "O"), ("Ú", "U"),
+                 ("Ñ", "N"), ("á", "a"), ("é", "e"), ("í", "i"), ("ó", "o"),
+                 ("ú", "u"), ("ñ", "n")):
+        out = out.replace(a, b)
+    return out
+
+
+def _tokens_nombre(nombre: str) -> frozenset[str]:
+    """Tokens normalizados de un nombre de persona, para matchear por NOMBRE.
+
+    Asinfo dice "Proaño Patricio" y scintela.vendedor "Patricio Proano" (otro
+    orden, sin ñ, con espacios colgando): mismo conjunto de tokens. El match
+    va por nombre y no por id hardcodeado — regla de la casa para IDs legacy:
+    por NOMBRE o fallar (y acá "fallar" es mostrar el nombre crudo de Asinfo,
+    no inventar un código).
+    """
+    limpio = _sin_tildes((nombre or "").strip().upper())
+    return frozenset(t for t in limpio.replace(".", " ").split() if t)
+
+
+def mapa_vendedores() -> dict[frozenset, dict]:
+    """`{tokens del nombre: {codigo, nombre}}` de los vendedores ACTIVOS.
+
+    Sale de `scintela.vendedor` (catálogo local, el mismo de /comisiones y
+    /mi-cartera). Fail-soft: {} si la tabla no está — ahí el dueño se muestra
+    por el nombre de Asinfo pelado, sin código.
+    """
+    try:
+        import db
+        rows = db.fetch_all(
+            "SELECT codigo, nombre FROM scintela.vendedor "
+            "WHERE activo IS TRUE AND nombre IS NOT NULL"
+        )
+        out: dict[frozenset, dict] = {}
+        for r in rows or []:
+            toks = _tokens_nombre(r.get("nombre") or "")
+            if toks:
+                out[toks] = {"codigo": (r.get("codigo") or "").strip(),
+                             "nombre": (r.get("nombre") or "").strip()}
+        return out
+    except Exception:  # noqa: BLE001 — fail-soft: sin catálogo, nombre crudo
+        _LOG.warning("pedidos: no pude leer scintela.vendedor", exc_info=True)
+        return {}
+
+
+def _dueno(agente_nombre: str, vendedores: dict[frozenset, dict]) -> dict:
+    """El dueño de un pedido, presentado como lo conoce el programa.
+
+    `{codigo, nombre, es_casa}` — codigo vacío cuando el agente no es uno de
+    los 6 vendedores (la casa, un agente histórico, o NULL).
+    """
+    nombre = (agente_nombre or "").strip()
+    if not nombre:
+        return {"codigo": "", "nombre": "", "es_casa": False}
+    toks = _tokens_nombre(nombre)
+    if _NOMBRE_CASA_TOKEN in toks:
+        return {"codigo": "", "nombre": "Intela", "es_casa": True}
+    v = vendedores.get(toks)
+    if v:
+        return {"codigo": v["codigo"], "nombre": v["nombre"], "es_casa": False}
+    return {"codigo": "", "nombre": nombre, "es_casa": False}
+
+
+_ETIQUETA_UNIDAD = {UNIDAD_UN: "un", UNIDAD_KG: "kg", UNIDAD_ROLLO: "roll"}
+
+
+def _linea_pedido(row: dict) -> dict:
+    """Una línea del corte por pedido: producto, tela, color y cantidad en la
+    unidad ORIGINAL del pedido, con el kg estimado al lado cuando existe."""
+    unidad = int(_f(row.get("unidad")))
+    cantidad = _f(row.get("cantidad"))
+    if unidad == UNIDAD_ROLLO:
+        kg = round(cantidad * KG_POR_ROLLO)
+    elif unidad == UNIDAD_KG:
+        kg = round(cantidad)
+    else:
+        kg = None  # unidades (cuellos/puños): el kilo no está en esta consulta
+    return {
+        "producto": str(row.get("codigo") or "").strip(),
+        "tela": str(row.get("tela") or "").strip(),
+        "color": str(row.get("color") or "").strip(),
+        "cantidad": round(cantidad, 1),
+        "unidad": _ETIQUETA_UNIDAD.get(unidad, ""),
+        "kg": kg,
+    }
+
+
+def por_pedido() -> tuple[list[dict], bool]:
+    """Los pedidos pendientes como PEDIDOS: uno por fila, con dueño y líneas.
+
+    Mismo universo que el resto de la pantalla (≤ DIAS_PEDIDO_MAX días).
+    Devuelve `(pedidos, disponible)`; los más nuevos primero.
+    """
+    def _traer():
+        return metabase_client.fetch_dataset_estado(
+            ASINFO_DB, _SQL_POR_PEDIDO.format(
+                color=SQL_COLOR, ahora=AHORA_EC, dias=DIAS_PEDIDO_MAX))
+
+    filas, ok = _cacheado("por_pedido", _traer)
+    if not ok:
+        return [], False
+
+    vendedores = mapa_vendedores()
+    acc: dict[str, dict] = {}
+    for r in filas:
+        numero = str(r.get("numero") or "").strip()
+        if not numero:
+            continue
+        p = acc.get(numero)
+        if p is None:
+            fecha = str(r.get("fecha") or "")[:10]
+            p = acc[numero] = {
+                "numero": numero,
+                "fecha": fecha,
+                "fecha_es": _fecha_corta(fecha),
+                "dias": _dias_desde(fecha),
+                "cliente": str(r.get("cliente") or "").strip(),
+                "codigo_cliente": str(r.get("codigo_cliente") or "").strip(),
+                "descripcion": str(r.get("descripcion") or "").strip(),
+                "dueno": _dueno(str(r.get("agente_nombre") or ""), vendedores),
+                "lineas": [],
+                "total_kg": 0.0,
+                "kg_completo": True,
+            }
+        linea = _linea_pedido(r)
+        p["lineas"].append(linea)
+        if linea["kg"] is None:
+            # Un pedido con cuellos/puños no tiene el kilo de esas líneas:
+            # el total se marca parcial en vez de sumar un cero en silencio.
+            p["kg_completo"] = False
+        else:
+            p["total_kg"] += linea["kg"]
+
+    pedidos = list(acc.values())
+    for p in pedidos:
+        p["total_kg"] = round(p["total_kg"])
+        p["n_lineas"] = len(p["lineas"])
+    pedidos.sort(key=lambda p: (p["fecha"], p["numero"]), reverse=True)
+    return pedidos, True
+
+
+def armar_memo(numero: str) -> dict | None:
+    """La foto del pedido que viaja en el memo. None si el pedido no está
+    entre los pendientes (ya se despachó, es más viejo que el corte, o Asinfo
+    no contestó)."""
+    pedidos, ok = por_pedido()
+    if not ok:
+        return None
+    p = next((x for x in pedidos if x["numero"] == numero), None)
+    if p is None:
+        return None
+    return {
+        "numero": p["numero"],
+        "fecha": p["fecha"],
+        "cliente": {"codigo": p["codigo_cliente"], "nombre": p["cliente"]},
+        "vendedor": {"codigo": p["dueno"]["codigo"],
+                     "nombre": p["dueno"]["nombre"]},
+        "descripcion": p["descripcion"],
+        "lineas": p["lineas"],
+        "total_kg": p["total_kg"] if p["kg_completo"] else None,
+    }
+
+
+def etiqueta_dueno(dueno: dict) -> str:
+    """Cómo se escribe el dueño en la columna `vendedor` del memo."""
+    if dueno.get("codigo"):
+        return f"{dueno['codigo']} · {dueno['nombre']}"
+    return dueno.get("nombre") or ""
+
+
+# ── Producción por pedido: la orden de fórmulas y su OFT (2026-08-27) ────────
+# En Asinfo el vínculo pedido↔orden de fabricación EXISTE en el schema y está
+# en CERO filas (verificado 27/08): la fábrica no lanza producción desde
+# pedidos. La cadena la arma nuestro memo: al crear la orden en formulas_app
+# se elige el pedido (`ordenes.pedido_numero`), la orden ya trae su OFT
+# (`ordenes.oft_numero`), y de la OFT salen cantidad a producir, producido y
+# el %. Es lo que el vendedor ve en su pedido.
+
+
+def _oft_segura(numero: str) -> str:
+    """Sólo lo que puede ser un número de OFT ('OFT-000038020'). Igual que
+    `codigo_seguro`: es lo único que separa el dato de una inyección, porque
+    va interpolado en el IN de la SQL."""
+    return "".join(
+        c for c in (numero or "").strip().upper()
+        if c.isalnum() or c in "-."
+    )[:30]
+
+
+def produccion_por_pedido(numeros: list[str]) -> dict[str, list[dict]]:
+    """`{pedido: [órdenes de tintura del pedido]}` con el avance de su OFT.
+
+    Cada orden: `{orden, kil, oft, a_producir, producido, pct}` — los tres
+    últimos en None si la orden no tiene OFT o Asinfo no contestó.
+    Fail-soft: {} si el bridge a formulas_app no está.
+    """
+    if not numeros:
+        return {}
+    from modules._lib import formulas_db
+    filas = formulas_db.fetch_all(
+        "SELECT pedido_numero, oft_numero, numero, kil "
+        "  FROM ordenes WHERE pedido_numero = ANY(%s)",
+        (list(numeros),))
+    if not filas:
+        return {}
+
+    ofts = sorted({_oft_segura(str(f.get("oft_numero") or "")) for f in filas} - {""})
+    datos_oft: dict[str, dict] = {}
+    if ofts:
+        in_list = ", ".join(f"'{o}'" for o in ofts)
+        rows, ok = metabase_client.fetch_dataset_estado(
+            ASINFO_DB,
+            "SELECT numero, cantidad, ISNULL(cantidad_fabricada, 0) AS fabricada"
+            f"  FROM orden_fabricacion WHERE numero IN ({in_list})")
+        if ok:
+            for r in rows:
+                n = str(r.get("numero") or "").strip().upper()
+                cant = _f(r.get("cantidad"))
+                fab = _f(r.get("fabricada"))
+                datos_oft[n] = {
+                    "a_producir": round(cant),
+                    "producido": round(fab),
+                    "pct": min(100, round(fab / cant * 100)) if cant else 0,
+                }
+
+    out: dict[str, list[dict]] = {}
+    for f in filas:
+        ped = str(f.get("pedido_numero") or "").strip().upper()
+        if not ped:
+            continue
+        oft = _oft_segura(str(f.get("oft_numero") or ""))
+        orden = {
+            "orden": str(f.get("numero") or "").strip(),
+            "kil": round(_f(f.get("kil"))),
+            "oft": oft,
+            "a_producir": None, "producido": None, "pct": None,
+        }
+        d = datos_oft.get(oft)
+        if d:
+            orden.update(d)
+        out.setdefault(ped, []).append(orden)
+    return out

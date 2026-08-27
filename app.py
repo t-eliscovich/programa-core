@@ -30,7 +30,7 @@ from auth import (
     tiene_permiso,
 )
 from extensions import csrf, limiter
-from modules._lib import formulas_db
+from modules._lib import formulas_db, formulas_memos
 
 # Slow-request threshold. Override with REQ_SLOW_MS in .env.
 REQ_SLOW_MS = int(os.environ.get("REQ_SLOW_MS", "500"))
@@ -150,6 +150,11 @@ def create_app() -> Flask:
     # No-op si FORMULAS_DATABASE_URL no está seteada — el bridge degrada
     # silenciosamente y los módulos consumidores muestran placeholder.
     formulas_db.init_pool()
+
+    # Envío de memos de pedidos a formulas_app — el único write-back del
+    # bridge, con rol propio acotado a la tabla `memos`. No-op sin
+    # FORMULAS_MEMOS_DATABASE_URL.
+    formulas_memos.init_pool()
 
     # ⭐ El navegador de los PDFs y las fotos, prendido de entrada. TMT
     # 2026-08-26 (dueña): *"podemos hacer más rápido lo de mandar imagen, pdf y

@@ -76,6 +76,14 @@
   .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
   .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
   .pd .btn:hover{border-color:#94a3b8}
+  /* corte pedido: estado del memo y botón de envío */
+  .pd .memo{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .pd .memo.env{background:#e0e7ff;color:#3730a3}
+  .pd .memo.enproc{background:#dcfce7;color:#166534}
+  .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
+  .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
+  .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
+  .pd .vendname{font-size:11px;color:#64748b}
 </style>
 {% endblock %}
 
@@ -257,6 +265,74 @@
             <td>{{ g.pedido|num_es(0) }}</td>
             <td><div class="bar"><i style="width:{{ (100 * g.pedido / mx)|round(0, 'ceil') if mx else 0 }}%"></i></div></td>
           </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+  {# ═══════════ PEDIDO ═══════════ #}
+  {% elif corte == 'pedido' %}
+    <p class="nota">Un renglón por pedido, con su vendedor tal como lo tiene Asinfo.
+      Abrí un pedido para ver sus telas. <b>Enviar memo</b> le manda el pedido completo
+      a la fábrica (pestaña Memos del programa de fórmulas); ahí lo toman y pasa a «en proceso».</p>
+    <table>
+      <colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:17%"><col style="width:21%"><col style="width:23%"></colgroup>
+      <thead><tr><th>Pedido</th><th>Desde</th><th>Cliente</th><th>Vendedor</th><th>Pedido</th><th>Memo</th></tr></thead>
+      <tbody>
+        {% for p in pedidos_lista %}
+          <tr>
+            <td class="cod">
+              <button type="button" class="abrir" aria-expanded="false" data-fila="m-{{ p.numero }}">
+                <span class="chev" aria-hidden="true"></span><span class="npd" style="color:#0f172a">{{ p.numero }}</span>
+              </button>
+            </td>
+            <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
+            <td><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
+            <td style="text-align:left">
+              {% if p.dueno.codigo %}<span class="vend">{{ p.dueno.codigo }}</span> <span class="vendname">{{ p.dueno.nombre }}</span>
+              {% elif p.dueno.nombre %}<span class="vendname">{{ p.dueno.nombre }}</span>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+            <td>{{ p.n_lineas }} <span class="u">{{ 'tela' if p.n_lineas == 1 else 'telas' }}</span>
+              · {{ p.total_kg|num_es(0) }} <span class="u">kg{% if not p.kg_completo %} + un{% endif %}</span></td>
+            <td class="no-print">
+              {% set m = memo_estados.get(p.numero) %}
+              {% if m and m.estado == 'en_proceso' %}
+                <span class="memo enproc">EN PROCESO</span>
+              {% elif m %}
+                <span class="memo env">ENVIADO</span>
+              {% elif tiene_permiso('pedidos.enviar_memo') %}
+                <form method="post" action="{{ url_for('pedidos.enviar_memo') }}" style="display:inline"
+                      onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="numero" value="{{ p.numero }}">
+                  <button type="submit" class="btnmemo">Enviar memo</button>
+                </form>
+              {% else %}<span class="muted">—</span>{% endif %}
+            </td>
+          </tr>
+          {% for l in p.lineas %}
+            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td class="cod" colspan="2" style="padding-left:32px"><span class="color">{{ l.color }}</span> <span class="prod">{{ l.producto }}</span></td>
+              <td colspan="2" style="text-align:left">{{ l.tela }}</td>
+              <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
+              <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }} <span class="u">kg</span>{% else %}—{% endif %}</td>
+            </tr>
+          {% endfor %}
+          {% for pr in produccion.get(p.numero, []) %}
+            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td colspan="6" class="masinfo" style="color:#166534">
+                En tintura: orden {{ pr.orden }} · {{ pr.kil|num_es(0) }} kg
+                {%- if pr.oft %} · {{ pr.oft }}{% endif %}
+                {%- if pr.pct is not none %} — a producir {{ pr.a_producir|num_es(0) }} kg,
+                  producido {{ pr.producido|num_es(0) }} kg ({{ pr.pct }}%){% endif %}
+              </td>
+            </tr>
+          {% endfor %}
+          {% if p.descripcion %}
+            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td colspan="6" class="masinfo" style="color:#475569">Nota del pedido: {{ p.descripcion }}</td>
+            </tr>
+          {% endif %}
         {% endfor %}
       </tbody>
     </table>

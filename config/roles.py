@@ -327,6 +327,14 @@ ROLES: list[tuple[str, list[str]]] = [
             "facturas.crear",
             "facturas.editar",
             "facturas.anular",
+            # TMT 2026-08-27 (dueña): el botón "Enviar memo" de /pedidos —
+            # mandar un pedido a la fábrica (tab Memos de formulas_app).
+            # Permiso PROPIO y no `facturas.ver` porque enviar es una ACCIÓN,
+            # no una lectura (lección de la mig 0208: un Confirmar habilitado
+            # por un permiso de lectura). Los vendedores NO lo necesitan: su
+            # botón vive en /mi-cartera y va por `micartera.ver` + ser el
+            # dueño del pedido. Mig 0235.
+            "pedidos.enviar_memo",
             "deudas.ver",
             # TMT 2026-08-19 (dueña): *"pero siempre tuvieron acceso, ¿por
             # qué no se los das?"*. Permiso PROPIO del lapicito de la columna
