@@ -290,7 +290,8 @@ def test_un_pedido_ya_enviado_muestra_su_etapa_y_no_el_boton(app, fake_db):
         "PDCL-26401": "en_tintura",
     })
     body = c.get_data(as_text=True)
-    assert "ENVIADO" in body and "EN TINTURA" in body
+    # La tira de pasos: los dos pedidos la llevan, con su paso actual.
+    assert "En tintura" in body and body.count('class="steps"') == 2
     assert 'class="btnmemo"' not in body
 
 
@@ -405,5 +406,5 @@ def test_un_pedido_terminado_muestra_terminado(app, fake_db):
     r = _get_corte_pedido(_login(app, fake_db),
                           etapas={"PDCL-26401": "terminado"})
     body = r.get_data(as_text=True)
-    assert "TERMINADO" in body
+    assert "Terminado" in body
     assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón

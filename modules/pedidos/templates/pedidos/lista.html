@@ -76,11 +76,17 @@
   .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
   .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
   .pd .btn:hover{border-color:#94a3b8}
-  /* corte pedido: estado del memo y botón de envío */
-  .pd .memo{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap}
-  .pd .memo.env{background:#e0e7ff;color:#3730a3}
-  .pd .memo.tinto{background:#dbeafe;color:#1e40af}
-  .pd .memo.term{background:#dcfce7;color:#166534}
+  /* corte pedido: la tira de pasos del pedido (la misma del portal) y el
+     botón de envío. Los separadores se estiran para llenar la celda. */
+  .pd .steps{display:flex;align-items:center;gap:4px;min-width:0}
+  .pd .steps .st{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;
+                 font-weight:600;color:#94a3b8;white-space:nowrap;flex:0 0 auto;
+                 letter-spacing:0;text-transform:none}
+  .pd .steps .st b{font-weight:400;font-size:10.5px}
+  .pd .steps .st.done{color:#16a34a}
+  .pd .steps .st.on{color:#1d4ed8;font-weight:700}
+  .pd .steps .sep{flex:1 1 0;height:2px;border-radius:1px;background:#e2e8f0;min-width:2px}
+  .pd .steps .sep.done{background:#86efac}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
@@ -276,7 +282,7 @@
       Abrí un pedido para ver sus telas. <b>Enviar memo</b> le manda el pedido completo
       a la fábrica (pestaña Memos del programa de fórmulas); ahí lo toman y pasa a «en proceso».</p>
     <table>
-      <colgroup><col style="width:16%"><col style="width:11%"><col style="width:12%"><col style="width:17%"><col style="width:21%"><col style="width:23%"></colgroup>
+      <colgroup><col style="width:14%"><col style="width:11%"><col style="width:10%"><col style="width:16%"><col style="width:19%"><col style="width:30%"></colgroup>
       <thead><tr><th>Pedido</th><th>Desde</th><th>Cliente</th><th>Vendedor</th><th>Pedido</th><th>Memo</th></tr></thead>
       <tbody>
         {% for p in pedidos_lista %}
@@ -296,16 +302,21 @@
             <td>{{ p.n_lineas }} <span class="u">{{ 'tela' if p.n_lineas == 1 else 'telas' }}</span>
               · {{ p.total_kg|num_es(0) }} <span class="u">kg{% if not p.kg_completo %} + un{% endif %}</span></td>
             <td class="no-print">
-              {# Las tres etapas del pedido (dueña 27/08, sin porcentajes):
-                 ENVIADO el memo · EN TINTURA cuando la OFT tiene orden de
-                 salida de material · TERMINADO cuando la OFT se cerró. #}
+              {# La tira de pasos del pedido (dueña 27/08, la misma del
+                 portal): Enviado el memo · En tintura cuando la OFT tiene
+                 orden de salida de material · Terminado cuando se cerró. #}
               {% set et = etapas.get(p.numero) %}
-              {% if et == 'terminado' %}
-                <span class="memo term">TERMINADO</span>
-              {% elif et == 'en_tintura' %}
-                <span class="memo tinto">EN TINTURA</span>
-              {% elif et %}
-                <span class="memo env">ENVIADO</span>
+              {% if et %}
+                {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et, 0) %}
+                <div class="steps">
+                  {% for rot in ['Enviado', 'En tintura', 'Terminado'] %}
+                    {% set i = loop.index0 %}
+                    {% if i > 0 %}<i class="sep {{ 'done' if _n >= i }}"></i>{% endif %}
+                    <span class="st {{ 'done' if i < _n else ('on' if i == _n) }}">
+                      <b>{{ '✓' if i < _n or (_n == 2 and i == 2) else '●' if i == _n else '○' }}</b>{{ rot }}
+                    </span>
+                  {% endfor %}
+                </div>
               {% elif tiene_permiso('pedidos.enviar_memo') %}
                 <form method="post" action="{{ url_for('pedidos.enviar_memo') }}" style="display:inline"
                       onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">
