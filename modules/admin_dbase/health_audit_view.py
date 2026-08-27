@@ -1490,6 +1490,113 @@ def _evaluar_fechaout(*, n_con_mov, filas_con_mov, n_nace_afuera,
 
 
 # ---------------------------------------------------------------------------
+# Un cheque devuelto tiene que dejar su nota de debito en el banco
+# ---------------------------------------------------------------------------
+#
+# TMT 2026-08-27 (el caso GUG): Alex marco devuelto un cheque de GUG de
+# $1.000 y los libros no se movieron — la devolucion de un cheque del dBase
+# (sin deposito vinculado en PC) no genera la ND, y el banco SI habia
+# debitado la plata. La conciliacion quedo $1.000 arriba y el agujero se
+# encontro a mano dias despues. Encima el mismo cliente tenia DOS cheques
+# devueltos del mismo importe: un "¿existe una ND?" no alcanza — hay que
+# CONTAR devoluciones contra NDs por cliente e importe.
+
+
+@bp.route("/devuelto-sin-nd", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def devuelto_sin_nd():
+    """¿Alguna devolucion de cheque quedo sin su nota de debito en libros?
+
+    Cuenta, por cliente e importe, los cheques marcados devueltos desde el
+    corte (que siguen devueltos) y las ND de devolucion del mismo cliente e
+    importe desde el corte. Si hay mas devoluciones que NDs, falta plata:
+    el banco debito el rebote y los libros no.
+
+    Solo lectura. NO cambia ningun calculo.
+    """
+    grupos = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(COALESCE(c.codigo_cli, ''))) AS codigo_cli,
+               c.importe,
+               COUNT(DISTINCT c.id_cheque) AS n_devueltos,
+               ARRAY_AGG(DISTINCT c.id_cheque) AS ids
+          FROM scintela.cheque c
+          JOIN scintela.mov_doble m
+            ON m.origen_table = 'cheque' AND m.origen_id = c.id_cheque
+           AND m.tipo = 'cheque_devuelto' AND m.estado = 'activo'
+         WHERE m.fecha_creacion >= %s
+           AND UPPER(TRIM(COALESCE(c.stat, ''))) IN ('1', '2', '9')
+         GROUP BY 1, 2
+        """,
+        (_CORTE_FECHAOUT,),
+    ) or []
+    filas = []
+    for g in grupos:
+        cli = (g.get("codigo_cli") or "").strip().upper()
+        imp = float(g.get("importe") or 0)
+        ids = [int(x) for x in (g.get("ids") or [])]
+        n_nds = int((db.fetch_one(
+            """
+            SELECT COUNT(*) AS n
+              FROM scintela.transacciones_bancarias tb
+             WHERE UPPER(TRIM(COALESCE(tb.documento, ''))) = 'ND'
+               AND tb.fecha >= %s
+               AND ABS(COALESCE(tb.importe, 0) - %s) <= 0.01
+               AND ( tb.numreferencia = ANY(%s)
+                     OR UPPER(TRIM(COALESCE(tb.prov, ''))) = %s
+                     OR UPPER(COALESCE(tb.concepto, '')) LIKE %s )
+            """,
+            (_CORTE_FECHAOUT, imp, ids or [0], cli, f"%{cli}%"),
+        ) or {}).get("n") or 0)
+        filas.append({
+            "codigo_cli": cli,
+            "importe": imp,
+            "n_devueltos": int(g.get("n_devueltos") or 0),
+            "n_nds": n_nds,
+            "ids_cheques": ids,
+        })
+    alerts, stats = _evaluar_devuelto_sin_nd(filas)
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
+def _evaluar_devuelto_sin_nd(filas: list[dict]) -> tuple[list[dict], dict]:
+    """Parte pura — sin base, para poder testear el conteo.
+
+    La regla es POR CANTIDAD, no por existencia: dos cheques devueltos del
+    mismo cliente por el mismo importe necesitan DOS notas de debito. Con un
+    "¿existe alguna?" el segundo rebote de GUG se escondia detras de la ND
+    del primero.
+    """
+    alerts: list[dict] = []
+    total_faltantes = 0
+    for f in filas:
+        faltan = int(f.get("n_devueltos") or 0) - int(f.get("n_nds") or 0)
+        if faltan <= 0:
+            continue
+        total_faltantes += faltan
+        alerts.append({
+            "nivel": "HIGH",
+            "que": (f"{f.get('codigo_cli')}: {f.get('n_devueltos')} cheque(s) "
+                    f"devueltos de {f.get('importe'):.2f} y solo "
+                    f"{f.get('n_nds')} nota(s) de debito en el banco"),
+            "por_que": "el banco debito el rebote y los libros no: falta "
+                       "cargar la ND de la devolucion (los cheques del dBase "
+                       "sin deposito vinculado no la generan solos). Mientras "
+                       "falte, el banco del programa queda arriba del real "
+                       "por ese importe.",
+            "donde_mirar": [f"/cheques/{i}" for i in
+                            (f.get("ids_cheques") or [])],
+        })
+    return alerts, {
+        "corte": _CORTE_FECHAOUT.isoformat(),
+        "n_grupos_devueltos": len(filas),
+        "n_nds_faltantes": total_faltantes,
+    }
+
+
+
+# ---------------------------------------------------------------------------
 # Un espejo de anticipo no puede quedar vivo sin su padre
 # ---------------------------------------------------------------------------
 #
@@ -2113,6 +2220,7 @@ def health_all():
     resp14 = espejo_huerfano()
     resp15 = codigos_duplicados()
     resp16 = competencia_coherente()
+    resp17 = devuelto_sin_nd()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2126,6 +2234,7 @@ def health_all():
     data14 = json.loads(resp14.get_data(as_text=True))
     data15 = json.loads(resp15.get_data(as_text=True))
     data16 = json.loads(resp16.get_data(as_text=True))
+    data17 = json.loads(resp17.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2148,7 +2257,7 @@ def health_all():
                and data6["ok"] and data7["ok"] and data9["ok"]
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
-               and data16["ok"]),
+               and data16["ok"] and data17["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2165,6 +2274,7 @@ def health_all():
         "espejo_huerfano": data14,
         "codigos_duplicados": data15,
         "competencia": data16,
+        "devuelto_sin_nd": data17,
     })
 
 

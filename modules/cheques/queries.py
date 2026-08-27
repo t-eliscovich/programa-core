@@ -8540,6 +8540,31 @@ def deshacer_devuelto(
             id_original=id_mov_doble,
         )
 
+    # 4. TMT 2026-08-27 (caso ch246 CG3): si la ND del protesto estaba
+    # CONCILIADA contra un debito real del extracto, deshacer el protesto
+    # tiene que soltar tambien ese match — la NC de arriba netea la plata,
+    # pero el match vivo dejaba el debito real "explicado" por una ND que ya
+    # no vale, y la conciliacion quedaba con la diferencia. Va DESPUES de la
+    # transaccion (romper_match abre la suya propia); si falla, el protesto
+    # queda deshecho igual y el match se suelta a mano por la pantalla.
+    matches_deshechos = []
+    for c in compensados:
+        try:
+            vivos = db.fetch_all(
+                "SELECT id FROM scintela.banco_conciliacion_match "
+                " WHERE id_transaccion = %s AND deshecho_en IS NULL",
+                (int(c["id_nd"]),),
+            ) or []
+            if not vivos:
+                continue
+            from modules.conciliacion.matcher_banco import romper_match
+            for v in vivos:
+                if romper_match(int(v["id"]), usuario=usuario):
+                    matches_deshechos.append(int(v["id"]))
+        except Exception as e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "deshacer_devuelto: soltar match de la ND", e)
+
     return {
         "id_cheque": id_cheque,
         "no_cheque": (ch.get("no_cheque") or "").strip(),
@@ -8547,5 +8572,6 @@ def deshacer_devuelto(
         "fechad_restaurada": fechad_nueva,
         "compensados": compensados,
         "relinkeados": relinkeados,
+        "matches_deshechos": matches_deshechos,
     }
 
