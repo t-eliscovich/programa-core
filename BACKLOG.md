@@ -359,11 +359,13 @@ Lo único que queda es la costumbre: correr la suite barajada cada tanto. Cómo,
 y el atajo para bisecar (dentro del archivo, no entre archivos), en
 `docs/tests_dependientes_del_orden.md`.
 
-🔴 **Y queda un hallazgo aparte, de PRODUCCIÓN**: `tabla_existe()` también
-cachea el `False` del `except`. Si la app arranca con la base un segundo
-inaccesible, la conciliación v2 queda redirigiendo al hub hasta que alguien
-reinicie el proceso — y no avisa. Es de la familia «algo que no anda y no
-avisa». No se tocó hoy: cambia comportamiento de producción.
+✅ **El hallazgo de producción que salió con esto ya está arreglado**
+(26/08/2026): `tabla_existe()` cacheaba también el `False` del `except`, así que
+un segundo de base inaccesible al arrancar dejaba la conciliación v2
+redirigiendo al hub hasta el próximo reinicio, sin avisar. Ahora el error no se
+cachea —se loguea y se vuelve a preguntar—; la respuesta buena, incluso el «no
+está», se sigue cacheando. Tres tests en
+`tests/test_tabla_existe_no_cachea_el_error.py`.
 ### [S] La fila no lleva a ningún lado
 En /pedidos el color se abre y muestra quién pidió y qué se está tinturando.
 Acá, cuando algo está en rojo, no hay adónde ir a ver el detalle. El destino

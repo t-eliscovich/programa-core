@@ -115,7 +115,18 @@ def tabla_existe() -> bool:
         )
         tabla_existe._cache = bool(row)
     except Exception:
-        tabla_existe._cache = False
+        # ⭐ El error NO se cachea (26/08/2026). Antes sí, y con eso un segundo
+        # de base inaccesible al arrancar dejaba la conciliación v2 redirigiendo
+        # al hub **hasta que alguien reiniciara el proceso** — sin un solo aviso
+        # en ningún lado. Un tropiezo de red de un segundo no puede apagar una
+        # pantalla por el resto del día.
+        #
+        # Lo que sí se sigue cacheando es la respuesta BUENA, incluso cuando es
+        # "no está": la migración no aparece sola, y cuando aparece es con un
+        # deploy, que reinicia el proceso y tira el caché igual.
+        _LOG.warning("No se pudo saber si corrió la migración 0060; "
+                     "se vuelve a preguntar en la próxima.", exc_info=True)
+        return False
     return tabla_existe._cache
 
 
