@@ -472,6 +472,79 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
     return out
 
 
+# ── La recepción SIN código del programa en la Nota ─────────────────────────
+# TMT 2026-08-30 (dueña, sobre MTG3756): *"eso debería haber aparecido en la
+# campanita, para que Andrés vea y lo cargue"*.
+#
+# El 29/08 a las 08:25 Asinfo recibió 16.113,6 kg (IM-653/654) cuya Nota decía
+# "MTG3756" pelado, sin el código del programa. Sin código no cruza con ninguna
+# compra ni anticipo, así que los kilos entraron al stock SIN su plata y la
+# utilidad subió ~48.900 de un saque — y nadie recibió ningún aviso:
+#
+#   · la alarma de "falta plata" saltea a propósito los grupos sin NADA
+#     atribuido (la guarda que evitó los 200 avisos del 31/07), y además
+#     espera 30 días;
+#   · la de factura repartida necesita una mitad CON plata.
+#
+# Este caso es distinto de la maduración normal: no es "todavía no cargaron la
+# compra" (eso tarda 10 días de mediana y se arregla solo), es "aunque la
+# carguen, no va a cruzar NUNCA" — le falta el código en la Nota de Asinfo.
+# Por eso avisa de una, sin umbral de días. El techo de antigüedad sí va, como
+# siempre, para no estrenar la alarma con un inventario de casos viejos
+# (MTGE3755 de enero, la INV 25-26/426 de 2025).
+def importaciones_sin_codigo(limite: int = 1000,
+                             rows: list[dict] | None = None,
+                             techo: int | None = None) -> list[dict]:
+    """Recepciones cuya Nota no trae el código del programa (tipo "AC 36").
+
+    Una por factura del proveedor (las partidas ---1/---2 comparten la Nota
+    base). Fail-soft: [] si no se pudo leer.
+    """
+    from filters import today_ec
+
+    from . import service as svc
+
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return []
+    techo = _techo_dias() if techo is None else int(techo)
+    hoy = today_ec()
+
+    por_base: dict[str, dict] = {}
+    for r in rows or []:
+        if not r.get("recibida"):
+            continue
+        if r.get("prov") and r.get("numero") is not None:
+            continue                     # tiene código: no es de acá
+        frec = _d(r.get("fecha_recepcion"))
+        if not frec:
+            continue
+        base = svc._nota_base(r.get("nota")) or str(r.get("im_numero") or "")
+        if not base:
+            continue
+        c = por_base.setdefault(base, {
+            "nota": base, "ims": [], "kg": 0.0, "recepcion": frec,
+            "proveedor": str(r.get("proveedor") or "").strip(),
+        })
+        c["ims"].append(r.get("im_numero"))
+        c["kg"] += float(r.get("kg") or 0)
+        if frec > c["recepcion"]:
+            c["recepcion"] = frec
+
+    out = []
+    for c in por_base.values():
+        edad = (hoy - c["recepcion"]).days
+        if techo and edad > techo:
+            continue                     # historia, no una tarea pendiente
+        c["dias"] = edad
+        c["kg"] = round(c["kg"], 2)
+        c["recepcion"] = str(c["recepcion"])
+        out.append(c)
+    out.sort(key=lambda x: -x["kg"])
+    return out
+
+
 # ── El aviso que ya se solucionó ────────────────────────────────────────────
 # TMT 2026-08-26 (dueña): *"si un aviso ya se solucionó habría que avisar que se
 # solucionó"*.
@@ -511,6 +584,28 @@ def _resolver_los_arreglados(rows: list[dict] | None) -> None:
                      f"hilo va a {_n(esperado / g['kg'])}."),
         )
 
+    # La Nota sin código se arregla cuando ALGUNA fila con esa Nota base ya
+    # trae el código parseado. "Desaparecer de la lectura" no alcanza (misma
+    # regla que arriba): resolver sólo lo verificable.
+    from . import service as _svc
+    bases_con_codigo = {
+        _svc._nota_base(r.get("nota"))
+        for r in rows
+        if r.get("prov") and r.get("numero") is not None
+    }
+    for a in avisos.abiertos_por_clave("import-sin-codigo:"):
+        clave = str(a.get("clave") or "")
+        if ":" not in clave:
+            continue
+        base = clave.split(":", 1)[1]
+        if base not in bases_con_codigo:
+            continue                     # sigue sin código (o no se leyó)
+        avisos.resolver(
+            int(a["id_aviso"]),
+            titulo=f"{base} · listo, la Nota ya tiene código",
+            detalle="Ya cruza con su compra o anticipo.",
+        )
+
     # La factura repartida se arregla cuando ninguna de sus importaciones
     # quedó sin plata.
     mal = {f["factura"]
@@ -545,11 +640,12 @@ def revisar_si_toca() -> dict:
         _ultima_corrida = ahora
 
     dias = _dias_umbral()
-    # UNA sola lectura por corrida para los dos chequeos.
+    # UNA sola lectura por corrida para los tres chequeos.
     _rows = _leer_importaciones()
     try:
         casos = importaciones_fuera_de_banda(dias, rows=_rows)
         facturas = facturas_con_plata_en_una_sola(rows=_rows)
+        sin_codigo = importaciones_sin_codigo(rows=_rows)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
@@ -623,6 +719,28 @@ def revisar_si_toca() -> dict:
             clave=f"import-factura-en-una:{f['factura']}",
         ):
             n += 1
+    for c in sin_codigo:
+        kg_txt = f"{_n(c['kg'], 0)} kg llegaron" if c["kg"] else "llegó mercadería"
+        titulo = (f"{c['nota']} · {kg_txt} sin código del programa en la Nota. "
+                  "¿Qué compra es?")
+        detalle = (
+            "Sin el código (tipo AC 36) no cruza con ninguna compra ni "
+            "anticipo: los kilos ya están en el stock sin su plata. Ponerle "
+            "el código a la Nota en Asinfo y cargar la compra."
+        )
+        if c.get("proveedor"):
+            detalle = f"Proveedor {c['proveedor']}. " + detalle
+        if avisos.avisar(
+            fuente="importaciones",
+            nivel="alerta",
+            titulo=titulo[:200],
+            detalle=detalle,
+            cantidad=len(c.get("ims") or []) or None,
+            url=_url_filtrada(c["nota"]),
+            # Idempotente por FACTURA del proveedor (las partidas comparten Nota).
+            clave=f"import-sin-codigo:{c['nota']}",
+        ):
+            n += 1
     try:
         _resolver_los_arreglados(_rows)
     except Exception as e:  # noqa: BLE001 -- resolver nunca frena la alarma
@@ -631,4 +749,4 @@ def revisar_si_toca() -> dict:
         _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
                   "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
     return {"corrio": True, "casos": len(casos), "facturas": len(facturas),
-            "avisados": n, "dias": dias}
+            "sin_codigo": len(sin_codigo), "avisados": n, "dias": dias}
