@@ -34,7 +34,7 @@ _LOG = logging.getLogger("programa_core.facturas.audit")
 _ASINFO_CUTOFF = date(2025, 1, 1)
 
 
-def _huerfanas_pc(limite: int = 500) -> list[dict]:
+def _huerfanas_pc(limite: int = 500, solo_con_saldo: bool = False) -> list[dict]:
     """PC: facturas eligibles para audit Asinfo.
 
     Criterios:
@@ -60,9 +60,17 @@ def _huerfanas_pc(limite: int = 500) -> list[dict]:
                OR f.numf IS NULL OR f.numf = 0)
           -- TMT 2026-05-26: excluir explícitamente marcadas (#DUP, #SIN_ASINFO).
           AND (f.numf_completo IS NULL OR NOT (f.numf_completo LIKE '#%%'))
+          -- TMT 2026-08-30 (dueña): "quiero resolver solo las 489" — el modo
+          -- acotado a las que tienen saldo pendiente, que son las que duelen
+          -- en cartera. El saldo se calcula como siempre: importe − abono −
+          -- retención (mig 0179), nunca la columna sola.
+          {filtro_saldo}
         ORDER BY f.fecha DESC, f.numf DESC
         LIMIT %s
-        """,
+        """.format(filtro_saldo=(
+            "AND (f.importe - COALESCE(f.abono, 0) - COALESCE(f.retencion, 0)) > 0.01"
+            if solo_con_saldo else ""
+        )),
         (_ASINFO_CUTOFF, limite),
     )
 
@@ -121,7 +129,8 @@ def _signos_compatibles(pc: dict, ai: dict) -> bool:
     return True  # kg=0 no filtra por signo
 
 
-def auditar_huerfanas(top_k: int = 3, limite: int = 500) -> list[dict]:
+def auditar_huerfanas(top_k: int = 3, limite: int = 500,
+                      solo_con_saldo: bool = False) -> list[dict]:
     """Audit completo: para cada huérfana PC, devuelve top-K candidatos AI.
 
     Returns:
@@ -134,7 +143,7 @@ def auditar_huerfanas(top_k: int = 3, limite: int = 500) -> list[dict]:
                                  ai_cliente_codigo, ai_kg, ai_usd, score }
             mejor_score      — score del mejor candidato (None si lista vacía).
     """
-    huerfanas = _huerfanas_pc(limite=limite)
+    huerfanas = _huerfanas_pc(limite=limite, solo_con_saldo=solo_con_saldo)
     if not huerfanas:
         return []
 

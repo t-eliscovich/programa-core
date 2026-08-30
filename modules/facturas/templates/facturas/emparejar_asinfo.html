@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% from "_ui.html" import wizard_hero, wizard_footer %}
+{# La pantalla del emparejador de facturas sin número del SRI.
+
+   TMT 2026-08-26 (dueña), sobre la URL de JSON que había antes: *"no puedo
+   hacer nada en esa página"*. Acá la vista previa ES lo que va a hacer el
+   botón: misma función, mismo lote. Acotada a las huérfanas CON SALDO
+   (TMT 2026-08-30: "quiero resolver solo las 489"). #}
+{% block title %}Emparejar con Asinfo{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('facturas.lista') }}" class="hover:underline">Facturas</a> /
+  <strong>Emparejar con Asinfo</strong>
+{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl">
+  {% set ico %}<path d="M13.828 10.172a4 4 0 0 0-5.656 0l-4 4a4 4 0 1 0 5.656 5.656l1.102-1.101m-.758-4.899a4 4 0 0 0 5.656 0l4-4a4 4 0 0 0-5.656-5.656l-1.1 1.1"/>{% endset %}
+  {{ wizard_hero('sky', 'Emparejar con Asinfo',
+                 'Facturas con saldo pendiente que no tienen el número del SRI (quedaron de la carga vieja del dBase). Se busca en Asinfo la misma factura — mismo cliente, mismos kilos, mismo importe, fecha cercana — y se le copia el número. Con el número puesto, la ficha muestra el detalle de qué se llevó.',
+                 ico) }}
+
+  {% if aplico %}
+    <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 rounded-lg px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300 mb-5">
+      Listo: se emparejaron <strong>{{ res.aplicados_count }}</strong> facturas.
+      {% if res.errores_apply_count %}
+        <strong class="text-red-700 dark:text-red-300">{{ res.errores_apply_count }} dieron error</strong> — recargá la pantalla para reintentarlas.
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="text-2xl font-semibold tabular-nums">{{ con_saldo_total }}</div>
+      <div class="text-xs text-slate-500 mt-1">sin número y con saldo</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="text-2xl font-semibold tabular-nums text-sky-700 dark:text-sky-300">{{ res.aplicados_count }}</div>
+      <div class="text-xs text-slate-500 mt-1">{{ 'emparejadas ahora' if aplico else 'se emparejan solas' }}</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="text-2xl font-semibold tabular-nums">{{ res.saltadas_score_alto_count + res.saltadas_sin_candidatos_count }}</div>
+      <div class="text-xs text-slate-500 mt-1">las tiene que mirar una persona</div>
+    </div>
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-4">
+      <div class="text-2xl font-semibold tabular-nums">{{ viejas }}</div>
+      <div class="text-xs text-slate-500 mt-1">anteriores a 2025 (quedan afuera)</div>
+    </div>
+  </div>
+
+  {% if not aplico and res.aplicados %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl mb-5 overflow-hidden">
+    <div class="px-4 pt-4 text-xs uppercase tracking-wider text-slate-500 font-semibold">
+      Qué haría, factura por factura
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <th class="text-left px-4 py-2">Fecha</th>
+            <th class="text-left px-2 py-2">Cliente</th>
+            <th class="text-right px-2 py-2">Kg</th>
+            <th class="text-right px-2 py-2">Importe</th>
+            <th class="text-left px-4 py-2">Número que le pone</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in res.aplicados %}
+          <tr class="border-b border-slate-100 dark:border-slate-800">
+            <td class="px-4 py-1.5 whitespace-nowrap">{{ r.fecha | fecha_es }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ r.codigo_cli }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.kg_pc | kg_es }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.usd_pc | money_es }}</td>
+            <td class="px-4 py-1.5 font-mono text-sky-700 dark:text-sky-300">{{ r.ai_numero }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% set saltadas = res.saltadas_score_alto + res.saltadas_sin_candidatos %}
+  {% if saltadas %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl mb-5 overflow-hidden">
+    <div class="px-4 pt-4 text-xs uppercase tracking-wider text-slate-500 font-semibold">
+      Las que saltea, y por qué
+    </div>
+    <div class="px-4 pt-1 pb-2 text-[13px] text-slate-500">
+      El botón no las toca: o Asinfo no tiene ninguna factura parecida, o la
+      parecida está a nombre de otro código (el tema de las sucursales) y eso
+      lo decide una persona.
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <th class="text-left px-4 py-2">Fecha</th>
+            <th class="text-left px-2 py-2">Cliente</th>
+            <th class="text-right px-2 py-2">Kg</th>
+            <th class="text-right px-2 py-2">Saldo</th>
+            <th class="text-left px-4 py-2">Por qué</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in saltadas %}
+          <tr class="border-b border-slate-100 dark:border-slate-800">
+            <td class="px-4 py-1.5 whitespace-nowrap">
+              <a class="text-sky-700 dark:text-sky-300 hover:underline" href="{{ url_for('facturas.detalle', id_factura=r.id_factura, id=r.id_factura) }}">{{ r.fecha | fecha_es }}</a>
+            </td>
+            <td class="px-2 py-1.5 font-mono">{{ r.codigo_cli }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.kg | kg_es }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.saldo | money_es }}</td>
+            <td class="px-4 py-1.5 text-slate-500">
+              {% if r.mejor_ai_numero %}
+                la parecida en Asinfo ({{ r.mejor_ai_numero }}) está a nombre de {{ r.mejor_ai_cli or '—' }}
+              {% else %}
+                Asinfo no tiene ninguna parecida
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if not aplico and res.aplicados_count %}
+  <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="text-sm text-slate-600 dark:text-slate-300">
+      El botón escribe <strong>únicamente el número del SRI</strong> en las
+      {{ res.aplicados_count }} de arriba: ni kilos, ni importes, ni abonos,
+      ni saldos.
+    </div>
+    {{ wizard_footer(url_for('facturas.lista'), 'Emparejar las ' ~ res.aplicados_count ~ ' facturas', 'sky') }}
+  </form>
+  {% elif not aplico %}
+    <div class="text-sm text-slate-500">No hay nada para emparejar en automático.</div>
+  {% endif %}
+</div>
+{% endblock %}

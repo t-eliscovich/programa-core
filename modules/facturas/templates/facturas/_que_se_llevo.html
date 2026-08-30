@@ -29,6 +29,9 @@
     <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded px-3 py-3 text-sm text-slate-500 mb-6">
       {% if det.estado == 'sin-numero' %}
         Esta factura no tiene número del SRI cargado, así que no se puede buscar el detalle en Asinfo.
+        {% if tiene_permiso('facturas.editar') %}
+          <a href="{{ url_for('facturas.emparejar_asinfo') }}" class="text-sky-700 dark:text-sky-300 hover:underline">Emparejar con Asinfo →</a>
+        {% endif %}
       {% elif det.estado == 'sin-datos' %}
         Asinfo no tiene el detalle de esta factura.
       {% elif det.estado == 'sin-puente' %}

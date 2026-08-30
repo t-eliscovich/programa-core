@@ -448,6 +448,7 @@ def test_post_smoke_facturas(escenario):
             ("/facturas/anuladas-asinfo", "destino del vigía"),
             ("/facturas/cargar-csv", "destino del alta masiva"),
             ("/facturas/backfill-asinfo", "pantalla del backfill"),
+            ("/facturas/emparejar-asinfo", "pantalla del emparejador"),
             ("/facturas/totales-hoy.json", "el JSON de la campanita"),
         ):
             b.agregar(getear_cazando(c, caza, destino, nota=nota))

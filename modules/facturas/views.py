@@ -3463,23 +3463,20 @@ def tipos_desde_asinfo():
     )
 
 
-@facturas_bp.route("/facturas/backfill-asinfo", methods=["GET"])
-@requiere_login
-@requiere_permiso("facturas.editar")
-def backfill_asinfo():
-    """Audit + backfill automático de huérfanas Asinfo.
+def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
+    """El emparejador de huérfanas, compartido por el JSON y la pantalla.
 
-    GET sin args      → preview (no toca DB).
-    GET ?apply=1      → aplica los matches que cumplen el threshold.
-
-    Devuelve JSON con conteos + detalle. Pensado para correr desde Chrome
-    (un click). No usa POST para evitar tener que cargar CSRF token desde
-    una herramienta admin one-shot.
+    Con `aplicar=False` es una vista previa que no toca la base; con
+    `aplicar=True` escribe el número en las que cumplen la política
+    (candidato cerca + mismo cliente). `solo_con_saldo` lo acota a las
+    facturas con saldo pendiente (TMT 2026-08-30, dueña: "quiero resolver
+    solo las 489").
     """
     from modules.facturas import audit_asinfo
 
-    apply = request.args.get("apply") == "1"
-    huerfanas = audit_asinfo.auditar_huerfanas(top_k=3, limite=1000)
+    apply = aplicar
+    huerfanas = audit_asinfo.auditar_huerfanas(
+        top_k=3, limite=1000, solo_con_saldo=solo_con_saldo)
 
     aplicados: list[dict] = []
     saltadas_sin_candidatos: list[dict] = []
@@ -3577,6 +3574,62 @@ def backfill_asinfo():
         "saltadas_sin_candidatos": saltadas_sin_candidatos,
         "errores_apply": errores_apply[:20],
     }
+
+
+@facturas_bp.route("/facturas/backfill-asinfo", methods=["GET"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def backfill_asinfo():
+    """Audit + backfill automático de huérfanas Asinfo (JSON, herramienta admin).
+
+    GET sin args      → preview (no toca DB).
+    GET ?apply=1      → aplica los matches que cumplen el threshold.
+    GET ?con_saldo=1  → sólo las huérfanas con saldo pendiente.
+
+    Devuelve JSON con conteos + detalle. Pensado para correr desde Chrome
+    (un click). No usa POST para evitar tener que cargar CSRF token desde
+    una herramienta admin one-shot. La versión con pantalla y botón es
+    /facturas/emparejar-asinfo.
+    """
+    return _emparejar_asinfo(
+        aplicar=request.args.get("apply") == "1",
+        solo_con_saldo=request.args.get("con_saldo") == "1",
+    )
+
+
+@facturas_bp.route("/facturas/emparejar-asinfo", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("facturas.editar")
+def emparejar_asinfo():
+    """La pantalla del emparejador — el backfill de arriba, con botón.
+
+    TMT 2026-08-26 (dueña), sobre la URL de JSON: *"no puedo hacer nada en
+    esa página"*. GET muestra la vista previa (qué número le pondría a cada
+    una); el botón manda el POST que escribe. Acotado a las huérfanas CON
+    SALDO pendiente, que son las que molestan en cartera (TMT 2026-08-30:
+    "quiero resolver solo las 489"). Las anteriores a 2025 quedan afuera a
+    propósito: Asinfo limpio arranca ahí, y ésas las mira una persona.
+    """
+    res = _emparejar_asinfo(aplicar=request.method == "POST",
+                            solo_con_saldo=True)
+
+    fuera = db.fetch_one(
+        """
+        SELECT COUNT(*) FILTER (WHERE fecha < '2025-01-01') AS viejas,
+               COUNT(*) AS con_saldo
+        FROM scintela.factura
+        WHERE (numf_completo IS NULL OR numf_completo = '')
+          AND COALESCE(stat, '') <> 'X'
+          AND (importe - COALESCE(abono, 0) - COALESCE(retencion, 0)) > 0.01
+        """) or {}
+
+    return render_template(
+        "facturas/emparejar_asinfo.html",
+        res=res,
+        con_saldo_total=int(fuera.get("con_saldo") or 0),
+        viejas=int(fuera.get("viejas") or 0),
+        aplico=res["modo"] == "apply",
+    )
 
 
 # =====================================================================
