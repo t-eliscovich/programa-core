@@ -327,6 +327,58 @@ def test_un_documento_que_no_conocemos_se_porta_como_factura():
     assert res["totales"]["kg"] == 21.8
 
 
+def test_la_nota_de_entrega_es_una_venta_con_kilos():
+    """NTEN (doc 251): la venta del mostrador. TMT 2026-08-30 (dueña): *"no
+    están andando las notas de entrega"* — la NTEN-10924 decía "sin número del
+    SRI" teniendo su número, porque la regex sólo conocía el 001-099-…."""
+    f = _fila("Jersey 3", "CELESTE", 21.8, 9.86, 175.53)
+    f["doc"] = fl.DOC_NTEN
+    res = fl._agrupar([f])
+    assert res["doc"] == "nten"
+    assert res["titulo"] == "Detalle"
+    assert res["totales"]["kg"] == 21.8
+    assert res["totales"]["rollos"] == 1
+
+
+def test_la_ncnt_es_mercaderia_que_vuelve_con_kilos():
+    """NCNT (doc 451) devuelve MERCADERÍA — no es la financiera del punto 7."""
+    f = _fila("Fleece Lycra", "JAS.OSCURO", 21.7, 11.07, 212.23)
+    f["doc"] = fl.DOC_NCNT
+    res = fl._agrupar([f])
+    assert res["doc"] == "ncnt"
+    assert res["titulo"] == "Qué devolvió"
+    assert res["totales"]["kg"] == 21.7
+
+
+@pytest.mark.parametrize("numero", ["NTEN-10924", "NCNT-01095"])
+def test_la_numeracion_propia_pasa_entera_al_sql(numero):
+    """Las NTEN y NCNT viven en la misma `factura_cliente` con ese número."""
+    with patch("modules._lib.metabase_client.disponible", return_value=True), \
+         patch("modules._lib.metabase_client.fetch_dataset_estado",
+               return_value=([], True)) as m:
+        res = fl.que_se_llevo(numero)
+    assert res["estado"] == "sin-datos"      # pasó la regex y preguntó
+    assert f"fc.numero = '{numero}'" in m.call_args[0][1]
+
+
+@pytest.mark.parametrize("numero", ["NTEN-", "NTEN-abc", "nten-10924",
+                                    "NTEN-10924'; DROP TABLE x--"])
+def test_la_numeracion_propia_tambien_se_valida_entera(numero):
+    with patch("modules._lib.metabase_client.disponible") as m:
+        res = fl.que_se_llevo(numero)
+    assert res["estado"] == "sin-numero"
+    m.assert_not_called()
+
+
+def test_el_relleno_tambien_busca_la_numeracion_propia():
+    """El SQL de `_faltantes` filtra por regex: sin NTEN/NCNT ahí, el
+    calentador nunca les llenaría el detalle a las viejas."""
+    import inspect
+
+    src = inspect.getsource(fl._faltantes)
+    assert "NTEN" in src and "NCNT" in src
+
+
 def test_el_formato_del_cache_subio():
     """Lo guardado con precios netos tiene que reescribirse solo (IVA 27/08)."""
     assert fl.FORMATO >= 6

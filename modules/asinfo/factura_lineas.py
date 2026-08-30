@@ -81,10 +81,13 @@ _LOG = logging.getLogger("programa_core.asinfo.factura_lineas")
 #: La base de Asinfo dentro de Metabase.
 DB_ASINFO = 2
 
-#: El número SRI: 001-099-000182419. Es lo único que se interpola en el SQL,
-#: así que se valida ENTERO (no recortado: un `[:17]` previo se comería la cola
-#: y dejaría pasar basura sin decirlo).
-_NUMERO_RE = re.compile(r"^\d{3}-\d{3}-\d{9}$")
+#: El número del documento: 001-099-000182419 para lo fiscal, y la numeración
+#: PROPIA de las notas de entrega ('NTEN-10924') y las NCNT ('NCNT-01095'),
+#: que en Asinfo viven en la misma `factura_cliente` con ese `numero` literal
+#: (verificado: `facturas_periodo` las trae así desde siempre). Es lo único
+#: que se interpola en el SQL, así que se valida ENTERO (no recortado: un
+#: `[:17]` previo se comería la cola y dejaría pasar basura sin decirlo).
+_NUMERO_RE = re.compile(r"^(?:\d{3}-\d{3}-\d{9}|(?:NTEN|NCNT)-\d{1,9})$")
 
 #: Los atributos de Asinfo que nos importan (tabla `atributo`).
 ATRIBUTO_CALIDAD = 2
@@ -99,11 +102,20 @@ CATEGORIA_SERVICIOS = "SERVICIOS"
 DOC_FACTURA = 7
 DOC_NOTA_CREDITO = 17
 DOC_DEVOLUCION = 20
+#: La nota de entrega (numeración propia 'NTEN-'): vende mercadería con rollos
+#: y kilos, igual que la factura. Y la NCNT ('NCNT-'): mercadería que VUELVE,
+#: con kilos de verdad — no es la nota de crédito financiera del punto 7.
+#: Los ids son los mismos que usan inventario_rotativo y asinfo_parado
+#: (7, 251 venden; 20, 451 devuelven).
+DOC_NTEN = 251
+DOC_NCNT = 451
 
 _DOCS = {
     DOC_FACTURA: "factura",
     DOC_NOTA_CREDITO: "nota-credito",
     DOC_DEVOLUCION: "devolucion",
+    DOC_NTEN: "nten",
+    DOC_NCNT: "ncnt",
 }
 
 #: El rótulo del bloque. Vive acá, y no en cada template, porque son TRES
@@ -117,6 +129,7 @@ _DOCS = {
 TITULOS = {
     "nota-credito": "Nota de crédito",
     "devolucion": "Qué devolvió",
+    "ncnt": "Qué devolvió",
 }
 TITULO_DEFAULT = "Detalle"
 
@@ -255,7 +268,7 @@ def _faltantes(limite: int, dias: int) -> list[str]:
         "  LEFT JOIN scintela.factura_detalle d ON d.numero = f.numf_completo "
         " WHERE d.numero IS NULL "
         "   AND f.fecha >= %s AND f.fecha < %s "
-        "   AND f.numf_completo ~ '^[0-9]{3}-[0-9]{3}-[0-9]{9}$' "
+        "   AND f.numf_completo ~ '^([0-9]{3}-[0-9]{3}-[0-9]{9}|(NTEN|NCNT)-[0-9]+)$' "
         " ORDER BY f.fecha DESC, f.id_factura DESC "
         " LIMIT %s",
         (hoy - timedelta(days=max(1, int(dias))), hoy - timedelta(days=3),
