@@ -1101,7 +1101,14 @@ def kg_hilado_mes(compras: list[dict], limite: int = 400,
         vistos.add(clave)
         if im is None or gkg <= 0:
             # No hay de dónde sacarlo: queda el kg de la compra y se AVISA.
-            out["sin_match"].append(c)
+            # Si la compra SÍ matchea una importación pero Asinfo no entregó
+            # los kg del detalle, se anota el nº: el balance distingue "falta
+            # el dato en Asinfo/el puente" de "falta el código en el concepto"
+            # y no manda a completar a mano lo que vive allá. TMT 2026-08-30.
+            c_avisada = dict(c)
+            if im is not None:
+                c_avisada["im"] = str(im.get("im_numero") or "") or None
+            out["sin_match"].append(c_avisada)
             total += kg_compra
             b["kg"] = kg_compra
             continue

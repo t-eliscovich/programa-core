@@ -1928,8 +1928,24 @@ _IMPORT_KG_DETALLE: dict = {}  # {"tabla": ..., "col": ...} descubierto
 _IMPORT_COSTO_HILADO_CACHE: dict = {}  # {im_numero: {costo,kg,usd_kg}} (promedio por tipo de hilado)
 
 
+# El nombre REAL del detalle, verificado contra el ERP el 30/08/2026. El
+# descubrimiento por INFORMATION_SCHEMA queda como confirmación, pero si no
+# contesta se usa este nombre en vez de dejar los kg sin fuente.
+_DETALLE_FP_CONOCIDO = {"tabla": "detalle_factura_proveedor", "col": "cantidad"}
+
+
 def _descubrir_detalle_fp() -> dict | None:
-    """Tabla+columna de cantidad del detalle de factura_proveedor."""
+    """Tabla+columna de cantidad del detalle de factura_proveedor.
+
+    TMT 2026-08-30 — un solo fracaso del descubrimiento (Metabase caído un
+    instante, p.ej. al arrancar el proceso) quedaba cacheado PARA SIEMPRE
+    (`done=True` con hit=None) y `importaciones_kg` devolvía {} hasta el
+    siguiente deploy: la columna KG de /importaciones toda en «—», el
+    balance gritando "22 compra(s) del mes con importe pero SIN kg" y la
+    dueña mandada a completar a mano kilos que estaban sanos en Asinfo.
+    Ahora solo el ÉXITO se cachea para siempre; si el descubrimiento no
+    contesta se usa el nombre conocido del detalle y se reintenta después.
+    """
     if _IMPORT_KG_DETALLE.get("done"):
         return _IMPORT_KG_DETALLE.get("hit")
     sql = """
@@ -1952,9 +1968,13 @@ def _descubrir_detalle_fp() -> dict | None:
         if t and col and "precio" not in col.lower():
             hit = {"tabla": t, "col": col}
             break
-    _IMPORT_KG_DETALLE["done"] = True
-    _IMPORT_KG_DETALLE["hit"] = hit
-    return hit
+    if hit:
+        _IMPORT_KG_DETALLE["done"] = True
+        _IMPORT_KG_DETALLE["hit"] = hit
+        return hit
+    # Sin respuesta: NO se graba `done` (la próxima llamada reintenta el
+    # descubrimiento) y mientras tanto los kg salen del nombre conocido.
+    return dict(_DETALLE_FP_CONOCIDO)
 
 
 def importaciones_kg(limite: int = 400) -> dict[str, float]:

@@ -5144,17 +5144,36 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
                 "o revisar Asinfo antes de leer la utilidad."
             )
         elif _hk_sin_match:
-            _det = "; ".join(
-                f"{str(c.get('prov') or '?').strip()} {float(c.get('importe') or 0):,.2f} ({c.get('fecha')})"
-                for c in _hk_sin_match[:5]
-            )
-            advertencias.append(
-                f"⚠ HILADO: {len(_hk_sin_match)} compra(s) del mes con importe pero SIN kg — "
-                f"ni en la compra ni en su importación: {_det}. "
-                "Sin esos kg el $/kg del hilado queda inflado y revalúa todo el stock. "
-                "Completar el kg (o el N° de importación en el concepto); si la compra "
-                "no es hilo, corregirle el TIPO desde Editar."
-            )
+            # Dos situaciones distintas, dos avisos (dueña 2026-08-30: "esto
+            # está mal... si sabemos que el kg viene de Asinfo"): si la compra
+            # SÍ matchea su importación, el kg vive en Asinfo y no hay nada
+            # que completar a mano — el que falló es el puente (o el detalle
+            # de la factura allá). Solo la compra que no matchea NINGUNA
+            # importación necesita que le carguen el N° o le corrijan el TIPO.
+            def _det_de(filas):
+                return "; ".join(
+                    f"{str(c.get('prov') or '?').strip()} {float(c.get('importe') or 0):,.2f} ({c.get('fecha')})"
+                    for c in filas[:5]
+                )
+            _con_im = [c for c in _hk_sin_match if c.get("im")]
+            _sin_im = [c for c in _hk_sin_match if not c.get("im")]
+            if _con_im:
+                advertencias.append(
+                    f"⚠ HILADO: {len(_con_im)} compra(s) del mes sin kg cuya "
+                    f"importación SÍ está en Asinfo: {_det_de(_con_im)}. "
+                    "El kg vive en Asinfo y el puente no lo trajo — no hay nada "
+                    "que completar a mano. Mientras tanto el $/kg del hilado "
+                    "queda inflado; si el aviso sigue mañana, revisar el detalle "
+                    "de esas facturas en Asinfo."
+                )
+            if _sin_im:
+                advertencias.append(
+                    f"⚠ HILADO: {len(_sin_im)} compra(s) del mes con importe pero SIN kg — "
+                    f"ni en la compra ni en su importación: {_det_de(_sin_im)}. "
+                    "Sin esos kg el $/kg del hilado queda inflado y revalúa todo el stock. "
+                    "Completar el kg (o el N° de importación en el concepto); si la compra "
+                    "no es hilo, corregirle el TIPO desde Editar."
+                )
 
         # ── ALARMA de BANDA (US$/kg) ─────────────────────────────────────
         # TMT 2026-07-31. Hasta hoy el balance sólo avisaba cuando una compra
