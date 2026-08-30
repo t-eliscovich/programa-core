@@ -1314,6 +1314,7 @@ def compensar_deposito_devuelto(
     fecha: date,
     usuario: str = "web",
     registro: dict | None = None,
+    stat_prev: str | None = None,
 ) -> float:
     """Descuenta del banco el importe de un cheque DEPOSITADO que fue devuelto.
 
@@ -1373,7 +1374,79 @@ def compensar_deposito_devuelto(
         conn=conn,
     ) or []
     if not links:
-        return 0.0
+        # TMT 2026-08-30 (Tamara: "no puede ser que devuelva y no haya ND").
+        # Un cheque del dBase depositado en su epoca no tiene link a ningun
+        # 'DE' de PC — pero si HOY rebota, el banco debita HOY y la ND
+        # corresponde IGUAL. Asi quedaron los libros $1.000 arriba con GUG y
+        # $1.894,29 con ADI: el flujo salia por aca sin crear nada y nadie se
+        # enteraba hasta la conciliacion. Ahora, si el caller dice de que
+        # estado VENIA el cheque y era uno de banco (familia EN_BANCO), la ND
+        # se crea igual, contra Pichincha (10) — con el mismo guard de no
+        # duplicar: una ND libre (no reclamada por otro protesto) del mismo
+        # cliente e importe, posterior a la salida del cheque, cuenta como
+        # "ya cargada a mano". Sin stat_prev (callers viejos, pantalla de
+        # arreglo masivo) el comportamiento es el de siempre: no tocar.
+        from modules.cheques import estados as _est
+        _dep = (stat_prev or "").strip().upper() in _est.EN_BANCO
+        if not _dep:
+            return 0.0
+        _cli0 = (codigo_cli or "").strip().upper()
+        nd_libre = db.fetch_one(
+            "SELECT MAX(tb.id_transaccion) AS m "
+            "  FROM scintela.transacciones_bancarias tb "
+            " WHERE UPPER(TRIM(COALESCE(tb.documento,''))) = 'ND' "
+            "   AND ABS(COALESCE(tb.importe, 0) - %s) <= 0.01 "
+            "   AND ( tb.numreferencia = %s "
+            "         OR UPPER(TRIM(COALESCE(tb.prov,''))) = %s "
+            "         OR UPPER(COALESCE(tb.concepto,'')) LIKE %s ) "
+            "   AND tb.fecha >= COALESCE((SELECT GREATEST(c0.fechaout, "
+            "         c0.fechaing, c0.fecha) FROM scintela.cheque c0 "
+            "         WHERE c0.id_cheque = %s), tb.fecha) "
+            "   AND NOT EXISTS ( "
+            "     SELECT 1 FROM scintela.mov_doble md "
+            "      WHERE md.tipo = 'cheque_devuelto' AND md.estado = 'activo' "
+            "        AND md.origen_id <> %s "
+            "        AND (md.metadata->'compensacion'->>'id_nd')::bigint "
+            "            = tb.id_transaccion )",
+            (imp, id_cheque, _cli0, f"%{_cli0}%", id_cheque, id_cheque),
+            conn=conn,
+        )
+        if nd_libre and nd_libre.get("m") is not None:
+            if registro is not None:
+                registro["nd_ya_existia"] = True
+            return 0.0
+        import bank_helpers
+        _res_nd = bank_helpers.insert_movimiento_bancario(
+            conn,
+            no_banco=10,  # solo Pichincha — el deposito del dBase fue ahi
+            no_cta=None,
+            fecha=fecha,
+            documento="ND",
+            importe=imp,
+            permitir_signed=True,
+            concepto=(
+                f"ch.devuelto {no_cheque or id_cheque} {codigo_cli or ''}"
+            ).strip()[:50],
+            prov=codigo_cli,
+            numreferencia=id_cheque,
+            usuario=usuario,
+        )
+        if registro is not None:
+            registro["id_nd"] = _res_nd.get("id_transaccion")
+            registro["importe_nd"] = imp
+            registro["no_banco"] = 10
+            registro["sin_link_dbase"] = True
+        if imp > 0:
+            _insertar_gs_protesto(
+                conn,
+                no_banco=10,
+                codigo_cli=codigo_cli,
+                fecha=fecha,
+                id_cheque=id_cheque,
+                usuario=usuario,
+                registro=registro,
+            )
+        return imp
     # ¿Ya hay una ND POSTERIOR a este 'DE' vivo? (doble-click o ND manual). Se
     # compara por id_transaccion (serial) contra el depósito vivo más reciente:
     # una ND más nueva que el 'DE' ⇒ ese depósito ya se compensó. Una ND más
@@ -1873,6 +1946,7 @@ def transicionar_stat(
                     fecha=fecha,
                     usuario=usuario,
                     registro=_comp_registro,
+                    stat_prev=stat_prev,
                 )
             # TMT 2026-07-20 (dueña): al pasar a 1 (protestado) se pregunta la
             # NUEVA fecha de cobro (hoy o futura). Se guarda en fechad (columna
@@ -6249,6 +6323,7 @@ def reversar(
             no_cheque=ch.get("no_cheque"),
             fecha=today_ec(),
             usuario=usuario,
+            stat_prev=stat_prev,
         )
 
         # TMT 2026-07-25 (dueña, copiar dBase MODIFICA.PRG): en un REBOTE REAL

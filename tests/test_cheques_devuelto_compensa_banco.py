@@ -266,3 +266,63 @@ def test_la_nd_de_otro_cheque_no_bloquea_la_nueva():
     assert "md.tipo = 'cheque_devuelto'" in bloque
     assert "md.origen_id <> %s" in bloque, "la ND del PROPIO cheque si bloquea"
     assert "'compensacion'->>'id_nd'" in bloque
+
+
+# ── el cheque del dBase, sin link a su depósito (GUG y ADI, 30/08/2026) ────
+#
+# TMT (Tamara): "no puede ser que devuelva y no haya ND". Un cheque del dBase
+# depositado en su epoca no tiene link a ningun 'DE' de PC — pero si HOY
+# rebota, el banco debita HOY. El flujo salia por `if not links` sin crear
+# nada: asi los libros quedaron $1.000 arriba con GUG y $1.894,29 con ADI.
+# Ahora, si el caller dice que el cheque VENIA de depositado (stat_prev),
+# la ND se crea igual contra Pichincha.
+
+
+def _compensar_sin_link(monkeypatch, *, stat_prev, ya_nd=False):
+    from modules.cheques import queries
+
+    rec = _Rec(tiene_link=False, ya_nd=ya_nd)
+    _apply(monkeypatch, rec)
+    registro: dict = {}
+    monto = queries.compensar_deposito_devuelto(
+        object(),
+        id_cheque=100192,
+        importe=1000.0,
+        codigo_cli="GUG",
+        no_cheque=None,
+        fecha=date(2026, 8, 30),
+        usuario="tmt",
+        registro=registro,
+        stat_prev=stat_prev,
+    )
+    return rec, registro, monto
+
+
+def test_sin_link_pero_venia_depositado_crea_la_nd(monkeypatch):
+    rec, registro, monto = _compensar_sin_link(monkeypatch, stat_prev="B")
+    assert monto == 1000.0
+    assert len(_nd_del_cheque(rec)) == 1
+    nd = _nd_del_cheque(rec)[0]
+    assert nd["no_banco"] == 10 and nd["numreferencia"] == 100192
+    assert len(_gs_del_protesto(rec)) == 1, "la comision del protesto tambien"
+    assert registro.get("sin_link_dbase") is True
+    assert not _tiene_delete_link(rec.executes), "no hay link que borrar"
+
+
+def test_sin_link_y_nunca_depositado_no_crea_nada(monkeypatch):
+    """Z→devuelto: la plata nunca entro al banco, no corresponde ND."""
+    rec, _registro, monto = _compensar_sin_link(monkeypatch, stat_prev="Z")
+    assert monto == 0.0 and rec.nds == []
+
+
+def test_sin_link_sin_stat_prev_es_el_comportamiento_viejo(monkeypatch):
+    """Callers que no dicen de donde venia (pantalla de arreglo masivo): no tocar."""
+    rec, _registro, monto = _compensar_sin_link(monkeypatch, stat_prev=None)
+    assert monto == 0.0 and rec.nds == []
+
+
+def test_sin_link_con_nd_libre_ya_cargada_no_duplica(monkeypatch):
+    """La ND tipeada a mano ANTES de marcar devuelto cuenta como cargada."""
+    rec, registro, monto = _compensar_sin_link(monkeypatch, stat_prev="B", ya_nd=True)
+    assert monto == 0.0 and rec.nds == []
+    assert registro.get("nd_ya_existia") is True
