@@ -2260,6 +2260,11 @@ def health_all():
     # retenciones y los mails. NO entra al `ok`: borrar cero proformas es el
     # caso normal, no una alarma.
     data13 = _purgar_proformas_cron()
+    # TMT 2026-08-30: espejo de la PRIMERA factura por cliente en Asinfo
+    # ("cliente desde" de la ficha). Mismo pase diario idempotente que los
+    # mails, y por lo mismo NO entra al `ok`: Metabase caído un día no es un
+    # problema contable.
+    data18 = _refrescar_primera_compra_asinfo_cron()
     return jsonify({
         "ok": (data1["ok"] and data2["ok"] and data3["ok"] and data4["ok"]
                and data6["ok"] and data7["ok"] and data9["ok"]
@@ -2283,6 +2288,7 @@ def health_all():
         "codigos_duplicados": data15,
         "competencia": data16,
         "devuelto_sin_nd": data17,
+        "primera_compra_asinfo": data18,
     })
 
 
@@ -2310,6 +2316,12 @@ def _refrescar_mails_asinfo_cron() -> dict:
     """Copia el catálogo de mails de Asinfo a la tabla espejo. Fail-soft."""
     from modules.clientes import mail_asinfo
     return mail_asinfo.refrescar_cron()
+
+
+def _refrescar_primera_compra_asinfo_cron() -> dict:
+    """Copia la primera factura por cliente de Asinfo al espejo. Fail-soft."""
+    from modules.clientes import primera_compra_asinfo
+    return primera_compra_asinfo.refrescar_cron()
 
 
 def _aplicar_retenciones_asinfo_cron(dias: int = 60) -> dict:

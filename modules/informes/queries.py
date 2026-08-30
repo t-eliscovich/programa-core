@@ -11776,3 +11776,87 @@ def factura_deshacer_cambio_stat(id_mov_doble: int, usuario: str = "web") -> dic
                       "stat_previo": prev["stat_actual"],
                       "stat_nuevo": prev["stat_destino"]})
     return prev
+
+
+def compras_resumen_cliente(codigo_cli: str) -> dict:
+    """Desde cuándo es cliente + su compra promedio (kg y $), para la ficha.
+
+    ⭐ TMT 2026-08-30 — Jaime (oficina): *"podemos adicionar como información
+    desde cuándo es cliente y qué monto promedio de compra tiene? en la opción
+    4V del dBase se podía ver el promedio de venta en kilos y dólares"*. Les
+    sirve como dato informativo y para emitir certificados. La 4V era
+    MODIFICA.PRG PROCEDURE VENTAS: kg e importe por mes de los últimos dos
+    años + totales anuales.
+
+    Qué suma: TODAS las facturas del cliente menos las anuladas (stat X) —
+    las notas de crédito y devoluciones vienen con signo negativo y NETEAN,
+    que es lo que uno quiere decir con "compra". No se excluye el backfill de
+    Asinfo: acá las tres fuentes (dbf-import, asinfo-backfill, asinfo-carga)
+    se COMPLEMENTAN por mes (medido 30/08/2026: los totales mensuales dan
+    ~2,3 M parejos, y sólo 2 numf chocan entre fuentes).
+
+    "Desde cuándo": la memoria más larga es el espejo de Asinfo (ago 2019);
+    las facturas locales arrancan en ene 2025. Se toma la más vieja.
+
+    El promedio mensual va sobre los últimos 12 meses — o sobre los meses que
+    el cliente lleva comprando, si es más nuevo que eso: dividir por 12 la
+    compra de un cliente de marzo lo haría parecer un cuarto de lo que es.
+    """
+    from modules.clientes import primera_compra_asinfo as _pca
+
+    _pca.asegurar_tabla()
+    cod = (codigo_cli or "").strip().upper()
+
+    anios = db.fetch_all(
+        """
+        SELECT EXTRACT(YEAR FROM fecha)::int AS anio,
+               COALESCE(SUM(kg), 0)          AS kg,
+               COALESCE(SUM(importe), 0)     AS importe
+          FROM scintela.factura
+         WHERE UPPER(codigo_cli) = %s
+           AND (stat IS NULL OR stat <> 'X')
+         GROUP BY 1
+         ORDER BY 1
+        """,
+        (cod,),
+    ) or []
+
+    fila = db.fetch_one(
+        """
+        SELECT MIN(f.fecha)                            AS primera_pc,
+               (SELECT pa.primera
+                  FROM scintela.cliente c
+                  LEFT JOIN scintela.cliente_primera_compra_asinfo pa
+                         ON pa.ruc10 = LEFT(regexp_replace(
+                                COALESCE(c.ruc, ''), '[^0-9]', '', 'g'), 10)
+                 WHERE UPPER(c.codigo_cli) = %s
+                 LIMIT 1)                              AS primera_asinfo,
+               COALESCE(SUM(f.kg)      FILTER (WHERE f.fecha >=
+                   CURRENT_DATE - INTERVAL '12 months'), 0) AS kg_12m,
+               COALESCE(SUM(f.importe) FILTER (WHERE f.fecha >=
+                   CURRENT_DATE - INTERVAL '12 months'), 0) AS importe_12m
+          FROM scintela.factura f
+         WHERE UPPER(f.codigo_cli) = %s
+           AND (f.stat IS NULL OR f.stat <> 'X')
+        """,
+        (cod, cod),
+    ) or {}
+
+    hoy = today_ec()
+    desde = _pca.cliente_desde(fila.get("primera_pc"),
+                               fila.get("primera_asinfo"))
+    meses = 12
+    if fila.get("primera_pc"):
+        meses = max(1, min(12, (hoy - fila["primera_pc"]).days // 30 + 1))
+    kg_12m = float(fila.get("kg_12m") or 0)
+    importe_12m = float(fila.get("importe_12m") or 0)
+    return {
+        "desde": desde,
+        "etiqueta_desde": _pca.etiqueta_desde(desde, hoy),
+        "kg_mes": kg_12m / meses,
+        "importe_mes": importe_12m / meses,
+        "kg_12m": kg_12m,
+        "importe_12m": importe_12m,
+        "anios": [a for a in anios
+                  if float(a["kg"] or 0) or float(a["importe"] or 0)],
+    }

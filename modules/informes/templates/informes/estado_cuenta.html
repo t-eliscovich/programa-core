@@ -394,6 +394,26 @@
           &nbsp;·&nbsp; <span class="ec-lbl">Stop:</span>
           {% if data.cliente.stop == 'S' %}<span class="ec-bloq">Bloqueado</span>
           {% else %}<span class="ec-ok">OK</span>{% endif %}</div>
+        {# TMT 2026-08-30 (Jaime, oficina): "desde cuándo es cliente y qué
+           monto promedio de compra tiene" — lo que en el dBase era la opción
+           4V (kg e importe por año + promedio). El promedio va sobre los
+           últimos 12 meses (o los meses que lleve comprando, si es más
+           nuevo). Las dos líneas van SIEMPRE, con "—" cuando no hay dato:
+           misma regla que el resto del bloque. #}
+        {% set _cr = compras_resumen or {} %}
+        <div><span class="ec-lbl">Cliente desde:</span>
+          {% if _cr.etiqueta_desde %}{{ _cr.etiqueta_desde }}
+          {% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        <div><span class="ec-lbl">Compra promedio:</span>
+          {% if _cr.kg_12m or _cr.importe_12m %}
+            {{ _cr.kg_mes | num_es(0) }} kg · $ {{ _cr.importe_mes | money_es }} por mes
+            <span class="ec-nota" title="Total de los últimos 12 meses: {{ _cr.kg_12m | num_es(0) }} kg · $ {{ _cr.importe_12m | money_es }}. Suma facturas menos notas de crédito y devoluciones.">(últimos 12 meses)</span>
+          {% else %}<span class="ec-vacio">—</span>{% endif %}</div>
+        {% if _cr.anios %}
+        <div class="ec-nota">Por año:
+          {% for a in _cr.anios %}{{ a.anio }}: {{ a.kg | num_es(0) }} kg · $ {{ a.importe | money_es }}{% if not loop.last %} &nbsp;|&nbsp; {% endif %}{% endfor %}
+        </div>
+        {% endif %}
       </div>
     </div>
 

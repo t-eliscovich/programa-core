@@ -3796,6 +3796,12 @@ def estado_cuenta(codigo_cli):
             lambda: __import__(
                 "modules.cheques.queries", fromlist=["neteos_activos_cliente"]
             ).neteos_activos_cliente(codigo_up), [])[0]),
+        # TMT 2026-08-30 (Jaime, oficina): "desde cuándo es cliente y qué
+        # monto promedio de compra tiene" — la 4V del dBase, ahora en la
+        # ficha. Best-effort: si la consulta falla, la ficha se abre igual
+        # sin esas dos líneas.
+        compras_resumen=(_safe(
+            lambda: queries.compras_resumen_cliente(codigo_up), {})[0] or {}),
     )
 
 
