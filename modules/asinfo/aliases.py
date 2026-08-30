@@ -147,9 +147,15 @@ def codigo_por_direccion(id_direccion) -> str | None:
             ) or []
             _suc_cache = {int(r["id_direccion"]): _norm(r["codigo_cli"])
                           for r in rows if r.get("codigo_cli")}
+            _suc_cache_ts = time.time()
         except Exception:
+            # TMT 2026-08-30 — el sello del TTL iba AFUERA del try: un hipo de
+            # la DB en el primer intento dejaba 5 min de mapa vacío, y las
+            # facturas cargadas en esa ventana se GRABABAN con el código de la
+            # matriz en vez del de la sucursal (AJO en vez de AJ2). El fracaso
+            # conserva el último mapa bueno y reintenta a los 30 s.
             _suc_cache = _suc_cache or {}
-        _suc_cache_ts = time.time()
+            _suc_cache_ts = time.time() - max(0, _CACHE_TTL_SECS - 30)
     return _suc_cache.get(idd)
 
 

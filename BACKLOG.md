@@ -384,6 +384,57 @@ medir el costo real de un sobrante contra el de un faltante.
 
 ---
 
+## Cachés que tratan un fracaso como dato (audit 30/08/2026)
+
+El 30/08 se arreglaron los cuatro peores (`_descubrir_detalle_fp`,
+`ingresos_fabricacion_mes`, `compras_locales_asinfo`, `codigo_por_direccion`).
+El resto del audit, ordenado — el patrón correcto ya existe en el repo:
+`fetch_dataset_estado` + `_cache_put(..., ok, ttl)` (fracaso vence a 30 s).
+
+### [M] quimicos_flujo asume que formulas_db devuelve None y devuelve []
+`modules/informes/quimicos_flujo.py:102/339/405` — `_lib/formulas_db.fetch_all`
+devuelve `[]` al fallar, así que los `if rows is None` son código muerto:
+con formulas caído se cachean 240 s de ceros (desglose químico, ajustes,
+físico de colorantes) y la columna QUÍM.$ del flujo sale en cero con un
+ajuste falso. El balance NO se toca (`_VQX_ULTIMO_BUENO` lo protege).
+
+### [M] El caché de la pantalla Flujo producción congela el contexto degradado
+`modules/informes/views.py:2956` — el guard mira `error`/`data` (Postgres)
+pero cachea también `inv_asinfo`/`mov_asinfo`/`prod_tej_asinfo`: con Asinfo o
+formulas caídos y Postgres sano, la pantalla queda 300 s con los ceros aunque
+las fuentes vuelvan. Sumar `disponible`/`_cache_ok` al guard.
+
+### [S] Dos pantallas de stock cachean el [] de un timeout
+`modules/asinfo/service.py` `stock_en_proceso` (~1085) y `stock_asinfo_lote`
+(~936): 300 s de "no hay nada" en Stock en proceso y Stock por lote (pantalla
+y CSV; el balance no — sus anclas ya usan `_estado`). La función de al lado
+(`stock_asinfo_lote_totales`) ya tiene el patrón bueno: copiarlo.
+
+### [S] El mapa de aliases cae al fallback hardcodeado por 5 min
+`modules/asinfo/aliases.py:~100` (`_refrescar`): ante un hipo de la DB queda
+el mapa de 3 aliases hardcodeados el TTL entero; los agregados por pantalla
+dejan de aplicarse. Mismo arreglo que `codigo_por_direccion` (ya hecho).
+
+### [S] Flags set-once que un fallo deja mal hasta reiniciar
+`modules/activos/queries.py:120` (`_HAS_ORDEN_MANUAL = False` para siempre —
+la de al lado, `_tiene_borrado`, ya lo hace bien) y los `_bootstrapped` de
+saldo_snapshot / papelera_pendientes / concepto_cobro / nota_usuario /
+mail_asinfo / primera_compra_asinfo / bancos/apertura: si el CREATE falla una
+vez, no se reintenta. Mover la bandera adentro del try.
+
+### [S] fetch_card no marca el estado del bridge
+`modules/_lib/metabase_client.py` — `fetch_card` no llama `_marcar()`: el que
+quiera cachear un card con `ultimo_fetch_ok()` va a leer un ok ajeno. Hoy no
+muerde (los usuarios de cards guardan con `if rows:`), pero es una trampa
+armada para el próximo.
+
+### [L] periodo_guard se apaga si el import falla al arrancar
+`periodo_guard.py:30-44` — con `_periodos_q = None` el guard de meses
+cerrados no bloquea nada el resto de la vida del proceso (salvo
+`PERIODO_GUARD_STRICT=1`). Determinístico, no transitorio, pero vale saberlo.
+
+---
+
 ## Proceso
 
 ### [S] Checks de drift en /admin/health/all

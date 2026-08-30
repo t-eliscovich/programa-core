@@ -3254,9 +3254,22 @@ def ingresos_fabricacion_mes(anio: int, mes: int, id_bodega: int = 52) -> dict:
         HAVING SUM(d.cantidad) > 0
          ORDER BY m.fecha
     """
+    # TMT 2026-08-30 — `fetch_dataset` pelado devuelve [] tanto para "Metabase
+    # caído" como para "no hubo IFT", y acá se cacheaba `disponible=True` con
+    # total 0 los 5 minutos completos: los tercerizados desaparecían de la
+    # pantalla de Tejeduría, INTELA absorbía el ingreso de bodega 52 entero y
+    # el barrido no creaba el pasivo del maquilero. El comentario de abajo
+    # prometía distinguir los dos casos; ahora el código lo hace de verdad.
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=5000)
+        rows, _ok_ift = metabase_client.fetch_dataset_estado(
+            2, sql, max_results=5000)
     except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(vacio)
+    if not _ok_ift:
+        # Fracaso ≠ dato: se cachea el vacío (disponible=False) con la
+        # ventana corta de 30 s, como todo lo demás.
+        _cache_put(_PROD_TEJ_CACHE, cache_key, dict(vacio), False,
+                   _PROD_TEJ_TTL_SECS)
         return dict(vacio)
     ofs = []
     agg: dict = {}
@@ -3286,10 +3299,10 @@ def ingresos_fabricacion_mes(anio: int, mes: int, id_bodega: int = 52) -> dict:
         a["kg"] = round(a["kg"], 2)
     # `disponible=True` aunque no haya filas: "Asinfo contestó y no hubo
     # ingresos" es distinto de "Asinfo no contestó" (el gotcha del caché del
-    # 29/07 — ver la skill).
+    # 29/07 — ver la skill). Distinguirlo de verdad es el `_ok_ift` de arriba.
     out = {"disponible": True, "anio": anio, "mes": mes,
            "ofs": ofs, "por_tejedor": por_tejedor, "total_kg": round(total, 2)}
-    _PROD_TEJ_CACHE[cache_key] = (now, out)
+    _cache_put(_PROD_TEJ_CACHE, cache_key, out, True, _PROD_TEJ_TTL_SECS)
     return out
 
 
@@ -3449,7 +3462,13 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
                   fp.descripcion
          ORDER BY fp.id_factura_proveedor DESC
     """
-    rows = metabase_client.fetch_dataset(2, sql, max_results=int(limite))
+    # TMT 2026-08-30 — mismo gotcha que ingresos_fabricacion_mes: un timeout
+    # dejaba [] cacheado 5 min como si "no hubiera locales". Con eso el
+    # promedio ponderado del hilado perdía las dos patas juntas (kg y US$),
+    # ningún guard saltaba, y el $/kg se recalculaba import-only revaluando
+    # todo el stock en silencio. El fracaso ahora vence a los 30 s.
+    rows, _ok_loc = metabase_client.fetch_dataset_estado(
+        2, sql, max_results=int(limite))
     out = []
     for r in rows:
         try:
@@ -3473,7 +3492,7 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
             })
         except (TypeError, ValueError):
             continue
-    _LOCALES_CACHE[cache_key] = (now, out)
+    _cache_put(_LOCALES_CACHE, cache_key, out, _ok_loc, _LOCALES_TTL_SECS)
     return out
 
 
