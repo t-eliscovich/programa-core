@@ -9488,7 +9488,15 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
     # (misma familia del bug utilidad 54k vs 179k). Meses pasados = as_of (no hay
     # stock Asinfo histórico; se lee de historia). [[coherencia_numeros_una_fuente]]
     _hoy_cierre = today_ec()
-    if anio == _hoy_cierre.year and mes == _hoy_cierre.month and _hoy_cierre >= fecha_snap:
+    # TMT 2026-08-31: ¿esta foto se está tomando EL MISMO día que se cierra el
+    # mes? Lo necesita también el paquete PDF de cierre (cierres_paquete.py,
+    # más abajo): esas pantallas (cartera, gastos, activos) son "hoy" -- sólo
+    # tienen sentido archivarlas cuando "hoy" todavía es el mes que cierra.
+    _es_live = (
+        anio == _hoy_cierre.year and mes == _hoy_cierre.month
+        and _hoy_cierre >= fecha_snap
+    )
+    if _es_live:
         bal = informe_balance()
     else:
         bal = informe_balance_as_of(fecha_snap)
@@ -9693,6 +9701,19 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         except Exception as _e:
             from modules._lib.silencios import avisar
             avisar(__name__, "_existe_cierre", _e)
+
+    # TMT 2026-08-31 -- best-effort: el paquete PDF de cierre (mismas
+    # pantallas que antes se archivaban a mano en un Word, ver
+    # `cierres_paquete.py`). SOLO en la rama LIVE -- ver `_es_live` arriba.
+    # Nunca puede tirar abajo la foto de historia: cualquier falla queda en
+    # el log, no en una excepción que suba.
+    if _es_live:
+        try:
+            from modules.informes.cierres_paquete import generar_y_guardar
+            generar_y_guardar(anio, mes, usuario=usuario)
+        except Exception as _e:  # noqa: BLE001
+            from modules._lib.silencios import avisar
+            avisar(__name__, "crear_snapshot_historia.paquete_cierre", _e)
 
     return {
         "aplicado": True,

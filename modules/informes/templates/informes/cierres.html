@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero, volver_a_resultados %}
+{% block title %}Cierres del mes{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Cierres del mes</strong>{% endblock %}
+
+{% block content %}
+{# TMT 2026-08-31: el reemplazo del Word que se armaba a mano en el dBase
+   pegando capturas de pantalla al cerrar el mes (ver FEBRERO.docx). Cada
+   fila se genera SOLA al tomar la foto de cierre -- acá sólo se listan y
+   se descargan. #}
+<div class="max-w-3xl">
+  <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
+    {{ page_hero('Cierres del mes', descripcion='El paquete PDF que se archiva al cerrar cada mes — Resultados, Ventas, Cartera, Deudas, Gastos, Flujo de producción, Activos y Anticipos, todo en un solo archivo.') }}
+    <div class="no-print">
+      {{ volver_a_resultados() }}
+    </div>
+  </div>
+
+  {% if error %}
+    <div class="mb-6 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="text-left px-4 py-2">Mes</th>
+          <th class="text-right px-4 py-2">Páginas</th>
+          <th class="text-right px-4 py-2">Tamaño</th>
+          <th class="text-left px-4 py-2">Generado</th>
+          <th class="px-4 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for f in filas %}
+          <tr>
+            <td class="px-4 py-2 capitalize">{{ f.mes_nombre }} {{ f.anio }}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ f.paginas }}/8</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ (f.tamano_bytes / 1024) | round(0, 'floor') | int }} KB</td>
+            <td class="px-4 py-2 text-slate-500">{{ f.generado_en.strftime('%d/%m/%Y %H:%M') if f.generado_en else '' }}</td>
+            <td class="px-4 py-2 text-right">
+              <a href="{{ url_for('informes.cierres_pdf', anio=f.anio, mes=f.mes) }}"
+                 class="text-sky-600 dark:text-sky-400 hover:underline">Descargar</a>
+            </td>
+          </tr>
+        {% else %}
+          {{ empty_row(5, 'Todavía no se generó ningún cierre.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

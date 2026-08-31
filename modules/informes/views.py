@@ -1927,6 +1927,45 @@ def deudas():
     )
 
 
+@informes_bp.route("/cierres")
+@requiere_login
+@requiere_permiso("informes.ver")
+def cierres():
+    """El archivo de paquetes PDF de cierre de mes -- el reemplazo del Word
+    que se armaba a mano en el dBase (ver `cierres_paquete.py`).
+
+    TMT 2026-08-31: *"quiero que lo hagas vos... hagámoslo para el cierre,
+    que sea parte del proceso"*. Cada fila se genera SOLA cuando se toma la
+    foto de cierre del mes (`crear_snapshot_historia`, rama LIVE) -- acá
+    sólo se listan y se descargan, no hay botón de "generar" (eso vive en
+    `/admin/regenerar-snapshot/`, que ya dispara el paquete de yapa).
+    """
+    from modules.informes import cierres_paquete
+
+    filas, error = _safe(cierres_paquete.listar, [])
+    return render_template("informes/cierres.html", filas=filas, error=error)
+
+
+@informes_bp.route("/cierres/<int:anio>/<int:mes>/pdf")
+@requiere_login
+@requiere_permiso("informes.ver")
+def cierres_pdf(anio: int, mes: int):
+    from modules.informes import cierres_paquete
+
+    pdf_bytes = cierres_paquete.obtener(anio, mes)
+    if not pdf_bytes:
+        abort(404)
+    nombre = f"Cierre {cierres_paquete.nombre_mes(mes)} {anio}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'attachment; filename="{nombre}"',
+            "Cache-Control": "no-store",
+        },
+    )
+
+
 @informes_bp.route("/_diag/stock")
 @requiere_login
 @requiere_permiso("informes.ver")
