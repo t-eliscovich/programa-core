@@ -106,6 +106,38 @@ def test_cierres_pdf_sin_permiso_404(app, fake_db):
 
 
 # ---------------------------------------------------------------------------
+# /informes/cierres/vista-previa -- arma el PDF de HOY, no lo guarda.
+# ---------------------------------------------------------------------------
+
+def test_vista_previa_devuelve_el_pdf_inline(app, fake_db, monkeypatch):
+    monkeypatch.setattr(cierres_paquete, "armar_pdf",
+                        lambda anio, mes: (b"%PDF-preview", 8))
+    c = _login(app, fake_db, ["informes.ver"])
+    r = c.get("/informes/cierres/vista-previa")
+    assert r.status_code == 200
+    assert r.data == b"%PDF-preview"
+    assert r.mimetype == "application/pdf"
+    assert "inline" in r.headers["Content-Disposition"]
+    assert r.headers["X-Cierre-Paginas"] == "8/8"
+
+
+def test_vista_previa_sin_permiso_404(app, fake_db):
+    c = _login(app, fake_db, ["stock.ver"])
+    r = c.get("/informes/cierres/vista-previa")
+    assert r.status_code == 404
+
+
+def test_vista_previa_si_falla_redirige_con_flash(app, fake_db, monkeypatch):
+    def _revienta(anio, mes):
+        raise RuntimeError("el servidor no tiene navegador para imprimir")
+    monkeypatch.setattr(cierres_paquete, "armar_pdf", _revienta)
+    c = _login(app, fake_db, ["informes.ver"])
+    r = c.get("/informes/cierres/vista-previa", follow_redirects=True)
+    assert r.status_code == 200  # cayó en /informes/cierres
+    assert "no se pudo armar la vista previa" in r.get_data(as_text=True).lower()
+
+
+# ---------------------------------------------------------------------------
 # generar_y_guardar — nunca revienta
 # ---------------------------------------------------------------------------
 

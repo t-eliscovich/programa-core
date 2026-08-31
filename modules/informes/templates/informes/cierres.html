@@ -11,7 +11,11 @@
 <div class="max-w-3xl">
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Cierres del mes', descripcion='El paquete PDF que se archiva al cerrar cada mes — Resultados, Ventas, Cartera, Deudas, Gastos, Flujo de producción, Activos y Anticipos, todo en un solo archivo.') }}
-    <div class="no-print">
+    <div class="no-print flex items-center gap-2">
+      <a href="{{ url_for('informes.cierres_vista_previa') }}" target="_blank"
+         class="text-sm px-3 py-1.5 rounded border border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20">
+        Vista previa (con los datos de hoy)
+      </a>
       {{ volver_a_resultados() }}
     </div>
   </div>

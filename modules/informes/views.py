@@ -1935,15 +1935,45 @@ def cierres():
     que se armaba a mano en el dBase (ver `cierres_paquete.py`).
 
     TMT 2026-08-31: *"quiero que lo hagas vos... hagámoslo para el cierre,
-    que sea parte del proceso"*. Cada fila se genera SOLA cuando se toma la
-    foto de cierre del mes (`crear_snapshot_historia`, rama LIVE) -- acá
-    sólo se listan y se descargan, no hay botón de "generar" (eso vive en
-    `/admin/regenerar-snapshot/`, que ya dispara el paquete de yapa).
+    que sea parte del proceso"*. Cada fila del archivo se genera SOLA cuando
+    se toma la foto de cierre del mes (`crear_snapshot_historia`, rama
+    LIVE). El botón "Vista previa" de acá abajo es otra cosa -- arma el PDF
+    con el estado de HOY y no lo guarda; sirve para ver cómo queda o probar
+    un cambio de diseño cualquier día del mes, sin esperar a un cierre.
     """
     from modules.informes import cierres_paquete
 
     filas, error = _safe(cierres_paquete.listar, [])
     return render_template("informes/cierres.html", filas=filas, error=error)
+
+
+@informes_bp.route("/cierres/vista-previa")
+@requiere_login
+@requiere_permiso("informes.ver")
+def cierres_vista_previa():
+    """El PDF del paquete con el estado de HOY -- no se guarda en el
+    archivo (`scintela.cierre_paquete` queda intacto). Para verlo cualquier
+    día, no sólo al cerrar el mes: probar el diseño, o mostrarlo antes de
+    que exista un cierre real."""
+    from modules.informes import cierres_paquete
+
+    hoy = today_ec()
+    try:
+        pdf_bytes, paginas = cierres_paquete.armar_pdf(hoy.year, hoy.month)
+    except Exception as e:  # noqa: BLE001
+        flash(f"No se pudo armar la vista previa: {e}", "error")
+        return redirect(url_for("informes.cierres"))
+
+    nombre = f"Vista previa cierre {hoy.strftime('%d-%m-%Y')}.pdf"
+    return Response(
+        pdf_bytes,
+        mimetype="application/pdf",
+        headers={
+            "Content-Disposition": f'inline; filename="{nombre}"',
+            "Cache-Control": "no-store",
+            "X-Cierre-Paginas": f"{paginas}/{len(cierres_paquete.PAGINAS)}",
+        },
+    )
 
 
 @informes_bp.route("/cierres/<int:anio>/<int:mes>/pdf")
