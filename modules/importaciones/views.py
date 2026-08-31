@@ -17,7 +17,7 @@ from flask import (
     url_for,
 )
 
-from auth import requiere_login, requiere_permiso
+from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
@@ -308,9 +308,86 @@ def lista():
         anio=anio,
         anios_disponibles=anios_disponibles,
         colapsar=colapsar,
+        puede_cargar_codigo=tiene_permiso("compras.editar"),
         hoy=today_ec().isoformat(),
         error=error,
     )
+
+
+@importaciones_bp.route("/importaciones/codigo", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def guardar_codigo_importacion():
+    """Cargar A MANO el código del programa de una importación sin código.
+
+    TMT 2026-08-31 (dueña, MTG3756): la Nota de Asinfo venía sin "( MD 1 )" y
+    sin eso nada cruza — ni el anticipo cargado, ni los kg, ni la campanita se
+    resuelve. Editar la Nota allá no siempre está a mano; desde acá se guarda
+    el código (mig 0237) y el programa se lo appendea a la nota al leerla.
+
+    Si la factura vino PARTIDA (---1/---2 con la misma nota base), el código
+    se guarda para TODAS las partidas sin código de una: es la misma factura
+    del proveedor y en Asinfo compartirían el mismo código.
+    """
+    import re as _re
+
+    import db as _db
+
+    im = (request.form.get("im_numero") or "").strip()
+    crudo = (request.form.get("codigo") or "").strip().upper()
+    volver = request.referrer or url_for("importaciones.lista")
+    m = _re.match(r"^([A-Z]{2,3})\s*(\d+(?:-\d+)?)$", crudo)
+    if not im or not m:
+        flash("El código va como en la Nota: letras y número, ej. MD 1.",
+              "error")
+        return redirect(volver)
+    prov, numero = m.group(1), m.group(2)
+    codigo = f"{prov} {numero}"
+    if not _db.fetch_one(
+            "SELECT 1 AS ok FROM scintela.proveedor WHERE UPPER(codigo_prov) = %s",
+            (prov,)):
+        flash(f"No existe el proveedor {prov} en el programa.", "error")
+        return redirect(volver)
+
+    # Las partidas hermanas (misma nota base, también sin código) van juntas.
+    ims = [im]
+    try:
+        from concepto_parser import parse_nota_importacion
+        from modules.asinfo import service as _asvc
+
+        from . import service as _svc
+
+        filas = _asvc.importaciones_asinfo(limite=400)
+        base = next((_svc._nota_base(r.get("nota")) for r in filas
+                     if str(r.get("im_numero") or "").strip() == im), "")
+        if base:
+            for r in filas:
+                otro = str(r.get("im_numero") or "").strip()
+                if (otro and otro != im
+                        and _svc._nota_base(r.get("nota")) == base
+                        and not parse_nota_importacion(r.get("nota")).get("prov")):
+                    ims.append(otro)
+    except Exception:  # noqa: BLE001 -- sin hermanas, se guarda la elegida
+        pass
+
+    usuario = (g.user or {}).get("username", "web")
+    for _im in ims:
+        _db.execute(
+            """
+            INSERT INTO scintela.importacion_codigo (im_numero, codigo, usuario_crea)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (im_numero)
+            DO UPDATE SET codigo = EXCLUDED.codigo,
+                          usuario_crea = EXCLUDED.usuario_crea
+            """,
+            (_im, codigo, usuario),
+        )
+    if len(ims) > 1:
+        flash(f"Listo: {codigo} quedó en las {len(ims)} partidas de la factura.",
+              "ok")
+    else:
+        flash(f"Listo: {im} queda con el código {codigo}.", "ok")
+    return redirect(volver)
 
 
 # ---------------------------------------------------------------------------

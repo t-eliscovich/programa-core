@@ -725,8 +725,9 @@ def revisar_si_toca() -> dict:
                   "¿Qué compra es?")
         detalle = (
             "Sin el código (tipo AC 36) no cruza con ninguna compra ni "
-            "anticipo: los kilos ya están en el stock sin su plata. Ponerle "
-            "el código a la Nota en Asinfo y cargar la compra."
+            "anticipo: los kilos ya están en el stock sin su plata. Cargale "
+            "el código en la columna Código de la pantalla (o ponerlo en la "
+            "Nota en Asinfo), y cargar la compra."
         )
         if c.get("proveedor"):
             detalle = f"Proveedor {c['proveedor']}. " + detalle

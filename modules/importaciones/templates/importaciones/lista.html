@@ -249,7 +249,22 @@
             </td>
             <td class="fecha text-slate-500">{{ r.fecha or '—' }}</td>
             <td class="font-mono" title="{{ r.proveedor }}">{{ r.prov or '—' }}</td>
-            <td>{% if r.codigo %}<span class="code">{{ r.codigo }}</span>{% else %}<span class="text-slate-300">—</span>{% endif %}</td>
+            <td>
+              {% if r.codigo %}<span class="code">{{ r.codigo }}</span>
+              {% elif r.origen == 'importacion' and r.im_numero and puede_cargar_codigo %}
+                {# TMT 2026-08-31 (dueña, MTG3756): la Nota vino sin código y
+                   sin él nada cruza. Se carga acá y el programa lo appendea a
+                   la nota al leerla — vale para todas las partidas de la
+                   misma factura. #}
+                <form method="post" action="/importaciones/codigo" style="display:flex;gap:4px;align-items:center">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <input type="hidden" name="im_numero" value="{{ r.im_numero }}">
+                  <input name="codigo" placeholder="MD 1" style="width:4.5rem;border:1px solid #cbd5e1;border-radius:4px;padding:1px 4px;font-size:12px"
+                         title="La Nota de Asinfo no trae el código del programa. Cargalo acá (ej. MD 1) y la importación cruza con su compra o anticipo.">
+                  <button class="text-xs" style="text-decoration:underline">OK</button>
+                </form>
+              {% else %}<span class="text-slate-300">—</span>{% endif %}
+            </td>
             <td class="nota">{{ r.nota or '—' }}</td>
             <td class="num">
               {% if r.kg_recibidos is not none and r.kg_recibidos %}{{ r.kg_recibidos | num_es(0) }}

@@ -1914,6 +1914,57 @@ _IMPORT_TTL_SECS = 300  # 5 minutos
 _IMPORT_CACHE: dict = {}
 
 
+def _codigos_manuales() -> dict[str, str]:
+    """{im_numero: "MD 1"} — códigos cargados A MANO desde /importaciones.
+
+    TMT 2026-08-31 (dueña, MTG3756): cuando la Nota de Asinfo viene sin el
+    código del programa, se puede cargar desde la pantalla (mig 0237) y acá
+    se le appendea a la nota, así TODO lo que parsea notas (cruce de
+    anticipos, kg, vigías, la resolución de la campanita) funciona igual que
+    si el proveedor lo hubiera escrito. Fail-soft: {} (tabla ausente o DB
+    caída → se ve lo de siempre).
+    """
+    try:
+        import db as _db
+        rows = _db.fetch_all(
+            "SELECT im_numero, codigo FROM scintela.importacion_codigo") or []
+        return {
+            str(r["im_numero"]).strip(): str(r["codigo"]).strip().upper()
+            for r in rows if r.get("codigo")
+        }
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _con_codigo_manual(rows: list[dict]) -> list[dict]:
+    """Copias de `rows` con el código manual appendeado a la nota.
+
+    Copias a propósito: la lista cacheada no se toca (si no, cada llamada
+    volvería a appendear y la nota crecería sin fin).
+    """
+    manual = _codigos_manuales()
+    if not manual:
+        return list(rows or [])
+    try:
+        from concepto_parser import parse_nota_importacion as _parse
+    except Exception:  # noqa: BLE001
+        return list(rows or [])
+    out = []
+    for r in rows or []:
+        cod = manual.get(str(r.get("im_numero") or "").strip())
+        nota = str(r.get("nota") or "")
+        # Si la Nota YA trae su propio código, manda Asinfo (es la fuente):
+        # el cargado a mano se ignora — sin este guard, arreglar la Nota allá
+        # dejaría DOS códigos en la misma nota y el parser podría agarrar
+        # cualquiera de los dos. Dueña 31/08: "si está bien desde Asinfo, se
+        # matchea solo".
+        if cod and not _parse(nota).get("prov"):
+            r = dict(r)
+            r["nota"] = f"{nota.strip()} ( {cod} )".strip()
+        out.append(r)
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Kg por importación (detalle de la factura proveedor)
 # ---------------------------------------------------------------------------
@@ -2187,7 +2238,7 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
     now = _time.time()
     cached = _IMPORT_CACHE.get(cache_key)
     if cached and (now - cached[0]) < _IMPORT_TTL_SECS:
-        return cached[1]
+        return _con_codigo_manual(cached[1])
 
     # La "Fecha Recepción" real es la del documento de recepción de mercadería
     # (recepcion_proveedor.fecha, doc BOD-…), NO fp.fecha_recepcion (siempre NULL).
@@ -2233,7 +2284,7 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
         except (TypeError, ValueError):
             continue
     _cache_put(_IMPORT_CACHE, cache_key, out, _ok_imp, _IMPORT_TTL_SECS)
-    return out
+    return _con_codigo_manual(out)
 
 
 def hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> float:
