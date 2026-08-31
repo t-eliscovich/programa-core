@@ -26,6 +26,16 @@
         <strong class="text-red-700 dark:text-red-300">{{ res.errores_apply_count }} dieron error</strong> — recargá la pantalla para reintentarlas.
       {% endif %}
     </div>
+    {% if res.errores_apply %}
+    <div class="bg-white dark:bg-slate-900 border border-red-300 dark:border-slate-700 rounded-lg px-4 py-3 text-sm mb-5">
+      <div class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">Qué dijeron los errores</div>
+      <ul class="space-y-1 text-[13px] text-slate-600 dark:text-slate-300">
+        {% for e in res.errores_apply %}
+        <li><span class="font-mono">{{ e.ai_numero }}</span> — {{ e.error }}</li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   {% endif %}
 
   <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-5">

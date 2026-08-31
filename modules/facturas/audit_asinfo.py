@@ -264,6 +264,59 @@ def asociar(id_factura: int, numero_completo: str, usuario: str = "web") -> int:
     return res
 
 
+def absorber_copia_backfill(id_copia: int, usuario: str = "web") -> dict:
+    """Elimina la COPIA sin plata que dejó el backfill viejo, para liberar su número.
+
+    TMT 2026-08-30/31 (dueña, ok explícito): la carga vieja dejó la misma
+    factura dos veces — la de verdad (dbf-import, con el saldo) sin número, y
+    una copia del backfill (usuario_crea='asinfo-backfill', stat 'T') con el
+    número puesto. La copia dice "abonada", pero ese abono es FICTICIO: de las
+    163 copias medidas, ninguna tiene un cheque aplicado atrás. Por eso acá el
+    abono NO frena (a diferencia de borrar_carga_erronea) — los frenos son los
+    que separan una copia de una factura de verdad:
+
+      · usuario_crea = 'asinfo-backfill' y stat = 'T' (se re-verifica acá)
+      · sin cheques aplicados (chequesxfact)
+      · sin retenciones (codigo_cli + numf)
+      · sin movimientos en mov_doble
+
+    Cualquier cosa que no cumpla, levanta ValueError y NO se toca.
+    """
+    fila = db.fetch_one(
+        "SELECT id_factura, numf, numf_completo, codigo_cli, stat, usuario_crea "
+        "  FROM scintela.factura WHERE id_factura = %s",
+        (id_copia,))
+    if not fila:
+        raise ValueError("La copia no existe.")
+    if (fila.get("usuario_crea") or "") != "asinfo-backfill"             or (fila.get("stat") or "") != "T":
+        raise ValueError("No es una copia del backfill (stat "
+                         f"{fila.get('stat') or '—'}, carga "
+                         f"{fila.get('usuario_crea') or '—'}).")
+    cheq = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.chequesxfact WHERE id_fact = %s",
+        (id_copia,))
+    if cheq and int(cheq["n"]) > 0:
+        raise ValueError("La copia tiene cheques aplicados: no se toca.")
+    ret = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.retencion "
+        " WHERE codigo_cli = %s AND numf = %s",
+        (fila["codigo_cli"], fila["numf"]))
+    if ret and int(ret["n"]) > 0:
+        raise ValueError("La copia tiene retenciones: no se toca.")
+    mov = db.fetch_one(
+        "SELECT COUNT(*) AS n FROM scintela.mov_doble "
+        " WHERE (origen_table = 'factura' AND origen_id = %s) "
+        "    OR (destino_table = 'factura' AND destino_id = %s)",
+        (id_copia, id_copia))
+    if mov and int(mov["n"]) > 0:
+        raise ValueError("La copia tiene movimientos: no se toca.")
+
+    db.execute("DELETE FROM scintela.factura WHERE id_factura = %s", (id_copia,))
+    _LOG.info("absorber copia backfill id_factura=%s (%s) usuario=%s",
+              id_copia, fila.get("numf_completo"), usuario)
+    return {"id_factura": id_copia, "numf_completo": fila.get("numf_completo")}
+
+
 def asociar_batch(pares: list[tuple[int, str]], usuario: str = "web") -> dict:
     """Bulk: actualiza numf_completo y numf para muchos pares (id_factura, numero_completo).
 

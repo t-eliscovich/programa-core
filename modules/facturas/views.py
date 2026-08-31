@@ -3480,6 +3480,8 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
 
     aplicados: list[dict] = []
     con_copia: list[dict] = []
+    pendientes_directo: list[tuple] = []
+    pendientes_copia: list[tuple] = []
     saltadas_sin_candidatos: list[dict] = []
     saltadas_score_alto: list[dict] = []
     errores_apply: list[dict] = []
@@ -3550,31 +3552,7 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
                                f"carga {dueno.get('usuario_crea') or '—'})"),
                 })
                 continue
-            if apply:
-                try:
-                    if es_copia:
-                        # Absorber la copia: los frenos de verdad (abono 0,
-                        # sin cheques, sin retenciones, sin movimientos) los
-                        # pone borrar_carga_erronea, que levanta si no se
-                        # cumplen — y el caso queda en errores, no borrado.
-                        queries.borrar_carga_erronea(
-                            int(dueno["id_factura"]), usuario="web")
-                    audit_asinfo.asociar(
-                        pc["id_factura"],
-                        mejor["ai_numero"],
-                        usuario="web",
-                    )
-                except Exception as _e:
-                    errores_apply.append({
-                        "id_factura": pc["id_factura"],
-                        "ai_numero": mejor.get("ai_numero"),
-                        "error": f"{type(_e).__name__}: {_e}",
-                    })
-                    # Si más del 5% falla, parar para no spamear.
-                    if len(errores_apply) > max(20, int(0.05 * len(huerfanas))):
-                        break
-                    continue
-            (con_copia if es_copia else aplicados).append({
+            dato = {
                 "id_factura": pc["id_factura"],
                 "fecha": pc.get("fecha"),
                 "codigo_cli": pc.get("codigo_cli"),
@@ -3583,7 +3561,9 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
                 "ai_numero": mejor["ai_numero"],
                 "ai_tipo": mejor["ai_tipo"],
                 "score": score,
-            })
+            }
+            (pendientes_copia if es_copia else pendientes_directo).append(
+                (pc, mejor, dueno, dato))
         else:
             saltadas_score_alto.append({
                 "id_factura": pc["id_factura"],
@@ -3599,6 +3579,45 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
                 "mejor_ai_usd": mejor.get("ai_usd"),
                 "mejor_score": score,
             })
+
+    if apply:
+        # ⭐ Las limpias van PRIMERO y las copias después: la vuelta del
+        # 31/08 dio "0 emparejadas, 24 errores" porque el freno de errores
+        # cortaba el barrido entero cuando las primeras eran copias que el
+        # absorbedor rechazaba — y las que no dependían de nada quedaban
+        # sin su número igual.
+        tope_err = max(20, int(0.05 * len(huerfanas)))
+        for pc, mejor, dueno, dato in pendientes_directo:
+            if len(errores_apply) > tope_err:
+                break
+            try:
+                audit_asinfo.asociar(
+                    pc["id_factura"], mejor["ai_numero"], usuario="web")
+                aplicados.append(dato)
+            except Exception as _e:
+                errores_apply.append({
+                    "id_factura": pc["id_factura"],
+                    "ai_numero": mejor.get("ai_numero"),
+                    "error": f"{type(_e).__name__}: {_e}",
+                })
+        for pc, mejor, dueno, dato in pendientes_copia:
+            if len(errores_apply) > tope_err:
+                break
+            try:
+                audit_asinfo.absorber_copia_backfill(
+                    int(dueno["id_factura"]), usuario="web")
+                audit_asinfo.asociar(
+                    pc["id_factura"], mejor["ai_numero"], usuario="web")
+                con_copia.append(dato)
+            except Exception as _e:
+                errores_apply.append({
+                    "id_factura": pc["id_factura"],
+                    "ai_numero": mejor.get("ai_numero"),
+                    "error": f"{type(_e).__name__}: {_e}",
+                })
+    else:
+        aplicados = [d[3] for d in pendientes_directo]
+        con_copia = [d[3] for d in pendientes_copia]
 
     if apply:
         # Invalidar cache Asinfo para que el próximo render de /facturas

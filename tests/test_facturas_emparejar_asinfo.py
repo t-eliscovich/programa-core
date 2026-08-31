@@ -12,6 +12,8 @@ from __future__ import annotations
 from datetime import date
 from unittest.mock import patch
 
+import pytest
+
 from modules.facturas import audit_asinfo
 
 # --- el filtro "solo con saldo" ---------------------------------------------
@@ -176,10 +178,9 @@ def test_la_copia_fantasma_se_absorbe(app, monkeypatch):
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
-    from modules.facturas import queries as fqueries
     with patch.object(audit_asinfo, "auditar_huerfanas",
                       return_value=[_HUERFANA]), \
-         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "absorber_copia_backfill") as borrar, \
          patch.object(audit_asinfo, "asociar") as asoc:
         r = app.test_client().post("/facturas/emparejar-asinfo")
     assert r.status_code == 200
@@ -195,10 +196,9 @@ def test_la_copia_se_muestra_antes_de_tocarla(app, monkeypatch):
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
-    from modules.facturas import queries as fqueries
     with patch.object(audit_asinfo, "auditar_huerfanas",
                       return_value=[_HUERFANA]), \
-         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "absorber_copia_backfill") as borrar, \
          patch.object(audit_asinfo, "asociar") as asoc:
         r = app.test_client().get("/facturas/emparejar-asinfo")
     borrar.assert_not_called()
@@ -217,10 +217,9 @@ def test_el_dueno_de_verdad_no_se_pisa(app, monkeypatch):
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
-    from modules.facturas import queries as fqueries
     with patch.object(audit_asinfo, "auditar_huerfanas",
                       return_value=[_HUERFANA]), \
-         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "absorber_copia_backfill") as borrar, \
          patch.object(audit_asinfo, "asociar") as asoc:
         r = app.test_client().post("/facturas/emparejar-asinfo")
     borrar.assert_not_called()
@@ -236,12 +235,112 @@ def test_la_copia_con_plata_queda_en_errores(app, monkeypatch):
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
-    from modules.facturas import queries as fqueries
     with patch.object(audit_asinfo, "auditar_huerfanas",
                       return_value=[_HUERFANA]), \
-         patch.object(fqueries, "borrar_carga_erronea",
-                      side_effect=ValueError("La factura ya tiene abonos cargados.")), \
+         patch.object(audit_asinfo, "absorber_copia_backfill",
+                      side_effect=ValueError("La copia tiene cheques aplicados: no se toca.")), \
          patch.object(audit_asinfo, "asociar") as asoc:
         r = app.test_client().post("/facturas/emparejar-asinfo")
     asoc.assert_not_called()
-    assert "dieron error" in r.get_data(as_text=True)
+    html = r.get_data(as_text=True)
+    assert "dieron error" in html
+    assert "no se toca" in html          # el detalle del error se VE
+
+
+def test_las_limpias_se_aplican_aunque_las_copias_fallen(app, monkeypatch):
+    """La vuelta del 31/08: '0 emparejadas, 24 errores' — el freno cortaba
+    todo. Las que no dependen de nada van primero y quedan escritas."""
+    _login(app)
+    limpia = {
+        "pc_factura": dict(_HUERFANA["pc_factura"], id_factura=777),
+        "candidatos": [dict(_HUERFANA["candidatos"][0],
+                            ai_numero="001-099-000900001")],
+        "mejor_score": 0.01,
+    }
+    dueno = dict(_COPIA)
+    import modules.facturas.views as fviews
+    monkeypatch.setattr(fviews.db, "fetch_all", lambda *a, **k: [dueno])
+    import db
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"viejas": 0, "con_saldo": 2})
+    with patch.object(audit_asinfo, "auditar_huerfanas",
+                      return_value=[_HUERFANA, limpia]), \
+         patch.object(audit_asinfo, "absorber_copia_backfill",
+                      side_effect=ValueError("no se toca")), \
+         patch.object(audit_asinfo, "asociar") as asoc:
+        r = app.test_client().post("/facturas/emparejar-asinfo")
+    # La limpia (777) se asoció aunque la copia falló.
+    asoc.assert_called_once_with(777, "001-099-000900001", usuario="web")
+    html = r.get_data(as_text=True)
+    assert "se emparejaron" in html and "<strong>1</strong>" in html
+
+
+# --- los frenos del absorbedor, de cerca ------------------------------------
+
+class _FakeDBCopia:
+    """La copia y sus alrededores, configurable por test."""
+
+    def __init__(self, fila, cheques=0, retenciones=0, movs=0):
+        self.fila, self.cheques = fila, cheques
+        self.retenciones, self.movs = retenciones, movs
+        self.borradas = []
+
+    def fetch_one(self, sql, params=None, conn=None):
+        s = " ".join(sql.split()).lower()
+        if "from scintela.factura where id_factura" in s:
+            return dict(self.fila) if self.fila else None
+        if "chequesxfact" in s:
+            return {"n": self.cheques}
+        if "retencion" in s:
+            return {"n": self.retenciones}
+        if "mov_doble" in s:
+            return {"n": self.movs}
+        return None
+
+    def execute(self, sql, params=None, conn=None):
+        assert "delete from scintela.factura" in " ".join(sql.split()).lower()
+        self.borradas.append(params[0])
+        return 1
+
+    def apply_to(self, monkeypatch):
+        import db
+        monkeypatch.setattr(db, "fetch_one", self.fetch_one)
+        monkeypatch.setattr(db, "execute", self.execute)
+
+
+_FILA_COPIA = {"id_factura": 31260, "numf": 172013,
+               "numf_completo": "001-099-000172013", "codigo_cli": "NGU",
+               "stat": "T", "usuario_crea": "asinfo-backfill"}
+
+
+def test_el_absorbedor_borra_la_copia_limpia(monkeypatch):
+    fake = _FakeDBCopia(_FILA_COPIA)
+    fake.apply_to(monkeypatch)
+    res = audit_asinfo.absorber_copia_backfill(31260)
+    assert fake.borradas == [31260]
+    assert res["numf_completo"] == "001-099-000172013"
+
+
+@pytest.mark.parametrize("cambio, texto", [
+    ({"stat": "Z"}, "No es una copia del backfill"),
+    ({"usuario_crea": "dbf-import"}, "No es una copia del backfill"),
+])
+def test_el_absorbedor_no_toca_lo_que_no_es_copia(monkeypatch, cambio, texto):
+    fake = _FakeDBCopia(dict(_FILA_COPIA, **cambio))
+    fake.apply_to(monkeypatch)
+    with pytest.raises(ValueError, match=texto):
+        audit_asinfo.absorber_copia_backfill(31260)
+    assert fake.borradas == []
+
+
+@pytest.mark.parametrize("kwargs, texto", [
+    ({"cheques": 1}, "cheques aplicados"),
+    ({"retenciones": 1}, "retenciones"),
+    ({"movs": 2}, "movimientos"),
+])
+def test_el_absorbedor_frena_si_la_copia_tiene_algo(monkeypatch, kwargs, texto):
+    fake = _FakeDBCopia(_FILA_COPIA, **kwargs)
+    fake.apply_to(monkeypatch)
+    with pytest.raises(ValueError, match=texto):
+        audit_asinfo.absorber_copia_backfill(31260)
+    assert fake.borradas == []
