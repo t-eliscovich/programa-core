@@ -93,6 +93,11 @@
   .pd .lst.tinto{color:#1d4ed8}
   .pd td.telahead{text-align:left;padding-left:32px;font-size:10.5px;font-weight:700;
       color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+  .pd .fet{display:inline-flex;gap:6px}
+  .pd .fet button{font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid #e2e8f0;
+      color:#475569;background:#fff;cursor:pointer}
+  .pd .fet button:hover{border-color:#94a3b8}
+  .pd .fet button.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
@@ -287,12 +292,29 @@
     <p class="nota">Un renglón por pedido, con su vendedor tal como lo tiene Asinfo.
       Abrí un pedido para ver sus telas. <b>Enviar memo</b> le manda el pedido completo
       a la fábrica (pestaña Memos del programa de fórmulas); ahí lo toman y pasa a «en proceso».</p>
+    {# Filtro (dueña 31/08: "me falta poder filtrar en esta página"): por
+       texto —pedido, cliente o vendedor— y por etapa. Todo del lado del
+       navegador: las filas ya están en la página. #}
+    <div class="buscar no-print">
+      <input id="fped" type="search" placeholder="Filtrar pedido, cliente o vendedor…" autocomplete="off">
+      <span class="fet" id="fet">
+        <button type="button" class="on" data-et="">Todos</button>
+        <button type="button" data-et="sinmemo">Sin memo</button>
+        <button type="button" data-et="enviado">Enviado</button>
+        <button type="button" data-et="en_tintura">En tintura</button>
+        <button type="button" data-et="terminado">Terminado</button>
+      </span>
+      <span class="muted" id="fpcount"></span>
+    </div>
     <table>
       <colgroup><col style="width:14%"><col style="width:11%"><col style="width:10%"><col style="width:16%"><col style="width:19%"><col style="width:30%"></colgroup>
       <thead><tr><th>Pedido</th><th>Desde</th><th>Cliente</th><th>Vendedor</th><th>Pedido</th><th>Memo</th></tr></thead>
       <tbody>
         {% for p in pedidos_lista %}
-          <tr>
+          {% set et0 = etapas.get(p.numero) %}
+          <tr class="pedrow" data-num="{{ p.numero }}"
+              data-k="{{ (p.numero ~ ' ' ~ p.codigo_cliente ~ ' ' ~ p.cliente ~ ' ' ~ p.dueno.codigo ~ ' ' ~ p.dueno.nombre)|lower }}"
+              data-et="{{ et0.pedido if et0 else 'sinmemo' }}">
             <td class="cod">
               <button type="button" class="abrir" aria-expanded="false" data-fila="m-{{ p.numero }}">
                 <span class="chev" aria-hidden="true"></span><span class="npd" style="color:#0f172a">{{ p.numero }}</span>
@@ -425,6 +447,37 @@
         });
         var fc = document.getElementById('fcount');
         if (fc) { fc.textContent = q ? (n + ' colores') : ''; }
+      });
+    }
+    // Filtro del corte Pedido: texto + etapa. Esconde la fila del pedido y
+    // TODAS sus hijas desplegadas.
+    var fped = document.getElementById('fped');
+    var fet = document.getElementById('fet');
+    if (fped && fet) {
+      var etActiva = '';
+      function filtrarPedidos() {
+        var q = fped.value.trim().toLowerCase(), n = 0;
+        document.querySelectorAll('.pd tr.pedrow').forEach(function (tr) {
+          var okTexto = !q || (tr.dataset.k || '').indexOf(q) >= 0;
+          var okEt = !etActiva || tr.dataset.et === etActiva;
+          var ver = okTexto && okEt;
+          tr.style.display = ver ? '' : 'none';
+          if (ver) { n++; }
+          document.querySelectorAll('.pd [data-grupo="m-' + tr.dataset.num + '"]').forEach(function (h) {
+            if (!ver) { h.style.display = 'none'; h.classList.remove('open'); }
+            else { h.style.display = ''; }
+          });
+        });
+        var fc = document.getElementById('fpcount');
+        if (fc) { fc.textContent = (q || etActiva) ? (n + ' pedidos') : ''; }
+      }
+      fped.addEventListener('input', filtrarPedidos);
+      fet.querySelectorAll('button').forEach(function (b) {
+        b.addEventListener('click', function () {
+          etActiva = b.dataset.et;
+          fet.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
+          filtrarPedidos();
+        });
       });
     }
     // Flechita de una fila: despliega su detalle (clientes / pedidos), sin recargar.
