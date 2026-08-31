@@ -181,22 +181,16 @@ def test_con_memo_y_sin_ordenes_todo_esta_enviado():
     assert r["lineas"] == {"PI28NEG": "enviado", "FE96HAB": "enviado"}
 
 
-def test_la_salida_de_material_avanza_SOLO_la_linea_de_ese_producto():
-    """La OFT es del NEG: el NEG pasa a en tintura, el HAB sigue enviado, y
-    el resumen del pedido dice en tintura."""
+def test_la_orden_creada_avanza_SOLO_la_linea_de_su_producto():
+    """La OFT de la orden es del NEG: el NEG pasa a en tintura APENAS la
+    fábrica crea la orden (caso PDCL-30833 del 31/08: Asinfo asigna la
+    salida de material DESPUÉS de arrancar — no se la espera). El HAB, sin
+    orden, sigue enviado; el resumen dice en tintura."""
     ofts = [_fila_oft(),
-            _fila_oft(es_hija=True, con_salida=1, cantidad=100.0)]
+            _fila_oft(es_hija=True, cantidad=100.0)]
     r = _etapas(_ORDEN, ofts)["PDCL-1"]
     assert r["lineas"] == {"PI28NEG": "en_tintura", "FE96HAB": "enviado"}
     assert r["pedido"] == "en_tintura"
-
-
-def test_una_salida_colgada_del_padre_vale_para_las_lineas_de_esa_oft():
-    """El padre no tiene producto; su salida cuenta para las hijas."""
-    ofts = [_fila_oft(producto="", con_salida=1),
-            _fila_oft(es_hija=True)]
-    r = _etapas(_ORDEN, ofts)["PDCL-1"]
-    assert r["lineas"]["PI28NEG"] == "en_tintura"
 
 
 def test_la_linea_termina_cuando_sus_hojas_estan_finalizadas():

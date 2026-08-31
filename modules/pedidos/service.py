@@ -1115,9 +1115,11 @@ def etapas_por_pedido(pedidos: list[dict],
         {"pedido": 'enviado'|'en_tintura'|'terminado',
          "lineas": {codigo de producto: la etapa de ESA línea}}
 
-    - Línea EN TINTURA: alguna OFT de su producto tiene orden de salida de
-      material (una salida colgada del PADRE, sin producto, vale para todas
-      las líneas de esa OFT).
+    - Línea EN TINTURA: la fábrica creó una orden de tintura cuya OFT cubre
+      ese producto. ⚠ Ajuste del 31/08 (caso PDCL-30833): la regla original
+      esperaba la ORDEN DE SALIDA DE MATERIAL de Asinfo, pero Asinfo la
+      asigna DESPUÉS de que la fábrica ya arrancó (3 OFTs tinturándose con
+      con_salida=0) — no se la espera; si está, refuerza.
     - Línea TERMINADA: tiene OFT y todas sus hojas de ese producto están
       Finalizadas (o al plan).
     - Resumen del pedido: TERMINADO sólo si TODAS las líneas terminaron (o
@@ -1196,7 +1198,10 @@ def etapas_por_pedido(pedidos: list[dict],
             d = prods.get(prod)
             if d and d["terminada"]:
                 lineas[prod] = "terminado"
-            elif d and d["salida"]:
+            elif d:
+                # Hay una orden de tintura cuya OFT cubre este producto:
+                # la línea ya se está tinturando (no se espera la salida
+                # de material de Asinfo, que llega tarde).
                 lineas[prod] = "en_tintura"
             else:
                 lineas[prod] = "enviado"
