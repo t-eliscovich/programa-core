@@ -469,7 +469,7 @@
           });
         });
         var fc = document.getElementById('fpcount');
-        if (fc) { fc.textContent = (q || etActiva) ? (n + ' pedidos') : ''; }
+        if (fc) { fc.textContent = (q || etActiva) ? (n + (n === 1 ? ' pedido' : ' pedidos')) : ''; }
       }
       fped.addEventListener('input', filtrarPedidos);
       fet.querySelectorAll('button').forEach(function (b) {
