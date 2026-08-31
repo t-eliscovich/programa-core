@@ -21,7 +21,7 @@
 
   {% if aplico %}
     <div class="bg-emerald-50 dark:bg-emerald-900/20 border border-emerald-300 dark:border-emerald-700 rounded-lg px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300 mb-5">
-      Listo: se emparejaron <strong>{{ res.aplicados_count }}</strong> facturas.
+      Listo: se emparejaron <strong>{{ res.aplicados_count + res.con_copia_count }}</strong> facturas{% if res.con_copia_count %} ({{ res.con_copia_count }} absorbiendo su copia){% endif %}.
       {% if res.errores_apply_count %}
         <strong class="text-red-700 dark:text-red-300">{{ res.errores_apply_count }} dieron error</strong> — recargá la pantalla para reintentarlas.
       {% endif %}
@@ -79,6 +79,45 @@
   </div>
   {% endif %}
 
+  {% if not aplico and res.con_copia %}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl mb-5 overflow-hidden">
+    <div class="px-4 pt-4 text-xs uppercase tracking-wider text-slate-500 font-semibold">
+      El número lo tiene una copia sin plata ({{ res.con_copia_count }})
+    </div>
+    <div class="px-4 pt-1 pb-2 text-[13px] text-slate-500">
+      La carga vieja dejó la misma factura dos veces: la de verdad (con el
+      saldo) quedó sin número, y una copia cancelada, sin abonos ni
+      movimientos, se quedó con él. Para éstas el botón elimina la copia y le
+      pasa el número a la factura de verdad. Si una copia resulta tener
+      abonos, cheques o retenciones, no se toca y queda en la lista de errores.
+    </div>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="text-xs uppercase tracking-wider text-slate-500 border-b border-slate-200 dark:border-slate-700">
+            <th class="text-left px-4 py-2">Fecha</th>
+            <th class="text-left px-2 py-2">Cliente</th>
+            <th class="text-right px-2 py-2">Kg</th>
+            <th class="text-right px-2 py-2">Importe</th>
+            <th class="text-left px-4 py-2">Número que le pone</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in res.con_copia %}
+          <tr class="border-b border-slate-100 dark:border-slate-800">
+            <td class="px-4 py-1.5 whitespace-nowrap">{{ r.fecha | fecha_es }}</td>
+            <td class="px-2 py-1.5 font-mono">{{ r.codigo_cli }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.kg_pc | kg_es }}</td>
+            <td class="px-2 py-1.5 text-right tabular-nums">{{ r.usd_pc | money_es }}</td>
+            <td class="px-4 py-1.5 font-mono text-sky-700 dark:text-sky-300">{{ r.ai_numero }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+  {% endif %}
+
   {% set saltadas = res.saltadas_score_alto + res.saltadas_sin_candidatos %}
   {% if saltadas %}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl mb-5 overflow-hidden">
@@ -111,7 +150,9 @@
             <td class="px-2 py-1.5 text-right tabular-nums">{{ r.kg | kg_es }}</td>
             <td class="px-2 py-1.5 text-right tabular-nums">{{ r.saldo | money_es }}</td>
             <td class="px-4 py-1.5 text-slate-500">
-              {% if r.mejor_ai_numero %}
+              {% if r.motivo %}
+                {{ r.motivo }}
+              {% elif r.mejor_ai_numero %}
                 la parecida en Asinfo ({{ r.mejor_ai_numero }}) está a nombre de {{ r.mejor_ai_cli or '—' }}
               {% else %}
                 Asinfo no tiene ninguna parecida
@@ -125,15 +166,16 @@
   </div>
   {% endif %}
 
-  {% if not aplico and res.aplicados_count %}
+  {% if not aplico and (res.aplicados_count + res.con_copia_count) %}
   <form method="post" class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-6 shadow-sm">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="text-sm text-slate-600 dark:text-slate-300">
       El botón escribe <strong>únicamente el número del SRI</strong> en las
-      {{ res.aplicados_count }} de arriba: ni kilos, ni importes, ni abonos,
-      ni saldos.
+      {{ res.aplicados_count + res.con_copia_count }} de arriba — ni kilos, ni
+      importes, ni abonos, ni saldos —{% if res.con_copia_count %} y elimina las
+      {{ res.con_copia_count }} copias sin plata{% endif %}.
     </div>
-    {{ wizard_footer(url_for('facturas.lista'), 'Emparejar las ' ~ res.aplicados_count ~ ' facturas', 'sky') }}
+    {{ wizard_footer(url_for('facturas.lista'), 'Emparejar las ' ~ (res.aplicados_count + res.con_copia_count) ~ ' facturas', 'sky') }}
   </form>
   {% elif not aplico %}
     <div class="text-sm text-slate-500">No hay nada para emparejar en automático.</div>

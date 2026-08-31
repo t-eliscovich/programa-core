@@ -80,8 +80,15 @@ def _login(app):
         g.permisos = {"*"}
 
 
+def _sin_duenos(monkeypatch):
+    """Ningún número candidato está tomado por otra fila."""
+    import modules.facturas.views as fviews
+    monkeypatch.setattr(fviews.db, "fetch_all", lambda *a, **k: [])
+
+
 def test_la_pantalla_muestra_el_numero_que_le_pone(app, monkeypatch):
     _login(app)
+    _sin_duenos(monkeypatch)
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 16, "con_saldo": 489})
@@ -99,6 +106,7 @@ def test_la_pantalla_muestra_el_numero_que_le_pone(app, monkeypatch):
 
 def test_la_vista_previa_no_escribe(app, monkeypatch):
     _login(app)
+    _sin_duenos(monkeypatch)
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
@@ -111,6 +119,7 @@ def test_la_vista_previa_no_escribe(app, monkeypatch):
 
 def test_el_boton_escribe(app, monkeypatch):
     _login(app)
+    _sin_duenos(monkeypatch)
     import db
     monkeypatch.setattr(db, "fetch_one",
                         lambda *a, **k: {"viejas": 0, "con_saldo": 1})
@@ -143,3 +152,96 @@ def test_el_json_viejo_acepta_con_saldo(app, monkeypatch):
         r = app.test_client().get("/facturas/backfill-asinfo?con_saldo=1")
     assert r.status_code == 200
     assert m.call_args.kwargs["solo_con_saldo"] is True
+
+
+# --- el número ya lo tiene otra fila (TMT 2026-08-30) ------------------------
+#
+# "se emparejaron 3, 24 dieron error": el número candidato ya estaba tomado
+# por una COPIA sin plata del backfill viejo (asinfo-backfill, stat T). El
+# emparejador ahora la absorbe: elimina la copia (con los frenos de
+# borrar_carga_erronea) y le pasa el número a la factura de verdad.
+
+def _con_dueno(monkeypatch, dueno: dict):
+    import modules.facturas.views as fviews
+    monkeypatch.setattr(fviews.db, "fetch_all", lambda *a, **k: [dueno])
+
+
+_COPIA = {"id_factura": 31260, "numf_completo": "001-099-000172013",
+          "stat": "T", "usuario_crea": "asinfo-backfill", "abono": 0}
+
+
+def test_la_copia_fantasma_se_absorbe(app, monkeypatch):
+    _login(app)
+    _con_dueno(monkeypatch, dict(_COPIA))
+    import db
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"viejas": 0, "con_saldo": 1})
+    from modules.facturas import queries as fqueries
+    with patch.object(audit_asinfo, "auditar_huerfanas",
+                      return_value=[_HUERFANA]), \
+         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "asociar") as asoc:
+        r = app.test_client().post("/facturas/emparejar-asinfo")
+    assert r.status_code == 200
+    borrar.assert_called_once_with(31260, usuario="web")
+    asoc.assert_called_once_with(555, "001-099-000172013", usuario="web")
+    assert "absorbiendo su copia" in r.get_data(as_text=True)
+
+
+def test_la_copia_se_muestra_antes_de_tocarla(app, monkeypatch):
+    """En la vista previa la copia se LISTA y no se borra nada."""
+    _login(app)
+    _con_dueno(monkeypatch, dict(_COPIA))
+    import db
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"viejas": 0, "con_saldo": 1})
+    from modules.facturas import queries as fqueries
+    with patch.object(audit_asinfo, "auditar_huerfanas",
+                      return_value=[_HUERFANA]), \
+         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "asociar") as asoc:
+        r = app.test_client().get("/facturas/emparejar-asinfo")
+    borrar.assert_not_called()
+    asoc.assert_not_called()
+    html = r.get_data(as_text=True)
+    assert "una copia sin plata (1)" in html
+    assert "elimina la copia" in html
+
+
+def test_el_dueno_de_verdad_no_se_pisa(app, monkeypatch):
+    """Si el número lo tiene una factura real (no la copia del backfill),
+    el botón NO la toca: queda listada para que la mire una persona."""
+    _login(app)
+    _con_dueno(monkeypatch, {"id_factura": 99, "numf_completo": "001-099-000172013",
+                             "stat": "Z", "usuario_crea": "web", "abono": 0})
+    import db
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"viejas": 0, "con_saldo": 1})
+    from modules.facturas import queries as fqueries
+    with patch.object(audit_asinfo, "auditar_huerfanas",
+                      return_value=[_HUERFANA]), \
+         patch.object(fqueries, "borrar_carga_erronea") as borrar, \
+         patch.object(audit_asinfo, "asociar") as asoc:
+        r = app.test_client().post("/facturas/emparejar-asinfo")
+    borrar.assert_not_called()
+    asoc.assert_not_called()
+    assert "el número ya lo tiene otra factura" in r.get_data(as_text=True)
+
+
+def test_la_copia_con_plata_queda_en_errores(app, monkeypatch):
+    """borrar_carga_erronea levanta (la copia tenía abonos): no se asocia
+    y el caso queda contado como error, no borrado a medias."""
+    _login(app)
+    _con_dueno(monkeypatch, dict(_COPIA))
+    import db
+    monkeypatch.setattr(db, "fetch_one",
+                        lambda *a, **k: {"viejas": 0, "con_saldo": 1})
+    from modules.facturas import queries as fqueries
+    with patch.object(audit_asinfo, "auditar_huerfanas",
+                      return_value=[_HUERFANA]), \
+         patch.object(fqueries, "borrar_carga_erronea",
+                      side_effect=ValueError("La factura ya tiene abonos cargados.")), \
+         patch.object(audit_asinfo, "asociar") as asoc:
+        r = app.test_client().post("/facturas/emparejar-asinfo")
+    asoc.assert_not_called()
+    assert "dieron error" in r.get_data(as_text=True)

@@ -3479,9 +3479,26 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
         top_k=3, limite=1000, solo_con_saldo=solo_con_saldo)
 
     aplicados: list[dict] = []
+    con_copia: list[dict] = []
     saltadas_sin_candidatos: list[dict] = []
     saltadas_score_alto: list[dict] = []
     errores_apply: list[dict] = []
+
+    # ⭐ TMT 2026-08-30: el emparejado de las CON SALDO fallaba casi entero
+    # ("se emparejaron 3, 24 dieron error"): el número que había que ponerles
+    # ya lo tenía OTRA fila — una copia sin plata que dejó el backfill viejo
+    # (usuario_crea='asinfo-backfill', stat 'T': no cuenta en cartera) — y el
+    # índice único de numf_completo rechazaba el UPDATE. Acá se pregunta
+    # UNA sola vez quién tiene cada número candidato, para separar el caso.
+    numeros_cand = [item["candidatos"][0]["ai_numero"]
+                    for item in huerfanas if item["candidatos"]]
+    duenos: dict[str, dict] = {}
+    if numeros_cand:
+        for d in db.fetch_all(
+                "SELECT id_factura, numf_completo, stat, usuario_crea, abono "
+                "  FROM scintela.factura WHERE numf_completo = ANY(%s)",
+                (numeros_cand,)):
+            duenos[(d.get("numf_completo") or "").strip()] = d
 
     for item in huerfanas:
         pc = item["pc_factura"]
@@ -3508,8 +3525,40 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
 
         # Política: score bajo + mismo cliente → asociar.
         if score < _BACKFILL_SCORE_MAX and cli_pc == cli_ai:
+            dueno = duenos.get((mejor.get("ai_numero") or "").strip())
+            es_copia = (dueno is not None
+                        and (dueno.get("usuario_crea") or "") == "asinfo-backfill"
+                        and (dueno.get("stat") or "") == "T")
+            if dueno is not None and not es_copia:
+                # El número lo tiene una factura DE VERDAD (o una anulada):
+                # eso no se pisa solo — lo mira una persona.
+                saltadas_score_alto.append({
+                    "id_factura": pc["id_factura"],
+                    "fecha": pc.get("fecha"),
+                    "codigo_cli": pc.get("codigo_cli"),
+                    "cliente": pc.get("cliente"),
+                    "kg": float(pc.get("kg") or 0),
+                    "importe": float(pc.get("importe") or 0),
+                    "saldo": float(pc.get("saldo") or 0),
+                    "mejor_ai_numero": mejor["ai_numero"],
+                    "mejor_ai_cli": mejor.get("ai_cliente_codigo"),
+                    "mejor_ai_kg": mejor.get("ai_kg"),
+                    "mejor_ai_usd": mejor.get("ai_usd"),
+                    "mejor_score": score,
+                    "motivo": ("el número ya lo tiene otra factura "
+                               f"(stat {dueno.get('stat') or '—'}, "
+                               f"carga {dueno.get('usuario_crea') or '—'})"),
+                })
+                continue
             if apply:
                 try:
+                    if es_copia:
+                        # Absorber la copia: los frenos de verdad (abono 0,
+                        # sin cheques, sin retenciones, sin movimientos) los
+                        # pone borrar_carga_erronea, que levanta si no se
+                        # cumplen — y el caso queda en errores, no borrado.
+                        queries.borrar_carga_erronea(
+                            int(dueno["id_factura"]), usuario="web")
                     audit_asinfo.asociar(
                         pc["id_factura"],
                         mejor["ai_numero"],
@@ -3525,7 +3574,7 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
                     if len(errores_apply) > max(20, int(0.05 * len(huerfanas))):
                         break
                     continue
-            aplicados.append({
+            (con_copia if es_copia else aplicados).append({
                 "id_factura": pc["id_factura"],
                 "fecha": pc.get("fecha"),
                 "codigo_cli": pc.get("codigo_cli"),
@@ -3566,10 +3615,12 @@ def _emparejar_asinfo(aplicar: bool, solo_con_saldo: bool = False) -> dict:
         "threshold_score": _BACKFILL_SCORE_MAX,
         "huerfanas_total": len(huerfanas),
         "aplicados_count": len(aplicados),
+        "con_copia_count": len(con_copia),
         "saltadas_score_alto_count": len(saltadas_score_alto),
         "saltadas_sin_candidatos_count": len(saltadas_sin_candidatos),
         "errores_apply_count": len(errores_apply),
         "aplicados": aplicados[:20] if apply else aplicados,
+        "con_copia": con_copia[:20] if apply else con_copia,
         "saltadas_score_alto": saltadas_score_alto,
         "saltadas_sin_candidatos": saltadas_sin_candidatos,
         "errores_apply": errores_apply[:20],
