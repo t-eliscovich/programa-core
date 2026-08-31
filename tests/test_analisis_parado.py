@@ -2846,8 +2846,13 @@ def test_la_lista_no_muestra_lo_apagado(monkeypatch):
 class _DBFalsa:
     """La base de datos del refresco, apuntando lo que se escribe."""
 
-    def __init__(self, cohorte):
+    def __init__(self, cohorte, clientes=None):
         self.cohorte = cohorte
+        # ⭐ `{codigo_cli: vend}` de `scintela.cliente` — desde el 31/08/2026
+        # la competencia lo pide para saber a quién atribuir cada venta (ver
+        # `queries._vend_por_cliente`). Vacío por default: los tests que no
+        # lo necesitan siguen viendo todo como "Intela", igual que antes.
+        self.clientes = clientes or []
         self.escrito: list[tuple[str, tuple]] = []
         self.leido: list[str] = []
 
@@ -2867,6 +2872,8 @@ class _DBFalsa:
             return self.cohorte
         if s.startswith("SELECT subcategoria, color, motivo"):
             return self.cohorte
+        if s.startswith("SELECT codigo_cli, vend FROM scintela.cliente"):
+            return self.clientes
         return []
 
     def fetch_one(self, sql, params=None, conn=None):
@@ -3057,13 +3064,15 @@ def test_la_pantalla_muestra_las_tres_cifras():
     assert "resumen.kg_movido" in html
 
 
-def _venta(sub, col, kg, dia=25, calidad="PRI", vend="Intela"):
+def _venta(sub, col, kg, dia=25, calidad="PRI", vend="Intela", codigo_cli=None):
     return {"subcategoria": sub, "color": col, "kg": kg, "calidad": calidad,
-            "vendedor": vend, "vend_pc": None, "fecha": date(2026, 8, dia)}
+            "vendedor": vend, "vend_pc": None, "codigo_cli": codigo_cli,
+            "fecha": date(2026, 8, dia)}
 
 
-def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas):
-    db = _DBFalsa(cohorte)
+def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas, clientes=None,
+                          devolver_db=False):
+    db = _DBFalsa(cohorte, clientes=clientes)
     monkeypatch.setattr(queries, "db", db)
     monkeypatch.setattr(queries, "today_ec", lambda: date(2026, 8, 25))
     monkeypatch.setattr(asinfo_parado, "parados", lambda: parados)
@@ -3074,8 +3083,12 @@ def _refresco_con_ventas(monkeypatch, parados, cohorte, ventas):
     monkeypatch.setattr(asinfo_parado, "formas", lambda: {})
     monkeypatch.setattr(asinfo_parado, "ultima_venta_antes", lambda d: {})
     queries.actualizar()
-    return [(p[1], p[5], p[7]) for sql, p in db.escrito
-            if "INSERT INTO scintela.parado_venta" in sql]
+    filas = [(p[1], p[5], p[7]) for sql, p in db.escrito
+             if "INSERT INTO scintela.parado_venta" in sql]
+    # ⭐ `devolver_db`: para el test que necesita mirar `vend_pc`/`vendedor`
+    # (índices 2 y 3 de los mismos params) sin romper a los que ya usan la
+    # forma corta (color, kg, cuenta).
+    return (db, filas) if devolver_db else filas
 
 
 def _item(sub, col, kg_antes, stock=300):
@@ -3458,19 +3471,68 @@ def test_desde_el_detalle_se_salta_a_esa_tela_en_saldos():
 
 def test_el_que_no_compite_es_la_casa():
     """Dueña 25/08/2026, viendo "Bedon Hector" en la tabla de vendidos: *"bedón
-    no es un vendedor"*. En Asinfo firman ventas nombres que no están entre los
-    siete que compiten; esas ventas las hizo la casa, igual que las que vienen
-    sin vendedor o a nombre de "Cía. Ltda. Intela"."""
-    assert queries._quien_vendio({"vendedor": "Bedon Hector"}) == "Intela"
-    assert queries._quien_vendio({"vendedor": None}) == "Intela"
-    assert queries._quien_vendio({"vendedor": "  "}) == "Intela"
-    assert queries._quien_vendio({"vendedor": "Ramirez Edgar"}) == "Ramirez Edgar"
-    for c in queries.COMPETIDORES:
-        assert queries._quien_vendio({"vendedor": c}) == c
+    no es un vendedor"*. Cambió QUIÉN decide (dueña 31/08/2026: ahora es
+    `cliente.vend`, no el vendedor de Asinfo — ver
+    `test_la_competencia_atribuye_por_cliente_vend_no_por_asinfo`), pero la
+    regla de esta función sigue siendo la misma: un código que no es uno de
+    los seis activos, o que no vino, lo hizo la casa."""
+    assert queries._quien_vendio({"vend_pc": "XYZ"}) == "Intela"
+    assert queries._quien_vendio({"vend_pc": None}) == "Intela"
+    assert queries._quien_vendio({"vend_pc": ""}) == "Intela"
+    assert queries._quien_vendio({}) == "Intela"
+    assert queries._quien_vendio({"vend_pc": "EDG"}) == "Ramirez Edgar"
+    assert queries._quien_vendio({"vend_pc": "edg"}) == "Ramirez Edgar", (
+        "el código llega en minúsculas de algún lado y no debería importar")
+    for codigo, nombre in asinfo_parado.PC_VEND.items():
+        assert queries._quien_vendio({"vend_pc": codigo}) == nombre
+        assert nombre in queries.COMPETIDORES
     # ⚠ se normaliza al ESCRIBIR, no al mostrar: si no, habría kilos que se ven
     # como de Intela y no suman en su fila del ranking
     import inspect as _i
     assert "_quien_vendio(v)" in _i.getsource(queries.actualizar)
+
+
+def test_la_competencia_atribuye_por_cliente_vend_no_por_asinfo(monkeypatch):
+    """Dueña 31/08/2026, sobre la factura 001-099-000183092: el cliente tiene
+    `cliente.vend = 'SEP'` en Programa Core —el mismo vendedor que muestra la
+    ficha de la factura, Sebastián Proaño— pero esa factura puntual quedó en
+    Asinfo firmada por otra persona ("Bedon Hector", que ni siquiera compite) y
+    la competencia la contaba para "Intela". Desde ahora manda `cliente.vend`,
+    no quién firmó esa venta en particular."""
+    db, filas = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Toper", "COA", kg_antes=100)],
+        cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 60, vend="Bedon Hector",
+                        codigo_cli="AAA")],
+        clientes=[{"codigo_cli": "AAA", "vend": "SEP"}],
+        devolver_db=True)
+    completas = [p for sql, p in db.escrito
+                 if "INSERT INTO scintela.parado_venta" in sql]
+    assert len(completas) == 1
+    assert completas[0][2] == "SEP", "vend_pc: el código de cliente.vend"
+    assert completas[0][3] == "Proaño Sebastián", (
+        "vendedor: el nombre bonito de ESE código, no el de Asinfo")
+
+
+def test_cliente_sin_vend_asignado_cae_a_intela(monkeypatch):
+    """Un cliente sin vendedor en `cliente.vend` (NULL o vacío, o que no está
+    en la lista) no tiene cómo atribuirse: cae a Intela — igual que antes de
+    este cambio, y aunque en Asinfo la haya firmado un vendedor real."""
+    db, _ = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Toper", "COA", kg_antes=100)],
+        cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 60, vend="Ramirez Edgar",
+                        codigo_cli="ZZZ")],
+        # "ZZZ" no está en la lista: cliente sin vend, o que no existe
+        clientes=[{"codigo_cli": "AAA", "vend": "SEP"}],
+        devolver_db=True)
+    completas = [p for sql, p in db.escrito
+                 if "INSERT INTO scintela.parado_venta" in sql]
+    assert completas[0][2] is None
+    assert completas[0][3] == "Intela", (
+        "sin cliente.vend no importa quién firmó en Asinfo")
 
 
 def test_el_grupo_del_vendido_sobrevive_a_la_venta(monkeypatch):

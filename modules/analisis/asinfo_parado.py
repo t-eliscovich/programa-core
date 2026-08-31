@@ -122,6 +122,14 @@ VEND_PC = {
     "Quintero Jose": "JQU", "Ramirez Edgar": "EDG", "Proaño Sebastián": "SEP",
 }
 
+# El inverso de `VEND_PC`: código de `scintela.vendedor` → nombre completo de
+# Asinfo. Hace falta desde el 31/08/2026, cuando la COMPETENCIA (no esta
+# consulta) pasó a atribuir cada venta por `cliente.vend` en vez de por quien
+# firmó la factura puntual en Asinfo — ver `_quien_vendio()` en `queries.py`.
+# Con el código de PC a mano hace falta el nombre "bonito" para que siga
+# entrando en `COMPETIDORES`, que es la lista que pinta la tabla.
+PC_VEND = {codigo: nombre for nombre, codigo in VEND_PC.items()}
+
 # ⭐ "Intela" en vez de "mostrador". Dueña 17/08/2026: "intela/mostrador como un
 # vendedor extra. llamalo Intela mas que mostrador". Se juntan los dos casos que
 # significan lo mismo —la venta la hizo la casa—: la factura con vendedor
@@ -571,12 +579,26 @@ def _sql_vendido(desde: str) -> str:
     de marcado: las viejas llevan más tiempo corrido que las nuevas y medirlas
     con la misma vara le regalaría kilos a las viejas. El volumen se mantiene
     chico solo — son telas que por definición casi no se venden.
+
+    ⭐ Trae también `codigo_cli` (dueña 31/08/2026, sobre la factura
+    001-099-000183092: el `id_vendedor` que firmó ESA factura puntual en
+    Asinfo no era el vendedor real del cliente — `cliente.vend = 'SEP'` en
+    Programa Core, mismo dato que muestra la ficha de la factura—, y la
+    competencia igual la contaba como "Intela"). `queries._quien_vendio()`
+    usa este código para resolver el vendedor por `cliente.vend` en vez de
+    por `{_VENDEDOR}`; el campo `vendedor` (nombre de Asinfo) se deja en el
+    resultado porque `_quien_vendio` histórico y otras lecturas lo siguen
+    necesitando.
+
+    ⚠ Igual que en `SQL_LLAMADOS`: el código vive en `empresa.nombre_comercial`,
+    no en `codigo` (que es el RUC).
     """
     return f"""
 SELECT pr.nombre_subcategoria_producto AS subcategoria,
        RIGHT(RTRIM(pr.codigo), 3)      AS color,
        CAST({_FECHA} AS date)          AS fecha,
        {_VENDEDOR}                     AS vendedor,
+       RTRIM(e.nombre_comercial)       AS codigo_cli,
        {_CALIDAD_LINEA}                AS calidad,
        -- ⭐ El número de la factura, para poder abrirla desde la pantalla
        -- (dueña 26/08/2026). Entra al GROUP BY, así que cada renglón pasa a ser
@@ -589,13 +611,15 @@ SELECT pr.nombre_subcategoria_producto AS subcategoria,
 FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
+JOIN empresa e   ON e.id_empresa   = fc.id_empresa
 {_JOIN_PADRE}{_JOIN_MADRE_LINEA}
 {_JOIN_VENDEDOR}
 WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND {_FECHA} >= '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
-         CAST({_FECHA} AS date), {_VENDEDOR}, {_CALIDAD_LINEA}, RTRIM(fc.numero)
+         CAST({_FECHA} AS date), {_VENDEDOR}, RTRIM(e.nombre_comercial),
+         {_CALIDAD_LINEA}, RTRIM(fc.numero)
 """
 
 
@@ -632,6 +656,16 @@ GROUP BY pr.nombre_subcategoria_producto
 """
 
 
+# ⚠⚠ DECISIÓN 31/08/2026: esto NO se cambió a `cliente.vend`, a propósito.
+# `_quien_vendio()` (en queries.py) pasó a atribuir cada VENTA de la
+# competencia por el vendedor asignado al CLIENTE en Programa Core. Este
+# cálculo es otra cosa: reparte la META entre vendedores según cuánto pesa
+# cada uno del volumen HISTÓRICO de cada grupo (Fleece/Jersey/Poliéster), y
+# ahí sí importa quién factura de verdad — un vendedor que hereda una cartera
+# nueva no "vendió" ese volumen histórico solo porque el cliente hoy es suyo.
+# Si algún día hace falta unificar el criterio, que sea una decisión aparte:
+# mezclar las dos rompería la lectura de "cuánto vendió cada uno" que separa a
+# `SQL_SHARE` de `_sql_vendido`.
 SQL_SHARE = f"""
 -- Cuánto vende cada vendedor de cada GRUPO. Es lo que reparte la meta: sin
 -- esto, el ranking lo gana el de cartera más grande todos los meses.
@@ -766,6 +800,12 @@ def llamados() -> list[dict]:
 def vendido_desde(desde: str) -> list[dict]:
     filas = _filas(_sql_vendido(desde))
     for f in filas:
+        # ⚠ Este `vend_pc` es PROVISORIO: sale del vendedor que firmó la
+        # factura en Asinfo, igual que antes del 31/08/2026. `queries.
+        # actualizar()` lo PISA con el de `cliente.vend` (vía `codigo_cli`)
+        # antes de escribir `scintela.parado_venta` — ver `_quien_vendio()`.
+        # Queda acá porque otras lecturas (share_por_grupo, llamados) siguen
+        # usando el criterio de Asinfo y esperan la misma forma de fila.
         f["vend_pc"] = VEND_PC.get((f.get("vendedor") or "").strip())
         f["numf"] = _numf(f.get("numero"))
     return filas

@@ -662,6 +662,15 @@ def por_cliente(vend: str | None = None, orden: str = "codigo",
     parámetros: si la hoja del vendedor usara el de Asinfo, un cliente podría
     salirle a él acá y a otro en /mi-cartera.
 
+    ⚠⚠ NOTA 31/08/2026 — esto sigue igual a propósito. La COMPETENCIA
+    (`_quien_vendio()`, más abajo) SÍ cambió: desde el 31/08 atribuye cada
+    venta por `cliente.vend`, no por el vendedor de la factura de Asinfo,
+    porque una venta puede quedar firmada en Asinfo por alguien que no es el
+    vendedor real del cliente. Acá, "a quién ofrecerle qué", el criterio con
+    `vend` sigue siendo el de Asinfo — es la lista que arma la oficina para
+    repartir por lo que la fábrica REALMENTE vendió, y cambiarla no era parte
+    de este pedido.
+
     ⚠ `kg_potencial` NO es aditivo entre clientes. Una misma tela parada aparece
     en la lista de todos los que la compran, así que sumar la columna da mucho
     más que el stock real. Sirve para ORDENAR, no para prometer. La hoja lo dice.
@@ -773,21 +782,57 @@ def por_cliente_plano(vend: str | None = None, orden: str = "codigo",
 
 # ── Refresh ─────────────────────────────────────────────────────────────────
 
+def _vend_por_cliente(conn=None) -> dict[str, str]:
+    """`{codigo_cli: vend}` de `scintela.cliente`, normalizado.
+
+    ⭐ Dueña 31/08/2026: la competencia pasa a atribuir SIEMPRE por este campo
+    —el vendedor asignado al cliente en Programa Core, el mismo que se ve en
+    la ficha de la factura— y no por quien firmó esa venta puntual en Asinfo.
+    Confirmado con la factura 001-099-000183092: `cliente.vend = 'SEP'`
+    (Sebastián Proaño, así lo muestra la ficha), pero esa factura en
+    particular quedó en Asinfo con un `id_vendedor` que no es él, y la
+    competencia la contaba como "Intela".
+
+    Se resuelve acá, con una consulta a la propia base — NO otra llamada a
+    Asinfo — porque `cliente.vend` ya vive en Programa Core.
+
+    ⚠ Un cliente sin `vend` (NULL o vacío) no entra al diccionario:
+    `_quien_vendio()` no lo encuentra y cae a "Intela", igual que antes.
+    """
+    return {
+        (r["codigo_cli"] or "").strip().upper(): (r["vend"] or "").strip().upper()
+        for r in db.fetch_all("SELECT codigo_cli, vend FROM scintela.cliente",
+                               conn=conn)
+        if (r.get("codigo_cli") or "").strip() and (r.get("vend") or "").strip()
+    }
+
+
 def _quien_vendio(v: dict) -> str:
     """El vendedor de una venta, en los términos de la competencia.
 
-    ⭐ Dueña 25/08/2026, viendo "Bedon Hector" en la tabla de vendidos: *"bedón
-    no es un vendedor"*. En Asinfo firman ventas nombres que no están entre los
-    siete que compiten —bajas, gente de otra área, cargas viejas—: esas ventas
-    las hizo LA CASA. Es la misma decisión del 17/08 que juntó "Cía. Ltda.
-    Intela" y las facturas sin vendedor bajo el nombre Intela.
+    ⭐⭐ Dueña 31/08/2026, sobre la factura 001-099-000183092 (cliente con
+    `cliente.vend = 'SEP'`, atribuida a "Intela"): la atribución pasa de "quien
+    firmó ESA factura puntual en Asinfo" a "quien tiene asignado el CLIENTE en
+    Programa Core" — el mismo `cliente.vend` que muestra la ficha de la
+    factura. `v["vend_pc"]` ya viene resuelto por `cliente.vend` (lo pisa
+    `actualizar()` con `_vend_por_cliente()` antes de llamar acá); esta función
+    sólo lo traduce al nombre "bonito" que pinta la tabla.
+
+    Un cliente sin vendedor asignado, o con un código que no es uno de los
+    seis activos (bajas, cargas viejas), cae a "Intela" — igual que antes.
 
     ⚠ Se normaliza al ESCRIBIR `parado_venta`, no al mostrar: así el ranking, el
     cuadro por grupo y la tabla de vendidos cuentan lo mismo. Mostrarlo sólo en
     la pantalla dejaba kilos que aparecían como de Intela y no sumaban en su
     fila.
+
+    ⚠⚠ Esto es DISTINTO de `por_cliente()`, que sigue usando el vendedor de la
+    ÚLTIMA FACTURA de Asinfo para "a quién ofrecerle qué" — ver el comentario
+    ahí. Son dos preguntas distintas ("quién se gana el punto de ESTA venta" vs.
+    "a quién de mi cartera le ofrezco esta tela hoy") y desde el 31/08/2026
+    también dos fuentes distintas a propósito.
     """
-    quien = (v.get("vendedor") or "").strip()
+    quien = asinfo_parado.PC_VEND.get((v.get("vend_pc") or "").strip().upper())
     return quien if quien in COMPETIDORES else "Intela"
 
 
@@ -905,6 +950,17 @@ def actualizar() -> dict:
         anio_de[f["subcategoria"]] = f.get("anio")
 
     with db.tx() as conn:
+        # ⭐ LA COMPETENCIA ATRIBUYE POR `cliente.vend`, no por el vendedor que
+        # firmó la factura puntual en Asinfo (dueña 31/08/2026 — ver
+        # `_quien_vendio()` y `_vend_por_cliente()`). Se resuelve UNA vez acá,
+        # con una sola consulta a la propia base, y se PISA el `vend_pc` que
+        # `vendido_desde()` había calculado con el criterio viejo (por el
+        # `vendedor` de Asinfo) — ése queda provisorio a propósito, ver el
+        # comentario en `asinfo_parado.vendido_desde()`.
+        vend_cli = _vend_por_cliente(conn=conn)
+        for v in ventas:
+            v["vend_pc"] = vend_cli.get((v.get("codigo_cli") or "").strip().upper())
+
         # ⚠⚠ QUÉ SE PUEDE APAGAR. Las banderas hablan de la tela, no del motivo
         # por el que el ítem entró a la lista, y desde que se calculan para TODA
         # la bodega —hizo falta para la tela ya vendida— contestan también por
