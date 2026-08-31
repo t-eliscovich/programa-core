@@ -957,9 +957,26 @@ def actualizar() -> dict:
         # `vendido_desde()` había calculado con el criterio viejo (por el
         # `vendedor` de Asinfo) — ése queda provisorio a propósito, ver el
         # comentario en `asinfo_parado.vendido_desde()`.
+        #
+        # ⚠⚠ 31/08/2026, mismo día: `vendidos.html` pinta `v.vend_pc or
+        # 'Intela'` (el código corto, sin pasar por `_quien_vendio`) — un
+        # contrato viejo que asumía que `vend_pc` SÓLO podía ser uno de los
+        # seis que compiten o None, porque salía de mapear el nombre de
+        # Asinfo contra esos seis. `cliente.vend` no tiene esa garantía:
+        # cualquier código real de `scintela.vendedor` (p. ej. "BED", de
+        # alguien que no compite) se colaba tal cual en la columna y la
+        # pantalla de Vendidos mostraba "BED" donde tenía que decir "Intela"
+        # — confirmado en vivo con la factura de James 1.2 BLA del 25/08.
+        # Por eso acá se descarta cualquier código que no sea uno de los
+        # seis: `vend_pc` sigue siendo "uno de los que compite, o nada",
+        # igual que antes del 31/08; `_quien_vendio()` ya hace el mismo
+        # descarte para `vendedor`, así que las dos columnas quedan en el
+        # mismo criterio.
         vend_cli = _vend_por_cliente(conn=conn)
+        codigos_validos = set(asinfo_parado.VEND_PC.values())
         for v in ventas:
-            v["vend_pc"] = vend_cli.get((v.get("codigo_cli") or "").strip().upper())
+            codigo = vend_cli.get((v.get("codigo_cli") or "").strip().upper())
+            v["vend_pc"] = codigo if codigo in codigos_validos else None
 
         # ⚠⚠ QUÉ SE PUEDE APAGAR. Las banderas hablan de la tela, no del motivo
         # por el que el ítem entró a la lista, y desde que se calculan para TODA

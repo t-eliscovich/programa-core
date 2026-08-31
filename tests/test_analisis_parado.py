@@ -3535,6 +3535,33 @@ def test_cliente_sin_vend_asignado_cae_a_intela(monkeypatch):
         "sin cliente.vend no importa quién firmó en Asinfo")
 
 
+def test_vend_de_un_codigo_que_no_compite_no_se_filtra_crudo(monkeypatch):
+    """Bug en vivo el 31/08/2026, mismo día del cambio: la factura de James
+    1.2 BLA del 25/08 quedó con `vend_pc='BED'` escrito tal cual en
+    `parado_venta` —"BED" es un código real de `scintela.vendedor" (alguien
+    que no compite), no un vendedor inventado— y `vendidos.html` pinta
+    `v.vend_pc or 'Intela'` (el código corto, SIN pasar por `_quien_vendio`):
+    la pantalla de Vendidos mostró "BED" en la columna Vendedor en vez de
+    "Intela". `vend_pc` tiene que seguir siendo "uno de los seis que
+    compiten, o nada" — el mismo contrato de antes del 31/08 — aunque
+    `cliente.vend` traiga cualquier código real."""
+    db, _ = _refresco_con_ventas(
+        monkeypatch,
+        parados=[_item("Toper", "COA", kg_antes=100)],
+        cohorte=_cohorte("Toper", "COA"),
+        ventas=[_venta("Toper", "COA", 60, vend="Ramirez Edgar",
+                        codigo_cli="AAA")],
+        clientes=[{"codigo_cli": "AAA", "vend": "BED"}],
+        devolver_db=True)
+    completas = [p for sql, p in db.escrito
+                 if "INSERT INTO scintela.parado_venta" in sql]
+    assert completas[0][2] is None, (
+        "vend_pc: 'BED' no compite, no se escribe crudo")
+    assert completas[0][3] == "Intela", (
+        "vendedor: normalizado igual, con o sin vend_pc"
+    )
+
+
 def test_el_grupo_del_vendido_sobrevive_a_la_venta(monkeypatch):
     """La tabla muestra justamente lo que se vendió, que es lo primero que deja
     de tener foto: sin el fallback al puntaje —que guarda el grupo por tela— la
