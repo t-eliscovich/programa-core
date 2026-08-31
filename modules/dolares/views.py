@@ -92,7 +92,14 @@ def lista():
     #   "AC 15" → cuenta AC + concepto 15
     #   "AC"    → sólo cuenta AC
     #   "15"    → sólo concepto 15   (TMT 2026-07-11)
+    #
+    # El número es el NÚMERO de la importación, exacto — no un substring del
+    # concepto. TMT 2026-08-31 (dueña: *"cuando quiero filtrar el AI 26 me trae
+    # varios que tienen 26 en el concepto"*): pidiendo "AI 26" salían también el
+    # 23/26, el 33/26 y el 44/26, donde el 26 es el AÑO. El `q` sigue viajando
+    # como colador grueso al SQL (ILIKE), y `concepto_num` es el que decide.
     codigo = "" if id_dolares else (request.args.get("codigo") or "").strip()
+    concepto_num = None
     if codigo:
         import re as _re_cod
         m_cta = _re_cod.search(r"[A-Za-z]{2,3}", codigo)
@@ -101,6 +108,7 @@ def lista():
             cta = m_cta.group(0).upper()
         if m_num:
             q = m_num.group(0).lstrip("0") or m_num.group(0)
+            concepto_num = int(m_num.group(0))
     # Mes de recibido (la fecha de recepción se cuelga de Asinfo, se filtra en
     # Python porque no vive en scintela.dolares).
     recibido_mes = (
@@ -110,7 +118,7 @@ def lista():
     filas, error = _safe(
         lambda: queries.lista(
             desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos, q=q,
-            id_dolares=id_dolares,
+            id_dolares=id_dolares, concepto_num=concepto_num,
         ),
         [],
     )

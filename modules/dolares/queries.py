@@ -2,6 +2,7 @@
 from datetime import date
 
 import db
+from concepto_parser import parse_ref_anticipo
 from filters import today_ec
 from periodo_guard import asegurar_fecha_abierta
 
@@ -17,6 +18,7 @@ def lista(
     limite: int = 1000,
     q: str | None = None,
     id_dolares: int | None = None,
+    concepto_num: int | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
@@ -36,6 +38,16 @@ def lista(
 
     `q` (TMT 2026-06-09, pedido Tamara): filtro por CONCEPTO, substring
     case-insensitive (ILIKE).
+
+    `concepto_num` (TMT 2026-08-31, dueña: *"cuando quiero filtrar el AI 26 me
+    trae varios que tienen 26 en el concepto"*): el NÚMERO de la importación,
+    exacto. Pedir el AI 26 traía también el 23/26, el 44/26 y el 33/26 — el 26
+    de esos es el AÑO, no el número — porque el filtro era un substring. Acá se
+    compara contra el número que lee `parse_ref_anticipo` (el mismo que usa la
+    pantalla para cruzar con Asinfo), así que "26", "026", "26/26" y "26 SALDO"
+    entran, y "126" y "23/26" no. El ILIKE de `q` sigue actuando como colador
+    grueso (todo número exacto contiene su propio dígito, así que nunca saca de
+    más) y ahorra traerse la lista entera antes del LIMIT.
 
     Saldo acumulado (TMT 2026-05-12): running balance POR CUENTA, calculado
     sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
@@ -75,6 +87,18 @@ def lista(
             "limite": int(limite),
         },
     ) or []
+
+    # Número EXACTO de la importación — se filtra en Python porque el número
+    # sale del mismo parser que usa el resto de la pantalla (`23/26` → 23), y
+    # va ANTES del saldo corrido para que la columna "Saldo cta." acumule
+    # exactamente las filas que se ven.
+    if concepto_num is not None:
+        filtradas = []
+        for r in rows:
+            ref = parse_ref_anticipo(r.get("concepto"))
+            if ref.get("numero") == int(concepto_num):
+                filtradas.append(r)
+        rows = filtradas
 
     # Running balance por cuenta: ordenar ASC, acumular, marcar cada fila,
     # devolver DESC (que es el orden original). Bug TMT 2026-05-12: el
