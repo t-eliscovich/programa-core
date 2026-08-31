@@ -1122,8 +1122,11 @@ def etapas_por_pedido(pedidos: list[dict],
       con_salida=0) — no se la espera; si está, refuerza.
     - Línea TERMINADA: tiene OFT y todas sus hojas de ese producto están
       Finalizadas (o al plan).
-    - Resumen del pedido: TERMINADO sólo si TODAS las líneas terminaron (o
-      la X del memo); EN TINTURA si alguna línea avanzó; si no, ENVIADO.
+    - Resumen del pedido: TERMINADO sólo si TODAS las líneas terminaron;
+      EN TINTURA si alguna línea avanzó; si no, ENVIADO. ⚠ La X del memo NO
+      pisa las etapas (dueña 31/08: Jonathan la usa sólo para que el memo no
+      le siga apareciendo en formulas — es limpieza de su lista, no un dato
+      de producción).
 
     Fail-soft: sin respuesta de un bridge, todo queda en "enviado".
     """
@@ -1206,9 +1209,7 @@ def etapas_por_pedido(pedidos: list[dict],
             else:
                 lineas[prod] = "enviado"
 
-        if (memo_estados.get(ped) or {}).get("estado") == "terminado":
-            etapa = "terminado"    # la X de la fábrica manda
-        elif lineas and all(e == "terminado" for e in lineas.values()):
+        if lineas and all(e == "terminado" for e in lineas.values()):
             etapa = "terminado"
         elif any(e != "enviado" for e in lineas.values()):
             etapa = "en_tintura"

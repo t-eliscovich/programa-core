@@ -227,9 +227,12 @@ def test_al_100_del_plan_tambien_es_terminado_aunque_no_este_cerrada():
     assert r["lineas"]["PI28NEG"] == "terminado"
 
 
-def test_la_x_de_la_fabrica_manda_sobre_todo():
+def test_la_x_de_la_fabrica_NO_pisa_las_etapas():
+    """Dueña 31/08: Jonathan pone la X sólo para que el memo no le siga
+    apareciendo en formulas — es limpieza de su lista, no un dato de
+    producción. El pedido sigue mostrando lo que dice la producción real."""
     memo = {"PDCL-1": {"estado": "terminado", "en_proceso_por": "jonathan"}}
-    assert _etapas([], [], memo=memo)["PDCL-1"]["pedido"] == "terminado"
+    assert _etapas([], [], memo=memo)["PDCL-1"]["pedido"] == "enviado"
 
 
 def test_con_asinfo_caido_la_etapa_no_inventa_avance():
