@@ -239,64 +239,79 @@ def resumen(filas: list[dict], kg_base: float | None = None,
 
     ⭐ Las tres cifras se leen de corrido: AL ARRANCAR − VENDIDO = QUEDA (dueña
     25/08/2026: *"si teníamos 54k, lo que se vendió no puede ser 1k. o
-    deberíamos tener meta inicial, vendido, cuánto queda actualmente"*). La
-    pantalla mostraba el stock de hoy y lo vendido, dos números que no se
-    tocaban entre sí, y no había manera de ver el movimiento.
+    deberíamos tener meta inicial, vendido, cuánto queda actualmente"*, y
+    reafirmado 31/08/2026 más tarde: *"yo quiero que esta matematica
+    funcione, habia 50k se vendio 6k no quedan 46k. a corregir"*). La resta
+    tiene que cerrar SOLA, sin un asterisco que la explique.
 
-    `kg_base` son los kilos CONGELADOS de la largada, los mismos contra los que
-    corre la competencia. Sin ellos —antes de la largada— el arranque se
+    `kg_base` es lo que el LLAMADOR decide tratar como fijo — hoy, la suma de
+    `kg_al_marcar` (congelado por ÍTEM, el día que CADA UNO entró a la lista)
+    sobre la cohorte de hoy. No es una foto de una fecha única: crece solo
+    cuando entra una tela nueva, porque esa tela trae SU PROPIO punto de
+    partida. Antes se usaba una foto congelada por categoría el día de la
+    largada (`kg_al_arrancar()`), y una tela que entraba después (ej. una
+    SEGUNDA nueva) engordaba "Queda" sin haber estado nunca en "Al arrancar"
+    — el residuo aparecía como "kg de SEG nueva", un asterisco que Tamara no
+    quiere ver. Sin `kg_base` —antes de la largada— el arranque se
     reconstruye como stock de hoy + lo vendido, que cierra por construcción.
 
-    ⚠⚠ `kg_salido_antes` — DECISIÓN 31/08/2026. Un ítem que entró a la lista
-    ANTES de la largada (ej. el 17/08, ocho días antes del 25) puede haber
-    vendido algo en el medio: ese kilo salió de la bodega de verdad —"Queda"
-    ya no lo tiene— pero `kg_vendidos` sólo cuenta desde la largada (dueña
-    18/08/2026: "hace todo desde 25/08", ver `refresh()`), así que antes caía
-    en un `kg_movido` sin nombre que parecía tela perdida.
-    Tamara, 31/08/2026, viendo el caso de Kiana Forro 1.45 LIF (534,65 kg que
+    ⚠⚠ `kg_salido_antes` — DECISIÓN 31/08/2026, y la misma tarde plegada
+    adentro de "Vendido" en vez de tener su propia fila. Un ítem que entró a
+    la lista ANTES de la largada (ej. el 17/08, ocho días antes del 25) puede
+    haber vendido algo en el medio: ese kilo salió de la bodega de verdad
+    —"Queda" ya no lo tiene— pero `kg_vendidos` puro sólo cuenta desde la
+    largada (dueña 18/08/2026: "hace todo desde 25/08", ver `refresh()`).
+    Tamara, viendo el caso de Kiana Forro 1.45 LIF (534,65 kg que
     "desaparecían"): *"si ya estuvo en el listado, permanece… los vendedores
     no pueden que desaparezca de vez en cuando las cosas"* — pero también:
-    *"si se vendieron antes del 25 no cuentan para nadie"*. Las dos cosas a la
-    vez piden un CASILLERO PROPIO: se explica (no es un misterio) pero no
-    puntúa (no es Vendido). Por eso es la resta que le sobra a cada fila
-    marcada antes de la largada, nunca negativa, y no toca ni el tope ni
-    `usado` — no es una venta que compita, es historia vieja que ya pasó.
-    Un ítem marcado DESPUÍS de la largada no tiene este colchón: si a ése le
-    sobra algo, es `kg_movido` de verdad y hay que mirarlo.
+    *"si se vendieron antes del 25 no cuentan para nadie"*. Por eso el total
+    que se DEVUELVE en `kg_vendidos` es `vendido + salido_antes` — un solo
+    número, para que la resta cierre — pero lo que cuenta para la
+    competencia (puntos, ranking) nunca pasa por acá: sigue viviendo en
+    `scintela.parado_venta.cuenta`, ajeno a esta función. `kg_salido_antes`
+    queda también aparte en el dict por si alguna pantalla lo necesita, pero
+    ninguna lo muestra hoy.
 
-    ⚠ `kg_movido` es lo que ninguna de las dos cuentas de arriba explica: la
+    ⚠ `kg_movido` es lo que NINGUNA de las cuentas de arriba explica: la
     bodega se mueve por cosas que no son estas ventas (ajustes, producción que
-    entra a una tela de la lista, tela que sale sin factura). Va a la vista y
-    no escondido: la primera vez que los números no cierren, la pregunta va a
-    ser justamente ésa.
+    entra a una tela de la lista, tela que sale sin factura). Con `kg_base`
+    vivo debería quedar en CERO casi siempre — si no lo está, ES la alarma.
+    Va a la vista y no escondido: la primera vez que los números no cierren,
+    la pregunta va a ser justamente ésa.
     """
     # ⚠ La clave NO se puede llamar `items`: en Jinja `resumen.items` resuelve
     # primero el MÉTODO del diccionario, así que la tarjeta imprimía
     # "<built-in method items of dict object at 0x…>" en vez del número. No da
     # error — renderiza 200 y queda un texto absurdo donde va una cifra.
     kg = sum(float(f["stock_kg"]) for f in filas)
-    vendido = sum(float(f["kg_vendidos"]) for f in filas)
-    inicial = float(kg_base) if kg_base else kg + vendido
+    vendido_puntos = sum(float(f["kg_vendidos"]) for f in filas)
+    inicial = float(kg_base) if kg_base else kg + vendido_puntos
     # ⚠ `largada` es OPCIONAL a propósito: `resumen()` es una función pura que
     # no toca la base, y las dos pantallas que la llaman SÍ conocen la fecha
     # (la leen para otras cuentas). Pedírsela adentro con `config()` la
     # hubiera vuelto impura y roto todos los tests que la llaman con datos de
     # prueba sueltos, sin `db` de por medio.
-    salido_antes = 0.0
+    salido_antes_por_fila = []
     if largada is not None:
-        salido_antes = sum(
-            max(0.0, float(f.get("kg_al_marcar") or 0)
-                     - float(f["stock_kg"]) - float(f["kg_vendidos"]))
-            for f in filas
-            if f.get("fecha_marcado") and f["fecha_marcado"] < largada)
+        for f in filas:
+            residuo = 0.0
+            if f.get("fecha_marcado") and f["fecha_marcado"] < largada:
+                residuo = max(0.0, float(f.get("kg_al_marcar") or 0)
+                              - float(f["stock_kg"]) - float(f["kg_vendidos"]))
+            salido_antes_por_fila.append(residuo)
+    else:
+        salido_antes_por_fila = [0.0] * len(filas)
+    salido_antes = sum(salido_antes_por_fila)
+    vendido = vendido_puntos + salido_antes
     return {
         "n_items": len(filas),
         "kg": kg,
         "kg_vendidos": vendido,
         "kg_inicial": inicial,
         "kg_salido_antes": round(salido_antes, 2),
-        "kg_movido": round(inicial - vendido - kg - salido_antes, 2),
-        "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),
+        "kg_movido": round(inicial - vendido - kg, 2),
+        "movidos": sum(1 for f, sa in zip(filas, salido_antes_por_fila)
+                       if float(f["kg_vendidos"]) > 0 or sa > 0),
         "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
         "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
         "puntos": sum(float(f.get("puntos_fila") or 0) for f in filas),
@@ -333,16 +348,45 @@ def _fijar_base(conn=None) -> dict[str, float] | None:
 
 
 def kg_al_arrancar() -> float | None:
-    """Los kilos que había el día de la largada, los CONGELADOS.
+    """Los kilos que había el día de la largada, los CONGELADOS por categoría.
 
-    Son los mismos que mide la competencia: si la pantalla de Saldos reconstruye
-    su propio "al arrancar" con la foto de hoy, los dos números se separan en
-    cuanto la bodega se mueva y nadie sabe cuál es el bueno. `None` mientras no
-    se hayan fijado (antes de la largada, o entre la migración que los rehace y
-    el primer refresco).
+    ⚠ Desde el 31/08/2026 (tarde) la tarjeta "Al arrancar" de Saldos YA NO usa
+    esto — ver `kg_al_marcar_vivo()`. Esta foto congelada por categoría se
+    queda huérfana de pantalla porque una tela que se sumaba a la cohorte
+    DESPUÉS de la largada nunca entraba acá, y su stock aparecía en "Queda"
+    sin haber estado nunca en "Al arrancar" (el residuo "kg de SEG nueva").
+    Se deja viva —`_fijar_base()` la sigue escribiendo en cada refresco— por
+    si hace falta la foto histórica de un día puntual; no se borra la tabla
+    ni el cálculo, sólo se dejó de leer para esta cuenta.
+    `None` mientras no se hayan fijado (antes de la largada, o entre la
+    migración que los rehace y el primer refresco).
     """
     kg, _ = base_fijada()
     return round(sum(kg.values()), 2) if kg else None
+
+
+def kg_al_marcar_vivo(filas: list[dict]) -> float:
+    """La suma de `kg_al_marcar` de la cohorte de HOY — lo que reemplaza a
+    `kg_al_arrancar()` como "Al arrancar" en la tarjeta de Saldos.
+
+    ⭐ DECISIÓN 31/08/2026 (tarde). Tamara: *"yo quiero que esta matematica
+    funcione, habia 50k se vendio 6k no quedan 46k. a corregir"*. La foto
+    congelada por categoría (`kg_al_arrancar()`) sólo incluía las telas que YA
+    estaban en la cohorte el día de la largada; una SEGUNDA nueva que se suma
+    después trae su propio stock a "Queda" sin haber pasado nunca por "Al
+    arrancar", y la resta dejaba de cerrar — el residuo se mostraba como "kg
+    de SEG nueva", un asterisco que hay que leer para entender el número.
+
+    `kg_al_marcar` es un valor por ÍTEM, congelado el día que ESE ítem entró a
+    `parado_cohorte` (nunca se vuelve a tocar — ver `items()`). Sumarlo sobre
+    la cohorte de hoy no es "reconstruir con la foto de hoy" (eso cerraría
+    SIEMPRE por construcción, sin decir nada): cada tela aporta su propio
+    punto de partida histórico, así que la suma sólo crece cuando entra una
+    tela nueva a la lista — nunca porque la bodega se movió. La resta contra
+    esto sigue siendo una alarma real: si no cierra, algo pasó que ninguna
+    venta explica.
+    """
+    return round(sum(float(f.get("kg_al_marcar") or 0) for f in filas), 2)
 
 
 def base_fijada() -> tuple[dict[str, float], date | None]:

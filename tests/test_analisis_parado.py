@@ -2093,14 +2093,16 @@ def test_todo_se_cuenta_desde_la_largada_y_no_desde_que_entro_cada_fila():
         "ya no se arranca desde la fila más vieja de la cohorte")
 
 
-def test_la_pantalla_dice_desde_cuando_cuenta():
-    """Un "vendido" sin fecha al lado invita justamente a la comparación que
-    generó la confusión."""
+def test_vendido_ya_no_dice_desde_cuando_cuenta():
+    """⚠⚠ REVIERTE a propósito la decisión del 24/08/2026 (la de abajo, en el
+    docstring viejo, seguía pidiendo la fecha al lado del número). Desde el
+    31/08/2026 (tarde) "Vendido" fusiona kg_salido_antes: ya no es sólo "lo
+    vendido desde la largada", así que la frase "desde el 25/08" mentiría.
+    Tamara: *"yo quiero que esta matematica funcione... a corregir"* — la
+    tarjeta vuelve a ser UN número sin fecha al lado, a propósito."""
     html = " ".join(_html_parado().split())
-    # ⚠ La IDEA, no la frase: el 24/08/2026 el resumen pasó de cinco tarjetas a
-    # un renglón y el rótulo quedó partido ("Vendido … · desde el 25/08"). Lo
-    # que no puede faltar es la fecha al lado del número.
-    assert "Vendido" in html and "desde el 25/08" in html
+    assert "Vendido" in html
+    assert "desde el 25/08" not in html
 
 
 # ── Intela como una cartera más ─────────────────────────────────────────────
@@ -3133,11 +3135,18 @@ def test_salido_antes_de_la_largada_no_es_movido_ni_puntua(monkeypatch):
     r = queries.resumen(filas_antes, kg_base=580.15, largada=date(2026, 8, 25))
     assert r["kg_salido_antes"] == 534.65
     assert r["kg_movido"] == 0
+    # ⭐ DECISIÓN 31/08/2026 (tarde): "kg_vendidos" (lo que se DEVUELVE, lo que
+    # pinta la tarjeta) INCLUYE el salido_antes — Tamara: "yo quiero que esta
+    # matematica funcione... a corregir". La resta Al arrancar − Vendido tiene
+    # que dar Queda sin un tercer número escondido.
+    assert r["kg_vendidos"] == 534.65
+    assert r["kg_inicial"] - r["kg_vendidos"] - r["kg"] == r["kg_movido"] == 0
 
     # el mismo residuo, pero SIN pasarle `largada` (compatibilidad hacia
     # atrás: las pantallas que no la mandan ven el comportamiento de siempre)
     r = queries.resumen(filas_antes, kg_base=580.15)
     assert r["kg_salido_antes"] == 0
+    assert r["kg_vendidos"] == 0
     assert r["kg_movido"] == 534.65
 
     # marcado DESPUÉS de la largada: el residuo NO tiene colchón, es
@@ -3148,6 +3157,55 @@ def test_salido_antes_de_la_largada_no_es_movido_ni_puntua(monkeypatch):
     r = queries.resumen(filas_despues, kg_base=580.15, largada=date(2026, 8, 25))
     assert r["kg_salido_antes"] == 0
     assert r["kg_movido"] == 534.65
+
+
+def test_movidos_cuenta_tambien_los_items_que_solo_salieron_antes():
+    """El conteo de ítems de la tarjeta Vendido tiene que coincidir con lo que
+    ahora entra en la suma: un ítem que vendió TODO antes de la largada
+    (kg_vendidos post-largada en 0) igual tiene que sumar al conteo, porque
+    su kilo sí entra en `kg_vendidos` (el total, ya fusionado)."""
+    filas = [
+        {"stock_kg": 0, "kg_vendidos": 5, "kg_segunda": 0},  # vendió después
+        {"stock_kg": 45.5, "kg_vendidos": 0, "kg_segunda": 0,  # solo antes
+         "kg_al_marcar": 580.15, "fecha_marcado": date(2026, 8, 17)},
+        {"stock_kg": 10, "kg_vendidos": 0, "kg_segunda": 0},  # no se movió
+    ]
+    r = queries.resumen(filas, largada=date(2026, 8, 25))
+    assert r["movidos"] == 2
+
+
+def test_al_arrancar_vivo_absorbe_una_tela_nueva_sin_dejar_seg_nueva():
+    """⭐ DECISIÓN 31/08/2026 (tarde). Antes, "Al arrancar" era una foto
+    congelada por categoría el día de la largada (`kg_al_arrancar()`): una
+    tela que se sumaba a la cohorte DESPUÉS nunca entraba ahí, y su stock
+    aparecía en "Queda" sin haber estado nunca en "Al arrancar" — el residuo
+    salía como `kg_movido` negativo ("kg de SEG nueva"), un asterisco que
+    Tamara no quiere ver: *"yo quiero que esta matematica funcione, habia 50k
+    se vendio 6k no quedan 46k. a corregir"*.
+
+    Con `kg_al_marcar_vivo()` (suma de `kg_al_marcar` sobre la cohorte de
+    HOY, no una foto de un solo día) la tela nueva trae SU PROPIO punto de
+    partida y la resta cierra sola."""
+    vieja = {"stock_kg": 400, "kg_vendidos": 600, "kg_segunda": 0,
+             "kg_al_marcar": 1000, "fecha_marcado": date(2026, 8, 17)}
+    nueva = {"stock_kg": 200, "kg_vendidos": 0, "kg_segunda": 200,
+             "kg_al_marcar": 200, "fecha_marcado": date(2026, 9, 1)}
+    filas = [vieja, nueva]
+
+    kg_base_vivo = queries.kg_al_marcar_vivo(filas)
+    assert kg_base_vivo == 1200  # 1.000 de la vieja + 200 de la nueva
+
+    r = queries.resumen(filas, kg_base_vivo, largada=date(2026, 8, 25))
+    assert r["kg_inicial"] == 1200
+    assert r["kg_vendidos"] == 600
+    assert r["kg"] == 600
+    assert r["kg_movido"] == 0, "la resta tiene que cerrar sola, sin SEG nueva"
+
+    # ⚠ El testigo de lo que pasaba ANTES: con la foto vieja (congelada antes
+    # de que la tela nueva se sumara) la resta NO cerraba — quedaba el
+    # residuo negativo que la pantalla mostraba como "kg de SEG nueva".
+    r_viejo = queries.resumen(filas, kg_base=1000, largada=date(2026, 8, 25))
+    assert r_viejo["kg_movido"] == -200
 
 
 def test_la_pantalla_muestra_las_tres_cifras():
@@ -4126,17 +4184,20 @@ def test_la_ultima_venta_se_le_pide_a_asinfo_con_el_corte_adentro():
         "volvió el intento de reconstruirla desde la foto anterior")
 
 
-def test_los_kilos_que_entran_por_bodega_dicen_de_donde_salen():
-    """Dueña 25/08/2026: *"acá aclarar que los de segunda siguen entrando"*. El
-    número parecía un descuadre: no es un ajuste raro, es la SEGUNDA que sale
-    del telar todos los días y cae sola en la lista, porque un saldo es también
-    "los kilos SEG de cualquier tela, se venda o no", sin pedirle antigüedad."""
+def test_el_residuo_que_entra_ya_no_se_explica_como_seg_nueva():
+    """⚠⚠ REVIERTE a propósito la frase del 25/08/2026 ("acá aclarar que los
+    de segunda siguen entrando"). Con "Al arrancar" viva
+    (`kg_al_marcar_vivo`, decisión 31/08/2026 tarde) una SEGUNDA que se suma a
+    la cohorte DESPUÉS de la largada ya trae su propio punto de partida —
+    `kg_movido` no debería quedar negativo por eso nunca más. Si de todos
+    modos queda negativo, ya NO es "la segunda que entra sola": es un residuo
+    genuino (una corrección, un recuento) y decir "de SEG nueva" mentiría
+    sobre la causa. Por eso el texto pasa a ser genérico."""
     html = _html_parado()
     i = html.index("resumen.kg_movido | abs | num_es(0)")
-    assert "de SEG nueva" in html[i:i + 200], (
-        "el número parece un descuadre si no dice de dónde sale")
-    assert "resumen.kg_movido < 0" in html[i:i + 120], (
-        "sólo cuando ENTRAN kilos: si salieron, la segunda no explica nada")
+    assert "de más en bodega" in html[i:i + 200]
+    assert "de SEG nueva" not in html[i:i + 200]
+    assert "resumen.kg_movido < 0" in html[i:i + 120]
 
 
 def test_la_linea_abierta_se_lleva_su_propia_categoria_vendida():
