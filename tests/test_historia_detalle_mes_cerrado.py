@@ -85,27 +85,40 @@ def test_campos_usan_las_mismas_formulas_que_gastos_mes_anterior(monkeypatch):
 
 def test_tinto_mes_componentes_no_toca_dbase_para_un_mes_post_corte(monkeypatch):
     """Agosto 2026 es 100% posterior a CORTE_TINTURA (2026-07-01): la parte
-    scintela.tinto no debe correr ninguna query, todo sale de formulas_app."""
+    scintela.tinto no debe correr ninguna query, todo sale de formulas_app.
+
+    OJO: `queries.tinto_mes_componentes` hace `from modules.tintura import
+    service as _tint_svc` DENTRO de la función -- `patch.dict("sys.modules",
+    ...)` no alcanza para reemplazarlo (el paquete `modules.tintura` ya
+    tiene `service` como atributo real desde el primer import de la suite,
+    y `from paquete import submodulo` resuelve por ese atributo, no por
+    `sys.modules`). Hay que patchear la función directamente sobre el
+    módulo real con `patch.object`.
+    """
+    from modules.tintura import service as tint_svc
+
     class _NoDbCalls:
         def fetch_one(self, *a, **kw):
             raise AssertionError("no debería leer scintela.tinto para agosto")
 
-    fake_ordenes = []
+    calls = []
 
-    class _FakeSvc:
-        @staticmethod
-        def tinto_equiv_formulas(desde, hasta, excluir_lavados=False):
-            assert desde == date(2026, 8, 1)
-            assert hasta == date(2026, 8, 31)
-            return fake_ordenes
+    def fake_tinto_equiv_formulas(desde, hasta, excluir_lavados=False):
+        calls.append((desde, hasta))
+        assert desde == date(2026, 8, 1)
+        assert hasta == date(2026, 8, 31)
+        return []
 
     with patch.object(queries, "db", _NoDbCalls()), \
-         patch.dict("sys.modules", {"modules.tintura.service": _FakeSvc}):
+         patch.object(tint_svc, "tinto_equiv_formulas", fake_tinto_equiv_formulas):
         out = queries.tinto_mes_componentes(2026, 8)
+    assert calls, "tinto_equiv_formulas no se llamó"
     assert out == {"itin": 0.0, "ktint": 0.0, "kr": 0.0}
 
 
 def test_tinto_mes_componentes_suma_formulas_app_excluyendo_lavados(monkeypatch):
+    from modules.tintura import service as tint_svc
+
     class _Orden:
         def __init__(self, importe, color, kg, kgn):
             self.importe, self.color, self.kg, self.kgn = importe, color, kg, kgn
@@ -115,17 +128,15 @@ def test_tinto_mes_componentes_suma_formulas_app_excluyendo_lavados(monkeypatch)
         _Orden(20.0, "LAVADO MAQ", 30.0, 28.0),  # lavado: NO cuenta kg/kr, SI itin
     ]
 
-    class _FakeSvc:
-        @staticmethod
-        def tinto_equiv_formulas(desde, hasta, excluir_lavados=False):
-            return fake_ordenes
+    def fake_tinto_equiv_formulas(desde, hasta, excluir_lavados=False):
+        return fake_ordenes
 
     class _NoDbCalls:
         def fetch_one(self, *a, **kw):
             raise AssertionError("no debería leer scintela.tinto para agosto")
 
     with patch.object(queries, "db", _NoDbCalls()), \
-         patch.dict("sys.modules", {"modules.tintura.service": _FakeSvc}):
+         patch.object(tint_svc, "tinto_equiv_formulas", fake_tinto_equiv_formulas):
         out = queries.tinto_mes_componentes(2026, 8)
 
     assert out["itin"] == 120.0  # itin suma TODAS las filas, incl. lavados
