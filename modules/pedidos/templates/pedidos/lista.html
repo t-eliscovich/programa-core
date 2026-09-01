@@ -100,6 +100,8 @@
   .pd .fet button.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
   .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
   .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
+  .pd .btnmemo--cancelar{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #dc2626;background:#fff;color:#dc2626;cursor:pointer;white-space:nowrap}
+  .pd .btnmemo--cancelar:hover{background:#fef2f2}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
   .pd .vendname{font-size:11px;color:#64748b}
 </style>
@@ -336,6 +338,7 @@
               {# `et.pedido` es el RESUMEN (terminado sólo si TODAS las
                  líneas terminaron); el detalle por línea va en las filas de
                  abajo — dueña 27/08: "trackearlo por línea, no global". #}
+              {% set m = memo_estados.get(p.numero) %}
               {% set et = etapas.get(p.numero) %}
               {% if et %}
                 {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et.pedido, 0) %}
@@ -348,6 +351,14 @@
                     </span>
                   {% endfor %}
                 </div>
+                {% if m and m.estado == 'pendiente' and tiene_permiso('pedidos.enviar_memo') %}
+                  <form method="post" action="{{ url_for('pedidos.cancelar_memo') }}" style="display:inline;margin-left:6px"
+                        onsubmit="return confirm('¿Cancelar el memo del pedido {{ p.numero }}? Vas a poder mandarlo de nuevo.');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                    <input type="hidden" name="numero" value="{{ p.numero }}">
+                    <button type="submit" class="btnmemo btnmemo--cancelar">Cancelar memo</button>
+                  </form>
+                {% endif %}
               {% elif tiene_permiso('pedidos.enviar_memo') %}
                 <form method="post" action="{{ url_for('pedidos.enviar_memo') }}" style="display:inline"
                       onsubmit="return confirm('¿Enviar el pedido {{ p.numero }} como memo a la fábrica?');">

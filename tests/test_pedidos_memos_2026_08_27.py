@@ -249,6 +249,70 @@ def test_sin_env_var_el_envio_degrada_sin_romper():
     assert formulas_memos.estados(["P"]) == {}
 
 
+@pytest.fixture
+def _pool_formulas_memos():
+    """Reactiva/limpia formulas_memos._pool para los tests que lo wirean con
+    un fake — mismo mecanismo que `_wire_fake_pool` de test_formulas_db.py,
+    replicado acá (el módulo no expone un helper propio)."""
+    original = formulas_memos._pool
+    yield
+    formulas_memos._pool = original
+
+
+def _wire_fake_pool_memos(fila_returned):
+    """Fake pool mínimo: `cur.fetchone()` devuelve `fila_returned` (una tupla
+    tipo (id,) si el UPDATE/INSERT pegó, o None si el WHERE no matcheó)."""
+    from unittest.mock import MagicMock
+
+    fake_cur = MagicMock()
+    fake_cur.fetchone.return_value = fila_returned
+
+    fake_conn = MagicMock()
+    fake_conn.cursor.return_value.__enter__.return_value = fake_cur
+    fake_conn.cursor.return_value.__exit__.return_value = False
+
+    fake_pool = MagicMock()
+    fake_pool.getconn.return_value = fake_conn
+    formulas_memos._pool = fake_pool
+    return fake_cur
+
+
+def test_cancelar_un_memo_pendiente_pega(_pool_formulas_memos):
+    cur = _wire_fake_pool_memos((5,))
+    ok, motivo = formulas_memos.cancelar("PDCL-1", "jonathan")
+    assert (ok, motivo) == (True, "cancelado")
+    args = cur.execute.call_args.args
+    assert "estado = 'pendiente'" in args[0]
+    assert args[1] == ("jonathan", "PDCL-1")
+
+
+def test_cancelar_un_memo_en_proceso_no_hace_nada(_pool_formulas_memos):
+    """El UPDATE trae `WHERE ... AND estado = 'pendiente'`: si la fábrica ya
+    lo tomó (en_proceso/terminado) el WHERE no matchea, 0 filas."""
+    _wire_fake_pool_memos(None)
+    ok, motivo = formulas_memos.cancelar("PDCL-1", "jonathan")
+    assert (ok, motivo) == (False, "no_pendiente")
+
+
+def test_enviar_reactiva_un_memo_cancelado(_pool_formulas_memos):
+    """El ON CONFLICT ... DO UPDATE ... WHERE memos.estado = 'cancelado'
+    matchea: la fila se reactiva y `enviar()` avisa "enviado", como si fuera
+    nueva."""
+    _wire_fake_pool_memos((9,))
+    ok, motivo = formulas_memos.enviar("PDCL-1", "Cliente", "PPR", "test", {})
+    assert (ok, motivo) == (True, "enviado")
+
+
+def test_enviar_sigue_frenando_si_el_conflicto_es_con_un_memo_vivo(_pool_formulas_memos):
+    """Si el conflicto es con un memo pendiente/en_proceso/terminado, el
+    WHERE `estado = 'cancelado'` no matchea: 0 filas, "ya_enviado" — el
+    comportamiento de siempre no cambió."""
+    cur = _wire_fake_pool_memos(None)
+    ok, motivo = formulas_memos.enviar("PDCL-1", "Cliente", "PPR", "test", {})
+    assert (ok, motivo) == (False, "ya_enviado")
+    assert "ON CONFLICT" in cur.execute.call_args.args[0]
+
+
 # ── la pantalla de la oficina ───────────────────────────────────────────────
 
 def _login(app, fake_db, permisos=("facturas.ver", "stock.ver",
@@ -368,6 +432,66 @@ def test_enviar_un_pedido_que_no_existe_no_manda_nada(app, fake_db):
     env.assert_not_called()
 
 
+# ── cancelar-memo (2026-09-01) ──────────────────────────────────────────────
+
+def test_cancelar_memo_sin_permiso_es_404(app, fake_db):
+    c = _login(app, fake_db, permisos=("facturas.ver",))
+    with patch.object(formulas_memos, "cancelar") as canc:
+        r = c.post("/pedidos/cancelar-memo", data={"numero": "PDCL-26438"})
+    assert r.status_code == 404
+    canc.assert_not_called()
+
+
+def test_cancelar_memo_pendiente_confirma_y_puede_reenviarse(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(formulas_memos, "cancelar",
+                      return_value=(True, "cancelado")) as canc:
+        r = c.post("/pedidos/cancelar-memo", data={"numero": "PDCL-26438"},
+                   follow_redirects=True)
+    assert "cancelado" in r.get_data(as_text=True)
+    assert "Ya lo podés mandar de nuevo" in r.get_data(as_text=True)
+    canc.assert_called_once_with("PDCL-26438", "test")
+
+
+def test_cancelar_memo_no_pendiente_avisa_y_no_rompe(app, fake_db):
+    """Cubre tanto el pedido inexistente como el que la fábrica ya tomó: el
+    UPDATE con WHERE estado='pendiente' no matchea en ninguno de los dos
+    casos, así que `cancelar()` devuelve el mismo "no_pendiente"."""
+    c = _login(app, fake_db)
+    with patch.object(formulas_memos, "cancelar",
+                      return_value=(False, "no_pendiente")):
+        r = c.post("/pedidos/cancelar-memo", data={"numero": "PDCL-99999"},
+                   follow_redirects=True)
+    assert "ya no está pendiente" in r.get_data(as_text=True)
+
+
+def test_cancelar_memo_sin_numero_no_llama_al_bridge(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(formulas_memos, "cancelar") as canc:
+        r = c.post("/pedidos/cancelar-memo", data={}, follow_redirects=True)
+    assert "Falta el número de pedido" in r.get_data(as_text=True)
+    canc.assert_not_called()
+
+
+def test_pedido_con_memo_cancelado_no_cuenta_como_tiene_memo(app, fake_db):
+    """El filtrado vive en la VIEW: `estados()` puede traer un memo
+    'cancelado', pero el dict que llega a `etapas_por_pedido` ya no lo
+    incluye — la pantalla vuelve a ofrecer "Enviar memo" para ese pedido."""
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(formulas_memos, "estados",
+                      return_value={"PDCL-26438": {"estado": "cancelado",
+                                                    "en_proceso_por": None}}), \
+         patch.object(service, "etapas_por_pedido", return_value={}) as etapas_mock:
+        r = c.get("/pedidos?corte=pedido")
+    activos_pasado = etapas_mock.call_args.args[1]
+    assert "PDCL-26438" not in activos_pasado
+    body = r.get_data(as_text=True)
+    assert 'class="btnmemo"' in body
+
+
 # ── el portal del vendedor ──────────────────────────────────────────────────
 
 def _login_vendedor(app, fake_db, vend="PPR"):
@@ -417,6 +541,33 @@ def test_el_vendedor_manda_lo_suyo_y_queda_registrado_su_usuario(app, fake_db):
                    data={"numero": "PDCL-26438"})
     assert r.status_code == 302
     assert env.call_args.kwargs["enviado_por"] == "patricio"
+
+
+def test_el_vendedor_no_puede_cancelar_un_pedido_ajeno(app, fake_db):
+    """PPR postea el numero del pedido de RMY: 404, como si no existiera —
+    calcado del cerco de `pedidos_enviar_memo`."""
+    c = _login_vendedor(app, fake_db, vend="PPR")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(formulas_memos, "cancelar") as canc:
+        r = c.post("/mi-cartera/pedidos/cancelar-memo",
+                   data={"numero": "PDCL-26401"})
+    assert r.status_code == 404
+    canc.assert_not_called()
+
+
+def test_el_vendedor_cancela_lo_suyo_y_queda_registrado_su_usuario(app, fake_db):
+    c = _login_vendedor(app, fake_db, vend="PPR")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(formulas_memos, "cancelar",
+                      return_value=(True, "cancelado")) as canc:
+        r = c.post("/mi-cartera/pedidos/cancelar-memo",
+                   data={"numero": "PDCL-26438"})
+    assert r.status_code == 302
+    canc.assert_called_once_with("PDCL-26438", "patricio")
 
 
 def test_un_pedido_terminado_muestra_terminado(app, fake_db):

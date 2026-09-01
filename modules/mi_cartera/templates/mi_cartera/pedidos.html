@@ -63,6 +63,7 @@
   .ped-steps .sep{flex:1 1 0;height:2px;border-radius:1px;background:#e2e8f0;min-width:2px}
   .ped-steps .sep.done{background:#86efac}
   .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
+  .btn-memo--cancelar{border:1px solid #dc2626;border-radius:9px;background:#fff;color:#dc2626;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
 </style>
 
 {% if not disponible %}
@@ -133,6 +134,17 @@
           <input type="hidden" name="numero" value="{{ p.numero }}">
           {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
           <button type="submit" class="btn-memo">Enviar memo</button>
+        </form>
+      </div>
+      {% endif %}
+      {% if m and m.estado == 'pendiente' %}
+      <div class="ped-pie" style="margin-top:4px">
+        <form method="post" action="{{ url_for('mi_cartera.pedidos_cancelar_memo') }}"
+              onsubmit="return confirm('¿Cancelar el memo del pedido {{ p.numero }}? Vas a poder mandarlo de nuevo.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="numero" value="{{ p.numero }}">
+          {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+          <button type="submit" class="btn-memo btn-memo--cancelar">Cancelar memo</button>
         </form>
       </div>
       {% endif %}

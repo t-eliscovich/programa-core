@@ -1,21 +1,26 @@
 """Envío de MEMOS de pedidos a formulas_app — el único write-back del bridge.
 
 `formulas_db.py` es SELECT-only por contrato y así se queda. Este módulo es
-la excepción DELIBERADA y acotada (decisión Tamara 2026-08-27): Programa Core
-manda memos de pedidos a la tabla `memos` de formulas_app, y nada más. El
-cerco no es una promesa del código sino del ROL de la base:
-`programa_core_memos` tiene SELECT e INSERT sobre `public.memos` y ningún
-otro privilegio. Aunque alguien escriba acá un UPDATE a `ordenes`, Postgres
-lo rechaza.
+la excepción DELIBERADA y acotada (decisión Tamara 2026-08-27, ampliada
+2026-09-01): Programa Core manda memos de pedidos a la tabla `memos` de
+formulas_app, y nada más. El cerco no es una promesa del código sino del ROL
+de la base: `programa_core_memos` tiene SELECT, INSERT y un UPDATE acotado
+por columna sobre `public.memos` (estado, cliente, vendedor, enviado_por,
+enviado_en, detalle, cancelado_por, cancelado_en) y ningún otro privilegio —
+`en_proceso_por/en_proceso_en/terminado_por/terminado_en/id/pedido_numero`
+siguen siendo exclusivos de la fábrica. Aunque alguien escriba acá un UPDATE
+a `ordenes`, o a una columna fuera de esa lista, Postgres lo rechaza.
 
 El memo es una FOTO del pedido al momento de enviar. Si el pedido cambia en
 Asinfo después, el memo no se entera — se manda de nuevo (y el UNIQUE de
 `pedido_numero` en formulas_app hace que el segundo envío avise "ya estaba"
-en vez de duplicar).
+en vez de duplicar, salvo que el memo esté 'cancelado': ahí reactiva la
+MISMA fila con datos frescos). Un memo 'pendiente' también se puede
+`cancelar()` desde acá — sólo mientras la fábrica no lo tomó.
 
-Fail-soft como todo el bridge: sin env var o con la base caída, `enviar()`
-devuelve (False, "sin_bridge") y `estados()` devuelve {} — la pantalla
-muestra el botón igual y el envío avisa que no pudo, nunca rompe.
+Fail-soft como todo el bridge: sin env var o con la base caída, `enviar()` y
+`cancelar()` devuelven (False, "sin_bridge") y `estados()` devuelve {} — la
+pantalla muestra el botón igual y el envío avisa que no pudo, nunca rompe.
 
 Env vars:
     FORMULAS_MEMOS_DATABASE_URL  postgresql://programa_core_memos:...@host/postgres?sslmode=require
@@ -93,10 +98,20 @@ def _conn():
 
 def enviar(numero: str, cliente: str, vendedor: str, enviado_por: str,
            detalle: dict) -> tuple[bool, str]:
-    """Inserta el memo. Devuelve `(ok, motivo)`.
+    """Inserta el memo, o reactiva uno CANCELADO con datos frescos. Devuelve
+    `(ok, motivo)`.
 
-    motivos: "enviado" (quedó), "ya_enviado" (otro lo mandó antes — el UNIQUE
-    de formulas_app lo frena), "sin_bridge" (env var vacía o base caída).
+    Si ya existe una fila con este `pedido_numero` en estado 'cancelado', el
+    ON CONFLICT la reactiva (vuelve a 'pendiente', pisa cliente/vendedor/
+    detalle/enviado_por/enviado_en, limpia cancelado_por/cancelado_en) en vez
+    de insertar una fila nueva — el UNIQUE de formulas_app es sobre
+    `pedido_numero`. Si el conflicto es con una fila VIVA (pendiente/
+    en_proceso/terminado) el WHERE no matchea, 0 filas, mismo "ya_enviado"
+    de siempre.
+
+    motivos: "enviado" (quedó, nueva o reactivada), "ya_enviado" (ya había un
+    memo vivo — el UNIQUE de formulas_app lo frena), "sin_bridge" (env var
+    vacía o base caída).
     """
     if _pool is None:
         return False, "sin_bridge"
@@ -108,7 +123,16 @@ def enviar(numero: str, cliente: str, vendedor: str, enviado_por: str,
                     INSERT INTO memos (pedido_numero, cliente, vendedor,
                                        enviado_por, detalle)
                     VALUES (%s, %s, %s, %s, %s)
-                    ON CONFLICT (pedido_numero) DO NOTHING
+                    ON CONFLICT (pedido_numero) DO UPDATE
+                       SET cliente = EXCLUDED.cliente,
+                           vendedor = EXCLUDED.vendedor,
+                           enviado_por = EXCLUDED.enviado_por,
+                           enviado_en = NOW(),
+                           detalle = EXCLUDED.detalle,
+                           estado = 'pendiente',
+                           cancelado_por = NULL,
+                           cancelado_en = NULL
+                     WHERE memos.estado = 'cancelado'
                     RETURNING id
                     """,
                     (numero, cliente or "", vendedor or "", enviado_por or "",
@@ -121,6 +145,39 @@ def enviar(numero: str, cliente: str, vendedor: str, enviado_por: str,
         return False, "ya_enviado"
     except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
         _log.warning("formulas_memos.enviar falló: %s", e)
+        return False, "sin_bridge"
+
+
+def cancelar(numero: str, usuario: str) -> tuple[bool, str]:
+    """Cancela un memo PENDIENTE — el pedido cambió después de enviarlo y
+    hay que mandar una foto nueva. No toca memos que la fábrica ya tomó
+    ('en_proceso'/'terminado'): ahí cancelar podría dejar huérfana una
+    orden de tintura ya armada (decisión Tamara 2026-09-01).
+
+    Devuelve (ok, motivo): "cancelado", "no_pendiente" (ya lo tomó la
+    fábrica, ya estaba cancelado, o no existe), "sin_bridge".
+    """
+    if _pool is None:
+        return False, "sin_bridge"
+    try:
+        with _conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE memos
+                       SET estado = 'cancelado',
+                           cancelado_por = %s,
+                           cancelado_en = NOW()
+                     WHERE pedido_numero = %s AND estado = 'pendiente'
+                 RETURNING id
+                    """,
+                    (usuario or "", numero),
+                )
+                fila = cur.fetchone()
+            c.commit()
+        return (True, "cancelado") if fila else (False, "no_pendiente")
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_memos.cancelar falló: %s", e)
         return False, "sin_bridge"
 
 

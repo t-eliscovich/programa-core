@@ -872,13 +872,16 @@ def pedidos():
     mios = [p for p in todos if p["dueno"]["codigo"] == vend]
     numeros = [p["numero"] for p in mios]
     memo_estados = formulas_memos.estados(numeros)
+    # Un memo cancelado no cuenta como "tiene memo": el pedido vuelve a
+    # mostrar "Enviar memo" como si nunca se hubiera mandado.
+    activos = {n: v for n, v in memo_estados.items() if v.get("estado") != "cancelado"}
     return render_template(
         "mi_cartera/pedidos.html",
         seccion="pedidos",
         disponible=disponible,
         pedidos=mios,
-        etapas=pedidos_service.etapas_por_pedido(mios, memo_estados),
-        memo_estados=memo_estados,
+        etapas=pedidos_service.etapas_por_pedido(mios, activos),
+        memo_estados=activos,
         **_ctx_base(vend),
     )
 
@@ -920,4 +923,35 @@ def pedidos_enviar_memo():
     else:
         flash("No pude hablar con el programa de fórmulas — el memo NO se "
               "envió. Probá de nuevo en un rato.", "error")
+    return redirect(_url_mis_pedidos())
+
+
+@mi_cartera_bp.route("/mi-cartera/pedidos/cancelar-memo", methods=["POST"])
+@requiere_login
+@requiere_permiso("micartera.ver")
+def pedidos_cancelar_memo():
+    """El vendedor cancela el memo PENDIENTE de un pedido SUYO, para poder
+    mandarlo de nuevo con datos al día. Mismo cerco de dueño que
+    `pedidos_enviar_memo`."""
+    vend = _vend_actual()
+    numero = (request.form.get("numero") or "").strip()
+    detalle = pedidos_service.armar_memo(numero) if numero else None
+    if detalle is None:
+        flash("No encontré ese pedido entre los pendientes, así que no pude "
+              "cancelar el memo. Recargá la pantalla y probá de nuevo.", "error")
+        return redirect(_url_mis_pedidos())
+    if detalle["vendedor"]["codigo"] != vend:
+        abort(404)
+
+    usuario = g.user["username"] if g.get("user") else ""
+    ok, motivo = formulas_memos.cancelar(numero, usuario)
+    if ok:
+        flash(f"Memo del pedido {numero} cancelado. Ya lo podés mandar de nuevo.",
+              "success")
+    elif motivo == "no_pendiente":
+        flash(f"El memo del pedido {numero} ya no está pendiente — no se "
+              "pudo cancelar.", "warning")
+    else:
+        flash("No pude hablar con formulas_app — el memo NO se canceló. "
+              "Probá de nuevo en un rato.", "error")
     return redirect(_url_mis_pedidos())
