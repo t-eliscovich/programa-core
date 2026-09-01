@@ -105,7 +105,13 @@ _PAGE = """\
     valores de julio (id=296) como placeholder -- mejor que dejarlos en cero, pero
     <b>no son el dato real de agosto</b>. Si alguien vio la pantalla completa antes del
     incidente (Andres guardo el snapshot id=508 a las 22:20 del 31/08), esos valores de
-    detalle se pueden corregir a mano despues.
+    detalle se pueden corregir a mano despues.<br><br>
+    <b>Tamara 2026-09-01:</b> 10 de esas columnas (kcom/ucom/ktej/utej/ktin/utin/gasto/
+    gstotal/kvent/uvent) YA tienen una reconstruccion real mas abajo en esta misma
+    pantalla ("Detalle real de {{ anio }}-{{ '%02d'|format(mes) }}"), sacada de compras/
+    xgast/factura/tinto filtrados por fecha a agosto -- no julio. stock/anticipos/
+    maquinaria/realty/costo siguen sin fuente independiente (mismo problema que la
+    cartera).
     <form method="post" style="margin-top:6px">
       <input type=hidden name=csrf_token value="{{ csrf_token() }}">
       <input type="hidden" name="restore_agosto_manual" value="1">

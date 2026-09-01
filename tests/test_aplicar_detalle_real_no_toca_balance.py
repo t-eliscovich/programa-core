@@ -13,7 +13,6 @@ from unittest.mock import patch
 import db
 from modules.informes import queries as iq
 
-
 CAMPOS = {
     "ucom": 1111.0, "kcom": 222.0,
     "utej": 3333.0, "ktej": 444.0,

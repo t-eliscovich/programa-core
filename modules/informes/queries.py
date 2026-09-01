@@ -9551,7 +9551,7 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
     v, _ = None, None
     try:
         v = gastos_xgast_v1_a_v9_mes(meses_atras=meses_atras)
-    except Exception as e:  # noqa: BLE001
+    except Exception:  # noqa: BLE001
         v = {}
     try:
         a = amortizaciones_mensuales(meses_atras=meses_atras)
