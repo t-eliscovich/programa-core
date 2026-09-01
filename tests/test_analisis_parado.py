@@ -3201,11 +3201,36 @@ def test_al_arrancar_vivo_absorbe_una_tela_nueva_sin_dejar_seg_nueva():
     assert r["kg"] == 600
     assert r["kg_movido"] == 0, "la resta tiene que cerrar sola, sin SEG nueva"
 
-    # ⚠ El testigo de lo que pasaba ANTES: con la foto vieja (congelada antes
-    # de que la tela nueva se sumara) la resta NO cerraba — quedaba el
-    # residuo negativo que la pantalla mostraba como "kg de SEG nueva".
+    # ⚠ El PISO de `resumen()` (ver más abajo) es una segunda red: incluso con
+    # la foto VIEJA (congelada antes de que la tela nueva se sumara, el bug
+    # que este test reproduce), la resta ya no queda en descubierto — "Al
+    # arrancar" sube al piso de lo que hoy se puede explicar. Antes de que
+    # existiera el piso esto daba -200 ("kg de SEG nueva"); con las dos
+    # defensas juntas (kg_al_marcar_vivo + el piso) da 0 aunque el llamador
+    # se equivoque de foto.
     r_viejo = queries.resumen(filas, kg_base=1000, largada=date(2026, 8, 25))
-    assert r_viejo["kg_movido"] == -200
+    assert r_viejo["kg_movido"] == 0
+
+
+def test_el_piso_absorbe_segunda_que_sigue_entrando_a_tela_ya_marcada():
+    """El caso REAL, verificado por SQL en vivo el 01/09/2026: no es sólo una
+    tela nueva entrando a la cohorte (el test de arriba) — una tela marcada
+    hace semanas (18/08/2026, una semana antes de la largada) sigue
+    recibiendo SEGUNDA todos los días, y su stock de HOY supera lo que tenía
+    anotado al marcarse. Ej. real: Toper AZN, marcado con 18,9 kg, con 59,9
+    kg en bodega hoy — 41 kg de SEGUNDA que entraron después, no una venta al
+    revés. Sin el piso, `kg_al_marcar_vivo()` solo (el fix anterior) NO
+    alcanza para este caso: la tela YA estaba en la cohorte antes de la
+    largada, así que no hay "tela nueva" que sumar — el hueco está adentro
+    de una tela vieja."""
+    filas = [{"stock_kg": 59.9, "kg_vendidos": 18.9, "kg_segunda": 59.9,
+              "kg_al_marcar": 18.9, "fecha_marcado": date(2026, 8, 18)}]
+    kg_base_vivo = queries.kg_al_marcar_vivo(filas)
+    assert kg_base_vivo == 18.9  # lo único que sabíamos el día que se marcó
+
+    r = queries.resumen(filas, kg_base_vivo, largada=date(2026, 8, 25))
+    assert r["kg_inicial"] == 78.8  # el piso: kg (59,9) + vendido (18,9)
+    assert r["kg_movido"] == 0, "la segunda que entra no es una alarma"
 
 
 def test_la_pantalla_muestra_las_tres_cifras():
@@ -4184,20 +4209,24 @@ def test_la_ultima_venta_se_le_pide_a_asinfo_con_el_corte_adentro():
         "volvió el intento de reconstruirla desde la foto anterior")
 
 
-def test_el_residuo_que_entra_ya_no_se_explica_como_seg_nueva():
+def test_el_movido_ya_no_puede_ser_negativo():
     """⚠⚠ REVIERTE a propósito la frase del 25/08/2026 ("acá aclarar que los
-    de segunda siguen entrando"). Con "Al arrancar" viva
-    (`kg_al_marcar_vivo`, decisión 31/08/2026 tarde) una SEGUNDA que se suma a
-    la cohorte DESPUÉS de la largada ya trae su propio punto de partida —
-    `kg_movido` no debería quedar negativo por eso nunca más. Si de todos
-    modos queda negativo, ya NO es "la segunda que entra sola": es un residuo
-    genuino (una corrección, un recuento) y decir "de SEG nueva" mentiría
-    sobre la causa. Por eso el texto pasa a ser genérico."""
+    de segunda siguen entrando") — y el intento a medias de la MISMA tarde
+    del 31/08/2026 ("de más en bodega"). Verificado en vivo el 01/09/2026:
+    no era sólo una tela nueva sumándose a la cohorte — telas marcadas hace
+    semanas siguen recibiendo SEGUNDA todos los días y su stock de hoy supera
+    lo que tenían al marcarse. `resumen()` ahora pone un PISO: "Al arrancar"
+    nunca puede ser menor que `kg + vendido`, así que `kg_movido` (el
+    residuo, ver el docstring de `resumen()`) queda estructuralmente
+    imposible de ser negativo. Ya no hace falta explicar "de dónde sale" un
+    número que no puede existir."""
     html = _html_parado()
-    i = html.index("resumen.kg_movido | abs | num_es(0)")
-    assert "de más en bodega" in html[i:i + 200]
-    assert "de SEG nueva" not in html[i:i + 200]
-    assert "resumen.kg_movido < 0" in html[i:i + 120]
+    i = html.index("resumen.kg_movido | num_es(0)")
+    assert "que salieron por bodega" in html[i:i + 120]
+    assert "de más en bodega" not in html
+    assert "de SEG nueva" not in html
+    assert "resumen.kg_movido < 0" not in html
+    assert "resumen.kg_movido >= 1" in " ".join(html.split())
 
 
 def test_la_linea_abierta_se_lleva_su_propia_categoria_vendida():

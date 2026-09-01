@@ -244,16 +244,31 @@ def resumen(filas: list[dict], kg_base: float | None = None,
     funcione, habia 50k se vendio 6k no quedan 46k. a corregir"*). La resta
     tiene que cerrar SOLA, sin un asterisco que la explique.
 
-    `kg_base` es lo que el LLAMADOR decide tratar como fijo — hoy, la suma de
+    `kg_base` es lo que el LLAMADOR decide tratar como piso — hoy, la suma de
     `kg_al_marcar` (congelado por ÍTEM, el día que CADA UNO entró a la lista)
-    sobre la cohorte de hoy. No es una foto de una fecha única: crece solo
-    cuando entra una tela nueva, porque esa tela trae SU PROPIO punto de
-    partida. Antes se usaba una foto congelada por categoría el día de la
-    largada (`kg_al_arrancar()`), y una tela que entraba después (ej. una
-    SEGUNDA nueva) engordaba "Queda" sin haber estado nunca en "Al arrancar"
-    — el residuo aparecía como "kg de SEG nueva", un asterisco que Tamara no
-    quiere ver. Sin `kg_base` —antes de la largada— el arranque se
-    reconstruye como stock de hoy + lo vendido, que cierra por construcción.
+    sobre la cohorte de hoy. Antes se usaba una foto congelada por categoría
+    el día de la largada (`kg_al_arrancar()`), y una tela que entraba después
+    (una SEGUNDA nueva) engordaba "Queda" sin haber estado nunca en "Al
+    arrancar". Sin `kg_base` —antes de la largada— el arranque se reconstruye
+    como stock de hoy + lo vendido, que cierra por construcción.
+
+    ⚠⚠ Y ni sumar `kg_al_marcar` de la cohorte de hoy alcanza SOLO: la
+    SEGUNDA de una tela que YA estaba en la lista sigue entrando todos los
+    días (dueña 25/08/2026: "acá aclarar que los de segunda siguen
+    entrando") — el stock de HOY de un ítem puede superar su propio
+    `kg_al_marcar`, marcado hace semanas, sin que se haya vendido nada raro.
+    Verificado en vivo el 01/09/2026: 20+ ítems marcados el 18/08 con stock
+    hoy por encima de lo que tenían al marcarse, todos por SEGUNDA que siguió
+    tejiéndose. Eso NO es una pérdida ni un misterio, es la fábrica
+    trabajando — pero mostrado como "kg de más en bodega" es un asterisco
+    igual de confuso que el que se sacó de Vendido. Tamara, más tarde el
+    mismo día: *"yo quiero que esta matematica funcione, habia 50k se vendio
+    6k no quedan 46k. a corregir"*. Por eso "Al arrancar" no es sólo la suma
+    de `kg_al_marcar`: es el PISO más alto entre eso y lo que hoy se puede
+    explicar (`kg + vendido`) — así una tela que trajo MÁS de lo que tenía al
+    marcarse arranca, retroactivamente, con lo que trajo. La resta cierra
+    sola y "Al arrancar" queda diciendo la verdad: lo más grande que se supo
+    que tuvo cada tela desde que entró a la lista.
 
     ⚠⚠ `kg_salido_antes` — DECISIÓN 31/08/2026, y la misma tarde plegada
     adentro de "Vendido" en vez de tener su propia fila. Un ítem que entró a
@@ -272,12 +287,12 @@ def resumen(filas: list[dict], kg_base: float | None = None,
     queda también aparte en el dict por si alguna pantalla lo necesita, pero
     ninguna lo muestra hoy.
 
-    ⚠ `kg_movido` es lo que NINGUNA de las cuentas de arriba explica: la
-    bodega se mueve por cosas que no son estas ventas (ajustes, producción que
-    entra a una tela de la lista, tela que sale sin factura). Con `kg_base`
-    vivo debería quedar en CERO casi siempre — si no lo está, ES la alarma.
-    Va a la vista y no escondido: la primera vez que los números no cierren,
-    la pregunta va a ser justamente ésa.
+    ⚠ `kg_movido` con el piso de arriba SÓLO puede ser POSITIVO — kg que
+    ninguna venta explica y que NINGÚN ajuste "de más" absorbe: tela que salió
+    de la bodega sin quedar en `kg_vendidos` (un ajuste, un recuento, algo sin
+    factura). Nunca negativo: la producción que entra ya no es un misterio,
+    quedó adentro de "Al arrancar". Va a la vista y no escondido: si esto no
+    da cero, ES la alarma real.
     """
     # ⚠ La clave NO se puede llamar `items`: en Jinja `resumen.items` resuelve
     # primero el MÉTODO del diccionario, así que la tarjeta imprimía
@@ -285,7 +300,7 @@ def resumen(filas: list[dict], kg_base: float | None = None,
     # error — renderiza 200 y queda un texto absurdo donde va una cifra.
     kg = sum(float(f["stock_kg"]) for f in filas)
     vendido_puntos = sum(float(f["kg_vendidos"]) for f in filas)
-    inicial = float(kg_base) if kg_base else kg + vendido_puntos
+    inicial_base = float(kg_base) if kg_base else kg + vendido_puntos
     # ⚠ `largada` es OPCIONAL a propósito: `resumen()` es una función pura que
     # no toca la base, y las dos pantallas que la llaman SÍ conocen la fecha
     # (la leen para otras cuentas). Pedírsela adentro con `config()` la
@@ -303,6 +318,14 @@ def resumen(filas: list[dict], kg_base: float | None = None,
         salido_antes_por_fila = [0.0] * len(filas)
     salido_antes = sum(salido_antes_por_fila)
     vendido = vendido_puntos + salido_antes
+    # ⭐ El PISO: si hoy se puede explicar más de lo que "Al arrancar" tenía
+    # anotado (porque entró SEGUNDA nueva a una tela ya marcada), "Al
+    # arrancar" sube a ese piso — retroactivo, sin aviso, porque es una
+    # buena noticia (más stock), no una pérdida que haya que mirar. Contra
+    # `kg + vendido` COMPLETO (con `salido_antes` adentro), no sólo lo que
+    # cuenta para la competencia: si no, un ítem con salido_antes grande
+    # podía volver a dejar el piso corto y `kg_movido` negativo de nuevo.
+    inicial = max(inicial_base, kg + vendido)
     return {
         "n_items": len(filas),
         "kg": kg,
