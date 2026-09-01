@@ -858,12 +858,26 @@ def test_competencia_muestra_el_al_arrancar_vivo_de_saldos(monkeypatch):
     assert c["kg_al_arrancar_vivo"] == r_saldos["kg_inicial"]
 
 
+def test_competencia_redondea_el_renglon_nuevo_a_miles():
+    """⭐ DECISIÓN 01/09/2026 (segunda vuelta, misma tarde). Tamara, mirando
+    el renglón recién agregado con la precisión completa (6.412 de 53.041
+    kg): *"no directamente de la competencia tiene que ser solo 6 de 53"*.
+    Sólo ESTE renglón va en miles — la tarjeta grande de arriba ("Se
+    vendió") sigue al kilo, que es la que importa de verdad."""
+    r = {"kg_inicial": 53041.0}
+    liquidado = 6412.0
+    assert round(liquidado / 1000) == 6
+    assert round(r["kg_inicial"] / 1000) == 53
+
+
 def test_la_pantalla_de_competencia_muestra_el_al_arrancar_vivo():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
             "templates" / "analisis" / "competencia.html").read_text(
                 encoding="utf-8")
     assert "kg_al_arrancar_vivo" in html
+    assert "liquidado_miles" in html
+    assert "kg_al_arrancar_vivo_miles" in html
 
 
 # ── El candado, con una ruta nueva abierta ──────────────────────────────────

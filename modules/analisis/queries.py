@@ -1895,6 +1895,13 @@ def competencia() -> dict:
     kg_al_arrancar_vivo = resumen(
         filas, kg_al_marcar_vivo(filas), largada=largada)["kg_inicial"]
     return {
+        # ⭐ 01/09/2026 (segunda vuelta, misma tarde). Tamara: "no
+        # directamente de la competencia tiene que ser solo 6 de 53" — el
+        # renglón nuevo va en MILES redondeados, no con la precisión
+        # completa de la tarjeta grande de arriba (que es la que importa al
+        # kilo). Ver el uso en competencia.html.
+        "liquidado_miles": round(liquidado / 1000),
+        "kg_al_arrancar_vivo_miles": round(kg_al_arrancar_vivo / 1000),
         "hoy": today_ec(),
         "largada": largada,
         "cierre": cierre,

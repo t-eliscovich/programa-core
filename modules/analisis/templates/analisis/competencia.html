@@ -158,11 +158,12 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {{ largada.strftime('%d/%m') }}{% endif %}</div>
   {# ⭐ DECISIÓN 01/09/2026. Tamara pidió este renglón para ver acá el mismo
      "Al arrancar" vivo de Saldos — ver `kg_al_arrancar_vivo` en
-     `queries.competencia()`. Y la misma tarde acotó el texto: "esto tiene
-     que decir, nada mas. no sigas poniendo numeros y que mareen" — sin
-     explicación al lado, los dos números ya se explican solos. #}
-  <div class="chico">{{ liquidado | num_es(0) }} de
-    {{ kg_al_arrancar_vivo | num_es(0) }} kg</div>
+     `queries.competencia()`. Después acotó el texto ("esto tiene que decir,
+     nada mas. no sigas poniendo numeros y que mareen") y, en la misma
+     tarde, la precisión: "no directamente de la competencia tiene que ser
+     solo 6 de 53" — EN MILES, redondeado, no al kilo como la tarjeta
+     grande de arriba (`liquidado_miles` / `kg_al_arrancar_vivo_miles`). #}
+  <div class="chico">{{ liquidado_miles }} de {{ kg_al_arrancar_vivo_miles }}k</div>
 </div>
 </div>
 
