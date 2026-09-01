@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import date
 
 from flask import (
     Blueprint,
@@ -136,7 +137,9 @@ def parado():
         grupos=grupos,
         subgrupos=[{"sub": s, "cat": c} for s, c in subgrupos],
         llamados=queries.llamados_por_tela(),
-        resumen=queries.resumen(base, queries.kg_al_arrancar()),
+        resumen=queries.resumen(base, queries.kg_al_arrancar(),
+                                 largada=date.fromisoformat(
+                                     queries.config("largada", "2026-08-25"))),
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),
@@ -494,7 +497,9 @@ def mis_telas():
         filas=filas, llamados=llamados, mia=True, vend=vend,
         grupos=grupos,
         subgrupos=[{"sub": x, "cat": c} for x, c in subgrupos],
-        resumen=queries.resumen(base, queries.kg_al_arrancar()),
+        resumen=queries.resumen(base, queries.kg_al_arrancar(),
+                                 largada=date.fromisoformat(
+                                     queries.config("largada", "2026-08-25"))),
         bolsa=queries.bolsa_congelada(),
         grupos_resumen=queries.por_grupo(base),
         estado=queries.estado(),

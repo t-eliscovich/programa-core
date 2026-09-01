@@ -2269,26 +2269,26 @@ def test_la_pantalla_dibuja_la_lista_entera_del_mes():
 
 
 @pytest.mark.parametrize(
-    ("motivo", "calidad", "cuenta"),
+    ("motivo", "calidad"),
     [
-        # La tela × color entera está parada: todos sus kilos entraron a la
-        # lista, así que todos puntúan.
-        ("parado", "PRI", True),
-        ("parado", "SEG", True),
-        # ⭐ Entró SÓLO por sus kilos de segunda: la primera de esa misma tela
-        # se vende sola y no puede dar puntos. Dueña 24/08/2026: "solo tiene
-        # que ponerse la de segunda en la competencia, la de primera no cuenta".
-        ("segunda", "SEG", True),
-        ("segunda", "PRI", False),
-        # Sin calidad en la línea de factura, un ítem de segunda no regala el
-        # beneficio de la duda.
-        ("segunda", None, False),
+        ("parado", "PRI"),
+        ("parado", "SEG"),
+        ("segunda", "SEG"),
+        # ⚠⚠ DECISIÓN 31/08/2026, revierte la del 24/08. Kiana Forro 1.45 LIF
+        # (534,65 kg): el LOTE de bodega era SEGUNDA, la FACTURA salió cargada
+        # como PRIMERA (verificado con TFB de `movimiento_inventario` contra
+        # Asinfo) — el kilo se vendió de verdad y antes no le daba puntos a
+        # nadie ni bajaba de "Queda". Dueña: *"que cuente como Vendido"*.
+        # El TOPE (test de abajo) sigue impidiendo que esto regale puntos por
+        # vender tela que "se vende sola" — la razón original del 24/08.
+        ("segunda", "PRI"),
+        ("segunda", None),
         # Cohorte vieja, sin motivo guardado: cuenta todo, como venía.
-        (None, "PRI", True),
+        (None, "PRI"),
     ],
 )
-def test_solo_puntua_el_kilo_de_la_clase_por_la_que_entro(motivo, calidad, cuenta):
-    assert queries.cuenta_el_kilo(motivo, calidad) is cuenta
+def test_todo_kilo_vendido_puntua_ahora(motivo, calidad):
+    assert queries.cuenta_el_kilo(motivo, calidad) is True
 
 
 def test_las_devoluciones_restan_en_lo_que_puntua():
@@ -3113,6 +3113,43 @@ def test_las_tarjetas_se_leen_de_corrido(monkeypatch):
     assert r["kg_movido"] == 278
 
 
+def test_salido_antes_de_la_largada_no_es_movido_ni_puntua(monkeypatch):
+    """⚠⚠ DECISIÓN 31/08/2026. Un ítem marcado el 17/08 (ocho días antes de
+    la largada del 25/08) pudo haber vendido algo en el medio: ese kilo salió
+    de la bodega de verdad —"Queda" ya no lo tiene— pero `kg_vendidos` sólo
+    cuenta desde la largada, así que antes cerraba como `kg_movido`: tela que
+    parecía perdida sin estarlo. Kiana Forro 1.45 LIF, real: 534,65 kg.
+
+    Tamara, con el caso puesto adelante: *"si ya estuvo en el listado,
+    permanece… los vendedores no pueden que desaparezca de vez en cuando las
+    cosas"* — pero también *"si se vendieron antes del 25 no cuentan para
+    nadie"*. Las dos juntas piden un casillero aparte: se explica, no puntúa.
+
+    Un ítem marcado DESPUÉS de la largada no tiene este colchón: ahí un
+    residuo sigue siendo `kg_movido` de verdad, la alarma que hay que mirar."""
+    filas_antes = [{"stock_kg": 45.5, "kg_vendidos": 0, "kg_segunda": 0,
+                     "kg_al_marcar": 580.15,
+                     "fecha_marcado": date(2026, 8, 17)}]
+    r = queries.resumen(filas_antes, kg_base=580.15, largada=date(2026, 8, 25))
+    assert r["kg_salido_antes"] == 534.65
+    assert r["kg_movido"] == 0
+
+    # el mismo residuo, pero SIN pasarle `largada` (compatibilidad hacia
+    # atrás: las pantallas que no la mandan ven el comportamiento de siempre)
+    r = queries.resumen(filas_antes, kg_base=580.15)
+    assert r["kg_salido_antes"] == 0
+    assert r["kg_movido"] == 534.65
+
+    # marcado DESPUÉS de la largada: el residuo NO tiene colchón, es
+    # kg_movido de verdad
+    filas_despues = [{"stock_kg": 45.5, "kg_vendidos": 0, "kg_segunda": 0,
+                       "kg_al_marcar": 580.15,
+                       "fecha_marcado": date(2026, 8, 26)}]
+    r = queries.resumen(filas_despues, kg_base=580.15, largada=date(2026, 8, 25))
+    assert r["kg_salido_antes"] == 0
+    assert r["kg_movido"] == 534.65
+
+
 def test_la_pantalla_muestra_las_tres_cifras():
     from pathlib import Path
     html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
@@ -3232,6 +3269,33 @@ def test_el_item_que_asinfo_ya_no_devuelve_conserva_su_tope(monkeypatch):
         ventas=[_venta("Toper", "COA", 400)])
     assert ("COA", 40.0, True) in filas, "perdió el tope que le pusimos nosotros"
     assert ("COA", 360.0, False) in filas
+
+
+def test_segunda_vendida_como_primera_igual_puntua_pero_topada(monkeypatch):
+    """⚠⚠ DECISIÓN 31/08/2026. Kiana Forro 1.45 LIF: el lote de bodega era
+    SEGUNDA (580,15 kg al marcar) pero las 17 facturas que se lo llevaron
+    salieron cargadas con el atributo de calidad en PRIMERA — verificado
+    contra Asinfo (factura + TFB de `movimiento_inventario`). Antes esos
+    kilos no puntuaban (`cuenta_el_kilo` exigía calidad='SEG' para un ítem de
+    segunda) y tampoco bajaban de "Queda": quedaban flotando como un
+    "kg_movido" sin explicación. Tamara: *"que cuente como Vendido"*.
+
+    La prueba de que esto NO reabre el agujero del 24/08 ("no darle puntos a
+    la tela que se vende sola"): el TOPE es el kg de SEGUNDA que había al
+    marcar (50), no el kg_antes (5.000, que es el saldo TOTAL —primera y
+    segunda— de 90 días atrás, deliberadamente grande acá). Aunque la venta
+    sea de 200 kg y venga cargada como PRIMERA, sólo 50 puntúan."""
+    cohorte = [{"subcategoria": "Kiana Forro 1.45", "color": "LIF",
+                "fecha_marcado": date(2026, 8, 13), "motivo": "segunda",
+                "kg_al_marcar": 50}]
+    item = {"subcategoria": "Kiana Forro 1.45", "color": "LIF",
+            "stock_kg": 10, "stock_bodega": 10, "motivo": "segunda",
+            "nueva": False, "pedida": False, "entra": True, "kg_antes": 5000}
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[item], cohorte=cohorte,
+        ventas=[_venta("Kiana Forro 1.45", "LIF", 200, calidad="PRI")])
+    assert ("LIF", 50.0, True) in filas, "el kilo SEG vendido como PRI puntúa"
+    assert ("LIF", 150.0, False) in filas, "pero el tope de segunda lo frena"
 
 
 def test_sin_dato_de_asinfo_no_hay_tope(monkeypatch):

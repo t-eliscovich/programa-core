@@ -220,7 +220,8 @@ def llamados_por_tela(cartera_de: str | None = None) -> dict[str, list[dict]]:
     return dict(out)
 
 
-def resumen(filas: list[dict], kg_base: float | None = None) -> dict:
+def resumen(filas: list[dict], kg_base: float | None = None,
+            largada: date | None = None) -> dict:
     """Los números de las tarjetas. Se calculan sobre las filas ya leídas para
     que la tarjeta y la tabla no puedan decir cosas distintas.
 
@@ -234,10 +235,28 @@ def resumen(filas: list[dict], kg_base: float | None = None) -> dict:
     corre la competencia. Sin ellos —antes de la largada— el arranque se
     reconstruye como stock de hoy + lo vendido, que cierra por construcción.
 
-    ⚠ `kg_movido` es lo que la resta NO explica: la bodega se mueve por cosas
-    que no son estas ventas (ajustes, producción que entra a una tela de la
-    lista, tela que sale sin factura). Va a la vista y no escondido: la primera
-    vez que los tres números no cierren, la pregunta va a ser justamente ésa.
+    ⚠⚠ `kg_salido_antes` — DECISIÓN 31/08/2026. Un ítem que entró a la lista
+    ANTES de la largada (ej. el 17/08, ocho días antes del 25) puede haber
+    vendido algo en el medio: ese kilo salió de la bodega de verdad —"Queda"
+    ya no lo tiene— pero `kg_vendidos` sólo cuenta desde la largada (dueña
+    18/08/2026: "hace todo desde 25/08", ver `refresh()`), así que antes caía
+    en un `kg_movido` sin nombre que parecía tela perdida.
+    Tamara, 31/08/2026, viendo el caso de Kiana Forro 1.45 LIF (534,65 kg que
+    "desaparecían"): *"si ya estuvo en el listado, permanece… los vendedores
+    no pueden que desaparezca de vez en cuando las cosas"* — pero también:
+    *"si se vendieron antes del 25 no cuentan para nadie"*. Las dos cosas a la
+    vez piden un CASILLERO PROPIO: se explica (no es un misterio) pero no
+    puntúa (no es Vendido). Por eso es la resta que le sobra a cada fila
+    marcada antes de la largada, nunca negativa, y no toca ni el tope ni
+    `usado` — no es una venta que compita, es historia vieja que ya pasó.
+    Un ítem marcado DESPUÍS de la largada no tiene este colchón: si a ése le
+    sobra algo, es `kg_movido` de verdad y hay que mirarlo.
+
+    ⚠ `kg_movido` es lo que ninguna de las dos cuentas de arriba explica: la
+    bodega se mueve por cosas que no son estas ventas (ajustes, producción que
+    entra a una tela de la lista, tela que sale sin factura). Va a la vista y
+    no escondido: la primera vez que los números no cierren, la pregunta va a
+    ser justamente ésa.
     """
     # ⚠ La clave NO se puede llamar `items`: en Jinja `resumen.items` resuelve
     # primero el MÉTODO del diccionario, así que la tarjeta imprimía
@@ -246,12 +265,25 @@ def resumen(filas: list[dict], kg_base: float | None = None) -> dict:
     kg = sum(float(f["stock_kg"]) for f in filas)
     vendido = sum(float(f["kg_vendidos"]) for f in filas)
     inicial = float(kg_base) if kg_base else kg + vendido
+    # ⚠ `largada` es OPCIONAL a propósito: `resumen()` es una función pura que
+    # no toca la base, y las dos pantallas que la llaman SÍ conocen la fecha
+    # (la leen para otras cuentas). Pedírsela adentro con `config()` la
+    # hubiera vuelto impura y roto todos los tests que la llaman con datos de
+    # prueba sueltos, sin `db` de por medio.
+    salido_antes = 0.0
+    if largada is not None:
+        salido_antes = sum(
+            max(0.0, float(f.get("kg_al_marcar") or 0)
+                     - float(f["stock_kg"]) - float(f["kg_vendidos"]))
+            for f in filas
+            if f.get("fecha_marcado") and f["fecha_marcado"] < largada)
     return {
         "n_items": len(filas),
         "kg": kg,
         "kg_vendidos": vendido,
         "kg_inicial": inicial,
-        "kg_movido": round(inicial - vendido - kg, 2),
+        "kg_salido_antes": round(salido_antes, 2),
+        "kg_movido": round(inicial - vendido - kg - salido_antes, 2),
         "movidos": sum(1 for f in filas if float(f["kg_vendidos"]) > 0),
         "kg_segunda": sum(float(f["kg_segunda"]) for f in filas),
         "n_segunda": sum(1 for f in filas if float(f["kg_segunda"]) > 0),
@@ -840,29 +872,41 @@ def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
     """Si un kilo vendido puntúa en la competencia.
 
     ⭐ Dueña 24/08/2026: *"solo tiene que ponerse la de segunda en la
-    competencia, la de primera no cuenta"*. Un ítem entra a la lista por uno de
-    dos motivos, y el kilo tiene que ser de la misma clase que el motivo:
+    competencia, la de primera no cuenta"*. La idea original: un ítem que
+    entra por `segunda` sólo debería puntuar con kilos SEG, para no darle
+    puntos a una tela que "se vende sola" (su primera).
 
-      parado  — la tela × color entera está quieta: TODOS sus kilos entraron a
-                la lista, así que todos puntúan.
-      segunda — la tela se vende bien y lo único parado son sus kilos SEG: sólo
-                la SEG puntúa. Contar la PRI sería dar puntos por vender tela
-                que sale sola, que es exactamente lo que entrar sólo con la SEG
-                buscaba evitar (370 ítems, 16.124 kg al 24/08/2026).
+    ⚠⚠ DECISIÓN 31/08/2026, la revierte a propósito — no la pierdas de vista.
+    Investigando por qué `/analisis/parado` mostraba kilos "que salieron por
+    bodega" sin explicación (Kiana Forro 1.45 LIF, 534,65 de 580,15 kg):
+    con Asinfo (factura + TFB de `movimiento_inventario`) apareció que esos
+    kilos SÍ se vendieron — el LOTE de bodega era SEGUNDA, pero la FACTURA
+    salió cargada con el atributo de calidad en PRIMERA. El kilo se fue de la
+    bodega con una venta real atrás, pero el filtro de calidad no le daba
+    puntos a nadie Y ADEMÁS no bajaba de "Queda": quedaba flotando como si
+    hubiera desaparecido.
+
+    Tamara, viendo la evidencia: *"que cuente como Vendido"* — si salió por
+    bodega con una factura real, puntúa, se haya cargado como se haya cargado.
+    *"los vendedores no pueden que desaparezca de vez en cuando las cosas"*.
+
+    ⭐ Por qué esto NO reabre el agujero del 24/08: el TOPE (`kg_al_marcar`)
+    de un ítem `segunda` YA es sólo el kg de SEGUNDA que había el día que
+    entró a la lista (`asinfo_parado.SQL_PARADOS`: para un ítem que no pasa
+    `_ES_PARADO`, `stock_kg` sale de `cal.kg_segunda`, nunca de la primera).
+    Una tela que se vende sola tiene mucha primera pero poca —o nada— de
+    segunda: su tope se queda chico pase lo que pase con la calidad de la
+    factura. El filtro de calidad ya no hacía falta para eso; el tope solo
+    alcanza.
+
+    parado  — TODOS los kilos cuentan, como siempre.
+    segunda — CUALQUIER kilo vendido cuenta, acotado por el tope de segunda.
 
     ⚠ El motivo es el CONGELADO en la cohorte, no el de la foto de hoy: si
     mañana la tela entera se para, el ítem no puede cambiar de regla en la
-    mitad de la carrera. Sin motivo guardado cuenta todo, que es como venía
-    antes de la migración 0212.
-
-    ⚠ La única excepción la escribe el refresco: a un ítem de tela RECIÉN HECHA
-    o PEDIDA se le corrige el motivo a `segunda` aunque ya estuviera congelado
-    en `parado` — sus kilos de primera nunca debieron contar. Y no vuelve a
-    `parado` cuando la tela cumple los meses: quedarse en la regla más
-    exigente no le regala puntos a nadie, y volver sí.
+    mitad de la carrera.
     """
-    return motivo != "segunda" or calidad == "SEG"
-
+    return True
 
 def actualizar() -> dict:
     """
