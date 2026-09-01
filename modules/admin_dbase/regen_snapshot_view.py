@@ -14,11 +14,22 @@ Read-only por default (GET). Sólo `usuarios.admin`.
 """
 from __future__ import annotations
 
+import calendar
+from datetime import date
+
 from flask import Blueprint, Response, render_template_string, request
 
 import db
 from auth import requiere_login, requiere_permiso
 from filters import today_ec
+
+
+def _fecha_cierre_de(anio: int, mes: int) -> date:
+    """Último día de (anio, mes) — la única fecha que `crear_snapshot_historia`
+    escribe. Tamara 2026-09-01: extraído para que el DELETE de "REGENERAR
+    SNAPSHOT" borre por esta fecha EXACTA, nunca por año/mes (ver el
+    incidente en el docstring de la vista)."""
+    return date(anio, mes, calendar.monthrange(anio, mes)[1])
 
 bp = Blueprint(
     "regen_snapshot", __name__, url_prefix="/admin/regenerar-snapshot"
@@ -171,11 +182,16 @@ balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
   <div class=warn><b>Error:</b> {{ error }}</div>
   {% else %}
   <div class=warn>
-    <b>Acción destructiva:</b> esto va a borrar {{ snapshots|length }} fila(s) de
-    <code>scintela.historia</code> del mes y recalcular el snapshot del último
-    día del mes con las queries actuales. NO se hace backup automático.
+    <b>Acción destructiva:</b> esto va a borrar SÓLO la fila del cierre
+    (fecha exacta = último día de {{ anio }}-{{ '%02d'|format(mes) }}, si
+    existe) y recalcular esa fila con las queries actuales. NO toca las
+    fotos diarias de otros días del mes. NO se hace backup automático.
+    Si el mes ya pasó y hoy no es el mismo día del cierre, cae en la rama
+    <code>as_of</code> (aproximada) salvo que esté dentro de los 2 días de
+    gracia — ver el docstring de <code>crear_snapshot_historia</code>.
   </div>
-  <button type=submit name=aplicar value=1>
+  <button type=submit name=aplicar value=1
+          onclick="return confirm('Regenerar el cierre de {{ anio }}-{{ \'%02d\'|format(mes) }}? Esto borra y recalcula esa fila con las queries actuales.');">
     REGENERAR SNAPSHOT {{ anio }}-{{ '%02d'|format(mes) }}
   </button>
   {% endif %}
@@ -291,12 +307,14 @@ def index() -> Response:
     elif request.method == "POST" and request.form.get("restore_205") == "1":
         try:
             with db.tx() as conn:
-                # Borrar TODOS los snapshots del 2026-05
+                # Tamara 2026-09-01 — borrar SOLO la fila del cierre (fecha
+                # exacta), nunca el mes entero: un DELETE por año/mes se
+                # lleva puestas también las fotos diarias intermedias (el
+                # mismo bug que el 2026-09-01 borró las 31 fotos de agosto).
                 db.execute(
                     """
                     DELETE FROM scintela.historia
-                     WHERE EXTRACT(YEAR FROM fecha) = 2026
-                       AND EXTRACT(MONTH FROM fecha) = 5
+                     WHERE fecha = '2026-05-31'::date
                     """,
                     conn=conn,
                 )
@@ -339,11 +357,12 @@ def index() -> Response:
     elif request.method == "POST" and request.form.get("restore_junio_dbase") == "1":
         try:
             with db.tx() as conn:
+                # Tamara 2026-09-01 — fecha exacta, no el mes entero (ver
+                # comentario en restore_205 más arriba).
                 db.execute(
                     """
                     DELETE FROM scintela.historia
-                     WHERE EXTRACT(YEAR FROM fecha) = 2026
-                       AND EXTRACT(MONTH FROM fecha) = 6
+                     WHERE fecha = '2026-06-30'::date
                     """,
                     conn=conn,
                 )
@@ -391,11 +410,13 @@ def index() -> Response:
     elif request.method == "POST" and request.form.get("restore_agosto_manual") == "1":
         try:
             with db.tx() as conn:
+                # Tamara 2026-09-01 — fecha exacta, no el mes entero (ver
+                # comentario en restore_205 más arriba — este es justo el
+                # botón que arregla el incidente causado por ESE bug).
                 db.execute(
                     """
                     DELETE FROM scintela.historia
-                     WHERE EXTRACT(YEAR FROM fecha) = 2026
-                       AND EXTRACT(MONTH FROM fecha) = 8
+                     WHERE fecha = '2026-08-31'::date
                     """,
                     conn=conn,
                 )
@@ -430,25 +451,32 @@ def index() -> Response:
     elif request.method == "POST" and request.form.get("aplicar") == "1":
         try:
             from modules.informes import queries as iq
+
+            # Tamara 2026-09-01 (incidente 2026-09-01) — borrar SOLO la fila
+            # del cierre (fecha EXACTA = último día del mes), nunca el mes
+            # entero: un DELETE por año/mes se lleva puestas también las
+            # fotos diarias intermedias que haya en ese mes. Este mismo
+            # DELETE-por-mes fue lo que borró las 31 fotos diarias de agosto
+            # el día del incidente. `crear_snapshot_historia` sólo escribe
+            # UNA fila (la del último día) de todos modos, así que borrar
+            # más que esa fila nunca fue necesario.
+            _fecha_cierre = _fecha_cierre_de(anio, mes)
             with db.tx() as conn:
-                # 1. Borrar TODOS los snapshots del mes target
                 rows = db.fetch_all(
                     """
                     SELECT id_historia FROM scintela.historia
-                     WHERE EXTRACT(YEAR FROM fecha) = %s
-                       AND EXTRACT(MONTH FROM fecha) = %s
+                     WHERE fecha = %s
                     """,
-                    (anio, mes), conn=conn,
+                    (_fecha_cierre,), conn=conn,
                 ) or []
                 n_borrados = len(rows)
                 if n_borrados:
                     db.execute(
                         """
                         DELETE FROM scintela.historia
-                         WHERE EXTRACT(YEAR FROM fecha) = %s
-                           AND EXTRACT(MONTH FROM fecha) = %s
+                         WHERE fecha = %s
                         """,
-                        (anio, mes), conn=conn,
+                        (_fecha_cierre,), conn=conn,
                     )
             # 2. Recrear (fuera de la tx del DELETE — crear_snapshot_historia
             #    abre su propia tx con advisory lock)

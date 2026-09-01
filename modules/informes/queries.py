@@ -9496,16 +9496,43 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
     # que el cierre valúe el stock igual y no divergir el PATANT del mes siguiente
     # (misma familia del bug utilidad 54k vs 179k). Meses pasados = as_of (no hay
     # stock Asinfo histórico; se lee de historia). [[coherencia_numeros_una_fuente]]
+    #
+    # Tamara 2026-09-01 — BUG DE FONDO (incidente agosto/2026, mismo síntoma
+    # que ya había pisado julio): el cron mensual SIEMPRE corre el día 1 del
+    # mes SIGUIENTE (`scripts/procesa_provisiones_mensual.py`), así que la
+    # condición vieja `mes == hoy.month` daba SIEMPRE False para el cierre
+    # automático — ni un solo cierre mensual disparado por el cron podía
+    # caer en la rama LIVE, pasara lo que pasara. Julio "zafó" porque una
+    # foto diaria (rama SIEMPRE live) alcanzó a ocupar el 31/07 a las 22:31
+    # EC, antes de que el cron intentara cerrar por la rama as_of (que
+    # `_existe_cierre()` entonces saltea). Agosto no tuvo esa suerte: nadie
+    # visitó una pantalla que tomara foto cerca de medianoche, así que el
+    # cron cerró por as_of — que tiene la cartera reconstruida rota
+    # (usa el saldo ACTUAL de la factura, no el saldo que tenía en la fecha
+    # de cierre: cuanto más se cobra después, más lejos queda) y
+    # `_flujos_vivos_del_mes` devuelve {} (no hay `resultados` por esa rama)
+    # — exactamente lo que dejó a agosto con cartera $4,09M en vez de
+    # $7,76M y utilidad NEGATIVA -$1,88M. Ver /admin/health/simulacro-cierre
+    # y el ANCLAR 2026-08-31 que restauró el valor bueno a mano.
+    #
+    # El fix: separar "¿HOY es literalmente el último día del mes?" (sigue
+    # siendo lo único que puede disparar el paquete PDF de cierre, que
+    # archiva pantallas "de hoy") de "¿conviene usar el balance LIVE?". Un
+    # cierre tomado 1-2 días después del fin de mes usa datos de Asinfo que
+    # todavía no cambiaron materialmente — es la MISMA aproximación que ya
+    # salvó a julio por casualidad, ahora sin depender de que alguien haya
+    # visitado la pantalla justo antes de medianoche. Más allá de la
+    # gracia, es mejor la aproximación (documentada) de as_of que un balance
+    # LIVE que ya no tiene nada que ver con el mes que cierra.
     _hoy_cierre = today_ec()
-    # TMT 2026-08-31: ¿esta foto se está tomando EL MISMO día que se cierra el
-    # mes? Lo necesita también el paquete PDF de cierre (cierres_paquete.py,
-    # más abajo): esas pantallas (cartera, gastos, activos) son "hoy" -- sólo
-    # tienen sentido archivarlas cuando "hoy" todavía es el mes que cierra.
-    _es_live = (
-        anio == _hoy_cierre.year and mes == _hoy_cierre.month
-        and _hoy_cierre >= fecha_snap
-    )
-    if _es_live:
+    _dias_de_atraso = (_hoy_cierre - fecha_snap).days
+    _mismo_dia = _dias_de_atraso == 0
+    _GRACIA_CIERRE_DIAS = 2
+    _usar_balance_live = 0 <= _dias_de_atraso <= _GRACIA_CIERRE_DIAS
+    # El paquete PDF de cierre archiva pantallas "de hoy" (cartera, gastos,
+    # activos) — sólo tienen sentido si hoy TODAVÍA es el día que cierra.
+    _es_live = _mismo_dia
+    if _usar_balance_live:
         bal = informe_balance()
     else:
         bal = informe_balance_as_of(fecha_snap)
