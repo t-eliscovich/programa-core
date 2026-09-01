@@ -484,7 +484,17 @@ SELECT base.subcategoria, base.color, stk.categoria,
        -- Lo que hay en la bodega, sin importar por qué motivo entró ni si
        -- entró. Es con lo que la pantalla puede decir cuántos kilos quedaron
        -- afuera, y por cuál de las dos razones.
-       ISNULL(stk.stock_kg, 0)                      AS stock_bodega
+       ISNULL(stk.stock_kg, 0)                      AS stock_bodega,
+       -- ⭐ Los mismos tres —primera total, tubular de primera, abierta de
+       -- primera— pero SIN el CASE WHEN de `_ES_PARADO`. `refresh()` los
+       -- necesita para un ítem cuyo motivo quedó CONGELADO en 'parado' en
+       -- `parado_cohorte` pero que HOY ya no pasa `_ES_PARADO` —vendió algo
+       -- en el año, por ejemplo por la propia competencia— sin recalcular la
+       -- regla acá adentro. Ver el comentario largo en `queries.refresh()`
+       -- sobre por qué el motivo de HOY no puede mandar sobre la foto.
+       ISNULL(cal.kg_primera, 0)                    AS kg_primera_bodega,
+       ISNULL(cal.kg_tub_pri, 0)                    AS kg_tub_pri_bodega,
+       ISNULL(cal.kg_abi_pri, 0)                    AS kg_abi_pri_bodega
 FROM base
 CROSS JOIN hist
 LEFT JOIN stk

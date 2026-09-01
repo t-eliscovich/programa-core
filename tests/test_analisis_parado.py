@@ -3033,6 +3033,65 @@ def test_la_reciente_que_se_vendio_entera_igual_pierde_los_puntos(monkeypatch):
     assert res["nuevas"] == 1
 
 
+def test_item_parado_que_vende_sigue_mostrando_su_stock_completo(monkeypatch):
+    """Dueña 31/08/2026: *"si teniamos sin vender desde 2024 y se vendio con la
+    competencia, tiene que seguir contando. si no cada vez que vendemos un
+    rollo va a dejar de contar"*.
+
+    Fleece Fancy FNB: parada desde 2024, entro a la cohorte como 'parado'.
+    Vendio 95 de 448,5 kg por la propia competencia -eso hace que HOY
+    `asinfo_parado.parados()` ya no la vea "sin venta en 12 meses" y le
+    calcule motivo='segunda'/stock_kg=0 para esta vuelta (medido en vivo el
+    31/08/2026: la pantalla mostraba "Queda: vendido" con 353,65 kg de
+    primera todavia en bodega 53). La cohorte tiene que seguir mandando: la
+    foto debe mostrar esos 353,65 kg, no 0."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Fleece Fancy", "color": "FNB",
+                  # Lo que calcularia HOY `_ES_PARADO` (ya vendio, cae a
+                  # 'segunda'/stock_kg=0) -- y los crudos SIN el CASE WHEN,
+                  # que son los que la cohorte necesita para no perderlos.
+                  "stock_kg": 0, "motivo": "segunda", "nueva": False,
+                  "pedida": False, "entra": False,
+                  "stock_bodega": 353.65, "kg_segunda": 0,
+                  "kg_primera_bodega": 353.65, "kg_tub_pri_bodega": 353.65,
+                  "kg_tub_seg": 0, "kg_abi_pri_bodega": 0, "kg_abi_seg": 0,
+                  "categoria": "Fleece"}],
+        cohorte=[{"subcategoria": "Fleece Fancy", "color": "FNB",
+                  "fecha_marcado": date(2026, 8, 17), "motivo": "parado"}])
+    fotos = [p for sql, p in db.escrito
+             if "INSERT INTO scintela.parado_foto" in sql]
+    assert len(fotos) == 1
+    stock_kg, kg_primera, motivo = fotos[0][2], fotos[0][7], fotos[0][10]
+    assert stock_kg == 353.65, "el motivo CONGELADO tiene que mandar, no el de hoy"
+    assert kg_primera == 353.65
+    assert motivo == "parado"
+
+
+def test_item_segunda_de_verdad_sigue_mostrando_solo_su_segunda(monkeypatch):
+    """El espejo del test de arriba: un color que vende bien (NEG) y solo entro
+    a la cohorte por su segunda tiene que seguir mostrando SOLO esa segunda,
+    no toda la bodega -- el fix de FNB no puede hacer que la primera que se
+    vende sola vuelva a contar."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Fleece 96 Perchado", "color": "NEG",
+                  "stock_kg": 22, "motivo": "segunda", "nueva": False,
+                  "pedida": False, "entra": True,
+                  "stock_bodega": 7112.35, "kg_segunda": 22,
+                  "kg_primera_bodega": 7090.35, "kg_tub_pri_bodega": 7090.35,
+                  "kg_tub_seg": 22, "kg_abi_pri_bodega": 0, "kg_abi_seg": 0,
+                  "categoria": "Fleece"}],
+        cohorte=[{"subcategoria": "Fleece 96 Perchado", "color": "NEG",
+                  "fecha_marcado": date(2026, 8, 18), "motivo": "segunda"}])
+    fotos = [p for sql, p in db.escrito
+             if "INSERT INTO scintela.parado_foto" in sql]
+    assert len(fotos) == 1
+    stock_kg, kg_primera = fotos[0][2], fotos[0][7]
+    assert stock_kg == 22, "'segunda' tiene que seguir mostrando SOLO su segunda"
+    assert kg_primera == 0
+
+
 def test_las_tarjetas_se_leen_de_corrido(monkeypatch):
     """Dueña 25/08/2026: *"si teníamos 54k, lo que se vendió no puede ser 1k. o
     deberíamos tener meta inicial, vendido, cuánto queda actualmente"*.

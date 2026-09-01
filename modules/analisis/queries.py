@@ -1194,10 +1194,62 @@ def actualizar() -> dict:
         # hoy, así que las ocho telas que se vendieron ese día quedaron con la
         # columna en "—" y no había de dónde sacarla ("¿por qué cuellos no tiene
         # última?"). Ahora se le pide a Asinfo con el corte adentro.
-        stock = {(p["subcategoria"], p["color"]): p for p in par}
+        # ⚠⚠ EL MOTIVO QUE MANDA ACÁ ES EL CONGELADO EN LA COHORTE
+        # (`motivo_de`), NO el que recalcula HOY `asinfo_parado.parados()`.
+        #
+        # Antes esta foto salía de `par` (sólo lo que hoy pasa `_ES_PARADO`),
+        # así que un ítem parado desde 2024 que por fin vende un kilo —lo que
+        # la competencia existe para lograr— dejaba de "sin venta en 12
+        # meses" en el MISMO refresco: la fila caía de `par`, y acá se
+        # escribía stock_kg=0 ("Queda: vendido" en la pantalla) aunque le
+        # quedaran cientos de kg de primera sin tocar en la bodega. Medido en
+        # vivo el 31/08/2026 con Fleece Fancy FNB: vendió 95 de 448,5 kg
+        # (SEP, factura de la competencia) y la pantalla mostró Queda 0
+        # cuando en Asinfo seguían 353,65 kg de primera en bodega 53.
+        #
+        # La cohorte ya tenía la solución para los PUNTOS (`motivo_de`, que
+        # sólo baja de 'parado' a 'segunda' si el ítem vuelve a entrar como
+        # recién hecho/pedido/en producción — nunca por vender, ver el UPDATE
+        # de más arriba), pero la foto no la usaba: se armaba con el motivo
+        # de HOY en vez del congelado.
+        #
+        # Con `stock` armado desde `todas` (TODOS los renglones, entre o no
+        # en `par` hoy) y el stock_kg elegido por el motivo CONGELADO, un
+        # ítem 'parado' de la cohorte muestra siempre su stock COMPLETO de
+        # hoy —venda lo que venda mientras tanto—, y uno 'segunda' sigue
+        # mostrando sólo su segunda, igual que antes. Dueña 31/08/2026: "si
+        # teníamos sin vender desde 2024 y se vendió con la competencia,
+        # tiene que seguir contando. si no cada vez que vendemos un rollo va
+        # a dejar de contar".
+        stock = {(p["subcategoria"], p["color"]): p for p in todas}
+
+        def _foto_stock(p: dict | None, motivo_cong: str | None) -> dict:
+            p = p or {}
+            if motivo_cong == "parado":
+                return {
+                    "stock_kg": p.get("stock_bodega") or 0,
+                    "kg_primera": p.get("kg_primera_bodega") or 0,
+                    "kg_tubular": (p.get("kg_tub_pri_bodega") or 0)
+                                  + (p.get("kg_tub_seg") or 0),
+                    "kg_abierta": (p.get("kg_abi_pri_bodega") or 0)
+                                  + (p.get("kg_abi_seg") or 0),
+                    "kg_tub_pri": p.get("kg_tub_pri_bodega") or 0,
+                    "kg_abi_pri": p.get("kg_abi_pri_bodega") or 0,
+                }
+            return {
+                "stock_kg": p.get("kg_segunda") or 0,
+                "kg_primera": 0.0,
+                "kg_tubular": p.get("kg_tub_seg") or 0,
+                "kg_abierta": p.get("kg_abi_seg") or 0,
+                "kg_tub_pri": 0.0,
+                "kg_abi_pri": 0.0,
+            }
+
         db.execute("DELETE FROM scintela.parado_foto", conn=conn)
         for k in marcado:
             p = stock.get(k)
+            motivo_cong = motivo_de.get(k) or (p or {}).get("motivo")
+            foto = _foto_stock(p, motivo_cong)
             db.execute(
                 """INSERT INTO scintela.parado_foto
                        (subcategoria, color, stock_kg, kg_vendidos, ultima_venta,
@@ -1206,18 +1258,18 @@ def actualizar() -> dict:
                         kg_tub_pri, kg_tub_seg, kg_abi_pri, kg_abi_seg, forma)
                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
                            %s, %s, %s, %s, %s)""",
-                (k[0], k[1], (p or {}).get("stock_kg") or 0, vendido.get(k, 0),
+                (k[0], k[1], foto["stock_kg"], vendido.get(k, 0),
                  ultima_antes_de.get(k),
                  total_cli.get(k[0], 0),
-                 anio_de.get(k[0]), (p or {}).get("kg_primera") or 0,
+                 anio_de.get(k[0]), foto["kg_primera"],
                  (p or {}).get("kg_segunda") or 0,
                  (p or {}).get("categoria") or grupo_previo.get(k),
-                 (p or {}).get("motivo"),
-                 (p or {}).get("kg_tubular") or 0,
-                 (p or {}).get("kg_abierta") or 0,
-                 (p or {}).get("kg_tub_pri") or 0,
+                 motivo_cong,
+                 foto["kg_tubular"],
+                 foto["kg_abierta"],
+                 foto["kg_tub_pri"],
                  (p or {}).get("kg_tub_seg") or 0,
-                 (p or {}).get("kg_abi_pri") or 0,
+                 foto["kg_abi_pri"],
                  (p or {}).get("kg_abi_seg") or 0,
                  forma_de.get(k)), conn=conn)
 
