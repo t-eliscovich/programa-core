@@ -131,6 +131,31 @@ def test_post_aplicar_no_hace_nada_si_ya_esta_marcada(app, monkeypatch):
     assert not updates, "no deberia tocar nada si ya esta marcada la correccion"
 
 
+def test_post_aplicar_no_resta_si_una_fila_no_matchea(app, monkeypatch):
+    """Si una fila ya no tiene el importe esperado (alguien la corrigio a
+    mano, o esta corrida ya paso), el POST no debe restarle a NINGUNA fila
+    -- todo o nada, nunca una correccion parcial silenciosa."""
+    updates = []
+
+    def fake_execute_returning(sql, params=None, conn=None):
+        updates.append(params)
+        return None
+
+    filas = _filas_correctas()
+    filas[0]["importe"] = 1.0  # ya no matchea el monto esperado (195.750)
+
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **kw: None)
+    monkeypatch.setattr(db, "fetch_all", lambda *a, **kw: filas)
+    monkeypatch.setattr(db, "execute_returning", fake_execute_returning)
+    monkeypatch.setattr(db, "execute", lambda *a, **kw: 1)
+
+    _login(app)
+    client = app.test_client()
+    resp = client.post("/admin/correccion-provisiones-doble/", data={"aplicar": "1"})
+    assert resp.status_code == 200
+    assert not updates, "una fila que no matchea tiene que frenar TODO el POST"
+
+
 def test_post_aplicar_no_resta_si_falta_una_fila(app, monkeypatch):
     updates = []
 
