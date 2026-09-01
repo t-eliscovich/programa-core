@@ -451,9 +451,13 @@
   }
 
   btn.addEventListener('click', function () {
+    // Tamara 2026-09-01 — a propósito SIN confirm(): esta acción es de bajo
+    // riesgo (recalcula y pisa el override de UN período en
+    // scintela.gastos_mes_manual con las mismas queries de siempre; no borra
+    // ni toca ningún otro día/mes/tabla — a diferencia de los botones de
+    // /admin/regenerar-snapshot, que SÍ conservan el confirm()).
     var periodo = btn.dataset.periodo;
     if (!periodo) return;
-    if (!confirm('Recalcular y pisar los Gs. Mes Anterior congelados de ' + periodo + '?')) return;
     setStatus('Recalculando…', '#64748b');
     btn.disabled = true;
     fetch("{{ url_for('informes.gastos_recongelar_mes_anterior') }}", {
