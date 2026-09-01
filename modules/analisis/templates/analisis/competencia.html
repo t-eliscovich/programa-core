@@ -156,14 +156,13 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {{ kg_parado | num_es(0) }} kg · {% if fijada_el %}los kilos se fijaron el
     {{ fijada_el.strftime('%d/%m') }}{% else %}los kilos se fijan el
     {{ largada.strftime('%d/%m') }}{% endif %}</div>
-  {# ⭐ DECISIÓN 01/09/2026. Tamara pidió este renglón después de notar que
-     "Al arrancar" de Saldos (que sube solo cuando entra segunda nueva) no
-     se veía acá — sólo la meta fija de arriba. "Está bien que suba": no es
-     un error, es información que faltaba en esta pantalla. Mismo número que
-     la tarjeta "Al arrancar" de /analisis/parado, siempre — ver
-     `kg_al_arrancar_vivo` en `queries.competencia()`. #}
+  {# ⭐ DECISIÓN 01/09/2026. Tamara pidió este renglón para ver acá el mismo
+     "Al arrancar" vivo de Saldos — ver `kg_al_arrancar_vivo` en
+     `queries.competencia()`. Y la misma tarde acotó el texto: "esto tiene
+     que decir, nada mas. no sigas poniendo numeros y que mareen" — sin
+     explicación al lado, los dos números ya se explican solos. #}
   <div class="chico">{{ liquidado | num_es(0) }} de
-    {{ kg_al_arrancar_vivo | num_es(0) }} kg, contra lo que hay hoy</div>
+    {{ kg_al_arrancar_vivo | num_es(0) }} kg</div>
 </div>
 </div>
 
