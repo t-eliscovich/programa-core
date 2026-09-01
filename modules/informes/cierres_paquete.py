@@ -44,22 +44,25 @@ from filters import today_ec
 
 _LOG = logging.getLogger("programa_core.cierres_paquete")
 
-#: (título de la sección, ruta a pedirle a la app). El orden es el mismo
-#: en el que se archivaban las capturas del dBase.
-PAGINAS: tuple[tuple[str, str], ...] = (
-    ("Informe Resultados — Balance", "/informes/balance"),
-    ("Ventas del mes", "/informes/ventas"),
+#: (título de la sección, ruta a pedirle a la app, fondo). El orden es el
+#: mismo en el que se archivaban las capturas del dBase. `fondo=True` sólo
+#: en Resultados -- TMT 2026-08-31, dueña: "pagina 1, no lo podemos mostrar
+#: igual que la pantalla de resultados?" -- esa sección sale con colores
+#: (media screen); el resto sigue con la hoja de impresión de siempre.
+PAGINAS: tuple[tuple[str, str, bool], ...] = (
+    ("Informe Resultados — Balance", "/informes/balance", True),
+    ("Ventas del mes", "/informes/ventas", False),
     # TMT 2026-08-31: /cartera/aging es la pantalla OPERATIVA (buckets de
     # mora, botón "stop automático") -- no lo que se archiva cada mes.
     # /informes/cartera es el resumen simple (CLI/CHQ/FAC/TOT/%), réplica
     # del CARTERA del dBase, con su propia vista compacta de 3 columnas
     # para impresión (ver cartera.html).
-    ("Cartera", "/informes/cartera"),
-    ("Deudas", "/informes/deudas"),
-    ("Gastos del mes", "/informes/gastos"),
-    ("Flujo de producción", "/informes/flujo-produccion"),
-    ("Activos fijos", "/activos"),
-    ("Anticipos", "/dolares"),
+    ("Cartera", "/informes/cartera", False),
+    ("Deudas", "/informes/deudas", False),
+    ("Gastos del mes", "/informes/gastos", False),
+    ("Flujo de producción", "/informes/flujo-produccion", False),
+    ("Activos fijos", "/activos", False),
+    ("Anticipos", "/dolares", False),
 )
 
 _MESES_ES = (
@@ -90,16 +93,23 @@ def _usuario_sistema_id() -> int | None:
     return (row or {}).get("id_usuario")
 
 
-def _pdf_de_pagina(client, ruta: str) -> bytes:
+def _pdf_de_pagina(client, ruta: str, *, fondo: bool = False) -> bytes:
     """Le pide `ruta` al test client (ya logueado) y devuelve el PDF de esa
-    página. Levanta si la página no respondió 200 o si no hay navegador."""
+    página. Levanta si la página no respondió 200 o si no hay navegador.
+
+    `fondo=True`: pide la página con `?pdf_limpio=1` (esconde nav/sidebar/
+    botones sin pasar por la hoja de impresión, ver `templates/base.html`)
+    y la imprime en media `screen` con fondos (ver `pdf_motor.desde_html`)."""
     from modules._lib import pdf_motor
 
+    if fondo:
+        sep = "&" if "?" in ruta else "?"
+        ruta = f"{ruta}{sep}pdf_limpio=1"
     resp = client.get(ruta, follow_redirects=True)
     if resp.status_code != 200:
         raise RuntimeError(f"{ruta} respondió {resp.status_code}")
     html = resp.get_data(as_text=True)
-    return pdf_motor.desde_html(html)
+    return pdf_motor.desde_html(html, fondo=fondo)
 
 
 def _agregar_paginas(writer, pdf_bytes: bytes) -> None:
@@ -137,9 +147,9 @@ def armar_pdf(anio: int, mes: int) -> tuple[bytes, int]:
     writer = PdfWriter()
     ok = 0
     fallos: list[str] = []
-    for titulo, ruta in PAGINAS:
+    for titulo, ruta, fondo in PAGINAS:
         try:
-            pdf_bytes = _pdf_de_pagina(client, ruta)
+            pdf_bytes = _pdf_de_pagina(client, ruta, fondo=fondo)
             _agregar_paginas(writer, pdf_bytes)
             ok += 1
         except Exception as e:  # noqa: BLE001 -- una sección mala no tira el resto

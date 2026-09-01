@@ -179,6 +179,28 @@
       a[href]::after { content: "" !important; }
     }
 
+    /* TMT 2026-08-31 -- paquete PDF de cierre de mes, página de Resultados:
+       la dueña pidió que esa página salga "igual que la pantalla" (con
+       colores), no en blanco y negro plano como el resto de la hoja de
+       impresión de arriba. Este bloque NO vive dentro de @media print --
+       es aparte a propósito, para no tocar la hoja de "lista plana" que ya
+       usa cualquier Ctrl+P del sistema (decisión de la dueña, 2026-05-27).
+       Sólo esconde el chrome (nav/sidebar/botones/forms) cuando el server
+       pide la página con ?pdf_limpio=1 (ver cierres_paquete.py) e imprime
+       con fondo=True (pdf_motor + navegador.py, media=screen). */
+    body.pdf-limpio .no-print, body.pdf-limpio aside, body.pdf-limpio header,
+    body.pdf-limpio nav, body.pdf-limpio form, body.pdf-limpio form button,
+    body.pdf-limpio form input, body.pdf-limpio a.no-print,
+    body.pdf-limpio [role="navigation"], body.pdf-limpio button,
+    body.pdf-limpio details > summary > div, body.pdf-limpio summary {
+      display: none !important;
+    }
+    body.pdf-limpio main, body.pdf-limpio .max-w-3xl, body.pdf-limpio .max-w-4xl,
+    body.pdf-limpio .max-w-5xl, body.pdf-limpio .max-w-6xl, body.pdf-limpio .max-w-7xl,
+    body.pdf-limpio .max-w-full {
+      max-width: 100% !important;
+    }
+
     /* Sidebar mobile — oculto por default en pantallas <md, slide-in al abrir. */
     @media (max-width: 767px) {
       #sidebar {
@@ -829,7 +851,7 @@
   {# Child templates can add extra <link>/<script>/<style> tags here. #}
   {% block head_extra %}{% endblock %}
 </head>
-<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen">
+<body class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 min-h-screen{% if request.args.get('pdf_limpio') %} pdf-limpio{% endif %}">
 {% if g.user %}
 <div id="app-shell" class="flex" style="height: 100vh;">
   {# TMT 2026-08-03 — un usuario VENDEDOR sólo puede entrar a /mi-cartera

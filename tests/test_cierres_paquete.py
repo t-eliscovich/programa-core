@@ -188,12 +188,12 @@ def test_armar_pdf_pega_una_pagina_por_seccion(migrated_db, real_db_conn,
     # Dos secciones baratas en vez de las 8 reales -- lo que se prueba acá es
     # el PEGADO, no cada pantalla (esas ya tienen sus propios tests).
     monkeypatch.setattr(cierres_paquete, "PAGINAS", (
-        ("Deudas", "/informes/deudas"),
-        ("Anticipos", "/dolares"),
+        ("Deudas", "/informes/deudas", False),
+        ("Anticipos", "/dolares", False),
     ))
     monkeypatch.setattr(pdf_motor, "disponible", lambda: True)
-    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, static_dir=None:
-                        _pdf_de_una_pagina())
+    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, static_dir=None,
+                        fondo=False: _pdf_de_una_pagina())
 
     from app import create_app
     flask_app = create_app()
@@ -224,12 +224,12 @@ def test_armar_pdf_sigue_si_una_seccion_falla(migrated_db, real_db_conn,
     )
 
     monkeypatch.setattr(cierres_paquete, "PAGINAS", (
-        ("No existe", "/esta-ruta-no-existe-nunca"),
-        ("Deudas", "/informes/deudas"),
+        ("No existe", "/esta-ruta-no-existe-nunca", False),
+        ("Deudas", "/informes/deudas", False),
     ))
     monkeypatch.setattr(pdf_motor, "disponible", lambda: True)
-    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, static_dir=None:
-                        _pdf_de_una_pagina())
+    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, static_dir=None,
+                        fondo=False: _pdf_de_una_pagina())
 
     from app import create_app
     flask_app = create_app()

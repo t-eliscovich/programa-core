@@ -540,7 +540,7 @@ def test_el_pdf_sale_del_navegador_prendido_si_lo_hay(monkeypatch):
     """Y sin levantar uno nuevo: el `subprocess` ni se toca."""
     monkeypatch.setattr(pdf_motor, "binario", lambda: "/bin/falso")
     monkeypatch.setattr("modules._lib.navegador.pdf",
-                        lambda html, static: b"%PDF-1.4 prendido")
+                        lambda html, static, fondo=False: b"%PDF-1.4 prendido")
     monkeypatch.setattr(pdf_motor.subprocess, "run", _prohibido)
     assert pdf_motor.desde_html("<html>a</html>") == b"%PDF-1.4 prendido"
 
@@ -551,7 +551,7 @@ def test_el_pdf_ya_dibujado_no_se_vuelve_a_dibujar(monkeypatch):
     veces = []
     monkeypatch.setattr(pdf_motor, "binario", lambda: "/bin/falso")
     monkeypatch.setattr("modules._lib.navegador.pdf",
-                        lambda html, static: veces.append(1) or b"%PDF-1.4 x")
+                        lambda html, static, fondo=False: veces.append(1) or b"%PDF-1.4 x")
     pdf_motor.desde_html("<html>a</html>")
     pdf_motor.desde_html("<html>a</html>")
     assert len(veces) == 1
@@ -559,7 +559,7 @@ def test_el_pdf_ya_dibujado_no_se_vuelve_a_dibujar(monkeypatch):
 
 def test_si_no_hay_navegador_prendido_el_pdf_sale_por_el_camino_viejo(monkeypatch):
     monkeypatch.setattr(pdf_motor, "binario", lambda: "/bin/falso")
-    monkeypatch.setattr("modules._lib.navegador.pdf", lambda html, static: None)
+    monkeypatch.setattr("modules._lib.navegador.pdf", lambda html, static, fondo=False: None)
     corridas = []
 
     def _correr(cmd, **kw):

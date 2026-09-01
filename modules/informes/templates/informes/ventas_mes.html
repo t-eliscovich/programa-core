@@ -41,6 +41,17 @@
   @media print {
     .vm-cols3 { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; }
   }
+
+  /* TMT 2026-08-31 -- página 7 casi vacía en el paquete de cierre: el
+     resumen de totales de abajo reusaba `.vm-cols3` (grid de 3) para un
+     puñado de números sueltos -- combinado con la nota de "Fuente: ..."
+     alcanzaba para desbordar a una página nueva casi en blanco. Fila
+     compacta propia, chica también en impresión. */
+  .vm-totales { display: flex; gap: 32px; }
+  @media print {
+    .vm-totales { display: flex !important; gap: 20px !important; }
+    .vm-totales .vm-totales-valor { font-size: 13px !important; }
+  }
 </style>
 {% endblock %}
 
@@ -127,18 +138,18 @@
       {% endfor %}
     </div>
 
-    <div class="mt-4 pt-3 border-t-2 border-slate-900 vm-cols3 text-sm">
+    <div class="mt-4 pt-3 border-t-2 border-slate-900 vm-totales text-sm">
       <div>
         <div class="text-xs uppercase text-slate-500">Clientes</div>
-        <div class="font-mono font-bold text-lg">{{ data.n_clientes }}</div>
+        <div class="font-mono font-bold text-lg vm-totales-valor">{{ data.n_clientes }}</div>
       </div>
       <div>
         <div class="text-xs uppercase text-slate-500">Total kg</div>
-        <div class="font-mono font-bold text-lg">{{ data.total_kg | num_es(0) }}</div>
+        <div class="font-mono font-bold text-lg vm-totales-valor">{{ data.total_kg | num_es(0) }}</div>
       </div>
       <div>
         <div class="text-xs uppercase text-slate-500">Total monto US$</div>
-        <div class="font-mono font-bold text-lg">$ {{ data.total_monto | num_es(0) }}</div>
+        <div class="font-mono font-bold text-lg vm-totales-valor">$ {{ data.total_monto | num_es(0) }}</div>
       </div>
     </div>
   </div>
@@ -148,7 +159,9 @@
   </div>
   {% endif %}
 
-  <p class="mt-3 text-xs text-slate-500">
+  {# TMT 2026-08-31: nota de fuente -- sólo pantalla, no aporta al archivo
+     de cierre y era lo que terminaba de empujar a la página 7. #}
+  <p class="mt-3 text-xs text-slate-500 no-print">
     Fuente: scintela.factura del mes seleccionado, excluyendo stat='X' (eliminadas).
     Equivalente a la pantalla VENTAS DEL MES del dBase legacy (TINT.BAT).
   </p>

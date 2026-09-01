@@ -145,11 +145,21 @@ def _para_imprimir_offline(html: str, static_dir: Path) -> str:
     )
 
 
-def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
+def desde_html(html: str, static_dir: str | os.PathLike | None = None, *,
+                fondo: bool = False) -> bytes:
     """El HTML ya renderizado → los bytes de un PDF, con la hoja de IMPRESIÓN.
 
     Se imprime lo mismo que saldría de la impresora de la oficina porque es
     literalmente el mismo HTML pasado por el mismo motor de impresión.
+
+    `fondo=True` (TMT 2026-08-31, paquete de cierre -- dueña: "pagina 1, no
+    lo podemos mostrar igual que la pantalla de resultados?"): en vez de la
+    hoja `@media print`, pide la hoja tal cual se ve en pantalla (media
+    `screen`, con fondos). Sólo lo sabe hacer el camino del navegador YA
+    PRENDIDO (`navegador.py`, habla CDP); el `subprocess` de más abajo no
+    tiene forma de pedirle a `--print-to-pdf` que use media `screen`, así
+    que si ese navegador no está disponible, `fondo=True` degrada solo a la
+    hoja de impresión de siempre -- mejor eso que romper el paquete entero.
 
     ⭐ TMT 2026-08-26 (*"tarda mucho tiempo"*): antes de llegar al `subprocess`
     de más abajo se prueban los dos atajos, en este orden:
@@ -169,7 +179,7 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
     # listo para abrirse del disco, así que arriba sería un círculo.
     from modules._lib import navegador
 
-    k = cache_hojas.clave("pdf", html)
+    k = cache_hojas.clave("pdf", html, "fondo" if fondo else "plano")
     guardado = cache_hojas.obtener(k)
     if guardado:
         return guardado
@@ -182,7 +192,7 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None) -> bytes:
 
     static = Path(static_dir) if static_dir else Path(__file__).resolve().parents[2] / "static"
 
-    rapido = navegador.pdf(html, static)
+    rapido = navegador.pdf(html, static, fondo=fondo)
     if rapido:
         cache_hojas.guardar(k, rapido)
         return rapido

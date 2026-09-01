@@ -482,11 +482,19 @@ class _Navegador:
             return None
 
     def hoja(self, html: str, static: Path, *, medidas: tuple[int, int] | None,
-             formato: str) -> bytes:
+             formato: str, fondo: bool = False) -> bytes:
         """Una pestaña: abre el HTML, saca el archivo y se cierra.
 
         `formato` es 'pdf' o 'png'. `medidas` sólo la usa el PNG (la foto sale
         del tamaño de la ventana; el PDF, del tamaño de la hoja de papel).
+
+        `fondo=True` (sólo PDF, TMT 2026-08-31, paquete de cierre): en vez de
+        imprimir con la hoja `@media print` ("lista plana", pedido dueña
+        2026-05-27), renderiza en media `screen` -- la hoja tal cual se ve en
+        pantalla, colores y todo -- y pide los fondos al navegador
+        (`printBackground: True`). Es la excepción puntual para la página de
+        Resultados del paquete PDF ("mostrar igual que la pantalla"); el resto
+        de la app sigue saliendo por el camino de siempre.
         """
         limite = self._limite = time.monotonic() + DOC_S
         carpeta = Path(tempfile.mkdtemp(prefix="pc-hoja-"))
@@ -509,6 +517,8 @@ class _Navegador:
                 self._cmd("Emulation.setScrollbarsHidden", {"hidden": True}, sesion)
             self._cmd("Page.navigate", {"url": entrada.resolve().as_uri()}, sesion)
             self._esperar_carga(sesion, limite)
+            if fondo and formato == "pdf":
+                self._cmd("Emulation.setEmulatedMedia", {"media": "screen"}, sesion)
             if formato == "png":
                 # ⭐ TMT 2026-08-27 (dueña: "¿podemos mejorar?"). La ventana se
                 # abría con el alto ESTIMADO por `alto_para` — que estima para
@@ -544,7 +554,7 @@ class _Navegador:
                 # hace la impresión por defecto) y respetando el `@page` de la
                 # hoja. Verificado byte por byte.
                 r = self._cmd("Page.printToPDF", {
-                    "printBackground": False,
+                    "printBackground": fondo,
                     "displayHeaderFooter": False,
                     "preferCSSPageSize": True}, sesion)
             datos = base64.b64decode(r["data"])
@@ -570,7 +580,7 @@ def apagado() -> bool:
 
 
 def _usar(html: str, static: Path, *, medidas: tuple[int, int] | None,
-          formato: str) -> bytes | None:
+          formato: str, fondo: bool = False) -> bytes | None:
     """La hoja por el navegador que YA está prendido, o `None` sin drama.
 
     `None` quiere decir "por acá no salió": el que llamó sigue por el camino
@@ -583,7 +593,8 @@ def _usar(html: str, static: Path, *, medidas: tuple[int, int] | None,
         if not _NAV.vivo():        # se murió mientras esperábamos el lock
             return None
         try:
-            datos = _NAV.hoja(html, static, medidas=medidas, formato=formato)
+            datos = _NAV.hoja(html, static, medidas=medidas, formato=formato,
+                               fondo=fondo)
             _NAV.ultimo_uso = time.monotonic()
             return datos
         except Exception as e:  # noqa: BLE001 -- cualquier cosa: al camino viejo
@@ -598,9 +609,12 @@ def _usar(html: str, static: Path, *, medidas: tuple[int, int] | None,
             return None
 
 
-def pdf(html: str, static: Path) -> bytes | None:
-    """Los bytes del PDF, o `None` si el navegador persistente no está."""
-    return _usar(html, static, medidas=None, formato="pdf")
+def pdf(html: str, static: Path, *, fondo: bool = False) -> bytes | None:
+    """Los bytes del PDF, o `None` si el navegador persistente no está.
+
+    `fondo=True`: media `screen` + fondos reales, en vez de la hoja de
+    impresión (ver `hoja()`)."""
+    return _usar(html, static, medidas=None, formato="pdf", fondo=fondo)
 
 
 def png(html: str, static: Path, ancho: int, alto: int) -> bytes | None:
