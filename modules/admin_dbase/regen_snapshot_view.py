@@ -95,7 +95,7 @@ _PAGE = """\
     <b>no son el dato real de agosto</b>. Si alguien vio la pantalla completa antes del
     incidente (Andres guardo el snapshot id=508 a las 22:20 del 31/08), esos valores de
     detalle se pueden corregir a mano despues.
-    <form method="post" style="margin-top:6px" onsubmit="return confirm('Anclar 31/08 a los valores conocidos (borra los snapshots de agosto y crea el correcto)?');">
+    <form method="post" style="margin-top:6px">
       <input type=hidden name=csrf_token value="{{ csrf_token() }}">
       <input type="hidden" name="restore_agosto_manual" value="1">
       <button type="submit" style="background:#b45309;color:#fff;padding:6px 12px;border:0;border-radius:4px;font-weight:bold">
