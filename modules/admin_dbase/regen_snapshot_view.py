@@ -77,6 +77,33 @@ _PAGE = """\
     </form>
   </div>
 
+  <div style="border:2px solid #b45309;background:#fffbeb;padding:12px;margin:10px 0;border-radius:6px">
+    <b>ANCLAR cierre 31/08 a los ultimos valores conocidos (incidente regen 2026-09-01)</b><br>
+    El 31/08 se cerro un dia tarde (despues de medianoche), asi que el cierre cayo en la rama
+    <code>informe_balance_as_of</code>. Esa rama tiene dos problemas conocidos para un mes que
+    ya paso: la cartera reconstruida no cierra bien, y <code>_flujos_vivos_del_mes</code>
+    devuelve <code>{}</code> por esa rama (gasto/gstotal/kcom/ktej/ktin salen en cero -- el
+    mismo bug que ya afecto julio 2026). Un click sobre REGENERAR SNAPSHOT 2026-08 ya borro
+    las 31 fotos diarias de agosto y dejo una fila con patrimonio $19.055.150 y utilidad
+    NEGATIVA -$1.877.445 -- visiblemente rota.<br><br>
+    Este boton restaura patrimonio/cartera/banco/stock/deuda/retiros/utilidad a los ultimos
+    valores buenos conocidos (foto diaria id=510 del 2026-09-01 01:05, cruzada contra el
+    calculo independiente del simulacro-cierre -- ambos coinciden). Las columnas de DETALLE
+    (kcom/ktej/ktin/ucom/utej/utin/gasto/gstotal/kvent/uvent/costo/stock/anticipos/dolar/
+    maquinaria/realty) no tienen fuente independiente para agosto: se completan con los
+    valores de julio (id=296) como placeholder -- mejor que dejarlos en cero, pero
+    <b>no son el dato real de agosto</b>. Si alguien vio la pantalla completa antes del
+    incidente (Andres guardo el snapshot id=508 a las 22:20 del 31/08), esos valores de
+    detalle se pueden corregir a mano despues.
+    <form method="post" style="margin-top:6px" onsubmit="return confirm('Anclar 31/08 a los valores conocidos (borra los snapshots de agosto y crea el correcto)?');">
+      <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+      <input type="hidden" name="restore_agosto_manual" value="1">
+      <button type="submit" style="background:#b45309;color:#fff;padding:6px 12px;border:0;border-radius:4px;font-weight:bold">
+        ANCLAR 2026-08-31 (patrimonio $21.732.772,07)
+      </button>
+    </form>
+  </div>
+
   <b>AJUSTAR snapshot 31/05 con backfill de mayo (opción A — utilidad PC == dBase)</b><br>
   Suma al snapshot del 31/05 los saldos de facturas con
   <code>usuario_crea='asinfo-backfill'</code> y <code>fecha &le; 2026-05-31</code>.
@@ -340,6 +367,62 @@ def index() -> Response:
                 )
                 id_nuevo = int(res["id_historia"]) if res else None
                 patrimonio_nuevo = 20785914.0
+                aplicado = True
+        except Exception as e:
+            error = f"{type(e).__name__}: {e}"
+
+    # Botón "restore_agosto_manual" — ancla el cierre 31/08 a los últimos
+    # valores buenos conocidos. TMT 2026-09-01: un click sobre REGENERAR
+    # SNAPSHOT 2026-08 (con la sesión ya sin confirm()) corrió un día tarde
+    # (después de medianoche), cayó en la rama `informe_balance_as_of` y
+    # produjo un patrimonio $2,7M por debajo de lo real y utilidad NEGATIVA
+    # — la cartera reconstruida por esa rama no cierra bien para un mes que
+    # ya pasó (mismo síntoma que documenta /admin/health/simulacro-cierre) y
+    # `_flujos_vivos_del_mes` devuelve {} por esa rama (mismo bug que ya
+    # afectó julio 2026: gasto/gstotal/kcom/ktej/ktin en cero). patrimonio/
+    # cart/banco/ustock/usret/usuti son los de la foto diaria id=510 del
+    # 2026-09-01 01:05 (snapshot-diario), cruzados contra el cálculo
+    # independiente del simulacro-cierre — coinciden. deuda/uqui vienen de
+    # ese mismo cálculo independiente. Las columnas de detalle
+    # (kcom/ktej/ktin/ucom/utej/utin/gasto/gstotal/kvent/uvent/costo/stock/
+    # anticipos/dolar/maquinaria/realty) NO tienen fuente independiente para
+    # agosto — se completan con julio (id=296) como placeholder, mejor que
+    # dejarlas en cero pero NO son el dato real de agosto.
+    elif request.method == "POST" and request.form.get("restore_agosto_manual") == "1":
+        try:
+            with db.tx() as conn:
+                db.execute(
+                    """
+                    DELETE FROM scintela.historia
+                     WHERE EXTRACT(YEAR FROM fecha) = 2026
+                       AND EXTRACT(MONTH FROM fecha) = 8
+                    """,
+                    conn=conn,
+                )
+                res = db.execute_returning(
+                    """
+                    INSERT INTO scintela.historia
+                        (fecha, stock, kcom, ktej, ktin, ustock, uqui, kvent,
+                         uvent, costo, ucom, utej, utin, gasto, gstotal,
+                         banco, cart, deuda, retiro, patrimonio, anticipos,
+                         dolar, maquinaria, realty, usret, usuti,
+                         fecha_crea, usuario_crea)
+                    VALUES ('2026-08-31'::date,
+                            2506522.5, 332304.71, 285828.86, 274359.44,
+                            8727036.69, 341307.24, 332304.71, 2832518.84,
+                            3491906.0, 1003590.85, 139003.75, 381612.43,
+                            318659.25, 839275.43,
+                            1675042.40, 7758369.89, 3355956.28, 149003.95,
+                            21732772.07, 2159970.67,
+                            0.0, 1072300.0, 2379014.0,
+                            149003.95, 651173.41,
+                            CURRENT_TIMESTAMP, 'ancla-agosto-manual-2026-09-01')
+                    RETURNING id_historia
+                    """,
+                    conn=conn,
+                )
+                id_nuevo = int(res["id_historia"]) if res else None
+                patrimonio_nuevo = 21732772.07
                 aplicado = True
         except Exception as e:
             error = f"{type(e).__name__}: {e}"
