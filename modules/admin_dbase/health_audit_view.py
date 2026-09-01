@@ -2204,6 +2204,63 @@ def competencia_alertas(fila: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Saldos: Al arrancar - Vendido = Queda sigue cerrando
+# ---------------------------------------------------------------------------
+
+
+@bp.route("/saldos", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def saldos_coherente():
+    """Que la resta de `/analisis/parado` siga cerrando sola.
+
+    TMT 2026-08-31 (dueña, tras corregir la resta): *"pone alertas después
+    para que no nos vuelva a pasar"*. `resumen()` calcula "Al arrancar" con un
+    PISO (ver su docstring) que absorbe, en silencio, tanto una tela nueva que
+    se suma a la cohorte como la SEGUNDA que sigue entrando a una tela ya
+    marcada — así la resta nunca se rompe a la vista. Pero ese mismo piso
+    puede absorber también lo que ninguna venta explica de verdad: kilos que
+    salieron de bodega sin quedar en `kg_vendidos` (un ajuste, un recuento,
+    algo sin factura). `kg_movido` es justamente ese residuo — por
+    construcción nunca da negativo, así que la pregunta no es "¿cerró?" sino
+    "¿cuánto quedó sin explicar?". La pantalla ya lo muestra bajo Queda
+    (`kg_movido >= 1`); este chequeo vigila lo mismo aunque nadie la mire ese
+    día — recalcula EXACTAMENTE lo que ve `/analisis/parado` (mismos `items`,
+    `con_puntos`, `kg_al_marcar_vivo` y `largada`).
+    """
+    from datetime import date
+    from modules.analisis import queries as _saldos_q
+    base = _saldos_q.con_puntos(_saldos_q.items())
+    resumen = _saldos_q.resumen(
+        base, _saldos_q.kg_al_marcar_vivo(base),
+        largada=date.fromisoformat(_saldos_q.config("largada", "2026-08-25")))
+    return jsonify(saldos_alertas(resumen))
+
+
+def saldos_alertas(resumen: dict) -> dict:
+    """La alarma de una tarjeta `resumen()` ya calculada, sin base ni request.
+
+    Toma el dict que devuelve `queries.resumen()` — no una fila de SQL — así
+    un test la prueba con datos sueltos, igual que las filas de prueba de
+    `resumen()` mismo."""
+    kg_movido = float(resumen.get("kg_movido") or 0)
+    alerts: list = []
+    if kg_movido >= 1:
+        alerts.append({
+            "severity": "medium", "category": "saldos_kg_sin_explicar",
+            "msg": (f"Saldos tiene {kg_movido:,.2f} kg que ninguna venta "
+                    f"explica: salieron de bodega sin quedar en "
+                    f"`kg_vendidos` (un ajuste, un recuento, algo sin "
+                    f"factura). La pantalla ya lo muestra bajo Queda; esto "
+                    f"lo vigila aunque nadie la mire ese día.")})
+    return {
+        "ok": not alerts,
+        "alerts": alerts,
+        "stats": {"kg_movido": kg_movido},
+    }
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -2229,6 +2286,7 @@ def health_all():
     resp15 = codigos_duplicados()
     resp16 = competencia_coherente()
     resp17 = devuelto_sin_nd()
+    resp19 = saldos_coherente()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2243,6 +2301,7 @@ def health_all():
     data15 = json.loads(resp15.get_data(as_text=True))
     data16 = json.loads(resp16.get_data(as_text=True))
     data17 = json.loads(resp17.get_data(as_text=True))
+    data19 = json.loads(resp19.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2270,7 +2329,7 @@ def health_all():
                and data6["ok"] and data7["ok"] and data9["ok"]
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
-               and data16["ok"] and data17["ok"]),
+               and data16["ok"] and data17["ok"] and data19["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2289,6 +2348,7 @@ def health_all():
         "competencia": data16,
         "devuelto_sin_nd": data17,
         "primera_compra_asinfo": data18,
+        "saldos": data19,
     })
 
 

@@ -151,19 +151,6 @@ UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
 
 ## Aprobado por la dueña, pendiente de ejecutar
 
-### [S] Alerta cuando "Saldos" vuelve a tener kg sin explicar
-
-Pedido de la dueña, 31/08/2026, después de encontrar 1.744 kg que habían
-desaparecido de `/analisis/parado` sin dejar rastro (ver
-`project_2026_08_31_competencia_cliente_vend.md`): *"pone alertas después
-para que no nos vuelva a pasar"*.
-
-Hoy los cuatro números de la pantalla (Al arrancar / Vendido / Salido antes
-de la largada / Queda) cierran exactos — eso es lo que hay que vigilar. Un
-chequeo de `/admin/health` que sume las cuatro tarjetas de `resumen()` y
-avise si no dan `Al arrancar` (con margen de centavos por redondeo), en vez
-de esperar a que alguien lo note mirando la pantalla.
-
 ### [XS] La traza no dice de qué FECHA es el movimiento bancario
 
 ⚠ **Reescrito el 26/08/2026** — el item anterior estaba mal en sus dos partes.
