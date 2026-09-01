@@ -190,10 +190,20 @@ OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2 AS va2
 # salvo 38 líneas (0,7%) sin despacho vinculado — ahí no hay más remedio que
 # creerle a la factura. El join es LEFT a propósito: sin despacho, cae al
 # comportamiento de siempre.
+# ⚠ PERF (01/09/2026): `lote` tiene 2.069.232 filas y su único índice sobre
+# `codigo` es compuesto (empresa+codigo+producto) — un RTRIM() de los dos
+# lados del JOIN inutiliza cualquier índice y fuerza un scan completo de la
+# tabla por cada despacho. Sin el filtro por `id_producto` (que SÍ tiene
+# índice propio, `ix_lote_producto`) esta consulta pasó de ~1 s a un
+# timeout de 45 s contra Metabase — la pantalla de Saldos dejó de poder
+# refrescarse sola. El filtro extra no cambia el resultado (un lote es de
+# UN producto) y le da a SQL Server una llave indexada para arrancar antes
+# de comparar el código con RTRIM.
 _JOIN_LOTE_DESPACHO = """
 LEFT JOIN detalle_despacho_cliente ddc
        ON ddc.id_detalle_despacho_cliente = dfc.id_detalle_despacho_cliente
-LEFT JOIN lote lot_desp ON RTRIM(lot_desp.codigo) = RTRIM(ddc.codigo_lote)"""
+LEFT JOIN lote lot_desp ON lot_desp.id_producto = ddc.id_producto
+                        AND RTRIM(lot_desp.codigo) = RTRIM(ddc.codigo_lote)"""
 _CALIDAD_LINEA = (
     "CASE WHEN COALESCE(lot_desp.id_valor_atributo_2, dfc.id_valor_atributo_2, "
     "mad.va2) = 4 THEN 'SEG' ELSE 'PRI' END")

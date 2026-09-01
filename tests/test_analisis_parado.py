@@ -4729,3 +4729,30 @@ def test_la_calidad_de_una_venta_sale_del_lote_real_del_despacho():
     sql = asinfo_parado._sql_vendido("2026-08-25")
     assert "_JOIN_LOTE_DESPACHO" not in sql, "el f-string tiene que estar YA interpolado"
     assert "detalle_despacho_cliente" in sql
+
+
+def test_el_join_al_lote_real_filtra_por_producto_antes_del_rtrim():
+    """PERF, CERRADO 01/09/2026. El fix de arriba se deployo (49f74f48) y la
+    pantalla de Saldos dejo de poder refrescarse sola: Metabase timeouteaba
+    a los 45 s en la consulta de `_sql_vendido`. Causa: `lote` tiene
+    2.069.232 filas y su unico indice sobre `codigo` es compuesto
+    (empresa+codigo+producto) -- el `RTRIM()` de los dos lados del JOIN
+    inutiliza cualquier indice y fuerza un scan completo por cada despacho.
+
+    Confirmado en vivo (`/admin/health/metabase`): dos refrescos seguidos
+    murieron con "Read timed out (read timeout=45)". Con el filtro por
+    `id_producto` (que si tiene indice propio, `ix_lote_producto`) la MISMA
+    consulta corrida contra Metabase bajo de timeout a 5,3 s (3.026 filas,
+    ventana desde el 25/08/2026).
+
+    El filtro no cambia el resultado -- un lote es de UN solo producto --
+    asi que es puramente de performance. Si se vuelve a tocar este JOIN,
+    mantener el filtro por id_producto ANTES del RTRIM, o va a quedar
+    igual de lento aunque el resto de la logica sea correcta."""
+    fuente = asinfo_parado._JOIN_LOTE_DESPACHO
+    assert "lot_desp.id_producto = ddc.id_producto" in fuente, (
+        "sin este filtro, el JOIN escanea las 2M de filas de `lote` por "
+        "cada despacho y Metabase timeoutea a los 45 s")
+    # el filtro por producto tiene que ir ANTES (o junto) del RTRIM, para
+    # que el optimizador de SQL Server lo pueda usar como primer paso
+    assert fuente.index("id_producto") < fuente.index("RTRIM")
