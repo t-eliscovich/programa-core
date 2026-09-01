@@ -260,10 +260,12 @@ def test_happy_path_ambas_tareas_ok(fake_db):
     exit_code, resultados = ppm.correr(periodo="2026-04", fecha=date(2026, 4, 17))
 
     assert exit_code == 0
-    # 3 tareas: procesa_provisiones, actualizar_amortizacion, snapshot_historia
-    assert len(resultados) == 3
+    # 2 tareas desde 2026-09-01: "procesa_provisiones" se sacó (duplicaba a
+    # persistir_acumulacion_yy(), el motor único de YY/RT — ver docstring
+    # del script).
+    assert len(resultados) == 2
     assert {r[0] for r in resultados} == {
-        "procesa_provisiones", "actualizar_amortizacion", "snapshot_historia",
+        "actualizar_amortizacion", "snapshot_historia",
     }
     assert all(r[1] == "O" for r in resultados)
 
@@ -295,10 +297,10 @@ def test_segunda_corrida_no_re_ejecuta(fake_db):
 
 
 def test_primera_tarea_falla_segunda_igual_corre(fake_db, monkeypatch):
-    """Si procesa_provisiones revienta, actualizar_amortizacion se intenta igual."""
+    """Si actualizar_amortizacion revienta, snapshot_historia se intenta igual."""
     def handler(sql, params):
-        if "procesa_provisiones" in sql:
-            raise RuntimeError("boom de provisiones")
+        if "actualizar_amortizacion" in sql:
+            raise RuntimeError("boom de amortizacion")
         return None
     fake_db.call_handler = handler
 
@@ -307,14 +309,14 @@ def test_primera_tarea_falla_segunda_igual_corre(fake_db, monkeypatch):
 
     assert exit_code == 1  # hubo un error
     por_tarea = {r[0]: r for r in resultados}
-    assert por_tarea["procesa_provisiones"][1] == "E"
-    assert "boom de provisiones" in por_tarea["procesa_provisiones"][2]
+    assert por_tarea["actualizar_amortizacion"][1] == "E"
+    assert "boom de amortizacion" in por_tarea["actualizar_amortizacion"][2]
     # Segunda tarea igual terminó en 'O'
-    assert por_tarea["actualizar_amortizacion"][1] == "O"
+    assert por_tarea["snapshot_historia"][1] == "O"
 
     # Slots reflejan lo mismo
-    assert fake_db.slots[("procesa_provisiones", "2026-04")]["estado"] == "E"
-    assert fake_db.slots[("actualizar_amortizacion", "2026-04")]["estado"] == "O"
+    assert fake_db.slots[("actualizar_amortizacion", "2026-04")]["estado"] == "E"
+    assert fake_db.slots[("snapshot_historia", "2026-04")]["estado"] == "O"
 
 
 def test_force_reemplaza_slot_previo_ok(fake_db):
@@ -338,7 +340,7 @@ def test_force_reemplaza_slot_previo_ok(fake_db):
 def test_procedure_no_existe_exit_2(fake_db):
     """Si la proc no existe en el schema, exit code distinto (= 2)."""
     def handler(sql, params):
-        raise RuntimeError('procedure scintela.procesa_provisiones(date) does not exist')
+        raise RuntimeError('function scintela.actualizar_amortizacion() does not exist')
     fake_db.call_handler = handler
 
     ppm = _importar_script()
@@ -347,7 +349,7 @@ def test_procedure_no_existe_exit_2(fake_db):
     assert exit_code == 2  # EXIT_MISSING_PROC
     # No intenta la segunda tarea porque salió del loop al detectar missing.
     assert len(resultados) == 1
-    assert resultados[0][0] == "procesa_provisiones"
+    assert resultados[0][0] == "actualizar_amortizacion"
     assert resultados[0][1] == "E"
 
 
@@ -355,9 +357,9 @@ def test_slot_colgado_en_R_no_re_ejecuta_sin_force(fake_db):
     """Un run previo que murió (estado='R', terminado_en IS NULL) no se re-ejecuta solo."""
     ppm = _importar_script()
     # Reservar el slot de la primera tarea manualmente, sin terminarlo.
-    fake_db.slots[("procesa_provisiones", "2026-04")] = {
+    fake_db.slots[("actualizar_amortizacion", "2026-04")] = {
         "id_ejecucion": 999,
-        "tarea": "procesa_provisiones",
+        "tarea": "actualizar_amortizacion",
         "periodo": "2026-04",
         "estado": "R",
         "iniciado_en": datetime.now(),
@@ -371,12 +373,12 @@ def test_slot_colgado_en_R_no_re_ejecuta_sin_force(fake_db):
 
     assert exit_code == 1  # hay error (tarea 1 quedó colgada sin force)
     por_tarea = {r[0]: r for r in resultados}
-    assert por_tarea["procesa_provisiones"][1] == "R"
-    assert "force" in por_tarea["procesa_provisiones"][2].lower()
+    assert por_tarea["actualizar_amortizacion"][1] == "R"
+    assert "force" in por_tarea["actualizar_amortizacion"][2].lower()
     # Slot sigue igual (estado='R', no se pisó)
-    assert fake_db.slots[("procesa_provisiones", "2026-04")]["estado"] == "R"
+    assert fake_db.slots[("actualizar_amortizacion", "2026-04")]["estado"] == "R"
     # La segunda tarea sí corrió normal
-    assert por_tarea["actualizar_amortizacion"][1] == "O"
+    assert por_tarea["snapshot_historia"][1] == "O"
 
 
 def test_parse_args_periodo_default_mes_actual(fake_db):
@@ -385,7 +387,7 @@ def test_parse_args_periodo_default_mes_actual(fake_db):
     # Arma argv con fecha explícita y NO periodo — debería derivar '2026-04'.
     exit_code = ppm.main(["--fecha", "2026-04-17"])
     assert exit_code == 0
-    assert ("procesa_provisiones", "2026-04") in fake_db.slots
+    assert ("actualizar_amortizacion", "2026-04") in fake_db.slots
 
 
 def test_periodo_formato_invalido_levanta(fake_db):
@@ -437,14 +439,30 @@ def test_ejecutar_tarea_usa_cursor_no_tx_exec(monkeypatch, fake_db):
         )
 
 
+def test_procesa_provisiones_no_esta_en_tareas(fake_db):
+    """Regresión del incidente 2026-09-01: `procesa_provisiones` (CALL
+    scintela.procesa_provisiones, el motor VIEJO que carga el mes completo
+    de un saque) duplicó la carga del día 1 contra `persistir_acumulacion_yy`
+    (modules/posdat/queries.py) -- el motor único de YY/RT desde el
+    2026-06-10, que corre solo (lazy, en cada request al balance/posdat, sin
+    cron). Cada una de las 12 provisiones YY/RT se sumó dos veces: 724.275
+    (mes) + 24.142,50 (día) = 748.417,50. Este test asegura que nadie
+    reintroduzca esa tarea en el cron sin pensarlo.
+    """
+    ppm = _importar_script()
+    assert "procesa_provisiones" not in {t for t, _ in ppm.TAREAS}
+    for _tarea, sql_call in ppm.TAREAS:
+        assert "procesa_provisiones" not in sql_call.lower()
+
+
 def test_reset_slot_fetchone_devuelve_dict(fake_db):
     """`_reset_slot` hace `row['id_ejecucion']` — si el cursor devolviera
     tuplas (default sin RealDictCursor) el cast a int explotaría."""
     ppm = _importar_script()
     # Sembrar un slot para que --force lo resetee.
-    fake_db.slots[("procesa_provisiones", "2026-04")] = {
+    fake_db.slots[("actualizar_amortizacion", "2026-04")] = {
         "id_ejecucion": 1,
-        "tarea": "procesa_provisiones",
+        "tarea": "actualizar_amortizacion",
         "periodo": "2026-04",
         "estado": "E",
         "iniciado_en": datetime.now(),
@@ -460,4 +478,4 @@ def test_reset_slot_fetchone_devuelve_dict(fake_db):
     )
     assert exit_code == 0
     # El nuevo slot quedó en 'O'
-    assert fake_db.slots[("procesa_provisiones", "2026-04")]["estado"] == "O"
+    assert fake_db.slots[("actualizar_amortizacion", "2026-04")]["estado"] == "O"

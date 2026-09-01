@@ -1,9 +1,25 @@
 """Corre el ciclo mensual de procedures contables.
 
-Hace dos cosas y las trackea en `scintela.ejecuciones_tareas`:
+Hace lo siguiente y lo trackea en `scintela.ejecuciones_tareas`:
 
-    1. CALL scintela.procesa_provisiones(CURRENT_DATE)
-    2. SELECT scintela.actualizar_amortizacion()
+    1. SELECT scintela.actualizar_amortizacion()
+    2. snapshot_historia (Python)
+
+Tamara 2026-09-01 — SACADA la tarea `procesa_provisiones` (CALL
+scintela.procesa_provisiones): el 01/09/2026, primer día con el reparto
+diario nuevo (mig 0223, `reparto_mensual.py`), este cron corrió esa
+procedure VIEJA (que carga el mes COMPLETO de las 12 provisiones YY/RT de
+un saque) al mismo tiempo que `persistir_acumulacion_yy()`
+(`modules/posdat/queries.py`) — el "motor único" de acumulación YY/RT desde
+la decisión de la dueña del 2026-06-10 — sigue corriendo SOLO, en cada
+request a /informes/balance y /posdat (lazy, idempotente, sin cron). Las
+dos rutas escriben sobre el MISMO `scintela.posdat.importe`, en el MISMO
+sentido: el resultado fue que cada una de las 12 provisiones se cargó DOS
+VECES el día 1 (724.275 del mes completo + 24.142,50 del día = 748.417,50),
+inflando la deuda (Pasivos) y hundiendo la utilidad del día en un monto que
+no era real. Ver memoria `project_2026_09_01_provisiones_doble_carga_dia_1`.
+`procesa_provisiones` quedó redundante desde que el motor único existe
+(2026-06-10) — nadie había sacado el CALL de este cron hasta hoy.
 
 Diseño:
 
@@ -11,8 +27,8 @@ Diseño:
   ejecución exitosa registra estado='O'. Las siguientes ven el UNIQUE
   (tarea, periodo) y salen en silencio con exit 0.
 - Cada tarea corre en su propia tx con su propia fila en
-  ejecuciones_tareas. Si procesa_provisiones falla, actualizar_amortizacion
-  todavía se intenta. El reporte final lista qué quedó verde / rojo.
+  ejecuciones_tareas. Si una tarea falla, las demás igual se intentan.
+  El reporte final lista qué quedó verde / rojo.
 - Exit 0 si todas las tareas están terminadas con 'O' al final (incluyendo
   las que ya corrieron antes). Exit 1 si alguna tarea quedó en 'E' este
   run. Cualquier exit != 0 es una señal al scheduler / a cron para que
@@ -57,7 +73,12 @@ EXIT_MISSING_PROC = 2
 # (nombre_tarea, sql_call). Si sumás una tarea nueva, acá es el único
 # lugar que toca — la lógica de tracking es genérica.
 TAREAS = (
-    ("procesa_provisiones",    "CALL scintela.procesa_provisiones(%s)"),
+    # "procesa_provisiones" SACADA 2026-09-01 -- ver el docstring del módulo.
+    # `persistir_acumulacion_yy()` (modules/posdat/queries.py) es el ÚNICO
+    # motor de acumulación YY/RT desde el 2026-06-10; llamarla desde acá
+    # TAMBIÉN duplicaba la carga del día 1. Si hace falta reintroducir algo
+    # de scintela.procesa_provisiones, primero confirmar que no pisa lo
+    # mismo que el motor único.
     ("actualizar_amortizacion", "SELECT scintela.actualizar_amortizacion()"),
     ("snapshot_historia",       "PYTHON:snapshot_historia"),
 )
