@@ -3368,7 +3368,14 @@ def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
     tela se fue por un ajuste, un traslado o un recuento.
 
     ⚠ Pero la que se VENDIÓ se queda aunque esté en 0: es la que muestra que la
-    competencia funcionó."""
+    competencia funcionó.
+
+    ⚠⚠ DECISIÓN 31/08/2026: y la que se vendió ANTES de la largada TAMBIÉN se
+    queda, aunque `kg_vendidos` (que sólo cuenta desde la largada) la vea en
+    0/0. Kiana Forro 1.45 LIF quedó 0 y 0 con este filtro sin la tercera
+    condición, y desaparecía ENTERA de la pantalla — 534,65 kg vendidos de
+    verdad, invisibles. La tercera condición la salva: si `kg_al_marcar` no
+    cierra contra stock+vendido, queda un residuo real y la fila se queda."""
     visto = {}
 
     def fake(sql, params=None, conn=None):
@@ -3377,8 +3384,9 @@ def test_la_fila_en_cero_que_nunca_se_movio_no_se_muestra(monkeypatch):
 
     monkeypatch.setattr(queries.db, "fetch_all", fake)
     queries.items()
-    assert ("AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0)"
-            in visto["sql"])
+    assert ("AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0 "
+            "OR c.kg_al_marcar > COALESCE(f.stock_kg, 0) + "
+            "COALESCE(f.kg_vendidos, 0) + 0.01)" in visto["sql"])
 
 
 def test_la_tabla_de_vendidos_dice_dia_y_vendedor(monkeypatch):

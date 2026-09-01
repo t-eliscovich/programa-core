@@ -168,7 +168,19 @@ def items(conn=None) -> list[dict]:
            -- que hay que ver ("si empezamos a venderlas, que no se nos vayan de
            -- la lista"), y es la única forma de saber si la competencia
            -- funcionó.
-           AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0)
+           --
+           -- ⚠⚠ DECISIÓN 31/08/2026: un ítem en CERO y CERO no siempre es "un
+           -- ajuste sin nada que mostrar". Kiana Forro 1.45 LIF quedó 0 kg y 0
+           -- vendidos (los 534,65 kg se vendieron ANTES de la largada, así que
+           -- `kg_vendidos` no los cuenta) y este filtro lo hacía desaparecer
+           -- ENTERO de la pantalla y del resumen — el peor caso posible de
+           -- "los vendedores no pueden que desaparezca de vez en cuando las
+           -- cosas". Si queda un residuo (`kg_al_marcar` no cierra contra
+           -- stock+vendido), la fila se queda igual: es tela que salió y hay
+           -- que explicar, no un recuento.
+           AND (COALESCE(f.stock_kg, 0) > 0 OR COALESCE(f.kg_vendidos, 0) > 0
+                OR c.kg_al_marcar >
+                   COALESCE(f.stock_kg, 0) + COALESCE(f.kg_vendidos, 0) + 0.01)
          ORDER BY COALESCE(f.stock_kg, 0) DESC, c.subcategoria, c.color
         """, conn=conn
     )
