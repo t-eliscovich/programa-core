@@ -2093,16 +2093,15 @@ def test_todo_se_cuenta_desde_la_largada_y_no_desde_que_entro_cada_fila():
         "ya no se arranca desde la fila más vieja de la cohorte")
 
 
-def test_vendido_ya_no_dice_desde_cuando_cuenta():
-    """⚠⚠ REVIERTE a propósito la decisión del 24/08/2026 (la de abajo, en el
-    docstring viejo, seguía pidiendo la fecha al lado del número). Desde el
-    31/08/2026 (tarde) "Vendido" fusiona kg_salido_antes: ya no es sólo "lo
-    vendido desde la largada", así que la frase "desde el 25/08" mentiría.
-    Tamara: *"yo quiero que esta matematica funcione... a corregir"* — la
-    tarjeta vuelve a ser UN número sin fecha al lado, a propósito."""
+def test_la_pantalla_dice_desde_cuando_cuenta():
+    """Un "vendido" sin fecha al lado invita justamente a la comparación que
+    generó la confusión (dueña 24/08/2026). Y desde la vuelta atrás del
+    31/08/2026 (tarde) esto importa el doble: "Vendido" tiene que ser
+    SIEMPRE el mismo número que /analisis/competencia, y las dos pantallas
+    comparten la misma ventana ("desde la largada") — decirlo en las dos
+    partes es lo que evita la pregunta "¿por qué acá dice otra cosa?"."""
     html = " ".join(_html_parado().split())
-    assert "Vendido" in html
-    assert "desde el 25/08" not in html
+    assert "Vendido" in html and "desde el 25/08" in html
 
 
 # ── Intela como una cartera más ─────────────────────────────────────────────
@@ -3135,11 +3134,17 @@ def test_salido_antes_de_la_largada_no_es_movido_ni_puntua(monkeypatch):
     r = queries.resumen(filas_antes, kg_base=580.15, largada=date(2026, 8, 25))
     assert r["kg_salido_antes"] == 534.65
     assert r["kg_movido"] == 0
-    # ⭐ DECISIÓN 31/08/2026 (tarde): "kg_vendidos" (lo que se DEVUELVE, lo que
-    # pinta la tarjeta) INCLUYE el salido_antes — Tamara: "yo quiero que esta
-    # matematica funcione... a corregir". La resta Al arrancar − Vendido tiene
-    # que dar Queda sin un tercer número escondido.
-    assert r["kg_vendidos"] == 534.65
+    # ⭐ SEGUNDA VUELTA, 31/08/2026 (misma tarde): "kg_vendidos" (lo que
+    # pinta la tarjeta) sigue siendo PURO — 0 acá, porque este ítem no vendió
+    # nada DESDE la largada. El ajuste para que la resta cierre igual vive en
+    # "Al arrancar" (`kg_inicial`), que baja retroactivo en vez de que
+    # "Vendido" suba: así sigue siendo el MISMO número que
+    # /analisis/competencia (Tamara: "basta de numeros distintos por todos
+    # lados"). "Al arrancar" queda en 45,5 kg — lo único que esta tela trae
+    # a la carrera es lo que tiene hoy, porque lo demás ya se había ido
+    # antes de arrancar.
+    assert r["kg_vendidos"] == 0
+    assert r["kg_inicial"] == 45.5
     assert r["kg_inicial"] - r["kg_vendidos"] - r["kg"] == r["kg_movido"] == 0
 
     # el mismo residuo, pero SIN pasarle `largada` (compatibilidad hacia
@@ -3159,11 +3164,12 @@ def test_salido_antes_de_la_largada_no_es_movido_ni_puntua(monkeypatch):
     assert r["kg_movido"] == 534.65
 
 
-def test_movidos_cuenta_tambien_los_items_que_solo_salieron_antes():
-    """El conteo de ítems de la tarjeta Vendido tiene que coincidir con lo que
-    ahora entra en la suma: un ítem que vendió TODO antes de la largada
-    (kg_vendidos post-largada en 0) igual tiene que sumar al conteo, porque
-    su kilo sí entra en `kg_vendidos` (el total, ya fusionado)."""
+def test_movidos_no_cuenta_lo_que_solo_salio_antes():
+    """⚠⚠ REVIERTE a propósito el intento de la primera vuelta (mismo día): el
+    conteo de ítems de la tarjeta Vendido vuelve a ser SÓLO los que vendieron
+    algo DESDE la largada — igual que `kg_vendidos`, igual que Competencia.
+    Un ítem que sólo tiene `kg_salido_antes` (vendió todo ANTES del 25/08) no
+    suma acá: ese kilo no está en "Vendido", está restado de "Al arrancar"."""
     filas = [
         {"stock_kg": 0, "kg_vendidos": 5, "kg_segunda": 0},  # vendió después
         {"stock_kg": 45.5, "kg_vendidos": 0, "kg_segunda": 0,  # solo antes
@@ -3171,7 +3177,7 @@ def test_movidos_cuenta_tambien_los_items_que_solo_salieron_antes():
         {"stock_kg": 10, "kg_vendidos": 0, "kg_segunda": 0},  # no se movió
     ]
     r = queries.resumen(filas, largada=date(2026, 8, 25))
-    assert r["movidos"] == 2
+    assert r["movidos"] == 1
 
 
 def test_al_arrancar_vivo_absorbe_una_tela_nueva_sin_dejar_seg_nueva():

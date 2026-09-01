@@ -88,15 +88,15 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <span class="mini">{{ resumen.n_items }} telas × color</span></span>
   <span><span class="k">Vendido</span>
     <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
-    {# ⚠ DECISIÓN 31/08/2026 (tarde). Tamara: "yo quiero que esta matematica
-       funcione, habia 50k se vendio 6k no quedan 46k. a corregir" — la resta
-       tiene que cerrar sola. Este número YA incluye lo que vendió un ítem
-       marcado antes de la largada (`kg_salido_antes`, ver `resumen()`): no
-       cuenta para nadie en la competencia (eso sigue viviendo aparte, en
-       `parado_venta.cuenta`), pero acá adentro es tela que salió igual y
-       "Al arrancar" − "Vendido" tiene que dar "Queda" sin excusas. Por eso ya
-       no lleva la fecha de corte al lado: ya no es sólo eso. #}
-    <span class="mini">{{ resumen.movidos }} ítems</span></span>
+    {# ⚠⚠⚠ DECISIÓN 31/08/2026 (tarde, segunda vuelta). Un primer intento le
+       sumó `kg_salido_antes` a este número para que la resta cerrara —y esa
+       misma tarde Tamara lo notó comparando contra /analisis/competencia:
+       "8k es solo de la competencia?? entonces por qué competencia dice
+       6391? basta de numeros distintos por todos lados". Este número tiene
+       que ser SIEMPRE el mismo que Competencia (las dos leen, en el fondo,
+       `parado_venta.cuenta` desde la largada). Todo el ajuste para que la
+       resta cierre igual se mudó a "Al arrancar" — ver `resumen()`. #}
+    <span class="mini">desde el 25/08 · {{ resumen.movidos }} ítems</span></span>
   <span><span class="k">Queda</span>
     <b>{{ resumen.kg | num_es(0) }} kg</b>
     {# ⚠ Lo que la resta no explica se dice, no se tapa. "Al arrancar" ya
