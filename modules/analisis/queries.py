@@ -1583,7 +1583,13 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                                                     AS color_nombre,
                   MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
                            WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
-                           ELSE COALESCE(f.forma, '') END) AS forma_fila
+                           ELSE COALESCE(f.forma, '') END) AS forma_fila,
+                  -- ⭐ Dueña 01/09/2026: "poné la última fecha de vendido de
+                  -- esa tela como está en saldos" — la MISMA columna que
+                  -- `/analisis/parado` (`f.ultima_venta`, de `parado_foto`,
+                  -- ya está en el JOIN de acá abajo por subcategoria+color),
+                  -- no la fecha de ESTA venta puntual (esa ya la tiene "Día").
+                  MAX(f.ultima_venta) AS ultima_venta
              FROM scintela.parado_venta v
              LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
              LEFT JOIN scintela.parado_foto f

@@ -4635,3 +4635,33 @@ def test_lo_vendido_guarda_el_numero_completo():
     mig = (Path(__file__).resolve().parent.parent / "migrations" /
            "0233_parado_venta_numero_completo.sql").read_text(encoding="utf-8")
     assert "ADD COLUMN IF NOT EXISTS numero" in mig
+
+
+def test_el_detalle_de_competencia_trae_la_ultima_venta_de_saldos():
+    """Duena 01/09/2026: "pone en esta tabla la ultima fecha de vendido de
+    esa tela como esta en saldos" — mirando /analisis/competencia, el detalle
+    que se abre por vendedor.
+
+    La columna tiene que ser la MISMA que /analisis/parado (`f.ultima_venta`,
+    de `parado_foto`, congelada antes de la largada) para esa tela+color, no
+    inventar una cuenta aparte. `vendido_detalle()` ya tenia ese JOIN por
+    subcategoria+color para sacar `forma_fila`; esto solo agrega la columna."""
+    import inspect
+    fuente = inspect.getsource(queries.vendido_detalle)
+    assert "f.ultima_venta" in fuente, (
+        "no lee la ultima_venta de parado_foto: seria otra fuente de verdad")
+    assert "AS ultima_venta" in fuente
+
+
+def test_la_tabla_de_competencia_muestra_la_ultima_venta_de_la_tela():
+    """La misma columna, en el mismo formato que /analisis/parado
+    (`dd/mm/yy`), y como columna APARTE de "Dia" — "Dia" es la fecha de ESTA
+    venta puntual; "Ultima" es cuando se habia vendido antes."""
+    from pathlib import Path
+    t = (Path("modules/analisis/templates/analisis/competencia.html")
+         .read_text(encoding="utf-8"))
+    assert "<th class=\"n opt\">Última</th>" in t
+    assert ("v.ultima_venta.strftime('%d/%m/%y') if v.ultima_venta "
+            "else '—'") in t
+    # ⚠ No es la misma columna que "Dia" (v.fecha, la venta puntual de hoy).
+    assert "v.ultima_venta" in t and "v.fecha" in t

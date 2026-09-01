@@ -70,9 +70,9 @@ border-radius:6px;table-layout:fixed;width:100%}
    columnas quedaban corridas de un vendedor al otro — el que vendió una sola
    tela tenía la columna Color a mitad de camino de donde la tenía el de al
    lado. */
-tr.vdet col.c1{width:26%}tr.vdet col.c2{width:20%}tr.vdet col.c3{width:9%}
-tr.vdet col.c4{width:9%}tr.vdet col.c5{width:9%}tr.vdet col.c6{width:15%}
-tr.vdet col.c7{width:12%}
+tr.vdet col.c1{width:24%}tr.vdet col.c2{width:18%}tr.vdet col.c3{width:8%}
+tr.vdet col.c4{width:8%}tr.vdet col.c5{width:8%}tr.vdet col.c6{width:13%}
+tr.vdet col.c7{width:11%}tr.vdet col.c8{width:10%}
 tr.vdet td,tr.vdet th{overflow:hidden;text-overflow:ellipsis}
 /* El renglón vendido cuelga de su grupo: sangría, letra chica y UNA sola línea.
    ⚠⚠ La clase se llama `vlinea` y NO `linea`: `.linea` ya existe en el CSS de
@@ -232,16 +232,21 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
   <tr class="vdet"><td colspan="8">
     <table>
     <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4">
-    <col class="c5"><col class="c6"><col class="c7"></colgroup>
+    <col class="c5"><col class="c6"><col class="c7"><col class="c8"></colgroup>
     {# ⭐ Las MISMAS columnas que la lista de saldos (dueña 25/08/2026: "color,
        forma, categoría, kg tienen que ser columnas"). Todo en un renglón de
        texto corrido no se lee: se compara mal y no se puede recorrer con la
        vista en vertical.
        El renglón del GRUPO es un subtotal: ocupa las cinco primeras y deja los
-       kilos y los puntos en su columna, encolumnados con los de sus telas. #}
+       kilos y los puntos en su columna, encolumnados con los de sus telas.
+       ⭐ "Última" (dueña 01/09/2026: "pone en esta tabla la ultima fecha de
+       vendido de esa tela como esta en saldos") es la MISMA columna de
+       `/analisis/parado` para esa tela+color (`ultima_venta`, congelada
+       antes de la largada) — no confundir con "Día", que es la fecha de
+       ESTA venta puntual dentro de la competencia. #}
     <thead><tr><th>Tipo de tela</th><th>Color</th><th>Forma</th>
     <th>Categoría</th><th class="opt">Día</th><th class="n">Vendió</th>
-    <th class="n">Puntos</th></tr></thead>
+    <th class="n">Puntos</th><th class="n opt">Última</th></tr></thead>
     <tbody>
     {# ⭐ Cada venta va DENTRO de su grupo (dueña 25/08/2026: "quería ver el
        pique especial de lo vendido dentro de pique, no una tabla aparte").
@@ -253,7 +258,8 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {% for d in r.detalle %}
       <tr><td colspan="5">{{ d.grupo }}</td>
       <td class="n g">{{ d.kg | num_es(0) }} kg</td>
-      <td class="n pts">{{ d.puntos | num_es(0) }}</td></tr>
+      <td class="n pts">{{ d.puntos | num_es(0) }}</td>
+      <td class="opt"></td></tr>
       {% for v in d.lineas %}
         {# ⚠ Los puntos van SIEMPRE. Estuvieron un día escondidos cuando eran
            iguales a los kilos ("no me repitas info 64, 64"), y eso funcionaba
@@ -293,6 +299,7 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
             %}{{ v.fecha.strftime('%d/%m') }}{% endif %}{% else %}—{% endif %}</td>
           <td class="n">{{ v.kg | num_es(0) }} kg</td>
           <td class="n pts">{{ v.puntos | num_es(0) }}</td>
+          <td class="n g opt">{{ v.ultima_venta.strftime('%d/%m/%y') if v.ultima_venta else '—' }}</td>
         </tr>
       {% endfor %}
     {% endfor %}
