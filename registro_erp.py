@@ -479,6 +479,12 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(regen_snapshot_bp)
 
+    # Corrección del doble cobro de provisiones YY/RT del 01/09/2026.
+    # Tamara 2026-09-01.
+    from modules.admin_dbase.correccion_provisiones_doble_view import bp as correccion_prov_bp
+
+    app.register_blueprint(correccion_prov_bp)
+
     # Vincular cheques históricos del dBase a sus facturas — TMT 2026-06-07.
     # /admin/abonos-historicos reconstruye el chequesxfact que el dBase nunca
     # guardó (CHEQUES.DBF no referencia la factura) y recalcula
