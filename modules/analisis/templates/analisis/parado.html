@@ -89,17 +89,15 @@ th.ord.desc::after{content:" ↓";opacity:1}
   <span><span class="k">Vendido</span>
     <b>{{ resumen.kg_vendidos | num_es(0) }} kg</b>
     <span class="mini">desde el 25/08 · {{ resumen.movidos }} ítems</span>
-    {# ⭐ DECISIÓN 31/08/2026: un ítem marcado ANTES de la largada (ej. el
-       17/08) puede haber vendido algo en el medio — ese kilo salió de
-       verdad, pero no cuenta como Vendido (dueña: "si se vendieron antes
-       del 25 no cuentan para nadie") ni tiene que quedar flotando como
-       misterio en "Queda" (dueña: "los vendedores no pueden que
-       desaparezca de vez en cuando las cosas"). Casillero propio, sin
-       puntos. #}
-    {% if resumen.kg_salido_antes >= 1 %}
-      <span class="mini">+ {{ resumen.kg_salido_antes | num_es(0) }} kg
-        vendidos antes del 25/08, no puntuaron</span>
-    {% endif %}</span>
+    {# ⚠ DECISIÓN 31/08/2026, y la misma tarde se sacó de la vista (dueña:
+       "no muestres esto, borralos de vendidos, para qué"). El kilo de un
+       ítem marcado ANTES de la largada que se vendió en el medio SIGUE sin
+       contar como Vendido (ni de casualidad ni con esta pantalla) y SIGUE
+       sin ensuciar "Queda" — `resumen.kg_salido_antes` se sigue calculando
+       y restando de `kg_movido` para que las cuentas cierren — pero ya no
+       se le muestra a nadie el porqué en un renglón aparte: la pantalla es
+       más simple sin él, y el número resuelto (Queda sin residuo raro) ya
+       dice lo que hacía falta decir. #}</span>
   <span><span class="k">Queda</span>
     <b>{{ resumen.kg | num_es(0) }} kg</b>
     {# ⚠ Lo que la resta no explica se dice, no se tapa: la bodega se mueve por
