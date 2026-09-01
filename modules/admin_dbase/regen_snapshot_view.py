@@ -168,6 +168,65 @@ balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
 <p><i>No hay snapshots para ese mes todavía.</i></p>
 {% endif %}
 
+{% if detalle_preview %}
+<h2>Detalle real de {{ anio }}-{{ '%02d'|format(mes) }} (kcom/ucom/ktej/utej/ktin/utin/gasto/gstotal/kvent/uvent)</h2>
+<p>Reconstruido de las tablas propias de PC (compras/xgast/factura/tinto) filtradas
+por fecha a ese mes -- NO julio, NO un placeholder. No toca patrimonio, cartera,
+banco, stock, deuda ni utilidad: <b>sólo estas 10 columnas de detalle.</b></p>
+<table>
+  <thead><tr><th>Campo</th><th>En historia hoy</th><th>Reconstruido</th><th style="text-align:left">Fuente</th></tr></thead>
+  <tbody>
+    {% for campo, etiqueta in [("kcom","Materia prima (kg)"), ("ucom","Materia prima ($)"),
+                                ("ktej","Tejeduría (kg)"), ("utej","Tejeduría ($)"),
+                                ("ktin","Colorantes (kg)"), ("utin","Tintorería, gastos de proceso ($)"),
+                                ("gasto","Administración ($)"), ("gstotal","Total gastos ($)"),
+                                ("kvent","Ventas (kg)"), ("uvent","Ventas ($)")] %}
+    <tr>
+      <td style="text-align:left">{{ etiqueta }}</td>
+      <td>{{ '%.2f'|format((detalle_actual or {}).get(campo) or 0) }}</td>
+      <td><b>{{ '%.2f'|format(detalle_preview.campos[campo]) }}</b></td>
+      <td style="text-align:left;font-size:11px;color:#555">
+        {% if campo in ("kcom","ucom") %}{{ detalle_preview.fuente["ucom/kcom"] }}
+        {% elif campo in ("ktej","utej") %}{{ detalle_preview.fuente["utej/ktej"] }}
+        {% elif campo == "utin" %}{{ detalle_preview.fuente["utin"] }}
+        {% elif campo == "ktin" %}{{ detalle_preview.fuente["ktin"] }}
+        {% elif campo in ("gasto","gstotal") %}{{ detalle_preview.fuente["gasto/gstotal"] }}
+        {% else %}{{ detalle_preview.fuente["kvent/uvent"] }}
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+<form method=POST style="margin-top:12px">
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+  <input type=hidden name=anio value="{{ anio }}">
+  <input type=hidden name=mes value="{{ mes }}">
+  <input type=hidden name=anio_detalle value="{{ anio }}">
+  <input type=hidden name=mes_detalle value="{{ mes }}">
+
+  {% if aplicado_detalle %}
+  <div class=ok>
+    <b>✓ Detalle aplicado.</b> Fila id={{ id_detalle_nuevo }}: kcom={{ '%.2f'|format(detalle_aplicado.kcom) }},
+    ucom={{ '%.2f'|format(detalle_aplicado.ucom) }}, ktej={{ '%.2f'|format(detalle_aplicado.ktej) }},
+    utej={{ '%.2f'|format(detalle_aplicado.utej) }}, ktin={{ '%.2f'|format(detalle_aplicado.ktin) }},
+    utin={{ '%.2f'|format(detalle_aplicado.utin) }}, gasto={{ '%.2f'|format(detalle_aplicado.gasto) }},
+    gstotal={{ '%.2f'|format(detalle_aplicado.gstotal) }}, kvent={{ '%.2f'|format(detalle_aplicado.kvent) }},
+    uvent={{ '%.2f'|format(detalle_aplicado.uvent) }}. Patrimonio/utilidad NO se tocaron
+    (patrimonio={{ '%.2f'|format(detalle_aplicado.patrimonio) }}, usuti={{ '%.2f'|format(detalle_aplicado.usuti) }}).
+  </div>
+  {% elif error_detalle %}
+  <div class=warn><b>Error:</b> {{ error_detalle }}</div>
+  {% else %}
+  <button type=submit name=aplicar_detalle_real value=1 style="background:#0a0"
+    onclick="return confirm('Pisar SOLO las 10 columnas de detalle del cierre {{ anio }}-{{ '%02d'|format(mes) }} con estos valores reconstruidos? No toca patrimonio ni cartera.');">
+    APLICAR DETALLE REAL DE {{ anio }}-{{ '%02d'|format(mes) }}
+  </button>
+  {% endif %}
+</form>
+{% endif %}
+
 <form method=POST style="margin-top:24px">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
   <input type=hidden name=anio value="{{ anio }}">
@@ -219,6 +278,12 @@ def index() -> Response:
     id_nuevo: int | None = None
     patrimonio_nuevo = 0.0
     error: str | None = None
+
+    # Estado del botón "aplicar_detalle_real" (detalle real de un mes cerrado).
+    aplicado_detalle = False
+    id_detalle_nuevo: int | None = None
+    detalle_aplicado: dict | None = None
+    error_detalle: str | None = None
 
     # Botón "ajustar_backfill_31_05" — TMT decisión 2026-06-10 opción A.
     # Suma al cart/patrimonio del snapshot 31/05 los saldos de las facturas
@@ -448,6 +513,53 @@ def index() -> Response:
         except Exception as e:
             error = f"{type(e).__name__}: {e}"
 
+    # Botón "aplicar_detalle_real" — Tamara 2026-09-01: "no de julio. del
+    # cierre. busca y ponelo bien" — pisa SÓLO las 10 columnas de DETALLE
+    # (kcom/ucom/ktej/utej/ktin/utin/gasto/gstotal/kvent/uvent) de la fila
+    # YA ANCLADA de un mes cerrado, con el dato real reconstruido por
+    # `historia_detalle_mes_cerrado` (tablas propias de PC filtradas por
+    # fecha a ese mes). Deliberadamente NO toca patrimonio/cart/banco/
+    # stock/deuda/anticipos/dolar/maquinaria/realty/usret/usuti/costo/
+    # ustock/uqui/retiro -- esos ya están anclados a los últimos valores
+    # buenos conocidos (ver el botón ANCLAR de arriba) y reconstruirlos
+    # "como estaban tal día" tiene el mismo problema sin resolver que la
+    # cartera.
+    elif request.method == "POST" and request.form.get("aplicar_detalle_real") == "1":
+        try:
+            from modules.informes import queries as iq
+
+            anio_d = int(request.form.get("anio_detalle") or anio)
+            mes_d = int(request.form.get("mes_detalle") or mes)
+            rec = iq.historia_detalle_mes_cerrado(anio_d, mes_d)
+            if not rec.get("ok"):
+                error_detalle = rec.get("razon", "no se pudo reconstruir")
+            else:
+                campos = rec["campos"]
+                _fecha_cierre_d = _fecha_cierre_de(anio_d, mes_d)
+                res = db.execute_returning(
+                    """
+                    UPDATE scintela.historia
+                       SET kcom = %(kcom)s, ucom = %(ucom)s,
+                           ktej = %(ktej)s, utej = %(utej)s,
+                           ktin = %(ktin)s, utin = %(utin)s,
+                           gasto = %(gasto)s, gstotal = %(gstotal)s,
+                           kvent = %(kvent)s, uvent = %(uvent)s
+                     WHERE fecha = %(fecha)s
+                    RETURNING id_historia, kcom, ucom, ktej, utej, ktin,
+                              utin, gasto, gstotal, kvent, uvent,
+                              patrimonio, usuti
+                    """,
+                    {**campos, "fecha": _fecha_cierre_d},
+                )
+                if res:
+                    id_detalle_nuevo = int(res["id_historia"])
+                    detalle_aplicado = dict(res)
+                    aplicado_detalle = True
+                else:
+                    error_detalle = f"no hay fila de historia con fecha = {_fecha_cierre_d} (¿está anclado el cierre?)"
+        except Exception as e:
+            error_detalle = f"{type(e).__name__}: {e}"
+
     elif request.method == "POST" and request.form.get("aplicar") == "1":
         try:
             from modules.informes import queries as iq
@@ -495,6 +607,31 @@ def index() -> Response:
         except Exception as e:
             error = f"{type(e).__name__}: {e}"
 
+    # Vista previa del detalle reconstruido (SOLO lectura -- no escribe
+    # nada). Tamara 2026-09-01: mirar antes de aplicar. Se intenta siempre
+    # que (anio, mes) sea un mes ya cerrado; si no, queda en None y la
+    # sección no se muestra.
+    detalle_preview = None
+    detalle_actual = None
+    try:
+        from modules.informes import queries as iq
+
+        _rec = iq.historia_detalle_mes_cerrado(anio, mes)
+        if _rec.get("ok"):
+            detalle_preview = _rec
+            _row_actual = db.fetch_one(
+                """
+                SELECT id_historia, kcom, ucom, ktej, utej, ktin, utin,
+                       gasto, gstotal, kvent, uvent
+                  FROM scintela.historia
+                 WHERE fecha = %s
+                """,
+                (_fecha_cierre_de(anio, mes),),
+            )
+            detalle_actual = dict(_row_actual) if _row_actual else None
+    except Exception:  # noqa: BLE001 -- vista previa, nunca romper la pantalla
+        detalle_preview = None
+
     # Snapshot listing
     snapshots = db.fetch_all(
         """
@@ -518,6 +655,12 @@ def index() -> Response:
             id_nuevo=id_nuevo,
             patrimonio_nuevo=patrimonio_nuevo,
             error=error,
+            detalle_preview=detalle_preview,
+            detalle_actual=detalle_actual,
+            aplicado_detalle=aplicado_detalle,
+            id_detalle_nuevo=id_detalle_nuevo,
+            detalle_aplicado=detalle_aplicado,
+            error_detalle=error_detalle,
         ),
         mimetype="text/html",
     )
