@@ -2319,26 +2319,32 @@ def test_la_pantalla_dibuja_la_lista_entera_del_mes():
 
 
 @pytest.mark.parametrize(
-    ("motivo", "calidad"),
+    ("motivo", "calidad", "cuenta"),
     [
-        ("parado", "PRI"),
-        ("parado", "SEG"),
-        ("segunda", "SEG"),
-        # ⚠⚠ DECISIÓN 31/08/2026, revierte la del 24/08. Kiana Forro 1.45 LIF
-        # (534,65 kg): el LOTE de bodega era SEGUNDA, la FACTURA salió cargada
-        # como PRIMERA (verificado con TFB de `movimiento_inventario` contra
-        # Asinfo) — el kilo se vendió de verdad y antes no le daba puntos a
-        # nadie ni bajaba de "Queda". Dueña: *"que cuente como Vendido"*.
-        # El TOPE (test de abajo) sigue impidiendo que esto regale puntos por
-        # vender tela que "se vende sola" — la razón original del 24/08.
-        ("segunda", "PRI"),
-        ("segunda", None),
+        ("parado", "PRI", True),
+        ("parado", "SEG", True),
+        ("parado", None, True),
+        # ⭐ VUELTA ATRÁS 01/09/2026 (ver el docstring de `cuenta_el_kilo`).
+        # `calidad` acá YA es la del LOTE REAL que despachó
+        # (`asinfo_parado._JOIN_LOTE_DESPACHO`), no lo que decía la factura
+        # — por eso un `segunda` con calidad "SEG" sigue contando: es el caso
+        # Kiana Forro (lote real SEGUNDA, factura mal cargada en PRIMERA), y
+        # con la calidad resuelta contra el lote real ya no importa qué decía
+        # la factura.
+        ("segunda", "SEG", True),
+        # ⭐ Lo que el 31/08 dejaba pasar y el 01/09 cierra: una tela que se
+        # vende sola (verificado en vivo: Fleece 96 Sin Perchar, Rib Normal,
+        # Rib Acanalado — 600 a 3.800 kg reales de primera desde la largada)
+        # llenaba su tope de segunda (12-130 kg) con ventas de PRIMERA de
+        # verdad, sin mover un gramo de la segunda marcada.
+        ("segunda", "PRI", False),
+        ("segunda", None, False),
         # Cohorte vieja, sin motivo guardado: cuenta todo, como venía.
-        (None, "PRI"),
+        (None, "PRI", True),
     ],
 )
-def test_todo_kilo_vendido_puntua_ahora(motivo, calidad):
-    assert queries.cuenta_el_kilo(motivo, calidad) is True
+def test_solo_la_segunda_de_verdad_puntua_para_un_item_segunda(motivo, calidad, cuenta):
+    assert queries.cuenta_el_kilo(motivo, calidad) is cuenta
 
 
 def test_las_devoluciones_restan_en_lo_que_puntua():
@@ -2365,13 +2371,19 @@ def test_la_dificultad_de_la_tela_tambien_es_neta():
     assert "kg_seg_12m" in sql
 
 
-def test_lo_vendido_trae_la_calidad_de_la_linea_y_no_del_lote():
-    """En las líneas de factura `dfc.id_lote` viene en NULL: la calidad está en
-    el atributo 2 de la LÍNEA (3 = PRI, 4 = SEG). Verificado contra
-    `valor_atributo` el 24/08/2026."""
+def test_lo_vendido_trae_la_calidad_del_lote_real_del_despacho():
+    """CERRADO 01/09/2026 — reemplaza al test del 24/08 que llevaba este
+    nombre. `dfc.id_lote` (la columna de la LÍNEA de factura) sigue en NULL
+    siempre (eso no cambió: no se usa ni antes ni ahora). Lo que sí cambió es
+    de dónde sale la calidad: antes, del atributo 2 de la línea de factura
+    (lo que alguien tipeó); ahora, primero del LOTE REAL que salió por el
+    despacho (`detalle_despacho_cliente.codigo_lote` → `lote`), y sólo si no
+    hay despacho vinculado cae a la línea de factura — ver
+    `test_la_calidad_de_una_venta_sale_del_lote_real_del_despacho`."""
     sql = " ".join(asinfo_parado._sql_vendido("2026-08-25").split())
-    assert "COALESCE(dfc.id_valor_atributo_2, mad.va2) = 4 THEN 'SEG'" in sql
-    assert "dfc.id_lote" not in sql
+    assert ("COALESCE(lot_desp.id_valor_atributo_2, dfc.id_valor_atributo_2, "
+            "mad.va2) = 4 THEN 'SEG'") in sql
+    assert "dfc.id_lote" not in sql, "la línea de factura no tiene lote propio"
 
 
 def test_la_devolucion_hereda_la_calidad_y_el_vendedor_de_la_factura_madre():
@@ -3409,20 +3421,22 @@ def test_el_item_que_asinfo_ya_no_devuelve_conserva_su_tope(monkeypatch):
     assert ("COA", 360.0, False) in filas
 
 
-def test_segunda_vendida_como_primera_igual_puntua_pero_topada(monkeypatch):
-    """⚠⚠ DECISIÓN 31/08/2026. Kiana Forro 1.45 LIF: el lote de bodega era
-    SEGUNDA (580,15 kg al marcar) pero las 17 facturas que se lo llevaron
-    salieron cargadas con el atributo de calidad en PRIMERA — verificado
-    contra Asinfo (factura + TFB de `movimiento_inventario`). Antes esos
-    kilos no puntuaban (`cuenta_el_kilo` exigía calidad='SEG' para un ítem de
-    segunda) y tampoco bajaban de "Queda": quedaban flotando como un
-    "kg_movido" sin explicación. Tamara: *"que cuente como Vendido"*.
+def test_segunda_de_lote_real_puntua_aunque_la_factura_diga_primera(monkeypatch):
+    """⭐ Kiana Forro 1.45 LIF: el lote de bodega era SEGUNDA (580,15 kg al
+    marcar) pero las 17 facturas que se lo llevaron salieron cargadas con el
+    atributo de calidad en PRIMERA — verificado contra Asinfo. El 31/08 se
+    arregló contando CUALQUIER calidad (reabrió otro agujero, cerrado el
+    01/09 — ver `test_una_primera_de_verdad_no_puntua_aunque_llene_el_tope`).
+    El arreglo de fondo es más arriba, en `vendido_desde()`: `calidad` YA
+    viene resuelta contra el LOTE REAL del despacho, no de la factura. Acá,
+    en `cuenta_el_kilo`, ese kilo llega como "SEG" —la verdad del lote—, así
+    que puntúa igual sin necesitar la excepción de "cualquier calidad".
 
     La prueba de que esto NO reabre el agujero del 24/08 ("no darle puntos a
     la tela que se vende sola"): el TOPE es el kg de SEGUNDA que había al
     marcar (50), no el kg_antes (5.000, que es el saldo TOTAL —primera y
     segunda— de 90 días atrás, deliberadamente grande acá). Aunque la venta
-    sea de 200 kg y venga cargada como PRIMERA, sólo 50 puntúan."""
+    sea de 200 kg, sólo 50 puntúan."""
     cohorte = [{"subcategoria": "Kiana Forro 1.45", "color": "LIF",
                 "fecha_marcado": date(2026, 8, 13), "motivo": "segunda",
                 "kg_al_marcar": 50}]
@@ -3431,9 +3445,34 @@ def test_segunda_vendida_como_primera_igual_puntua_pero_topada(monkeypatch):
             "nueva": False, "pedida": False, "entra": True, "kg_antes": 5000}
     filas = _refresco_con_ventas(
         monkeypatch, parados=[item], cohorte=cohorte,
-        ventas=[_venta("Kiana Forro 1.45", "LIF", 200, calidad="PRI")])
-    assert ("LIF", 50.0, True) in filas, "el kilo SEG vendido como PRI puntúa"
+        ventas=[_venta("Kiana Forro 1.45", "LIF", 200, calidad="SEG")])
+    assert ("LIF", 50.0, True) in filas, "el kilo del lote real SEG puntúa"
     assert ("LIF", 150.0, False) in filas, "pero el tope de segunda lo frena"
+
+
+def test_una_primera_de_verdad_no_puntua_aunque_llene_el_tope(monkeypatch):
+    """⭐ CERRADO 01/09/2026. Dueña, mirando /analisis/competencia: "porque
+    estan en la competencia?" — Fleece 96 Sin Perchar NEG, Rib Normal BLA y
+    ~40 ítems más entraban por un resto chico de SEGUNDA (12-130 kg) pegado a
+    una tela que se vende sola en PRIMERA (600-3.800 kg reales desde la
+    largada). Como cualquier calidad contaba, el tope se llenaba en 1-2 días
+    con ventas normales — puntaje completo sin mover un gramo de la segunda,
+    que seguía intacta en bodega. Verificado con Metabase: el lote real de
+    esas ventas ERA primera de verdad (no un error de carga como Kiana
+    Forro) — `dueña: "era de segunda la tela que salio en esas facturas? si
+    era de segunda poner en cal = seg"`. No lo era, así que no cuenta."""
+    cohorte = [{"subcategoria": "Fleece 96 Sin Perchar", "color": "NEG",
+                "fecha_marcado": date(2026, 8, 18), "motivo": "segunda",
+                "kg_al_marcar": 44.55}]
+    item = {"subcategoria": "Fleece 96 Sin Perchar", "color": "NEG",
+            "stock_kg": 44.55, "stock_bodega": 44.55, "motivo": "segunda",
+            "nueva": False, "pedida": False, "entra": True, "kg_antes": 44.55}
+    filas = _refresco_con_ventas(
+        monkeypatch, parados=[item], cohorte=cohorte,
+        ventas=[_venta("Fleece 96 Sin Perchar", "NEG", 679, calidad="PRI")])
+    assert filas == [("NEG", 679.0, False)], (
+        "toda la venta tiene que caer del lado que NO puntúa — nada de "
+        "primera de verdad puede llenar el tope de segunda")
 
 
 def test_sin_dato_de_asinfo_no_hay_tope(monkeypatch):
@@ -4665,3 +4704,28 @@ def test_la_tabla_de_competencia_muestra_la_ultima_venta_de_la_tela():
             "else '—'") in t
     # ⚠ No es la misma columna que "Dia" (v.fecha, la venta puntual de hoy).
     assert "v.ultima_venta" in t and "v.fecha" in t
+
+
+def test_la_calidad_de_una_venta_sale_del_lote_real_del_despacho():
+    """CERRADO 01/09/2026. La calidad que decide si un kilo `segunda` puntua
+    tiene que ser la del LOTE que de verdad salio por el despacho, no la que
+    alguien tipeo en la linea de la factura -- esa puede estar mal (Kiana
+    Forro) o, mas comun, coincidir siempre pero dejar pasar telas que se
+    venden solas (Fleece 96 Sin Perchar) si no se verifica.
+
+    Verificado en vivo con Metabase el 01/09/2026: de 5.537 lineas vendidas
+    desde la largada, el lote real y la factura coinciden en TODAS salvo 38
+    sin despacho vinculado (0,7%) -- por eso el join es LEFT con fallback a
+    la factura, nunca NOT NULL."""
+    fuente = asinfo_parado._JOIN_LOTE_DESPACHO
+    assert "detalle_despacho_cliente" in fuente
+    assert "codigo_lote" in fuente
+    assert "LEFT JOIN" in fuente, "sin LEFT, una venta sin despacho desaparecería"
+
+    linea = asinfo_parado._CALIDAD_LINEA
+    assert "lot_desp.id_valor_atributo_2" in linea
+    assert "dfc.id_valor_atributo_2" in linea, "fallback a la factura si no hay despacho"
+
+    sql = asinfo_parado._sql_vendido("2026-08-25")
+    assert "_JOIN_LOTE_DESPACHO" not in sql, "el f-string tiene que estar YA interpolado"
+    assert "detalle_despacho_cliente" in sql

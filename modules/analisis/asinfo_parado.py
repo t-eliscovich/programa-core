@@ -176,8 +176,27 @@ OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2 AS va2
                 AND m.id_producto = dfc.id_producto) mad"""
 # TOP 1 y no un JOIN: la madre puede tener el mismo producto en dos renglones
 # y un JOIN duplicaría los kilos de la devolución.
-_CALIDAD_LINEA = ("CASE WHEN COALESCE(dfc.id_valor_atributo_2, mad.va2) = 4 "
-                  "THEN 'SEG' ELSE 'PRI' END")
+
+# ⭐ DECISIÓN 01/09/2026 (dueña, mirando /analisis/competencia: "era de
+# segunda la tela que salio en esas facturas? si era de segunda poner en
+# cal = seg"). La calidad de la FACTURA (`dfc.id_valor_atributo_2`) es lo
+# que alguien tipeó al facturar — el caso Kiana Forro del 31/08 probó que
+# puede estar mal (lote SEGUNDA, factura cargada en PRIMERA). La calidad
+# de VERDAD es la del LOTE que salió por el DESPACHO
+# (`detalle_despacho_cliente.codigo_lote` → `lote.id_valor_atributo_2`).
+#
+# ⚠ Verificado en vivo el 01/09/2026 sobre las 5.537 líneas vendidas desde
+# la largada: el lote real y la factura COINCIDEN siempre (0 discrepancias),
+# salvo 38 líneas (0,7%) sin despacho vinculado — ahí no hay más remedio que
+# creerle a la factura. El join es LEFT a propósito: sin despacho, cae al
+# comportamiento de siempre.
+_JOIN_LOTE_DESPACHO = """
+LEFT JOIN detalle_despacho_cliente ddc
+       ON ddc.id_detalle_despacho_cliente = dfc.id_detalle_despacho_cliente
+LEFT JOIN lote lot_desp ON RTRIM(lot_desp.codigo) = RTRIM(ddc.codigo_lote)"""
+_CALIDAD_LINEA = (
+    "CASE WHEN COALESCE(lot_desp.id_valor_atributo_2, dfc.id_valor_atributo_2, "
+    "mad.va2) = 4 THEN 'SEG' ELSE 'PRI' END")
 
 _VENDEDOR = ("CASE WHEN vv.nombre_vendedor IS NULL "
              "OR RTRIM(vv.nombre_vendedor) IN ('Cía. Ltda. Intela', '') "
@@ -622,7 +641,7 @@ FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
 JOIN empresa e   ON e.id_empresa   = fc.id_empresa
-{_JOIN_PADRE}{_JOIN_MADRE_LINEA}
+{_JOIN_PADRE}{_JOIN_MADRE_LINEA}{_JOIN_LOTE_DESPACHO}
 {_JOIN_VENDEDOR}
 WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND {_FECHA} >= '{desde}'

@@ -953,36 +953,46 @@ def cuenta_el_kilo(motivo: str | None, calidad: str | None) -> bool:
     entra por `segunda` sólo debería puntuar con kilos SEG, para no darle
     puntos a una tela que "se vende sola" (su primera).
 
-    ⚠⚠ DECISIÓN 31/08/2026, la revierte a propósito — no la pierdas de vista.
-    Investigando por qué `/analisis/parado` mostraba kilos "que salieron por
-    bodega" sin explicación (Kiana Forro 1.45 LIF, 534,65 de 580,15 kg):
-    con Asinfo (factura + TFB de `movimiento_inventario`) apareció que esos
-    kilos SÍ se vendieron — el LOTE de bodega era SEGUNDA, pero la FACTURA
-    salió cargada con el atributo de calidad en PRIMERA. El kilo se fue de la
-    bodega con una venta real atrás, pero el filtro de calidad no le daba
-    puntos a nadie Y ADEMÁS no bajaba de "Queda": quedaba flotando como si
-    hubiera desaparecido.
+    ⚠⚠ DECISIÓN 31/08/2026: la había revertido a "cualquier calidad cuenta,
+    acotado por el tope" — ver el historial de git para el porqué (Kiana
+    Forro 1.45 LIF: el LOTE de bodega era SEGUNDA, pero la FACTURA salió
+    cargada con el atributo de calidad en PRIMERA, y el kilo real quedaba sin
+    puntuar).
 
-    Tamara, viendo la evidencia: *"que cuente como Vendido"* — si salió por
-    bodega con una factura real, puntúa, se haya cargado como se haya cargado.
-    *"los vendedores no pueden que desaparezca de vez en cuando las cosas"*.
+    ⚠⚠⚠ VUELTA ATRÁS 01/09/2026 — la de arriba no fue el fix correcto.
+    Confirmado en vivo con Metabase (Fleece 96 Sin Perchar NEG, Rib Normal
+    BLA y ~40 ítems más): un ítem `segunda` con un tope chico (12-130 kg)
+    sobre una tela que se vende MUY rápido en primera (600-3.800 kg desde la
+    largada) llenaba su tope entero con ventas normales de primera en 1-2
+    días — puntaje completo sin mover un gramo de la segunda real, que
+    seguía intacta en bodega (`stock_kg` sin cambios desde que se marcó).
+    Dueña, viendo la evidencia: *"era de segunda la tela que salio en esas
+    facturas? si era de segunda poner en cal = seg"*.
 
-    ⭐ Por qué esto NO reabre el agujero del 24/08: el TOPE (`kg_al_marcar`)
-    de un ítem `segunda` YA es sólo el kg de SEGUNDA que había el día que
-    entró a la lista (`asinfo_parado.SQL_PARADOS`: para un ítem que no pasa
-    `_ES_PARADO`, `stock_kg` sale de `cal.kg_segunda`, nunca de la primera).
-    Una tela que se vende sola tiene mucha primera pero poca —o nada— de
-    segunda: su tope se queda chico pase lo que pase con la calidad de la
-    factura. El filtro de calidad ya no hacía falta para eso; el tope solo
-    alcanza.
+    ⭐ El fix de fondo no es este `return`: es que `calidad` ahora viene del
+    LOTE REAL que salió por el DESPACHO (`asinfo_parado._JOIN_LOTE_DESPACHO`,
+    `detalle_despacho_cliente.codigo_lote` → `lote.id_valor_atributo_2`), no
+    de lo que alguien tipeó en la factura. Verificado en vivo el 01/09/2026:
+    de 5.537 líneas vendidas desde la largada, la calidad de la factura y la
+    del lote real coinciden en TODAS salvo 38 sin despacho vinculado (0,7%,
+    ahí no queda otra que creerle a la factura). Fleece 96 Sin Perchar NEG:
+    lote real = PRI, factura = PRI — coincide, era primera de verdad, no un
+    error de carga. El caso Kiana Forro del 31/08 seguía puntuando IGUAL con
+    este fix: su lote real es SEGUNDA aunque la factura diga PRIMERA, así que
+    con la calidad del lote real vuelve a contar sin reabrir el agujero del
+    24/08.
 
-    parado  — TODOS los kilos cuentan, como siempre.
-    segunda — CUALQUIER kilo vendido cuenta, acotado por el tope de segunda.
+    parado  — TODOS los kilos cuentan, como siempre (nunca tuvo tope de
+              calidad: el motivo `parado` no distingue primera de segunda).
+    segunda — SÓLO cuenta si la calidad del LOTE REAL es SEG, acotado además
+              por el tope de segunda (`kg_al_marcar`).
 
     ⚠ El motivo es el CONGELADO en la cohorte, no el de la foto de hoy: si
     mañana la tela entera se para, el ítem no puede cambiar de regla en la
     mitad de la carrera.
     """
+    if motivo == "segunda":
+        return calidad == "SEG"
     return True
 
 def actualizar() -> dict:
