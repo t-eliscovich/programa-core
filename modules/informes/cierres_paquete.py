@@ -49,7 +49,12 @@ _LOG = logging.getLogger("programa_core.cierres_paquete")
 PAGINAS: tuple[tuple[str, str], ...] = (
     ("Informe Resultados — Balance", "/informes/balance"),
     ("Ventas del mes", "/informes/ventas"),
-    ("Cartera", "/cartera/aging"),
+    # TMT 2026-08-31: /cartera/aging es la pantalla OPERATIVA (buckets de
+    # mora, botón "stop automático") -- no lo que se archiva cada mes.
+    # /informes/cartera es el resumen simple (CLI/CHQ/FAC/TOT/%), réplica
+    # del CARTERA del dBase, con su propia vista compacta de 3 columnas
+    # para impresión (ver cartera.html).
+    ("Cartera", "/informes/cartera"),
     ("Deudas", "/informes/deudas"),
     ("Gastos del mes", "/informes/gastos"),
     ("Flujo de producción", "/informes/flujo-produccion"),

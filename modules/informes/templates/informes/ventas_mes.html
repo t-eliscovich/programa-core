@@ -31,6 +31,16 @@
   .vm-grid tbody td.num  { text-align: right; font-family: ui-monospace, Menlo, monospace; }
   .vm-grid tfoot td      { padding: 6px 8px; border-top: 2px solid rgb(15 23 42); font-weight: 700; }
   .vm-grid tfoot td.num  { text-align: right; font-family: ui-monospace, Menlo, monospace; }
+  /* TMT 2026-08-31: las 3 columnas NO pueden ir por `md:grid-cols-3` de
+     Tailwind -- static/tailwind.css es un build JIT congelado y esa clase
+     puede no estar compilada (clases "fantasma", ver skill programa-core).
+     Clase propia, sin esa dependencia, y forzada en @media print para que
+     el paquete de cierre (cierres_paquete.py, que imprime esta MISMA
+     pantalla) no la aplaste a 1 columna y multiplique páginas. */
+  .vm-cols3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0 24px; }
+  @media print {
+    .vm-cols3 { display: grid !important; grid-template-columns: repeat(3, 1fr) !important; }
+  }
 </style>
 {% endblock %}
 
@@ -90,7 +100,7 @@
 
   <div class="vm-grid bg-white border border-slate-300 rounded p-3">
     <div class="text-sm font-bold uppercase tracking-wider text-red-700 mb-2 pl-2">Ventas del mes</div>
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-x-6">
+    <div class="vm-cols3">
       {% for col in [col1, col2, col3] %}
         <table>
           <thead>
@@ -117,7 +127,7 @@
       {% endfor %}
     </div>
 
-    <div class="mt-4 pt-3 border-t-2 border-slate-900 grid grid-cols-3 gap-x-6 text-sm">
+    <div class="mt-4 pt-3 border-t-2 border-slate-900 vm-cols3 text-sm">
       <div>
         <div class="text-xs uppercase text-slate-500">Clientes</div>
         <div class="font-mono font-bold text-lg">{{ data.n_clientes }}</div>

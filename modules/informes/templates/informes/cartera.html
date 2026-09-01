@@ -4,7 +4,32 @@
 {% block title %}Cartera — resumen{% endblock %}
 {% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <strong>Cartera — resumen</strong>{% endblock %}
 
-{% block head_extra %}{{ informes_styles() }}{% endblock %}
+{% block head_extra %}{{ informes_styles() }}
+<style>
+  /* TMT 2026-08-31: paquete de cierre de mes -- réplica del CARTERA del
+     dBase (CLI/CHQ/FAC/TOT/% en 3 columnas). La tabla de arriba es la
+     interactiva (nombre + link a estado de cuenta); ésta es SOLO para
+     impresión/PDF, compacta, sin depender de clases Tailwind que puedan
+     no estar compiladas (ver vm-cols3 en ventas_mes.html, mismo motivo). */
+  .cartera-print { display: none; }
+  @media print {
+    .cartera-interactiva { display: none !important; }
+    .cartera-print { display: block !important; }
+    .cartera-print .cols3 {
+      display: grid !important; grid-template-columns: repeat(3, 1fr) !important;
+      gap: 0 20px;
+    }
+    .cartera-print table { width: 100%; border-collapse: collapse; font-size: 11px; }
+    .cartera-print th {
+      text-align: right; color: rgb(190 18 60); font-weight: 700;
+      border-bottom: 1px solid rgb(148 163 184); padding: 3px 6px;
+    }
+    .cartera-print th.cli { text-align: left; }
+    .cartera-print td { padding: 2px 6px; border-bottom: 1px dotted rgb(226 232 240); text-align: right; }
+    .cartera-print td.cli { text-align: left; font-family: ui-monospace, Menlo, monospace; font-weight: 600; }
+  }
+</style>
+{% endblock %}
 
 {% block content %}
 {% set _actions %}
@@ -37,7 +62,7 @@
     </div>
   {% endif %}
 
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden cartera-interactiva">
     <table class="info-table">
       <thead>
         <tr>
@@ -89,6 +114,44 @@
         {% endif %}
       </tbody>
     </table>
+  </div>
+
+  {# TMT 2026-08-31: paquete de cierre de mes -- réplica del CARTERA del
+     dBase en 3 columnas (CLI/CHQ/FAC/TOT/%), sólo para impresión (ver
+     estilos en head_extra). Mismos datos que la tabla de arriba. #}
+  {% set total_filas = filas | length %}
+  {% set per_col = ((total_filas + 2) // 3) %}
+  <div class="cartera-print">
+    <div class="text-sm font-bold uppercase tracking-wider text-rose-700 mb-2">Cartera</div>
+    <div class="cols3">
+      {% for col in [filas[0:per_col], filas[per_col:per_col*2], filas[per_col*2:]] %}
+        <table>
+          <thead>
+            <tr>
+              <th class="cli">CLI</th>
+              <th>CHQ</th>
+              <th>FAC</th>
+              <th>TOT</th>
+              <th>%</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for f in col %}
+              <tr>
+                <td class="cli">{{ f.codigo_cli }}</td>
+                <td>{{ (f.cheques or 0) | num_es(0) if (f.cheques or 0) > 0 else '—' }}</td>
+                <td>{{ (f.facturas or 0) | num_es(0) }}</td>
+                <td>{{ (f.saldo_total or 0) | num_es(0) }}</td>
+                <td>{{ f.pct }}</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% endfor %}
+    </div>
+    <div style="margin-top: 8px; padding-top: 6px; border-top: 2px solid #000; font-weight: 700; font-size: 11px;">
+      Total ({{ total_filas }} clientes): {{ total | num_es(0) }}
+    </div>
   </div>
 
 {% endcall %}
