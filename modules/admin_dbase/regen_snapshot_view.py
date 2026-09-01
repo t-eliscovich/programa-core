@@ -148,8 +148,7 @@ balance (ej. revert de filtros) y el snapshot queda desincronizado.</p>
     <code>scintela.historia</code> del mes y recalcular el snapshot del último
     día del mes con las queries actuales. NO se hace backup automático.
   </div>
-  <button type=submit name=aplicar value=1
-    onclick="return confirm('Borrar {{ snapshots|length }} snapshots de {{ anio }}-{{ mes }} y recrear?');">
+  <button type=submit name=aplicar value=1>
     REGENERAR SNAPSHOT {{ anio }}-{{ '%02d'|format(mes) }}
   </button>
   {% endif %}
