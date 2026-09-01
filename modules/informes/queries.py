@@ -1847,8 +1847,10 @@ def apertura_ukg_hilado(mesnum: int, yy: int) -> float:
     return tarifa_iniciales_mes_anterior(mesnum, yy, "um")
 
 
-def ventas_mes_corriente_resultado() -> dict:
-    """Ventas del mes EN CURSO calculadas live desde scintela.factura.
+def ventas_mes_corriente_resultado(meses_atras: int = 0) -> dict:
+    """Ventas del mes EN CURSO calculadas live desde scintela.factura (o
+    `meses_atras` meses hacia atrás — Tamara 2026-09-01, para reconstruir
+    kvent/uvent de un mes ya cerrado).
 
     Replica lo que hace INFORMES.PRG: VENTA del mes = SUM(facturas) del mes
     en curso, NO del último cierre histórico. Si la fila historia está
@@ -1866,11 +1868,12 @@ def ventas_mes_corriente_resultado() -> dict:
                COALESCE(SUM(kg), 0)      AS kg,
                COALESCE(SUM(importe), 0) AS importe
         FROM scintela.factura
-        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
-          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s) + INTERVAL '1 month'
           AND (stat IS NULL OR stat <> 'X')
           AND {NO_BACKFILL_WHERE}  -- ver constante arriba
-        """
+        """,
+            {"meses_atras": int(meses_atras or 0)},
         )
         or {}
     )
@@ -1946,8 +1949,10 @@ def ventas_mes_corriente_kg_fisico() -> float:
 # ningún número.
 
 
-def compras_mes_corriente() -> dict:
-    """Compras de MATERIA PRIMA (hilado) del mes en curso.
+def compras_mes_corriente(meses_atras: int = 0) -> dict:
+    """Compras de MATERIA PRIMA (hilado) del mes en curso (o `meses_atras`
+    meses hacia atrás — Tamara 2026-09-01, para reconstruir MAT.PR. de un
+    mes ya cerrado, ver `historia_detalle_mes_cerrado`).
 
     Replica VM/MAT.PR. del INFORMES.PRG: en COMPRAS.DBF, las filas con
     TIPO='H' son materia prima (hilado). Otras tipos:
@@ -1975,15 +1980,16 @@ def compras_mes_corriente() -> dict:
                COALESCE(kg, 0)      AS kg,
                COALESCE(importe, 0) AS importe
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
-          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'H'
           -- Excluir anuladas (stat 'X' o 'Y'). Sin este filtro, compras
           -- reversadas seguían inflando MAT.PR. y U$/kg ponderado.
           -- TMT 2026-05-13.
           AND COALESCE(stat, '') NOT IN ('X', 'Y')
           AND {NO_BACKFILL_WHERE}  -- ver constante arriba
-        """
+        """,
+            {"meses_atras": int(meses_atras or 0)},
         )
         or []
     )
@@ -9419,6 +9425,192 @@ def _flujos_vivos_del_mes(bal: dict) -> dict:
         out["stock"] = float(stock_kg)
 
     return out
+
+
+def tinto_mes_componentes(anio: int, mes: int) -> dict:
+    """Igual que `tinto_mes_corriente_resultado()` (ITIN/KTINT/KR de TINTO,
+    PRG líneas 252-256) pero para (anio, mes) EXPLÍCITO en vez de "el mes en
+    curso" -- para poder reconstruir un mes YA CERRADO.
+
+    Tamara 2026-09-01 -- a diferencia del cuadro MOVIMIENTOS de Asinfo (que
+    sólo sabe contestar "cómo está el inventario AHORA", nunca "cómo estaba
+    tal día"), tanto `scintela.tinto` como `formulas_app` son tablas
+    TRANSACCIONALES con fecha propia por fila -- sí se pueden filtrar por
+    un rango de fechas de un mes que ya pasó, sin el problema de
+    contaminación de un saldo "a hoy". Por eso ktin/itin/kr de esta función
+    SÍ son un dato real de agosto, no una aproximación.
+
+    Reutiliza `_tint_svc.tinto_equiv_formulas(desde, hasta, ...)` -- el
+    mismo puente a formulas_app que ya usa la rama LIVE -- pero con el
+    rango de fechas del mes pedido en vez de "hoy".
+    """
+    import calendar as _cal
+
+    m_ini = date(anio, mes, 1)
+    m_fin = date(anio, mes, _cal.monthrange(anio, mes)[1])
+
+    itin = 0.0
+    ktint = 0.0
+    kr = 0.0
+
+    # Parte scintela.tinto (dBase histórico, sólo días < CORTE_TINTURA).
+    if m_ini < CORTE_TINTURA:
+        row = (
+            db.fetch_one(
+                """
+            SELECT COALESCE(SUM(importe), 0)                                     AS itin,
+                   COALESCE(SUM(CASE WHEN UPPER(TRIM(color)) NOT LIKE 'LAV%%'
+                                     THEN kg  ELSE 0 END), 0)                    AS ktint,
+                   COALESCE(SUM(CASE WHEN UPPER(TRIM(color)) NOT LIKE 'LAV%%'
+                                      AND COALESCE(kg, 0) > 0
+                                     THEN kgn ELSE 0 END), 0)                    AS kr
+            FROM scintela.tinto
+            WHERE fecha >= %(desde)s
+              AND fecha <= %(hasta)s
+              AND fecha <  %(corte)s
+            """,
+                {"desde": m_ini, "hasta": m_fin, "corte": CORTE_TINTURA},
+            )
+            or {}
+        )
+        itin += float(row.get("itin") or 0)
+        ktint += float(row.get("ktint") or 0)
+        kr += float(row.get("kr") or 0)
+
+    # Parte formulas_app (del corte en adelante).
+    f_desde = max(CORTE_TINTURA, m_ini)
+    if f_desde <= m_fin:
+        try:
+            from modules.tintura import service as _tint_svc
+
+            for _o in _tint_svc.tinto_equiv_formulas(
+                f_desde, m_fin, excluir_lavados=False
+            ):
+                itin += _o.importe or 0.0
+                if (_o.color or "").strip().upper().startswith("LAV"):
+                    continue
+                _kg = _o.kg or 0.0
+                _kgn = _o.kgn or 0.0
+                ktint += _kg
+                if _kg > 0:
+                    kr += _kgn
+        except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
+            pass
+
+    return {"itin": itin, "ktint": ktint, "kr": kr}
+
+
+def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
+    """Reconstruye las columnas de DETALLE de `scintela.historia` de un mes
+    YA CERRADO — kcom/ucom/ktej/utej/ktin/utin/gasto/gstotal/kvent/uvent —
+    a partir de las tablas PROPIAS de PC, filtradas por fecha a ESE mes.
+
+    Tamara 2026-09-01 (incidente del cierre de agosto) — cuando el cierre
+    de un mes se toma tarde y cae en la rama `as_of`, estas columnas se
+    quedan sin fuente: `_flujos_vivos_del_mes` sólo sabe leer
+    `bal["resultados"]`, que sólo existe en la rama LIVE de HOY. El parche
+    de entonces fue completar con el mes anterior como placeholder — mejor
+    que dejarlas en 0, pero no es agosto.
+
+    Esta función SÍ reconstruye agosto real, para lo que se puede: usa las
+    mismas tablas fuente que ya sabían filtrar por mes (`gastos_xgast_v1_a_v9_mes`,
+    `amortizaciones_mensuales`, `tejido_mes_componentes`, `compras_mes_corriente`,
+    `ventas_mes_corriente_resultado`, todas con `meses_atras`) — todas leen
+    `scintela.xgast`/`compra`/`factura` con un WHERE de fecha, así que no les
+    importa si ya pasó el mes. Con esto, gasto/gstotal/utej/utin quedan
+    IDÉNTICOS a lo que ya muestra /informes/gastos → "Gs. Mes Anterior"
+    (mismo cálculo, ver `_gastos_mes_anterior_componentes` en views.py).
+
+    `ktin` sale de `tinto_mes_componentes(anio, mes)` -- KTINT real del mes,
+    de `scintela.tinto`/`formulas_app` filtrado por fecha (son tablas
+    transaccionales con fecha propia por fila, no un saldo "a hoy" como el
+    cuadro MOVIMIENTOS de Asinfo -- sí soportan un mes que ya pasó).
+
+    Lo que NO reconstruye, a propósito, porque no hay de dónde sacarlo
+    fielmente para un mes que ya pasó:
+      - `ktej` "de pantalla" (kg del cuadro MOVIMIENTOS de Asinfo, cuando
+        Asinfo contesta): ese cuadro es SIEMPRE el estado actual del
+        inventario, Asinfo no expone un "como estaba el bodega tal día".
+        Se usa el kg de COMPRAS propio de PC (`tejido_mes_componentes`)
+        como la mejor aproximación disponible -- el mismo dato que ya usa
+        la rama `costos` (PRG-literal) de este mismo mecanismo para el mes
+        en curso cuando Asinfo no contesta.
+      - `stock`/`anticipos`/`maquinaria`/`realty`/`costo`: son saldos DE UN
+        DÍA (no flujos del mes), y reconstruir "cuánto había exactamente el
+        31" tiene el mismo problema que la cartera (`totf` usa el saldo
+        ACTUAL, no el de esa fecha) -- no se tocan acá.
+
+    Devuelve `{ok, anio, mes, campos: {...}, fuente: {...}}` — `fuente`
+    documenta de qué función salió cada número, para que quede trazable.
+    """
+    hoy = today_ec()
+    meses_atras = (hoy.year - anio) * 12 + (hoy.month - mes)
+    if meses_atras < 1:
+        return {"ok": False, "razon": "el mes tiene que ser un mes ya cerrado"}
+
+    v, _ = None, None
+    try:
+        v = gastos_xgast_v1_a_v9_mes(meses_atras=meses_atras)
+    except Exception as e:  # noqa: BLE001
+        v = {}
+    try:
+        a = amortizaciones_mensuales(meses_atras=meses_atras)
+    except Exception:  # noqa: BLE001
+        a = {}
+    try:
+        tej = tejido_mes_componentes(meses_atras=meses_atras)
+    except Exception:  # noqa: BLE001
+        tej = {}
+    try:
+        mp = compras_mes_corriente(meses_atras=meses_atras)
+    except Exception:  # noqa: BLE001
+        mp = {}
+    try:
+        vt = ventas_mes_corriente_resultado(meses_atras=meses_atras)
+    except Exception:  # noqa: BLE001
+        vt = {}
+    try:
+        tin = tinto_mes_componentes(anio, mes)
+    except Exception:  # noqa: BLE001
+        tin = {}
+
+    def gv(k):
+        return float((v or {}).get(k) or 0)
+
+    def ga(k):
+        return float((a or {}).get(k) or 0)
+
+    tercer_tej = float((tej or {}).get("us_externo") or 0)
+    utej = gv("v1") + gv("v2") + gv("v3") + ga("dtj") + tercer_tej
+    utin = gv("v4") + gv("v5") + gv("v6") + ga("dcc")
+    gasto = gv("v7") + gv("v8") + gv("v9") + ga("deprcar")
+
+    campos = {
+        "ucom": float((mp or {}).get("importe") or 0),
+        "kcom": float((mp or {}).get("kg") or 0),
+        "utej": utej,
+        "ktej": float((tej or {}).get("kg_total") or 0),
+        "utin": utin,
+        "ktin": float((tin or {}).get("ktint") or 0),
+        "gasto": gasto,
+        "gstotal": utej + utin + gasto,
+        "kvent": float((vt or {}).get("kg") or 0),
+        "uvent": float((vt or {}).get("importe") or 0),
+    }
+    return {
+        "ok": True,
+        "anio": anio,
+        "mes": mes,
+        "campos": campos,
+        "fuente": {
+            "ucom/kcom": "compras_mes_corriente(meses_atras) -- scintela.compra tipo H, fecha en el mes",
+            "utej/ktej": "V1+V2+V3+amort(DTJ)+tejido_mes_componentes(meses_atras).us_externo -- xgast+compra",
+            "utin": "V4+V5+V6+amort(DCC) -- scintela.xgast",
+            "ktin": "tinto_mes_componentes(anio, mes).ktint -- scintela.tinto + formulas_app, fecha en el mes",
+            "gasto/gstotal": "V7+V8+V9+amort(DEPRCAR) -- scintela.xgast, mismo cálculo que /informes/gastos",
+            "kvent/uvent": "ventas_mes_corriente_resultado(meses_atras) -- scintela.factura, fecha en el mes",
+        },
+    }
 
 
 def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
