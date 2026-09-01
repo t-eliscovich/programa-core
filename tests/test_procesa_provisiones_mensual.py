@@ -54,6 +54,10 @@ class _FakeDB:
         self.tx_calls: list[tuple[str, tuple]] = []
         self.call_handler = call_handler or (lambda sql, params: None)
         self.init_pool_called = False
+        # 2026-09-01 — regresión "foto diaria pisa el cierre": qué devuelve
+        # el SELECT usuario_crea que el cron hace ANTES de crear_snapshot_historia
+        # para decidir si tiene que forzar. None = no hay fila (caso normal).
+        self.historia_fila_previa: dict | None = None
 
     # --- lo que el script llama directamente -------------------------------
 
@@ -95,6 +99,8 @@ class _FakeDB:
         # snapshot_historia tarea agregada en el cron — todas estas queries
         # son del calcular_kpis() y existe_snapshot(). Las dejamos pasar como
         # vacío/None para que el snapshot termine sin tocar Postgres real.
+        if "usuario_crea" in s and "from scintela.historia" in s:
+            return dict(self.historia_fila_previa) if self.historia_fila_previa else None
         if "from scintela.historia" in s:
             return None  # "no existe snapshot todavía"
         if "from scintela.factura" in s or "from scintela.posdat" in s \
@@ -232,17 +238,21 @@ def fake_db(monkeypatch):
     # LIVE. Lo stubbeamos: la responsabilidad de ESTE test es el tracking de
     # tareas en ejecuciones_tareas, no el cálculo del balance (cubierto aparte).
     import modules.informes.queries as _iq
-    monkeypatch.setattr(
-        _iq,
-        "crear_snapshot_historia",
-        lambda anio, mes, usuario="auto": {
+    fake.crear_snapshot_historia_calls = []
+
+    def _stub_crear_snapshot_historia(anio, mes, usuario="auto", forzar=False):
+        fake.crear_snapshot_historia_calls.append(
+            {"anio": anio, "mes": mes, "usuario": usuario, "forzar": forzar}
+        )
+        return {
             "aplicado": True,
             "anio": anio,
             "mes": mes,
             "id_historia": 999,
             "razon": "stub test",
-        },
-    )
+        }
+
+    monkeypatch.setattr(_iq, "crear_snapshot_historia", _stub_crear_snapshot_historia)
     return fake
 
 
@@ -479,3 +489,38 @@ def test_reset_slot_fetchone_devuelve_dict(fake_db):
     assert exit_code == 0
     # El nuevo slot quedó en 'O'
     assert fake_db.slots[("actualizar_amortizacion", "2026-04")]["estado"] == "O"
+
+
+# --- regresión 2026-09-01: foto diaria pisa el cierre --------------------
+#
+# Si una foto DIARIA (usuario_crea='snapshot-diario') ya ocupó la fecha
+# exacta del cierre antes de que corra el cron, `crear_snapshot_historia`
+# sin forzar la deja congelada a esa hora — el mismo patrón que "salvó" a
+# julio de pedo y rompió a agosto (ver `cierre-de-mes` skill). El cron
+# ahora chequea quién dejó la fila y fuerza SOLO si fue esa foto de paso.
+
+
+def test_snapshot_historia_no_forza_si_no_hay_fila_previa(fake_db):
+    """Caso normal: nada ocupó la fecha todavía -> forzar=False."""
+    ppm = _importar_script()
+    ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
+    llamada = fake_db.crear_snapshot_historia_calls[0]
+    assert llamada["forzar"] is False
+
+
+def test_snapshot_historia_forza_si_lo_unico_que_hay_es_foto_diaria(fake_db):
+    """Una foto diaria de paso ocupó el 30/09 -> el cron la pisa (forzar=True)."""
+    fake_db.historia_fila_previa = {"usuario_crea": "snapshot-diario"}
+    ppm = _importar_script()
+    ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
+    llamada = fake_db.crear_snapshot_historia_calls[0]
+    assert llamada["forzar"] is True
+
+
+def test_snapshot_historia_no_forza_si_la_fila_es_manual(fake_db):
+    """Si alguien ya reconstruyó el cierre a mano, el cron NO la pisa."""
+    fake_db.historia_fila_previa = {"usuario_crea": "admin"}
+    ppm = _importar_script()
+    ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
+    llamada = fake_db.crear_snapshot_historia_calls[0]
+    assert llamada["forzar"] is False

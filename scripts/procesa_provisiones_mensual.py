@@ -209,9 +209,37 @@ def _ejecutar_tarea(tarea: str, sql_call: str, fecha: date) -> None:
         # camino as_of además incluye la caja en `banco` y excluye
         # 'asinfo-backfill'. Idempotente: salta si ya existe el mes.
         from modules.informes.queries import crear_snapshot_historia
-        result = crear_snapshot_historia(
-            fecha_cierre.year, fecha_cierre.month, usuario=f"cron_{tarea}"
+        # Tamara 2026-09-01 -- si una foto DIARIA (usuario_crea='snapshot-diario')
+        # ya ocupó la fecha EXACTA del cierre -- alguien visitó una pantalla
+        # que la dispara, o el botón manual de /admin/health/all, antes de que
+        # corriera este cron -- `crear_snapshot_historia` sin forzar la deja
+        # CONGELADA a esa hora. Es el mismo patrón que "salvó" julio de pedo
+        # (una foto diaria ocupó el 31/07 a las 22:31 EC, cerca de la hora
+        # real) y rompió agosto (nadie visitó nada esa noche, así que el cron
+        # cerró por la rama as_of rota) -- ver memoria
+        # project_2026_09_01_provisiones_doble_carga_dia_1 y la skill
+        # cierre-de-mes. El cron ES la fuente autorizada del cierre: si lo
+        # único que hay en la fecha es una foto diaria de paso, la pisa. Si
+        # hay CUALQUIER otra cosa (una reconstrucción manual de Tamara/Andrés
+        # vía /admin/regenerar-snapshot/, un backfill, etc.) no la toca --
+        # forzar=False sigue siendo el default seguro para todo lo demás.
+        fila_previa = db.fetch_one(
+            "SELECT usuario_crea FROM scintela.historia WHERE fecha = %s LIMIT 1",
+            (fecha_cierre,),
         )
+        forzar_por_foto_diaria = bool(
+            fila_previa and fila_previa.get("usuario_crea") == "snapshot-diario"
+        )
+        result = crear_snapshot_historia(
+            fecha_cierre.year, fecha_cierre.month, usuario=f"cron_{tarea}",
+            forzar=forzar_por_foto_diaria,
+        )
+        if forzar_por_foto_diaria:
+            log.info(
+                "snapshot_historia %s -- pisó una foto diaria que había "
+                "ocupado la fecha de cierre antes que el cron",
+                fecha_cierre,
+            )
         log.info(
             "snapshot_historia %s -> aplicado=%s (id=%s, %s)",
             fecha_cierre, result.get("aplicado"), result.get("id_historia"),
