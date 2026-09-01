@@ -1883,6 +1883,17 @@ def competencia() -> dict:
     meses = _meses(largada, cierre)
     hay_hoy = sum(g["kg"] for g in grupos)
     liquidado = sum(g["liquidado"] for g in grupos)
+    # ⭐ DECISIÓN 01/09/2026. "Al arrancar" de Saldos (`resumen()`, con su
+    # piso: kg_al_marcar_vivo − salido_antes, nunca por debajo de kg+vendido)
+    # y "de X kg" acá venían de DOS cuentas distintas — la meta congelada del
+    # 25/08 (`kg_al_largar`, abajo) es fija a propósito (el objetivo no se
+    # mueve en el mes), pero eso dejaba a Tamara sin ver que "Al arrancar"
+    # de Saldos había crecido. Tamara: *"esta bien que suba"* — pidió
+    # mostrar el número vivo ACÁ también, para no tener que ir a buscarlo a
+    # otra pantalla. `resumen()` sobre las MISMAS `filas` de acá (no una
+    # consulta nueva) para que sea el idéntico número, siempre.
+    kg_al_arrancar_vivo = resumen(
+        filas, kg_al_marcar_vivo(filas), largada=largada)["kg_inicial"]
     return {
         "hoy": today_ec(),
         "largada": largada,
@@ -1898,6 +1909,10 @@ def competencia() -> dict:
         # largada): lo que hay hoy más lo que se vendió, que ES lo que había.
         "kg_al_largar": (sum(congelada.values()) if congelada
                          else hay_hoy + liquidado),
+        # ⭐ El "Al arrancar" VIVO, el mismo que muestra Saldos — ver el
+        # comentario de arriba. Distinto de `kg_al_largar` (la meta fija) a
+        # propósito: uno es el objetivo, éste es cuánto se puede explicar hoy.
+        "kg_al_arrancar_vivo": kg_al_arrancar_vivo,
         # ⚠ Se llama `fijada_el` y no `meta_fijada_el`: no es la fecha de una
         # meta —desde el 24/08 no hay— sino la del día en que se congelaron los
         # KILOS contra los que corre la competencia.

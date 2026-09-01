@@ -838,6 +838,34 @@ def test_la_competencia_sale_de_las_mismas_filas_que_lo_parado():
     assert "items()" in inspect.getsource(queries.competencia)
 
 
+def test_competencia_muestra_el_al_arrancar_vivo_de_saldos(monkeypatch):
+    """⭐ DECISIÓN 01/09/2026. Tamara notó que "Al arrancar" de Saldos (el que
+    sube solo cuando entra segunda a una tela vieja, ver `resumen()`) no se
+    veía en Competencia — sólo la meta fija (`kg_al_largar`). Pidió mostrarlo
+    acá también: *"esta bien que suba"* — no hace falta esconderlo, hace
+    falta que las dos pantallas digan lo mismo. `kg_al_arrancar_vivo` sale
+    de `resumen()` sobre las MISMAS `filas` que arma `competencia()` (no una
+    cuenta aparte), así que es matemáticamente el mismo número que pintaría
+    Saldos con esos datos — no una aproximación."""
+    c = _competencia_falsa(monkeypatch)
+    assert "kg_al_arrancar_vivo" in c
+    # Mismo fake DB todavía activo: repetir el cálculo de Saldos sobre las
+    # MISMAS filas tiene que dar el mismo número, no una aproximación.
+    filas_saldos = queries.con_puntos(queries.items())
+    r_saldos = queries.resumen(
+        filas_saldos, queries.kg_al_marcar_vivo(filas_saldos),
+        largada=c["largada"])
+    assert c["kg_al_arrancar_vivo"] == r_saldos["kg_inicial"]
+
+
+def test_la_pantalla_de_competencia_muestra_el_al_arrancar_vivo():
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(
+                encoding="utf-8")
+    assert "kg_al_arrancar_vivo" in html
+
+
 # ── El candado, con una ruta nueva abierta ──────────────────────────────────
 
 def test_la_competencia_esta_abierta_a_todos():
