@@ -138,13 +138,24 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
 {# ⚠ Entre 0 y 100. Con las devoluciones restando, una semana en rojo da un
    porcentaje NEGATIVO, y un `width` negativo no achica la barra: la hace
    desaparecer sin decir por qué. #}
-{% set avance = [[100, (100 * liquidado / kg_al_largar) if kg_al_largar else 0] | min, 0] | max %}
+{# ⭐⭐ DECISIÓN 01/09/2026 (tercera vuelta sobre este número, misma tarde).
+   Primero se agregó un renglón chico con "Al arrancar" vivo AL LADO de la
+   meta fija del mes — dos números en la misma tarjeta. Tamara, mirándolos
+   juntos: "no entiendo para que sirve el 50 aca" — y eligió, con las dos
+   opciones puestas adelante, sacar la meta fija de la pantalla entera y
+   dejar UN SOLO número: el vivo. El % avance ahora se mide contra el
+   número de acá abajo, no contra la meta congelada del 25/08 — puede
+   moverse un poco si entra segunda nueva (antes no se movía nunca por
+   eso), a cambio de que la pantalla diga una sola cosa. La meta congelada
+   se sigue calculando adentro (queries.competencia()) por si hace falta
+   más adelante, pero ya no se lee en este template. #}
+{% set avance = [[100, (100 * liquidado / kg_al_arrancar_vivo) if kg_al_arrancar_vivo else 0] | min, 0] | max %}
 <div class="term">
   <div class="term-tope">
     <div>
       <p class="k">Se vendió</p>
       <p class="v"><b class="vd">{{ liquidado | num_es(0) }}</b>
-        <span class="de">de {{ kg_al_largar | num_es(0) }} kg</span></p>
+        <span class="de">de {{ kg_al_arrancar_vivo | num_es(0) }} kg</span></p>
     </div>
     <p class="pct">{{ avance | num_es(1) }}%</p>
   </div>
@@ -156,14 +167,6 @@ cierra el {{ cierre.strftime('%d/%m/%Y') }}.
     {{ kg_parado | num_es(0) }} kg · {% if fijada_el %}los kilos se fijaron el
     {{ fijada_el.strftime('%d/%m') }}{% else %}los kilos se fijan el
     {{ largada.strftime('%d/%m') }}{% endif %}</div>
-  {# ⭐ DECISIÓN 01/09/2026. Tamara pidió este renglón para ver acá el mismo
-     "Al arrancar" vivo de Saldos — ver `kg_al_arrancar_vivo` en
-     `queries.competencia()`. Después acotó el texto ("esto tiene que decir,
-     nada mas. no sigas poniendo numeros y que mareen") y, en la misma
-     tarde, la precisión: "no directamente de la competencia tiene que ser
-     solo 6 de 53" — EN MILES, redondeado, no al kilo como la tarjeta
-     grande de arriba (`liquidado_miles` / `kg_al_arrancar_vivo_miles`). #}
-  <div class="chico">{{ liquidado_miles }} de {{ kg_al_arrancar_vivo_miles }}k</div>
 </div>
 </div>
 

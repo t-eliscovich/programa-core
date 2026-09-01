@@ -858,16 +858,25 @@ def test_competencia_muestra_el_al_arrancar_vivo_de_saldos(monkeypatch):
     assert c["kg_al_arrancar_vivo"] == r_saldos["kg_inicial"]
 
 
-def test_competencia_redondea_el_renglon_nuevo_a_miles():
-    """⭐ DECISIÓN 01/09/2026 (segunda vuelta, misma tarde). Tamara, mirando
-    el renglón recién agregado con la precisión completa (6.412 de 53.041
-    kg): *"no directamente de la competencia tiene que ser solo 6 de 53"*.
-    Sólo ESTE renglón va en miles — la tarjeta grande de arriba ("Se
-    vendió") sigue al kilo, que es la que importa de verdad."""
-    r = {"kg_inicial": 53041.0}
-    liquidado = 6412.0
-    assert round(liquidado / 1000) == 6
-    assert round(r["kg_inicial"] / 1000) == 53
+def test_el_vendido_de_arriba_se_mide_contra_el_al_arrancar_vivo():
+    """⭐⭐ DECISIÓN 01/09/2026 (tercera vuelta sobre este número, misma
+    tarde). Después de agregar el renglón chico con "Al arrancar" vivo AL
+    LADO de la meta fija, Tamara: *"no entiendo para que sirve el 50 aca"*
+    — con las opciones puestas adelante (sacar la meta y dejar sólo el
+    vivo / mantener las dos líneas / una sola línea con los dos números),
+    eligió sacar la meta fija de la pantalla entera. El headline "Se
+    vendió" y el % avance pasan a medirse contra `kg_al_arrancar_vivo`, no
+    contra `kg_al_largar` — un solo número en toda la pantalla, aunque eso
+    signifique que el % ya no es perfectamente estable (puede bajar un
+    poco si entra segunda nueva más rápido de lo que se vende)."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parent.parent / "modules" / "analisis" /
+            "templates" / "analisis" / "competencia.html").read_text(
+                encoding="utf-8")
+    assert "100 * liquidado / kg_al_arrancar_vivo" in html
+    assert "de {{ kg_al_arrancar_vivo | num_es(0) }} kg" in html
+    assert "kg_al_largar" not in html, (
+        "la meta fija ya no se muestra en esta pantalla")
 
 
 def test_la_pantalla_de_competencia_muestra_el_al_arrancar_vivo():
@@ -876,8 +885,6 @@ def test_la_pantalla_de_competencia_muestra_el_al_arrancar_vivo():
             "templates" / "analisis" / "competencia.html").read_text(
                 encoding="utf-8")
     assert "kg_al_arrancar_vivo" in html
-    assert "liquidado_miles" in html
-    assert "kg_al_arrancar_vivo_miles" in html
 
 
 # ── El candado, con una ruta nueva abierta ──────────────────────────────────
