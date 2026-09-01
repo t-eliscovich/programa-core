@@ -302,7 +302,18 @@
            el mes y ya no se mueve (junio seedeado en mig 0127; julio en adelante
            se congela solo al entrar el mes nuevo). Ver informes/views.py. #}
         <tr class="mes-anterior">
-          <td class="row-label">Gs. Mes Anterior</td>
+          <td class="row-label">
+            Gs. Mes Anterior
+            {% if puede_recongelar %}
+            <button type="button" id="btn-recongelar" class="no-print"
+                    data-periodo="{{ periodo_anterior }}"
+                    title="Recalcula esta fila con el código actual y pisa el valor congelado de {{ periodo_anterior }}"
+                    style="margin-left:6px;font-size:10px;font-weight:400;color:#2563eb;background:none;border:1px solid #2563eb;border-radius:3px;padding:1px 6px;cursor:pointer;">
+              Recalcular
+            </button>
+            <span id="recongelar-status" class="no-print" style="font-size:11px;color:#64748b;margin-left:6px;"></span>
+            {% endif %}
+          </td>
           <td class="num">{{ col_total_prev.tej | num_es(0) }}</td>
           <td class="num">{{ col_total_prev.tin | num_es(0) }}</td>
           <td class="num">{{ col_total_prev.adm | num_es(0) }}</td>
@@ -414,6 +425,58 @@
     inp.addEventListener('input', scheduleSave);
   });
   recalc();
+})();
+</script>
+
+{# Tamara 2026-09-01 — botón admin "Recalcular" de la fila Gs. Mes Anterior:
+   pisa scintela.gastos_mes_manual del período congelado con el código
+   actual (bug del tejido tercerizado que faltaba en tejeduría). #}
+<script>
+(function () {
+  var btn = document.getElementById('btn-recongelar');
+  if (!btn) return;
+  var statusEl = document.getElementById('recongelar-status');
+
+  function csrf() {
+    var m = document.querySelector('meta[name="csrf-token"]');
+    if (m && m.content) return m.content;
+    var i = document.querySelector('input[name="csrf_token"]');
+    return i ? i.value : '';
+  }
+
+  function setStatus(txt, color) {
+    if (!statusEl) return;
+    statusEl.textContent = txt || '';
+    statusEl.style.color = color || '#64748b';
+  }
+
+  btn.addEventListener('click', function () {
+    var periodo = btn.dataset.periodo;
+    if (!periodo) return;
+    if (!confirm('Recalcular y pisar los Gs. Mes Anterior congelados de ' + periodo + '?')) return;
+    setStatus('Recalculando…', '#64748b');
+    btn.disabled = true;
+    fetch("{{ url_for('informes.gastos_recongelar_mes_anterior') }}", {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrf() },
+      body: 'periodo=' + encodeURIComponent(periodo)
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) {
+          setStatus('Listo ✓ — recargando…', '#16a34a');
+          setTimeout(function () { location.reload(); }, 600);
+        } else {
+          setStatus((j && j.error) || 'No se pudo recalcular', '#dc2626');
+          btn.disabled = false;
+        }
+      })
+      .catch(function () {
+        setStatus('No se pudo recalcular', '#dc2626');
+        btn.disabled = false;
+      });
+  });
 })();
 </script>
 

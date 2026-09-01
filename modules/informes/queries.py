@@ -3230,7 +3230,7 @@ def tinto_kg_servicios_mes() -> float:
     return float(row.get("kg") or 0)
 
 
-def tejido_mes_componentes() -> dict:
+def tejido_mes_componentes(meses_atras: int = 0) -> dict:
     """Descompone las compras tipo='K' del mes en sus tres componentes legacy.
 
     Convención dBase (PRG INFORMES.PRG + verificación con DBFs reales 2026-05-06):
@@ -3259,6 +3259,14 @@ def tejido_mes_componentes() -> dict:
         "kg_total":      kg_interno + kg_externo
         "us_total":      us_externo + us_kk_gastos
       }
+
+    Tamara 2026-09-01 — `meses_atras` (0 = mes en curso, 1 = mes anterior,
+    etc.) para poder descomponer el tejido tercerizado de un mes YA CERRADO.
+    Antes esta función sólo sabía leer el mes en curso (`CURRENT_TIMESTAMP`),
+    así que la fila "Gs. Mes Anterior" de /informes/gastos nunca podía sumarle
+    el tejido tercerizado (AP/RY) del mes que se está congelando — quedaba
+    123.902 en vez de 164.552 en agosto/2026, con el hueco exacto del
+    tercerizado del mes. Ver `col_total_prev` en views.py.
     """
     rows = (
         db.fetch_all(
@@ -3270,13 +3278,14 @@ def tejido_mes_componentes() -> dict:
             COALESCE(SUM(CASE WHEN COALESCE(kg, 0) > 0 THEN importe ELSE 0 END), 0) AS us_con_kg,
             COALESCE(SUM(CASE WHEN COALESCE(kg, 0) = 0 THEN importe ELSE 0 END), 0) AS us_sin_kg
         FROM scintela.compra
-        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)
-          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) + INTERVAL '1 month'
+        WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s)
+          AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s) + INTERVAL '1 month'
           AND UPPER(TRIM(tipo)) = 'K'
           AND COALESCE(stat, '') NOT IN ('X', 'Y')  -- excluir anuladas. TMT 2026-05-13.
           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
         GROUP BY 1
-        """
+        """,
+            {"meses_atras": int(meses_atras or 0)},
         )
         or []
     )

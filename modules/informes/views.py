@@ -2,6 +2,7 @@
 
 import csv
 import io
+import re
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -3030,6 +3031,43 @@ def flujo_produccion():
     return render_template("informes/flujo_produccion.html", _perf=_timings, **_render_kw)
 
 
+def _gastos_mes_anterior_componentes(meses_atras: int = 1) -> dict:
+    """GTEJ/GTIN/GGF (V1..V9 + amortización + tejido tercerizado) de un mes
+    YA CERRADO — por default el mes anterior al actual (hora Ecuador).
+
+    Tamara 2026-09-01 — extraído de la vista `gastos()` para poder reusarlo
+    también en `gastos_recongelar_mes_anterior()` (botón admin que corrige
+    un período ya congelado mal en `scintela.gastos_mes_manual`). Antes de
+    este fix, esta cuenta NUNCA sumaba el tejido tercerizado (AP/RY) del mes
+    que se congela — sólo el total EN VIVO del mes en curso lo sumaba (ver
+    `col_total["tej"]` más abajo). Verificado con agosto/2026: 123.902,12
+    (sin tercerizado) + 40.649,60 (tercerizado real de agosto) = 164.551,72,
+    contra los 165 que reportó Federico.
+    """
+    v_prev, _e = _safe(
+        lambda: queries.gastos_xgast_v1_a_v9_mes(meses_atras=meses_atras), {}
+    )
+    a_prev, _e = _safe(
+        lambda: queries.amortizaciones_mensuales(meses_atras=meses_atras), {}
+    )
+    tej_comp_prev, _e = _safe(
+        lambda: queries.tejido_mes_componentes(meses_atras=meses_atras), {}
+    )
+    tercer_tej_prev = float((tej_comp_prev or {}).get("us_externo") or 0)
+
+    def gvp(k):
+        return float((v_prev or {}).get(k) or 0)
+
+    def gap(k):
+        return float((a_prev or {}).get(k) or 0)
+
+    return {
+        "tej": gvp("v1") + gvp("v2") + gvp("v3") + gap("dtj") + tercer_tej_prev,
+        "tin": gvp("v4") + gvp("v5") + gvp("v6") + gap("dcc"),
+        "adm": gvp("v7") + gvp("v8") + gvp("v9") + gap("deprcar"),
+    }
+
+
 @informes_bp.route("/gastos")
 @requiere_login
 @requiere_permiso("gastos.ver")
@@ -3113,20 +3151,16 @@ def gastos():
     # Federico 2026-07-21 — fila "Gastos mes anterior": mismos GTEJ/GTIN/GGF
     # (V1..V9 + amortización) pero del mes CERRADO anterior, para comparar
     # columna a columna con el mes en curso.
-    v_prev, _e = _safe(lambda: queries.gastos_xgast_v1_a_v9_mes(meses_atras=1), {})
-    a_prev, _e = _safe(lambda: queries.amortizaciones_mensuales(meses_atras=1), {})
-
-    def gvp(k):
-        return float((v_prev or {}).get(k) or 0)
-
-    def gap(k):
-        return float((a_prev or {}).get(k) or 0)
-
-    col_total_prev = {
-        "tej": gvp("v1") + gvp("v2") + gvp("v3") + gap("dtj"),
-        "tin": gvp("v4") + gvp("v5") + gvp("v6") + gap("dcc"),
-        "adm": gvp("v7") + gvp("v8") + gvp("v9") + gap("deprcar"),
-    }
+    #
+    # Tamara 2026-09-01 — BUG encontrado (Federico reportó tejeduría 165 real
+    # vs 123.902 en pantalla, agosto/2026): esta fila usaba SIEMPRE gvp+gap,
+    # sin sumar el tejido TERCERIZADO (AP/RY) del mes anterior — a diferencia
+    # de `col_total["tej"]` (mes en curso, arriba) que sí lo suma vía
+    # `tejido_mes_componentes()["us_externo"]`. Tintorería/Admin no llevan
+    # tercerizado, por eso sólo tejeduría quedaba corta. Ver
+    # `_gastos_mes_anterior_componentes()` más abajo, reusada acá y en el
+    # botón "Recalcular" para el período ya congelado mal.
+    col_total_prev = _gastos_mes_anterior_componentes()
     suma_grand_prev = sum(col_total_prev.values())
 
     # Federico 2026-07-22 — "Gastos mes anterior" es FIJO (no editable). El mes
@@ -3190,6 +3224,8 @@ def gastos():
         fil_total=fil_total,
         suma_v_total=suma_v_total,
         suma_amort_total=suma_amort_total,
+        periodo_anterior=periodo_anterior,
+        puede_recongelar=tiene_permiso("usuarios.admin"),
         suma_grand=suma_grand,
         tercer_tej=tercer_tej,
         col_total_prev=col_total_prev,
@@ -3227,6 +3263,45 @@ def gastos_proyectados_guardar():
         return jsonify({"ok": True, **r})
     except Exception as e:  # pragma: no cover - defensivo
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
+
+
+@informes_bp.route("/gastos/recongelar", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def gastos_recongelar_mes_anterior():
+    """Recalcula y RE-CONGELA (pisa) `scintela.gastos_mes_manual` de un
+    período YA cerrado, con el código actual de `_gastos_mes_anterior_componentes`.
+
+    Tamara 2026-09-01 — el freeze normal es de una sola vez ("si ya hay fila
+    para el período, NO se recalcula"), a propósito: el mes cerrado no se
+    tiene que mover solo. Pero eso también significa que un período congelado
+    con una fórmula vieja/con bug se queda mal para siempre — no hay pantalla
+    para corregirlo. Este botón es esa pantalla: admin-only, pide el período
+    explícito (no "el mes anterior de hoy", para poder corregir un período
+    puntual sin arriesgar pisar el que está bien) y muestra antes/después.
+    No toca `scintela.historia` ni ninguna otra tabla — sólo el override
+    manual de gastos.
+    """
+    periodo = (request.form.get("periodo") or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{2}", periodo or ""):
+        return jsonify({"ok": False, "error": "período inválido, formato YYYY-MM"}), 400
+
+    anio, mes = int(periodo[:4]), int(periodo[5:7])
+    hoy = today_ec()
+    meses_atras = (hoy.year - anio) * 12 + (hoy.month - mes)
+    if meses_atras < 1:
+        return jsonify({"ok": False, "error": "el período tiene que ser un mes ya cerrado"}), 400
+
+    anterior_actual = _safe(lambda: queries.gastos_mes_manual_get(periodo), None)[0]
+    nuevo = _gastos_mes_anterior_componentes(meses_atras=meses_atras)
+    try:
+        r = queries.gastos_mes_manual_set(
+            periodo, nuevo["tej"], nuevo["tin"], nuevo["adm"],
+            usuario=f"recongelar-{(g.user or {}).get('username', 'admin')}",
+        )
+        return jsonify({"ok": True, "periodo": periodo, "antes": anterior_actual, "despues": r})
+    except Exception as e:  # pragma: no cover - defensivo
+        return jsonify({"ok": False, "error": f"No pude recongelar: {e}"}), 500
 
 
 @informes_bp.route("/gastos/detalle/<int:num>")
