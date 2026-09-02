@@ -260,7 +260,9 @@ def test_asinfo_pisa_el_descuento_cargado_y_guarda_el_anterior(monkeypatch):
     # UNA campanita con el número, no una por cliente
     avisos = [a for a in cap["avisos"] if a["clave"].startswith("clientes-desc-pisados")]
     assert len(avisos) == 1
-    assert "Asinfo cambió el descuento de 1 clientes" in avisos[0]["titulo"]
+    assert avisos[0]["titulo"] == "Asinfo cambió el descuento de 1 cliente"
+    # de cuánto a cuánto, sin tener que abrir la pantalla del sync
+    assert "CAL 12% → 14%" in avisos[0]["detalle"]
 
 
 def test_descuento_igual_no_toca_ni_avisa(monkeypatch):
@@ -353,7 +355,8 @@ def test_el_sync_pisa_el_vendedor_y_guarda_el_anterior(monkeypatch):
     ]
     avisos = [a for a in cap["avisos"] if a["clave"].startswith("clientes-vend-pisados")]
     assert len(avisos) == 1
-    assert "Asinfo cambió el vendedor de 1 clientes" in avisos[0]["titulo"]
+    assert avisos[0]["titulo"] == "Asinfo cambió el vendedor de 1 cliente"
+    assert "AAA PPR → BED" in avisos[0]["detalle"]
 
 
 def test_vend_igual_o_sin_agente_no_toca(monkeypatch):
@@ -622,3 +625,10 @@ def test_correr_si_toca_apagado(monkeypatch):
     _reset_freno(monkeypatch)
     monkeypatch.setenv("SYNC_CLIENTES_AUTO", "0")
     assert sa.correr_si_toca()["corrio"] is False
+
+
+def test_pct_formato_ecuador():
+    assert sa._pct(7.0) == "7%"
+    assert sa._pct(7.5) == "7,5%"
+    assert sa._pct(None) == "0%"
+    assert sa._n_clientes(3) == "3 clientes"
