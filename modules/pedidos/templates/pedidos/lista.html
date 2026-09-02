@@ -114,8 +114,10 @@
   .pd .steps .sep{width:8px;height:1.5px;background:#cbd5e1;margin:0 4px;flex:0 0 auto}
   .pd .steps .sep.done{background:var(--verde)}
   /* la etapa de UNA línea, al lado de su tela */
-  /* debajo del paso «En tintura» de la tira (≈ el ancho de «● Enviado —») */
-  main .pd table tbody td.etapa{padding-left:70px !important}
+  /* cada etapa debajo de SU paso de la tira: «En tintura» tras «● Enviado —»,
+     «Terminado» tras «● Enviado — ● En tintura —» */
+  .pd .lst.tinto{margin-left:60px}
+  .pd .lst.done{margin-left:132px}
   .pd .lst{display:inline-block;font-size:10.5px;font-weight:600;white-space:nowrap;padding:1px 7px;border-radius:99px}
   .pd .lst.done{color:var(--verde);background:#dcfce7}
   .pd .lst.tinto{color:var(--azul);background:#dbeafe}
