@@ -433,6 +433,37 @@ armada para el próximo.
 cerrados no bloquea nada el resto de la vida del proceso (salvo
 `PERIODO_GUARD_STRICT=1`). Determinístico, no transitorio, pero vale saberlo.
 
+### [H] la foto diaria del balance NO corre por ningún cron real
+Cierre de agosto 2026 quedó sin datos live porque cayó en la rama de
+reconstrucción aproximada (`informe_balance_as_of`) -- y esa rama sólo hace
+falta cuando NO hay foto diaria fresca para el último día del mes. Al
+investigar (agente, 2026-09-02) se confirmó que `/admin/health/snapshot-diario`
+(la que llama `crear_snapshot_diario()`) NUNCA tuvo un Scheduled Task real
+detrás en el EC2 -- la skill `intela-aws-deploy` sólo documenta 3 tasks
+(`FormulasApp`, `Metabase`, `ProgramaCore_Provisiones`), ninguno pega
+`/admin/health/all` ni `/snapshot-diario`. Encima esa ruta exige login
+(`requiere_login`, sin bypass de service-token), así que un `curl`/Task
+Scheduler sin sesión de navegador rebotaría a un 302 igual. Evidencia:
+`fotos_diarias_snapshot_diario` tiene sólo 2 filas en TODA la vida del
+sistema (31/07 y 01/09, ambas coincidentes con actividad manual, no con un
+patrón diario). Mientras esto no se resuelva, cualquier cierre que llegue
+tarde va a volver a caer en la rama aproximada. Arreglar con: un Scheduled
+Task real en el EC2 con sesión persistida, o un token de servicio que
+bypasee `requiere_login` sólo para esa ruta puntual.
+
+### [M] amortizaciones_mensuales() capaz se come el DEPRACT de activos tipo 'T'
+`queries.py:2366-2417` -- `depract = by.get("I", 0.0)` después de
+`GROUP BY UPPER(TRIM(tipo))`, sin sumar `'T'`. Mismo patrón que el bug real
+que ya se arregló hoy en `balance_components_as_of` (le faltaba 'T'), pero acá
+en el costo de tejeduría/tintorería (DCC/DTJ), no en el balance. Severidad
+baja porque un terreno normalmente no amortiza (`cuota` debería ser 0 para
+tipo 'T'), pero `activos_totales()` documenta que SÍ hay reclasificaciones
+I→T en la práctica -- no se pudo confirmar con datos reales (RDS con IP-lock).
+No tocar sin decisión de Tamara: si hay algún activo 'T' con cuota > 0, sumar
+ese bucket movería la utilidad en vivo. Agregar también un test de
+inspección de fuente (como `test_balance_components_as_of_terrenos.py`) que
+blindee `activos_totales()` contra esta regresión.
+
 ---
 
 ## Proceso
