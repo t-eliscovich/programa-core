@@ -467,21 +467,30 @@ def cartera_coherence():
 
 
 # ---------------------------------------------------------------------------
-@bp.route("/snapshot-diario", methods=["GET"])
-@requiere_login
-@requiere_permiso("usuarios.admin")
-def snapshot_diario_health():
-    """Toma la FOTO DIARIA del balance vivo y la valida contra el día anterior.
+def ejecutar_foto_diaria() -> dict:
+    """Rollover + WRITE-BACK de iniciales + FOTO DIARIA del balance vivo,
+    validada contra el día anterior. Devuelve {"ok", "alerts", "stats"}.
 
-    Esto es lo que independiza a PC del dBase: capturar cada día en vivo (cuando
-    cartera/anticipos/stock están frescos) para que el cierre de mes sea, sin
-    reconstruir nada, la foto del último día. Corre por el cron del health.
+    Lógica compartida entre la pantalla `/admin/health/snapshot-diario`
+    (visita manual, requiere login) y `scripts/foto_diaria_cron.py` (el
+    Scheduled Task del EC2, sin sesión -- ver skill intela-aws-deploy).
+    TMT 2026-09-02: hasta acá, la ÚNICA forma de que esto corriera era que
+    alguien visitara a mano una pantalla de health -- en los 31 días de
+    agosto 2026 nadie lo hizo ni una vez, así que ningún día tuvo foto y el
+    cierre de mes cayó en la reconstrucción aproximada en vez de la foto
+    real (ver memoria project_2026_09_01_cierre_agosto_roto_y_hardening).
+    Esta función existe para que el cron pueda llamar EXACTAMENTE la misma
+    lógica sin pasar por Flask/login.
 
     Alerta si:
       - el patrimonio pega un salto > $500k día a día (posible bug de cálculo)
       - el stock (USTOCK) salta > 5% día a día
       - el stock de TERMINADO/USTOCK sale en 0 (bug de iniciales/mes)
       - el patrimonio sale <= 0
+
+    Nunca levanta -- cualquier error de una etapa queda en "alerts", nunca
+    en una excepción sin atrapar (el cron necesita poder decidir el exit
+    code sin un try/except propio).
     """
     from modules.informes.queries import (
         crear_snapshot_diario,
@@ -514,7 +523,7 @@ def snapshot_diario_health():
     try:
         snap = crear_snapshot_diario()
     except Exception as e:  # noqa: BLE001
-        return jsonify({"ok": False, "alerts": alerts + [f"snapshot diario falló: {e}"], "stats": stats})
+        return {"ok": False, "alerts": alerts + [f"snapshot diario falló: {e}"], "stats": stats}
 
     stats["hoy"] = snap
     hoy_patr = float(snap.get("patrimonio") or 0)
@@ -556,7 +565,22 @@ def snapshot_diario_health():
     else:
         stats["ayer"] = None
 
-    return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+    return {"ok": len(alerts) == 0, "alerts": alerts, "stats": stats}
+
+
+@bp.route("/snapshot-diario", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def snapshot_diario_health():
+    """Toma la FOTO DIARIA del balance vivo y la valida contra el día anterior.
+
+    Esto es lo que independiza a PC del dBase: capturar cada día en vivo (cuando
+    cartera/anticipos/stock están frescos) para que el cierre de mes sea, sin
+    reconstruir nada, la foto del último día. Corre por el cron del health
+    (`scripts/foto_diaria_cron.py`, Scheduled Task en el EC2) -- esta ruta es
+    la versión "visitar a mano" de la MISMA lógica, ver `ejecutar_foto_diaria`.
+    """
+    return jsonify(ejecutar_foto_diaria())
 
 
 @bp.route("/metabase", methods=["GET"])
