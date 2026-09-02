@@ -106,6 +106,8 @@ def test_forzado_deja_aviso_en_novedades():
     assert "avisar(" in src
     assert "convertido-sin-recibir" in src        # clave idempotente
     assert 'nivel="alerta"' in src
+    # el importe en formato Ecuador (punto miles, coma decimal), no US
+    assert "num_es(importe_total" in src and ":,.2f}" not in src
 
 
 def test_los_quimicos_no_pasan_por_el_guard():

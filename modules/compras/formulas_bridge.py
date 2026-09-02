@@ -722,8 +722,16 @@ def _avisar_novedades(creadas: list, errores: list, ajustadas: list | None = Non
         if errores:
             avisar(
                 fuente="quimicos", nivel="error",
-                titulo=f"{len(errores)} compra(s) de químicos no se pudieron cargar",
-                detalle=str((errores[0] or {}).get("error") or "")[:140],
+                titulo=(f"{len(errores)} compra{'' if len(errores) == 1 else 's'} "
+                        "de químicos no se pudieron cargar"
+                        if len(errores) != 1 else
+                        f"Químicos: la factura {(errores[0] or {}).get('factura')} "
+                        f"de {(errores[0] or {}).get('proveedor')} no se pudo cargar"),
+                # cada factura con su motivo: sin eso había que ir al log
+                detalle=" · ".join(
+                    f"{(e or {}).get('proveedor')} {(e or {}).get('factura')}: "
+                    f"{str((e or {}).get('error') or '')[:80]}"
+                    for e in errores[:5])[:200],
                 cantidad=len(errores), url="/compras",
                 clave=("quimicos:error:"
                        + ",".join(sorted(str((e or {}).get("factura") or "")

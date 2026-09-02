@@ -279,7 +279,22 @@ def test_quimicos_avisa_los_errores_como_error():
         fb._avisar_novedades([], [{"proveedor": "AQ", "factura": "0140",
                                    "error": "proveedor inexistente"}])
     assert puestos[0]["nivel"] == "error"
-    assert puestos[0]["detalle"] == "proveedor inexistente"
+    assert puestos[0]["titulo"] == "Químicos: la factura 0140 de AQ no se pudo cargar"
+    assert puestos[0]["detalle"] == "AQ 0140: proveedor inexistente"
+
+
+def test_quimicos_varios_errores_lista_cada_factura():
+    from modules.compras import formulas_bridge as fb
+
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        fb._avisar_novedades([], [
+            {"proveedor": "AQ", "factura": "0140", "error": "sin proveedor"},
+            {"proveedor": "SY", "factura": "0201", "error": "importe vacío"},
+        ])
+    assert puestos[0]["titulo"] == "2 compras de químicos no se pudieron cargar"
+    assert puestos[0]["detalle"] == "AQ 0140: sin proveedor · SY 0201: importe vacío"
 
 
 def test_quimicos_sin_nada_no_avisa():

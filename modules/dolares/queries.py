@@ -3,7 +3,7 @@ from datetime import date
 
 import db
 from concepto_parser import parse_ref_anticipo
-from filters import today_ec
+from filters import num_es, today_ec
 from periodo_guard import asegurar_fecha_abierta
 
 # Alias retro-compat para sentinels (sortKey usa _date.min).
@@ -675,7 +675,7 @@ Convierte un lote de anticipos vivos a una compra (BAP).
             _avisos.avisar(
                 fuente="importaciones",
                 nivel="alerta",
-                titulo=(f"{codigo_prov} · $ {importe_total:,.2f} · "
+                titulo=(f"{codigo_prov} · $ {num_es(importe_total, 2)} · "
                         f"se cargó a compras SIN que llegue la mercadería"),
                 detalle=(
                     f"{', '.join(_sin_recibir)} todavía no figura recibida en "
