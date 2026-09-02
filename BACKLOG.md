@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-08-31._
+_Última actualización: 2026-09-02._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -243,6 +243,13 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 ---
 
 ## Deuda conocida
+
+### [XS] Despacho sin factura: las muestras chicas avisan igual
+Un despacho de 0,5 kg (MUESTRAS ING ANDRES, 28/08) enciende la misma alerta
+que uno de 988 kg. El de hilo sin orden tiene piso de 200 kg; éste no tiene.
+Tamara (02/09): en espera, para ver qué más aparece — mientras tanto la × de
+cada renglón lo archiva. Opciones: piso (menos de 5 kg no avisa) o saltear
+los que dicen MUESTRA en la nota. `modules/asinfo/despacho_sin_factura.py`.
 
 ### [S] `/comisiones/debug` sigue preguntando el mes con EXTRACT
 
