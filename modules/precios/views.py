@@ -407,3 +407,48 @@ def color_clase():
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude guardar la clase de ese color", e)
     return redirect(url_for("precios.lista", _anchor="colores-asinfo"))
+
+
+# ---------------------------------------------------------------------------
+# La lista de precios de Asinfo — el bloque plegado al pie de /precios
+# ---------------------------------------------------------------------------
+# TMT 2026-09-02, Tamara: *"si cambian los precios en asinfo tenemos que
+# cambiarlos en programa core… tener metodo de importar cambios"*. Decisión:
+# revisar y confirmar (nada se pisa solo). Igual que el bloque de colores, nace
+# CERRADO y la consulta (~0,6 s) sale recién cuando alguien lo abre.
+
+
+@precios_bp.route("/precios/asinfo-lista")
+@requiere_login
+@requiere_permiso("precios.editar")
+def asinfo_lista_json():
+    """Las celdas de Programa que difieren de la lista vigente de Asinfo."""
+    from flask import jsonify
+
+    from modules.precios import asinfo_lista
+
+    res = asinfo_lista.diferencias(forzar=request.args.get("forzar") == "1")
+    for d in res.get("diferencias") or []:
+        d["clave"] = asinfo_lista.clave_de(d)
+    return jsonify(res)
+
+
+@precios_bp.route("/precios/asinfo-aplicar", methods=["POST"])
+@requiere_login
+@requiere_permiso("precios.editar")
+def asinfo_aplicar():
+    """Escribe en Programa los precios de Asinfo que se tildaron."""
+    from modules.precios import asinfo_lista
+
+    claves = [c for c in request.form.getlist("celda") if c]
+    if not claves:
+        flash("No tildaste ningún precio.", "error")
+        return redirect(url_for("precios.lista", _anchor="precios-asinfo"))
+    rep = asinfo_lista.aplicar(claves, (g.user or {}).get("username", "web"))
+    if rep["aplicados"]:
+        flash(f"{rep['aplicados']} precio(s) traído(s) de Asinfo.", "success")
+    if rep["no_encontrados"]:
+        flash("Algunos ya no diferían y no se tocaron.", "error")
+    if rep["errores"]:
+        flash("No pude guardar: " + "; ".join(rep["errores"][:5]), "error")
+    return redirect(url_for("precios.lista", _anchor="precios-asinfo"))

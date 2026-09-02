@@ -1,0 +1,266 @@
+Cuellos|Cuellos|BJS|11.45|17
+Cuellos|Cuellos|BLN|10.81|2
+Cuellos|Cuellos|ESP|16.18|1
+Cuellos|Cuellos|FRT|12.7|81
+Cuellos|Cuellos|JSP|11.85|5
+Cuellos|Cuellos|MDS|12.08|24
+Cuellos|Cuellos Spun|BJS|11.45|34
+Cuellos|Cuellos Spun|BLN|10.81|5
+Cuellos|Cuellos Spun|FRT|12.7|186
+Cuellos|Cuellos Spun|JSP|11.85|12
+Cuellos|Cuellos Spun|MDS|12.08|58
+Cuellos|Cuellos T28|BJS|11.45|34
+Cuellos|Cuellos T28|BLN|10.81|5
+Cuellos|Cuellos T28|FRT|12.7|187
+Cuellos|Cuellos T28|JSP|11.85|12
+Cuellos|Cuellos T28|MDS|12.08|58
+Fleece|Fleece 102|BJS|8.31|36
+Fleece|Fleece 102|BLN|8.21|5
+Fleece|Fleece 102|FRT|9.25|196
+Fleece|Fleece 102|JSP|9.05|12
+Fleece|Fleece 102|MDS|8.69|62
+Fleece|Fleece 2.2|BJS|8.31|35
+Fleece|Fleece 2.2|BLN|8.21|5
+Fleece|Fleece 2.2|FRT|9.25|187
+Fleece|Fleece 2.2|JSP|9.05|12
+Fleece|Fleece 2.2|MDS|8.68|59
+Fleece|Fleece 96 Perchado|-|12.84|1
+Fleece|Fleece 96 Perchado|BJS|8.31|36
+Fleece|Fleece 96 Perchado|BLN|8.21|5
+Fleece|Fleece 96 Perchado|ESP|9.25|1
+Fleece|Fleece 96 Perchado|ESP|12.57|11
+Fleece|Fleece 96 Perchado|ESP|12.84|13
+Fleece|Fleece 96 Perchado|FRT|9.25|210
+Fleece|Fleece 96 Perchado|JSP|9.05|12
+Fleece|Fleece 96 Perchado|MDS|8.68|59
+Fleece|Fleece 96 Perchado|MDS|8.69|2
+Fleece|Fleece 96 Sin Perchar|BJS|8.31|36
+Fleece|Fleece 96 Sin Perchar|BLN|8.21|5
+Fleece|Fleece 96 Sin Perchar|FRT|9.25|190
+Fleece|Fleece 96 Sin Perchar|JSP|9.05|12
+Fleece|Fleece 96 Sin Perchar|MDS|8.68|60
+Fleece|Fleece 96 Sin Perchar|MDS|8.69|1
+Fleece|Fleece Suplex|BJS|8.88|34
+Fleece|Fleece Suplex|BLN|8.88|5
+Fleece|Fleece Suplex|FRT|8.88|186
+Fleece|Fleece Suplex|JSP|8.88|12
+Fleece|Fleece Suplex|MDS|8.88|58
+Jersey|Jersey 1.2|BJS|8.57|34
+Jersey|Jersey 1.2|BLN|7.94|5
+Jersey|Jersey 1.2|FRT|9.82|186
+Jersey|Jersey 1.2|JSP|9.28|12
+Jersey|Jersey 1.2|MDS|9.2|58
+Jersey|Jersey 105|BJS|8.57|34
+Jersey|Jersey 105|BLN|7.94|5
+Jersey|Jersey 105|FRT|9.82|186
+Jersey|Jersey 105|JSP|9.28|12
+Jersey|Jersey 105|MDS|9.2|58
+Jersey|Jersey 110|BJS|8.56|1
+Jersey|Jersey 110|BJS|8.57|34
+Jersey|Jersey 110|BLN|7.94|5
+Jersey|Jersey 110|FRT|9.82|186
+Jersey|Jersey 110|JSP|9.28|12
+Jersey|Jersey 110|MDS|9.2|58
+Jersey|Jersey 2.4|BJS|8.57|34
+Jersey|Jersey 2.4|BLN|7.94|5
+Jersey|Jersey 2.4|FRT|9.82|186
+Jersey|Jersey 2.4|JSP|9.28|12
+Jersey|Jersey 2.4|MDS|9.2|58
+Jersey|Jersey 2.6|BJS|8.57|34
+Jersey|Jersey 2.6|BLN|7.93|1
+Jersey|Jersey 2.6|BLN|7.94|5
+Jersey|Jersey 2.6|FRT|9.82|186
+Jersey|Jersey 2.6|JSP|9.28|12
+Jersey|Jersey 2.6|MDS|9.2|58
+Jersey|Jersey 3|BJS|8.56|3
+Jersey|Jersey 3|BJS|8.57|34
+Jersey|Jersey 3|BLN|7.93|3
+Jersey|Jersey 3|BLN|7.94|4
+Jersey|Jersey 3|FRT|9.82|191
+Jersey|Jersey 3|JSP|9.28|12
+Jersey|Jersey 3|MDS|9.19|3
+Jersey|Jersey 3|MDS|9.2|56
+Jersey|Jersey 3.2|BJS|8.57|34
+Jersey|Jersey 3.2|BLN|7.93|1
+Jersey|Jersey 3.2|BLN|7.94|4
+Jersey|Jersey 3.2|FRT|9.82|188
+Jersey|Jersey 3.2|JSP|9.28|12
+Jersey|Jersey 3.2|MDS|9.2|57
+Jersey|Jersey 3.5|BJS|8.56|3
+Jersey|Jersey 3.5|BJS|8.57|34
+Jersey|Jersey 3.5|BLN|7.93|1
+Jersey|Jersey 3.5|BLN|7.94|4
+Jersey|Jersey 3.5|FRT|9.82|193
+Jersey|Jersey 3.5|JSP|9.28|12
+Jersey|Jersey 3.5|MDS|9.19|3
+Jersey|Jersey 3.5|MDS|9.2|58
+Jersey|Jersey 3.8|BJS|8.57|34
+Jersey|Jersey 3.8|BJS|9.19|1
+Jersey|Jersey 3.8|BLN|7.94|5
+Jersey|Jersey 3.8|FRT|9.82|186
+Jersey|Jersey 3.8|JSP|9.28|12
+Jersey|Jersey 3.8|MDS|9.19|1
+Jersey|Jersey 3.8|MDS|9.2|58
+Jersey|Jersey 4.2|BJS|8.57|34
+Jersey|Jersey 4.2|BLN|7.94|5
+Jersey|Jersey 4.2|FRT|9.82|186
+Jersey|Jersey 4.2|JSP|9.28|12
+Jersey|Jersey 4.2|MDS|9.19|2
+Jersey|Jersey 4.2|MDS|9.2|58
+Jersey|Jersey 95|BJS|8.57|34
+Jersey|Jersey 95|BLN|7.94|5
+Jersey|Jersey 95|FRT|9.82|186
+Jersey|Jersey 95|JSP|9.28|12
+Jersey|Jersey 95|MDS|9.2|58
+Jersey|Jersey Forro|BJS|7.43|3
+Jersey|Jersey Forro|BJS|7.69|1
+Jersey|Jersey Forro|BJS|8.56|5
+Jersey|Jersey Forro|BJS|8.57|25
+Jersey|Jersey Forro|BLN|7.07|1
+Jersey|Jersey Forro|BLN|7.94|3
+Jersey|Jersey Forro|BLN|8.39|1
+Jersey|Jersey Forro|FRT|8.68|3
+Jersey|Jersey Forro|FRT|9.82|183
+Jersey|Jersey Forro|JSP|9.28|12
+Jersey|Jersey Forro|MDS|8.06|1
+Jersey|Jersey Forro|MDS|9.2|57
+Jersey|Jersey Forro 1.2|BJS|8.57|34
+Jersey|Jersey Forro 1.2|BLN|7.94|4
+Jersey|Jersey Forro 1.2|BLN|8.37|1
+Jersey|Jersey Forro 1.2|FRT|9.82|187
+Jersey|Jersey Forro 1.2|JSP|9.28|12
+Jersey|Jersey Forro 1.2|MDS|9.2|58
+Jersey|Jersey Listado|BJS|8.56|34
+Jersey|Jersey Listado|BLN|7.94|5
+Jersey|Jersey Listado|FRT|9.82|186
+Jersey|Jersey Listado|JSP|9.28|12
+Jersey|Jersey Listado|MDS|9.2|58
+Jersey|Jersey Paris|BJS|8.56|34
+Jersey|Jersey Paris|BLN|7.94|5
+Jersey|Jersey Paris|FRT|9.82|186
+Jersey|Jersey Paris|JSP|9.28|12
+Jersey|Jersey Paris|MDS|9.2|58
+Lycra|Jersey Lycra|BJS|11.06|34
+Lycra|Jersey Lycra|BLN|10.39|5
+Lycra|Jersey Lycra|FRT|11.42|186
+Lycra|Jersey Lycra|JSP|11.06|12
+Lycra|Jersey Lycra|MDS|11.06|58
+Lycra|Jersey Lycra 3.3|BJS|11.06|34
+Lycra|Jersey Lycra 3.3|BLN|10.39|5
+Lycra|Jersey Lycra 3.3|FRT|11.42|186
+Lycra|Jersey Lycra 3.3|JSP|11.06|12
+Lycra|Jersey Lycra 3.3|MDS|11.06|58
+Lycra|SCUBA|FRT|9.78|3
+Pique|Pique Especial|-|8.03|2
+Pique|Pique Especial|BJS|8.64|36
+Pique|Pique Especial|BLN|8.03|7
+Pique|Pique Especial|FRT|9.9|1
+Pique|Pique Especial|FRT|9.91|187
+Pique|Pique Especial|JSP|9.37|12
+Pique|Pique Especial|MDS|9.28|1
+Pique|Pique Especial|MDS|9.29|59
+Pique|Pique Especial 200|BJS|8.65|34
+Pique|Pique Especial 200|BLN|8.03|5
+Pique|Pique Especial 200|FRT|9.91|186
+Pique|Pique Especial 200|JSP|9.37|12
+Pique|Pique Especial 200|MDS|9.29|58
+Poliester|Alemania|BJS|7.26|34
+Poliester|Alemania|BLN|7.26|5
+Poliester|Alemania|FRT|7.26|186
+Poliester|Alemania|JSP|7.26|12
+Poliester|Alemania|MDS|7.26|58
+Poliester|Alemania 1.2|BJS|7.26|34
+Poliester|Alemania 1.2|BLN|7.26|5
+Poliester|Alemania 1.2|FRT|7.26|191
+Poliester|Alemania 1.2|JSP|7.26|12
+Poliester|Alemania 1.2|MDS|7.26|60
+Poliester|Beltis|BJS|9.99|34
+Poliester|Beltis|BLN|9.99|5
+Poliester|Beltis|FRT|9.99|187
+Poliester|Beltis|JSP|9.99|12
+Poliester|Beltis|MDS|9.99|58
+Poliester|James 1.2|BJS|7.72|34
+Poliester|James 1.2|BLN|7.72|5
+Poliester|James 1.2|FRT|7.72|187
+Poliester|James 1.2|JSP|7.72|12
+Poliester|James 1.2|MDS|7.72|57
+Poliester|Kiana|BJS|7.52|1
+Poliester|Kiana|FRT|7.52|19
+Poliester|Kiana|MDS|7.52|6
+Poliester|Kiana 1.2|BJS|7.52|34
+Poliester|Kiana 1.2|BLN|7.52|5
+Poliester|Kiana 1.2|FRT|7.52|186
+Poliester|Kiana 1.2|JSP|7.52|12
+Poliester|Kiana 1.2|MDS|7.52|58
+Poliester|Kiana 415x90|BJS|7.52|34
+Poliester|Kiana 415x90|BLN|7.52|5
+Poliester|Kiana 415x90|FRT|7.52|189
+Poliester|Kiana 415x90|JSP|7.52|12
+Poliester|Kiana 415x90|MDS|7.52|58
+Poliester|Kiana Forro|BJS|7.52|34
+Poliester|Kiana Forro|BLN|7.52|5
+Poliester|Kiana Forro|FRT|7.52|186
+Poliester|Kiana Forro|JSP|7.52|12
+Poliester|Kiana Forro|MDS|7.52|58
+Poliester|Kiana Mundial|-|7.52|2
+Poliester|Kiana Mundial|BJS|7.52|2
+Poliester|Kiana Mundial|BLN|7.52|1
+Poliester|Kiana Mundial|FRT|7.52|27
+Poliester|Kiana Mundial|MDS|7.52|1
+Poliester|Medical|BJS|11.66|1
+Poliester|Medical|BLN|11.66|1
+Poliester|Medical|FRT|11.66|5
+Poliester|Medical|MDS|11.66|1
+Poliester|Microfibra|BJS|7.72|34
+Poliester|Microfibra|BLN|7.72|5
+Poliester|Microfibra|FRT|7.72|187
+Poliester|Microfibra|JSP|7.72|12
+Poliester|Microfibra|MDS|7.72|58
+Poliester|Microfibra 1.2|BJS|7.72|34
+Poliester|Microfibra 1.2|BLN|7.72|5
+Poliester|Microfibra 1.2|FRT|7.72|187
+Poliester|Microfibra 1.2|JSP|7.72|12
+Poliester|Microfibra 1.2|MDS|7.72|59
+Poliester|Naty|BJS|7.72|1
+Poliester|Naty|BLN|7.72|1
+Poliester|Naty|FRT|7.72|5
+Puños|Puños|BJS|11.45|36
+Puños|Puños|BLN|10.59|1
+Puños|Puños|BLN|10.81|6
+Puños|Puños|ESP|16.18|1
+Puños|Puños|FRT|12.7|199
+Puños|Puños|JSP|11.85|12
+Puños|Puños|MDS|12.08|61
+Puños|Puños Spun|BJS|11.45|34
+Puños|Puños Spun|BLN|10.81|5
+Puños|Puños Spun|FRT|12.7|186
+Puños|Puños Spun|JSP|11.85|12
+Puños|Puños Spun|MDS|12.08|58
+Rib|Rib Acanalado|BJS|9.17|36
+Rib|Rib Acanalado|BLN|8.53|5
+Rib|Rib Acanalado|FRT|10.51|206
+Rib|Rib Acanalado|JSP|9.57|12
+Rib|Rib Acanalado|MDS|9.84|62
+Rib|Rib Normal|BJS|9.17|37
+Rib|Rib Normal|BLN|7.3|1
+Rib|Rib Normal|BLN|8.53|6
+Rib|Rib Normal|FRT|10.51|193
+Rib|Rib Normal|JSP|9.57|12
+Rib|Rib Normal|MDS|9.84|60
+Toper|Toper|BJS|8.17|34
+Toper|Toper|BLN|8.06|5
+Toper|Toper|ESP|12.39|44
+Toper|Toper|ESP|12.84|2
+Toper|Toper|FRT|9.11|187
+Toper|Toper|JSP|8.27|12
+Toper|Toper|MDS|8.53|58
+Toper|Toper 1.5|BJS|8.17|34
+Toper|Toper 1.5|BLN|8.06|5
+Toper|Toper 1.5|FRT|9.11|186
+Toper|Toper 1.5|JSP|8.27|12
+Toper|Toper 1.5|MDS|8.53|58
+Toper|Toper 1.7|BJS|8.17|2
+Toper|Toper 1.7|BLN|8.07|1
+Toper|Toper 1.7|FRT|9.11|16
+Toper|Toper 1.7|JSP|8.27|1
+Toper|Toper 1.7|MDS|8.53|6

@@ -503,6 +503,135 @@
 })();
 </script>
 
+{# ================= LA LISTA DE PRECIOS DE ASINFO ==========================
+   TMT 2026-09-02, Tamara: "si cambian los precios en asinfo tenemos que
+   cambiarlos en programa core… tener metodo de importar cambios". Muestra
+   SÓLO las celdas que difieren de la versión vigente de Asinfo (c/IVA, como
+   todo lo que se ve) y deja tildar cuáles traer. Sólo con precios.editar:
+   nace cerrado y la consulta a Asinfo sale al abrirlo.
+   ========================================================================= #}
+{% if puede_editar %}
+<details id="precios-asinfo" class="no-print solo-pantalla max-w-6xl mt-6 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+  <summary class="cursor-pointer select-none px-4 py-3 text-sm font-semibold text-slate-800 dark:text-slate-200">
+    Precios distintos a los de Asinfo
+    <span class="ml-2 font-normal text-xs text-slate-500 dark:text-slate-400">
+      compara con la lista vigente de Asinfo y trae los que cambiaron
+    </span>
+  </summary>
+
+  <div class="border-t border-slate-200 dark:border-slate-800 px-4 py-4">
+    <p class="text-xs text-slate-500 dark:text-slate-400 mb-3" style="max-width:78ch;">
+      Asinfo tiene un precio por cada producto; ac&aacute; se toma, para cada tela y clase de color,
+      el que tiene la mayor&iacute;a. Nada se cambia solo: tild&aacute; los que quer&eacute;s traer y confirm&aacute;.
+      Cuando Asinfo publica una lista nueva, avisa la campanita.
+    </p>
+
+    <div id="precios-asinfo-estado" class="text-xs text-slate-400">Buscando en Asinfo&hellip;</div>
+
+    <form method="post" action="{{ url_for('precios.asinfo_aplicar') }}" id="precios-asinfo-form" style="display:none;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800">
+        <table class="w-full text-sm" style="border-collapse:collapse;">
+          <thead class="text-xs uppercase tracking-wider text-slate-500">
+            <tr class="bg-slate-50 dark:bg-slate-800/50">
+              <th class="px-3 py-1.5 text-left font-medium" style="width:1%;">
+                <input type="checkbox" id="precios-asinfo-todos" title="Tildar todos">
+              </th>
+              <th class="px-3 py-1.5 text-left font-medium">Tela</th>
+              <th class="px-3 py-1.5 text-left font-medium">Color</th>
+              <th class="px-3 py-1.5 text-right font-medium whitespace-nowrap">Programa c/IVA</th>
+              <th class="px-3 py-1.5 text-right font-medium whitespace-nowrap">Asinfo c/IVA</th>
+              <th class="px-3 py-1.5 text-left font-medium">Cu&aacute;ntos productos</th>
+            </tr>
+          </thead>
+          <tbody id="precios-asinfo-filas"></tbody>
+        </table>
+      </div>
+      <div class="mt-3 flex items-center gap-3">
+        <button type="submit"
+                class="rounded-md bg-slate-800 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-700">
+          Traer los tildados
+        </button>
+        <span id="precios-asinfo-version" class="text-xs text-slate-500 dark:text-slate-400"></span>
+      </div>
+    </form>
+  </div>
+</details>
+
+<script>
+(function () {
+  var det = document.getElementById('precios-asinfo');
+  if (!det) return;
+  var cargado = false;
+  // Después de "Traer los tildados" se vuelve con #precios-asinfo: abrirlo
+  // para que se vea el resultado sin buscar el bloque.
+  if (location.hash === '#precios-asinfo') det.open = true;
+  function num(v) {
+    if (v === null || v === undefined) return '—';
+    return v.toLocaleString('es-EC', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+  function fila(d) {
+    var tr = document.createElement('tr');
+    tr.className = 'border-t border-slate-100 dark:border-slate-800';
+    var tdc = document.createElement('td');
+    tdc.className = 'px-3 py-1';
+    var cb = document.createElement('input');
+    cb.type = 'checkbox'; cb.name = 'celda'; cb.value = d.clave; cb.checked = !!d.aplicable;
+    tdc.appendChild(cb);
+    var td1 = document.createElement('td');
+    td1.className = 'px-3 py-1 whitespace-nowrap font-medium text-slate-800 dark:text-slate-200';
+    td1.textContent = d.tela;
+    var td2 = document.createElement('td');
+    td2.className = 'px-3 py-1 whitespace-nowrap text-slate-600 dark:text-slate-300';
+    td2.textContent = d.clase_desc;
+    var td3 = document.createElement('td');
+    td3.className = 'px-3 py-1 text-right tabular-nums text-slate-500 dark:text-slate-400';
+    td3.textContent = num(d.pc_iva);
+    var td4 = document.createElement('td');
+    td4.className = 'px-3 py-1 text-right tabular-nums font-semibold text-slate-800 dark:text-slate-100';
+    td4.textContent = num(d.asinfo_iva);
+    var td5 = document.createElement('td');
+    td5.className = 'px-3 py-1 text-xs ' + (d.aplicable ? 'text-slate-500 dark:text-slate-400' : 'text-amber-700 dark:text-amber-400');
+    td5.textContent = d.n + ' de ' + d.total + ' a ese precio' + (d.aplicable ? '' : ' — pocos: revisalo antes de traerlo');
+    tr.append(tdc, td1, td2, td3, td4, td5);
+    return tr;
+  }
+  det.addEventListener('toggle', function () {
+    if (!det.open || cargado) return;
+    cargado = true;
+    var est = document.getElementById('precios-asinfo-estado');
+    fetch('{{ url_for("precios.asinfo_lista_json") }}', { credentials: 'same-origin' })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (!d.ok) {
+          est.textContent = 'No pude preguntarle a Asinfo ahora. Volvé a abrirlo en un rato.';
+          return;
+        }
+        var ver = 'Lista de Asinfo versión ' + d.version + (d.desde ? ', vigente desde el ' + d.desde.slice(8,10) + '/' + d.desde.slice(5,7) + '/' + d.desde.slice(0,4) : '') + (d.viejo ? ' (lectura vieja: Asinfo no contesta ahora)' : '') + '.';
+        if (!d.diferencias.length) {
+          est.textContent = 'Todo igual: los ' + d.iguales + ' precios de la lista coinciden con Asinfo. ' + ver;
+          return;
+        }
+        est.style.display = 'none';
+        var tb = document.getElementById('precios-asinfo-filas');
+        tb.innerHTML = '';
+        d.diferencias.forEach(function (x) { tb.appendChild(fila(x)); });
+        document.getElementById('precios-asinfo-version').textContent =
+          d.diferencias.length + ' distinto(s), ' + d.iguales + ' iguales. ' + ver;
+        document.getElementById('precios-asinfo-form').style.display = '';
+        var todos = document.getElementById('precios-asinfo-todos');
+        todos.addEventListener('change', function () {
+          tb.querySelectorAll('input[name=celda]').forEach(function (c) { c.checked = todos.checked; });
+        });
+      })
+      .catch(function () {
+        est.textContent = 'No pude preguntarle a Asinfo ahora. Volvé a abrirlo en un rato.';
+      });
+  });
+})();
+</script>
+{% endif %}
+
 {# ================= LA HOJA PARA IMPRIMIR =================================
    TMT 2026-08-04, dueña: "puedes poner el imprimir abajo y asi no hay tantas
    pantallas" + "imprimir en horizontal que va a quedar mejor" + "deja solo

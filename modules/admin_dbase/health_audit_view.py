@@ -2356,6 +2356,24 @@ def historia_balance_cierra():
 
 
 # ---------------------------------------------------------------------------
+# Precios de /precios vs la lista vigente de Asinfo
+# ---------------------------------------------------------------------------
+# TMT 2026-09-02 (Tamara): si Asinfo cambia la lista y nadie trae los cambios,
+# la hoja impresa y la proforma cotizan a otro precio del que se factura. La
+# campanita avisa cuando sale una versión nueva; esto vigila que la diferencia
+# no quede abierta. Si Asinfo no contesta, ok con `sin_datos` (no es un
+# problema contable — ver [[feedback_flujo_chequeo_coherencia]]).
+
+
+@bp.route("/precios-asinfo", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def precios_asinfo():
+    from modules.precios import asinfo_lista
+    return jsonify(asinfo_lista.health())
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -2383,6 +2401,7 @@ def health_all():
     resp17 = devuelto_sin_nd()
     resp19 = saldos_coherente()
     resp20 = historia_balance_cierra()
+    resp21 = precios_asinfo()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2399,6 +2418,7 @@ def health_all():
     data17 = json.loads(resp17.get_data(as_text=True))
     data19 = json.loads(resp19.get_data(as_text=True))
     data20 = json.loads(resp20.get_data(as_text=True))
+    data21 = json.loads(resp21.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2427,7 +2447,7 @@ def health_all():
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
-               and data20["ok"]),
+               and data20["ok"] and data21["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2448,6 +2468,7 @@ def health_all():
         "primera_compra_asinfo": data18,
         "saldos": data19,
         "historia_balance_cierra": data20,
+        "precios_asinfo": data21,
     })
 
 

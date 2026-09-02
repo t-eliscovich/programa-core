@@ -146,6 +146,19 @@ def _loop() -> None:
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("sync colores (fondo): %s", e)
+            # TMT 2026-09-02 (Tamara: "si cambian los precios en asinfo
+            # tenemos que cambiarlos en programa core"). Una vez por hora se
+            # mira el NÚMERO de versión de la lista de precios de Asinfo; si
+            # cambió, campanita para quien edita precios. No pisa nada solo.
+            # PRECIOS_ASINFO_AUTO=0 lo apaga.
+            try:
+                from modules.precios import asinfo_lista as _precios_asinfo
+                pa = _precios_asinfo.correr_si_toca()
+                if pa.get("corrio") and (pa.get("reporte") or {}).get("cambio"):
+                    _LOG.info("lista de precios de Asinfo: versión nueva %s",
+                              (pa.get("reporte") or {}).get("version"))
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("versión precios Asinfo (fondo): %s", e)
             # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
             # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
             # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de
