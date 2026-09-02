@@ -19,6 +19,8 @@ Lo que protegen estos tests, en orden de qué tan caro sería que se rompa:
 """
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
 from modules._lib import medidor
@@ -282,3 +284,119 @@ def test_limpiar_tambien_borra_las_consultas_contadas():
     medidor.cerrar("/y", "GET", 10)
     fila = [f for f in medidor.resumen() if f["ruta"] == "/y"][0]
     assert fila["consultas"] == 0, "arrastró las consultas de antes de limpiar"
+
+
+# ---------------------------------------------------------------------------
+# 5. El puente y el calentador (TMT 2026-09-02: "¿páginas lentas?")
+# ---------------------------------------------------------------------------
+# Medidas en vivo, las pantallas lentas tenían casi nada de base propia:
+# /produccion-terminado-asinfo tardó 10,3 s con 7 ms de consultas. El resto era
+# el puente (Metabase / formulas) y la pantalla no lo mostraba.
+
+
+def test_el_puente_se_cuenta_aparte_de_la_base():
+    medidor.arrancar()
+    medidor.anotar_consulta(5, "SELECT 1")
+    medidor.anotar_puente(700)
+    medidor.anotar_puente(300)
+    medidor.cerrar("/produccion-terminado-asinfo", "GET", 1200)
+    f = medidor.resumen()[0]
+    assert f["ms_sql_prom"] == 5
+    assert f["ms_puente_prom"] == 1000
+    assert f["puente_prom"] == 2
+    lenta = medidor.lentas()[0]
+    assert lenta["ms_puente"] == 1000 and lenta["puente"] == 2
+
+
+def test_una_ida_al_puente_desde_un_hilo_de_fondo_no_se_cuenta():
+    medidor.anotar_puente(900)          # sin arrancar(): el calentador
+    medidor.arrancar()
+    medidor.cerrar("/x", "GET", 10)
+    assert medidor.resumen()[0]["ms_puente_prom"] == 0
+
+
+def test_metabase_le_avisa_al_medidor(monkeypatch):
+    """El cable: `_anotar` de metabase_client es lo que cuenta el puente."""
+    from modules._lib import metabase_client
+
+    medidor.arrancar()
+    metabase_client._anotar(2, 640.0, True)
+    medidor.cerrar("/y", "GET", 700)
+    assert medidor.resumen()[0]["ms_puente_prom"] == 640
+
+
+def test_formulas_le_avisa_al_medidor(monkeypatch):
+    from unittest.mock import MagicMock
+
+    from modules._lib import formulas_db
+
+    cur = MagicMock()
+    cur.fetchall.return_value = [{"a": 1}]
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    conn.cursor.return_value.__exit__.return_value = False
+    pool = MagicMock()
+    pool.getconn.return_value = conn
+    monkeypatch.setattr(formulas_db, "_pool", pool)
+
+    medidor.arrancar()
+    formulas_db.fetch_all("SELECT 1")
+    formulas_db.fetch_one("SELECT 1")
+    medidor.cerrar("/z", "GET", 10)
+    assert medidor.resumen()[0]["puente_prom"] == 2
+
+
+def test_medir_el_puente_no_puede_romper_la_consulta(monkeypatch):
+    from modules._lib import formulas_db
+
+    monkeypatch.setattr(medidor, "anotar_puente", lambda ms: 1 / 0)
+    formulas_db._medir(0.0)             # no tira: eso es todo el test
+    from modules._lib import metabase_client
+    metabase_client._anotar(2, 1.0, True)
+
+
+def test_el_calentador_deja_su_ultimo_ciclo():
+    assert medidor.calentador() == {}
+    medidor.anotar_calentador(
+        [{"paso": "balance", "ms": 900, "error": ""},
+         {"paso": "pedidos", "ms": 3000, "error": ""},
+         {"paso": "rotativo", "ms": 10, "error": "timeout"}], 3.9)
+    c = medidor.calentador()
+    assert c["ciclos"] == 1 and c["n_pasos"] == 3 and c["duracion_s"] == 3.9
+    assert c["lentos"][0]["paso"] == "pedidos"
+    assert [e["paso"] for e in c["errores"]] == ["rotativo"]
+    assert c["hace_s"] >= 0
+    medidor.anotar_calentador([], 0.1)
+    assert medidor.calentador()["ciclos"] == 2
+    medidor.limpiar()
+    assert medidor.calentador() == {}
+
+
+def test_un_ciclo_del_calentador_cronometra_cada_paso(monkeypatch):
+    """`_warm_once` corre pasos reales contra Asinfo; acá se le cambian todos
+    por dos de mentira y se mira que el ciclo quede en el termómetro con un
+    paso bueno y uno con error."""
+    from modules._lib import warmup
+
+    src = inspect.getsource(warmup._warm_once)
+    assert "medidor.anotar_calentador(corridos" in src
+    # Y el cable de verdad, sin Asinfo: los pasos fallan todos (no hay bridge),
+    # pero el ciclo igual se anota con sus errores.
+    warmup._warm_once()
+    c = medidor.calentador()
+    assert c["ciclos"] == 1 and c["n_pasos"] > 10
+
+
+def test_la_pantalla_muestra_el_puente_y_el_calentador(app, fake_db):
+    medidor.arrancar()
+    medidor.anotar_puente(640)
+    medidor.cerrar("/produccion-terminado-asinfo", "GET", 700)
+    medidor.anotar_calentador([{"paso": "pedidos_pendientes", "ms": 3000, "error": ""}], 3.0)
+    html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
+    assert "De eso, puente" in html and "640 ms (1.0)" in html
+    assert "El calentador" in html and "pedidos_pendientes" in html
+
+
+def test_la_pantalla_sin_calentador_lo_dice(app, fake_db):
+    html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
+    assert "no terminó ningún ciclo" in html

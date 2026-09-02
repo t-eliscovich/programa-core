@@ -167,11 +167,27 @@ def _warm_once() -> None:
         ]
     except Exception as e:  # noqa: BLE001 -- fail-soft
         _LOG.warning("warmup quimicos setup: %s", e)
+    # Cada paso se cronometra y el ciclo entero queda en el termómetro
+    # (/admin/pantallas): si una pantalla sale fría igual, ahí se ve si el
+    # calentador llegó a ella y cuánto tardó el ciclo. TMT 2026-09-02.
+    corridos: list[dict] = []
+    t_ciclo = time.time()
     for nombre, fn in pasos:
+        t0 = time.time()
+        error = ""
         try:
             fn()
         except Exception as e:  # noqa: BLE001 -- fail-soft por paso
+            error = str(e)[:200]
             _LOG.warning("warmup asinfo %s: %s", nombre, e)
+        corridos.append({"paso": nombre, "ms": round((time.time() - t0) * 1000),
+                         "error": error})
+    try:
+        from modules._lib import medidor
+
+        medidor.anotar_calentador(corridos, time.time() - t_ciclo)
+    except Exception:  # noqa: BLE001 -- medir jamás frena el calentador
+        pass
 
 
 def _loop() -> None:

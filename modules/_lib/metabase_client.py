@@ -49,6 +49,12 @@ _BITACORA_MAX = 60
 
 def _anotar(db: int, ms: float, ok: bool, error: str = "") -> None:
     try:
+        from modules._lib import medidor as _medidor
+
+        _medidor.anotar_puente(ms)  # el termómetro de /admin/pantallas
+    except Exception:  # noqa: BLE001 -- medir jamás rompe una consulta
+        pass
+    try:
         import time as _t
         _BITACORA.append({
             "ts": _t.strftime("%H:%M:%S", _t.gmtime(_t.time() - 5 * 3600)),
@@ -150,6 +156,8 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
     url = f"{_url()}/api/card/{card_id}/query/json"
     body: dict = {"parameters": params} if params else {}
 
+    import time as _t
+    _t0 = _t.monotonic()
     try:
         r = requests.post(
             url,
@@ -171,9 +179,11 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
             )
         r.raise_for_status()
         data = r.json()
+        _anotar(0, (_t.monotonic() - _t0) * 1000, True)
         return data if isinstance(data, list) else []
     except Exception as e:
         _log.warning("Metabase fetch_card(%s) falló: %s", card_id, e)
+        _anotar(0, (_t.monotonic() - _t0) * 1000, False, str(e))
         return []
 
 

@@ -60,6 +60,8 @@ _LOCK = threading.Lock()
 _RUTAS: dict[str, dict] = {}
 _LENTAS: list[dict] = []
 _DESDE = time.time()
+#: Lo último que hizo el calentador (`modules/_lib/warmup.py`): ver abajo.
+_CALENTADOR: dict = {}
 
 
 # ── lo que va contando el request en curso ──────────────────────────────────
@@ -75,6 +77,24 @@ def arrancar() -> None:
     _LOCAL.ms = 0.0
     _LOCAL.peor_ms = 0.0
     _LOCAL.peor_sql = ""
+    _LOCAL.puente_ms = 0.0
+    _LOCAL.puente_n = 0
+
+
+def anotar_puente(ms: float) -> None:
+    """Una ida al PUENTE que terminó — Metabase (Asinfo) o la base de formulas.
+
+    TMT 2026-09-02 (dueña: *"¿páginas lentas?"*). Medidas las pantallas en
+    vivo, las lentas tenían casi nada de base: /produccion-terminado-asinfo
+    tardó 10,3 s con 7 ms de consultas. El resto era el puente, y la pantalla
+    no lo mostraba — se veía "de eso, base 7 ms" y había que adivinar el
+    resto. Ahora el puente se cuenta aparte, con la misma regla que las
+    consultas: en un hilo de fondo no cuenta nada.
+    """
+    if not getattr(_LOCAL, "activo", False):
+        return
+    _LOCAL.puente_ms = getattr(_LOCAL, "puente_ms", 0.0) + ms
+    _LOCAL.puente_n = getattr(_LOCAL, "puente_n", 0) + 1
 
 
 def anotar_consulta(ms: float, sql: str) -> None:
@@ -97,6 +117,7 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
     activo = getattr(_LOCAL, "activo", False)
     n, ms_sql = getattr(_LOCAL, "n", 0), getattr(_LOCAL, "ms", 0.0)
     peor_ms, peor_sql = getattr(_LOCAL, "peor_ms", 0.0), getattr(_LOCAL, "peor_sql", "")
+    puente_ms, puente_n = getattr(_LOCAL, "puente_ms", 0.0), getattr(_LOCAL, "puente_n", 0)
     _LOCAL.activo = False
     if not activo or not ruta:
         return
@@ -110,6 +131,7 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
                 "ruta": ruta, "metodo": metodo, "visitas": 0, "ms": [],
                 "ms_max": 0.0, "consultas": 0, "consultas_max": 0,
                 "ms_sql": 0.0, "peor_sql": "", "peor_sql_ms": 0.0,
+                "ms_puente": 0.0, "puente": 0,
             }
         fila["visitas"] += 1
         fila["ms"].append(ms)
@@ -118,6 +140,8 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
         fila["consultas"] += n
         fila["consultas_max"] = max(fila["consultas_max"], n)
         fila["ms_sql"] += ms_sql
+        fila["ms_puente"] += puente_ms
+        fila["puente"] += puente_n
         if peor_ms > fila["peor_sql_ms"]:
             fila["peor_sql_ms"], fila["peor_sql"] = peor_ms, peor_sql
 
@@ -125,6 +149,7 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
             _LENTAS.append({
                 "ruta": ruta, "metodo": metodo, "codigo": codigo, "ms": round(ms),
                 "consultas": n, "ms_sql": round(ms_sql),
+                "puente": puente_n, "ms_puente": round(puente_ms),
                 "peor_sql": peor_sql, "peor_sql_ms": round(peor_ms),
                 "cuando": time.time(),
             })
@@ -152,6 +177,8 @@ def resumen() -> list[dict]:
         f["total_s"] = round(f["mediana_ms"] * f["visitas"] / 1000, 1)
         f["consultas_prom"] = round(f["consultas"] / max(1, f["visitas"]), 1)
         f["ms_sql_prom"] = round(f["ms_sql"] / max(1, f["visitas"]))
+        f["ms_puente_prom"] = round(f["ms_puente"] / max(1, f["visitas"]))
+        f["puente_prom"] = round(f["puente"] / max(1, f["visitas"]), 1)
         f["peor_sql_ms"] = round(f["peor_sql_ms"])
         salida.append(f)
     salida.sort(key=lambda f: -f["total_s"])
@@ -175,6 +202,38 @@ def estado() -> dict:
             "visitas": visitas,
             "lentas": len(_LENTAS),
         }
+
+
+# ── el calentador ───────────────────────────────────────────────────────────
+# El calentador (`warmup.py`) refresca las cachés de Asinfo cada 60 s para que
+# nadie pague la carga fría. Cuando una pantalla sale fría igual, la pregunta
+# es "¿el calentador llegó a esa pantalla, y cuándo?" — y hasta hoy sólo lo
+# decía el log del servidor Windows. Acá queda el último ciclo, en memoria.
+
+
+def anotar_calentador(pasos: list[dict], duracion_s: float) -> None:
+    """Terminó un ciclo del calentador: qué pasos corrió y cuánto tardó cada uno."""
+    with _LOCK:
+        _CALENTADOR.update({
+            "ciclos": _CALENTADOR.get("ciclos", 0) + 1,
+            "fin": time.time(),
+            "duracion_s": round(duracion_s, 1),
+            "pasos": [dict(p) for p in pasos],
+        })
+
+
+def calentador() -> dict:
+    """El último ciclo del calentador, listo para la pantalla."""
+    with _LOCK:
+        c = dict(_CALENTADOR)
+    if not c:
+        return {}
+    pasos = c.get("pasos") or []
+    c["hace_s"] = round(time.time() - c["fin"])
+    c["lentos"] = sorted(pasos, key=lambda p: -p["ms"])[:5]
+    c["errores"] = [p for p in pasos if p.get("error")]
+    c["n_pasos"] = len(pasos)
+    return c
 
 
 def limpiar() -> None:
@@ -201,4 +260,5 @@ def limpiar() -> None:
     with _LOCK:
         _RUTAS.clear()
         _LENTAS.clear()
+        _CALENTADOR.clear()
         _DESDE = time.time()

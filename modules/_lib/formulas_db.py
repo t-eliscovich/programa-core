@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from contextlib import contextmanager
 
 from psycopg2 import pool
@@ -78,10 +79,25 @@ def _conn():
         _pool.putconn(c)
 
 
+def _medir(t0: float) -> None:
+    """Le cuenta al termómetro (/admin/pantallas) una ida a formulas.
+
+    TMT 2026-09-02: las pantallas lentas tenían casi nada de base propia; el
+    tiempo era del puente y no se veía. Fail-soft: medir jamás rompe la consulta.
+    """
+    try:
+        from modules._lib import medidor
+
+        medidor.anotar_puente((time.monotonic() - t0) * 1000)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def fetch_all(sql: str, params: tuple | list = ()) -> list[dict]:
     """SELECT múltiple. Devuelve [] si el bridge no está activo o falla."""
     if _pool is None:
         return []
+    t0 = time.monotonic()
     try:
         with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
@@ -89,12 +105,15 @@ def fetch_all(sql: str, params: tuple | list = ()) -> list[dict]:
     except Exception as e:
         _log.warning("formulas_db.fetch_all falló: %s", e)
         return []
+    finally:
+        _medir(t0)
 
 
 def fetch_one(sql: str, params: tuple | list = ()) -> dict | None:
     """SELECT de una fila. Devuelve None si el bridge no está activo o falla."""
     if _pool is None:
         return None
+    t0 = time.monotonic()
     try:
         with _conn() as c, c.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(sql, params)
@@ -102,6 +121,8 @@ def fetch_one(sql: str, params: tuple | list = ()) -> dict | None:
     except Exception as e:
         _log.warning("formulas_db.fetch_one falló: %s", e)
         return None
+    finally:
+        _medir(t0)
 
 
 def healthcheck() -> bool:

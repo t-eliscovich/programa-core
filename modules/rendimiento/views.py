@@ -37,6 +37,7 @@ def pantallas():
         filas=medidor.resumen(),
         lentas=medidor.lentas(),
         estado=medidor.estado(),
+        calentador=medidor.calentador(),
         lenta_ms=int(medidor.LENTA_MS),
         seccion="admin",
     )
