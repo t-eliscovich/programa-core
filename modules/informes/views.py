@@ -942,6 +942,13 @@ def balance():
                 + float(_proy.get("tin") or 0)
                 + float(_proy.get("adm") or 0)
             )
+            # Andrés 2026-09-02 — si el presupuesto del mes todavía no se cargó,
+            # `gastos_proyectado_mes_get` hereda el del último mes cargado (antes
+            # devolvía 0 y la Utilidad Esperada salía inflada por todo el gasto
+            # fijo). Lo decimos en la ayuda de la fila en vez de disimularlo.
+            _proy_origen = (
+                _proy.get("periodo_origen_nom") or _proy.get("periodo_origen")
+            ) if _proy.get("heredado") else None
 
             def _cell(_lbl, _k):
                 for _r in _tabla:
@@ -967,6 +974,14 @@ def balance():
                         "base, compartidos por todos los usuarios) − Costos "
                         "directos (kg proy × (Materia Prima + Colorantes/Quím. "
                         "unitarios) × 1,045 = 4,5% de desperdicio)."
+                        + (
+                            " ⚠ El presupuesto de gastos de este mes todavía no "
+                            f"se cargó: se están usando los de {_proy_origen}. "
+                            "Cargalos en Informes → Gastos (fila «Gs. Proy. mes "
+                            "actual»)."
+                            if _proy_origen
+                            else ""
+                        )
                     )
                     break
 
