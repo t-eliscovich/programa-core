@@ -4,114 +4,145 @@
 
 {% block head_extra %}
 <style>
-  /* Todo inline/<style>: static/tailwind.css es un build JIT congelado. */
-  .pd{--rojo:#b91c1c}
-  .pd h1{font-size:20px;font-weight:700;color:#0f172a;margin:0}
-  .pd .nota{color:#64748b;font-size:12px;margin:6px 0 12px;max-width:900px;line-height:1.5}
-  .pd .nota a{color:#1d4ed8;text-decoration:none}
+  /* Todo inline/<style>: static/tailwind.css es un build JIT congelado.
+     Rediseño 02/09/2026 (dueña: "la página está fea"): una sola paleta
+     (tinta #0f172a, azul #1d4ed8, rojo #b91c1c, grises slate), texto de
+     ayuda a UNA línea, acciones a la derecha del título, el "Ver por" como
+     selector de una pieza, y en el corte Pedido la cantidad y los kilos en
+     columnas propias para que el detalle de cada tela quede alineado. */
+  .pd{--ink:#0f172a;--azul:#1d4ed8;--rojo:#b91c1c;--verde:#15803d;--gris:#64748b;--linea:#e2e8f0;--fondo:#f8fafc;max-width:960px}
+  .pd .top{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap}
+  .pd h1{font-size:22px;font-weight:700;color:var(--ink);margin:0;letter-spacing:-.01em}
+  .pd .nota{color:var(--gris);font-size:12.5px;margin:4px 0 0;line-height:1.5}
+  .pd .nota a{color:var(--azul);text-decoration:none}
   .pd .nota a:hover{text-decoration:underline}
-  .pd .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;margin:10px 0;max-width:900px;line-height:1.5}
-  .pd .ver{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 6px;align-items:center}
-  .pd .ver .cap{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
-  .pd .ver a{font-size:13px;padding:6px 14px;border-radius:7px;border:1px solid #e2e8f0;color:#475569;background:#fff;text-decoration:none}
-  .pd .ver a:hover{border-color:#94a3b8}
-  .pd .ver a.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
-  .pd .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0 8px;max-width:900px}
-  .pd .card{background:#f8fafc;border-radius:8px;padding:10px 12px}
-  .pd .card .lbl{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-  .pd .card .val{font-size:19px;font-weight:700;color:#0f172a;font-variant-numeric:tabular-nums}
-  .pd .card .sub{font-size:11px;color:#64748b;margin-top:1px}
+  .pd .pie{color:#94a3b8;font-size:11.5px;margin:18px 0 0;line-height:1.5;border-top:1px solid #f1f5f9;padding-top:10px}
+  .pd .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;margin:12px 0;line-height:1.5}
+  .pd .acciones{display:flex;gap:6px;flex:0 0 auto}
+  .pd .btn{font-size:12.5px;padding:6px 11px;border-radius:7px;border:1px solid var(--linea);background:#fff;color:#334155;text-decoration:none;cursor:pointer;line-height:1.2}
+  .pd .btn:hover{border-color:#94a3b8;color:var(--ink)}
+  /* selector de cortes: una sola pieza, el activo en tinta */
+  .pd .ver{display:inline-flex;align-items:center;gap:0;margin:16px 0 14px;border:1px solid var(--linea);border-radius:8px;background:#fff;padding:2px}
+  .pd .ver .cap{font-size:11px;color:var(--gris);text-transform:uppercase;letter-spacing:.05em;padding:0 8px 0 10px}
+  .pd .ver a{font-size:13px;padding:5px 12px;border-radius:6px;color:#475569;text-decoration:none;line-height:1.3}
+  .pd .ver a:hover{color:var(--ink);background:var(--fondo)}
+  .pd .ver a.on{background:var(--ink);color:#fff;font-weight:600}
+  /* tarjetas del corte tela */
+  .pd .cards{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:0 0 10px}
+  .pd .card{background:var(--fondo);border-radius:8px;padding:10px 12px}
+  .pd .card .lbl{font-size:11px;color:var(--gris);text-transform:uppercase;letter-spacing:.04em}
+  .pd .card .val{font-size:19px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums}
+  .pd .card .sub{font-size:11px;color:var(--gris);margin-top:1px}
   .pd .card.rojo .val{color:var(--rojo)}
-  .pd .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 14px}
-  .pd .tab{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;color:#475569;text-decoration:none;background:#fff}
+  .pd .tabs{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 14px}
+  .pd .tab{font-size:13px;padding:5px 11px;border-radius:7px;border:1px solid var(--linea);color:#475569;text-decoration:none;background:#fff}
   .pd .tab:hover{border-color:#94a3b8}
-  .pd .tab.on{background:#0f172a;border-color:#0f172a;color:#fff}
+  .pd .tab.on{background:var(--ink);border-color:var(--ink);color:#fff}
   .pd .tab .n{color:var(--rojo);font-weight:700}
   .pd .tab.on .n{color:#fca5a5}
-  .pd table{width:100%;max-width:900px;table-layout:fixed;border-collapse:collapse;font-size:13px;margin:6px 0 18px}
-  .pd th,.pd td{padding:5px 10px;border-bottom:1px solid #f1f5f9;text-align:right;font-variant-numeric:tabular-nums;line-height:1.45;overflow:hidden;text-overflow:ellipsis}
-  .pd th:first-child,.pd td:first-child{text-align:left}
-  .pd thead th{background:#f1f5f9;color:#475569;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1;white-space:normal;position:sticky;top:0;z-index:2}
-  .pd tbody tr:hover td{background:#f8fafc}
-  .pd .muted{color:#94a3b8;font-size:11px;font-weight:400}
-  .pd .u{font-size:11px;color:#64748b;font-weight:600}
+  /* la tabla */
+  .pd table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:13px;margin:0 0 6px;border:1px solid var(--linea)}
+  main .pd table tbody td{padding:7px 10px !important;font-size:13px !important}
+  .pd th,.pd td{border-bottom:1px solid #f1f5f9;text-align:right;font-variant-numeric:tabular-nums;line-height:1.4;overflow:hidden;text-overflow:ellipsis;vertical-align:middle}
+  .pd th:first-child,.pd td:first-child,.pd th.izq,.pd td.izq{text-align:left}
+  .pd tbody tr:last-child td{border-bottom:0}
+  main .pd table thead th{background:var(--fondo);color:var(--gris);font-size:10.5px !important;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--linea);white-space:nowrap;overflow:visible;text-overflow:clip;position:sticky;top:0;z-index:2;padding:6px 8px !important}
+  .pd tbody tr:hover td{background:#fcfdfe}
+  .pd tr.pedrow.open td{background:#eef2f7;border-bottom-color:var(--linea)}
+  .pd .muted{color:#94a3b8;font-size:11.5px;font-weight:400}
+  .pd .u{font-size:11px;color:var(--gris);font-weight:500}
   .pd .falta{color:var(--rojo);font-weight:700}
   .pd .okc{color:#94a3b8}
-  .pd .viejo{color:#b45309}
-  .pd h3{font-size:14px;font-weight:700;color:#0f172a;margin:20px 0 4px;max-width:900px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
-  .pd .cli{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700;color:#1d4ed8;cursor:help}
+  .pd .viejo{color:#b45309;font-weight:600}
+  .pd h3{font-size:14px;font-weight:700;color:var(--ink);margin:18px 0 6px;display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+  .pd .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .pd .cli{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--azul);cursor:help}
   .pd .cod{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .pd .color{font-size:14px;font-weight:700;letter-spacing:.02em}
-  .pd .prod{font-size:10px;color:#cbd5e1}
+  .pd .color{font-size:13.5px;font-weight:700;letter-spacing:.02em;color:var(--ink)}
+  .pd .prod{font-size:10.5px;color:#94a3b8;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;margin-left:4px}
   .pd .aca{display:inline-block;font-size:10px;font-weight:700;padding:0 5px;border-radius:4px;margin-right:6px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;flex:0 0 auto}
   .pd .aca.tub{background:#eef2ff;color:#3730a3}.pd .aca.abi{background:#fef3c7;color:#92400e}.pd .aca.otro{background:#f1f5f9;color:#475569}
-  .pd .bar{height:7px;background:#e2e8f0;border-radius:4px;overflow:hidden;min-width:60px}
-  .pd .bar>i{display:block;height:100%;background:#0f172a}
-  .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:#0f172a;font:inherit;display:flex;align-items:baseline;gap:6px;width:100%}
-  .pd .abrir:hover .color,.pd .abrir:hover .telaname{text-decoration:underline}
-  .pd .chev{display:inline-block;width:13px;height:13px;vertical-align:middle;flex:0 0 auto;margin-right:4px;background:center no-repeat;background-size:11px 11px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E")}
-  .pd .abrir[aria-expanded="true"] .chev,.pd tr.ghead[aria-expanded="true"] .chev{background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23475569' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E")}
+  .pd .bar{height:7px;background:var(--linea);border-radius:4px;overflow:hidden;min-width:60px}
+  .pd .bar>i{display:block;height:100%;background:var(--ink)}
+  .pd .abrir{background:none;border:0;padding:0;margin:0;cursor:pointer;text-align:left;color:var(--ink);font:inherit;display:flex;align-items:center;gap:6px;width:100%}
+  .pd .abrir:hover .color,.pd .abrir:hover .telaname,.pd .abrir:hover .npd{text-decoration:underline}
+  .pd .chev{display:inline-block;width:14px;height:14px;flex:0 0 auto;background:center no-repeat;background-size:12px 12px;transition:transform .12s;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M9 6l6 6-6 6'/%3E%3C/svg%3E")}
+  .pd .abrir[aria-expanded="true"] .chev,.pd tr.ghead[aria-expanded="true"] .chev{transform:rotate(90deg)}
+  @media (prefers-reduced-motion:reduce){.pd .chev{transition:none}}
   /* desplegables: se apagan por CLASE ([hidden] lo pisa cualquier display heredado) */
   .pd tr.det{display:none}
   .pd tr.det.open{display:table-row}
   .pd tr.vr{display:none}
   .pd tr.vr.open{display:table-row}
-  .pd tr.det>td{background:#f8fafc;font-size:12px;color:#475569}
-  .pd td.masinfo{text-align:left;padding-left:32px}
-  .pd td.masinfo a{font-size:11px;color:#1d4ed8;text-decoration:none}
+  main .pd table tbody tr.det>td{background:var(--fondo);font-size:12.5px !important;color:#475569;padding-top:4px !important;padding-bottom:4px !important;border-bottom-color:#eef2f6}
+  .pd tr.det.ultima>td{border-bottom:1px solid var(--linea)}
+  main .pd table tbody td.masinfo{text-align:left;padding-left:34px !important}
+  .pd td.masinfo a{font-size:11.5px;color:var(--azul);text-decoration:none}
   .pd td.masinfo a:hover{text-decoration:underline}
-  .pd .npd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#94a3b8;font-size:11px}
+  .pd .npd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--ink);font-size:12.5px;font-weight:600}
+  .pd tr.det .npd{color:#94a3b8;font-weight:400;font-size:11.5px}
   /* corte color: fila-cabecera del color */
-  .pd tr.ghead>td{background:#f8fafc;border-top:1px solid #e2e8f0;border-bottom:1px solid #e2e8f0;font-weight:700;padding:8px 10px;cursor:pointer}
+  .pd tr.ghead>td{background:var(--fondo);border-top:1px solid var(--linea);border-bottom:1px solid var(--linea);font-weight:700;padding:8px 10px;cursor:pointer}
   .pd tr.ghead:hover>td{background:#eef2f7}
   .pd tr.ghead .ccode{font-size:15px;font-weight:700;letter-spacing:.03em;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
-  .pd tr.ghead .cname{font-size:11px;color:#64748b;font-weight:600;margin-left:8px}
+  .pd tr.ghead .cname{font-size:11px;color:var(--gris);font-weight:600;margin-left:8px}
   .pd tr.vr>td:first-child{padding-left:26px}
   .pd .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .pd .chip{background:#fff;border:1px solid #e2e8f0;border-radius:6px;padding:1px 8px;font-size:11px}
-  .pd .chip b{color:#1d4ed8;font-family:ui-monospace,monospace}
-  .pd .buscar{margin:8px 0 4px;display:flex;gap:8px;align-items:center}
-  .pd .buscar input{border:1px solid #e2e8f0;border-radius:7px;padding:6px 10px;font-size:13px;width:260px}
-  .pd .buscar input:focus{outline:none;border-color:#94a3b8}
-  .pd .acciones{display:flex;gap:8px;margin:10px 0 2px}
-  .pd .btn{font-size:13px;padding:6px 12px;border-radius:7px;border:1px solid #e2e8f0;background:#fff;color:#0f172a;text-decoration:none;cursor:pointer}
-  .pd .btn:hover{border-color:#94a3b8}
-  /* corte pedido: la tira de pasos del pedido (la misma del portal) y el
-     botón de envío. Los separadores se estiran para llenar la celda. */
-  .pd .steps{display:flex;align-items:center;gap:4px;min-width:0}
-  .pd .steps .st{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;
-                 font-weight:600;color:#94a3b8;white-space:nowrap;flex:0 0 auto;
-                 letter-spacing:0;text-transform:none}
-  .pd .steps .st b{font-weight:400;font-size:10.5px}
-  .pd .steps .st.done{color:#16a34a}
-  .pd .steps .st.on{color:#1d4ed8;font-weight:700}
-  .pd .steps .sep{flex:1 1 0;height:2px;border-radius:1px;background:#e2e8f0;min-width:2px}
-  .pd .steps .sep.done{background:#86efac}
+  .pd .chip{background:#fff;border:1px solid var(--linea);border-radius:6px;padding:1px 8px;font-size:11px}
+  .pd .chip b{color:var(--azul);font-family:ui-monospace,monospace}
+  /* barra de filtro: buscador + etapas + cuenta */
+  .pd .buscar{margin:0 0 10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .pd .buscar input{border:1px solid var(--linea);border-radius:7px;padding:6px 10px 6px 30px;font-size:13px;width:280px;background:#fff no-repeat 9px center;background-size:14px 14px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2.2' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='M20 20l-3.5-3.5'/%3E%3C/svg%3E")}
+  .pd .buscar input:focus{outline:none;border-color:#94a3b8;box-shadow:0 0 0 3px #e2e8f0}
+  .pd .fet{display:inline-flex;gap:2px;background:#f1f5f9;border-radius:8px;padding:2px}
+  .pd .fet button{font-size:12px;padding:4px 10px;border-radius:6px;border:0;color:#475569;background:transparent;cursor:pointer;line-height:1.3}
+  .pd .fet button:hover{color:var(--ink)}
+  .pd .fet button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.12)}
+  .pd .fet button:focus-visible,.pd .btn:focus-visible,.pd .abrir:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
+  /* corte pedido: la tira de pasos (Enviado → En tintura → Terminado) */
+  .pd td.memo{white-space:normal;overflow:visible;text-overflow:clip}
+  .pd td.memo form{white-space:nowrap}
+  .pd .steps{display:inline-flex;align-items:center;gap:0;min-width:0;vertical-align:middle}
+  .pd .steps .st{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:500;color:#94a3b8;white-space:nowrap;letter-spacing:0;text-transform:none}
+  .pd .steps .st b{display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid #cbd5e1;background:#fff;font-size:0;line-height:0}
+  .pd .steps .st.done{color:var(--verde)}
+  .pd .steps .st.done b{background:var(--verde);border-color:var(--verde)}
+  .pd .steps .st.on{color:var(--azul);font-weight:700}
+  .pd .steps .st.on b{background:var(--azul);border-color:var(--azul);box-shadow:0 0 0 2.5px #dbeafe}
+  .pd .steps .sep{width:10px;height:1.5px;background:#cbd5e1;margin:0 4px;flex:0 0 auto}
+  .pd .steps .sep.done{background:var(--verde)}
   /* la etapa de UNA línea, al lado de su tela */
-  .pd .lst{font-size:10px;font-weight:700;white-space:nowrap;margin-left:6px}
-  .pd .lst.done{color:#16a34a}
-  .pd .lst.tinto{color:#1d4ed8}
-  .pd td.telahead{text-align:left;padding-left:32px;font-size:10.5px;font-weight:700;
-      color:#64748b;text-transform:uppercase;letter-spacing:.04em}
-  .pd .fet{display:inline-flex;gap:6px}
-  .pd .fet button{font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid #e2e8f0;
-      color:#475569;background:#fff;cursor:pointer}
-  .pd .fet button:hover{border-color:#94a3b8}
-  .pd .fet button.on{background:#0f172a;border-color:#0f172a;color:#fff;font-weight:700}
-  .pd .btnmemo{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #cbd5e1;background:#0f172a;color:#fff;cursor:pointer;white-space:nowrap}
-  .pd .btnmemo:hover{background:#1d4ed8;border-color:#1d4ed8}
-  .pd .btnmemo--cancelar{font-size:12px;padding:4px 10px;border-radius:7px;border:1px solid #dc2626;background:#fff;color:#dc2626;cursor:pointer;white-space:nowrap}
-  .pd .btnmemo--cancelar:hover{background:#fef2f2}
-  .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;font-weight:700}
-  .pd .vendname{font-size:11px;color:#64748b}
+  .pd .lst{display:inline-block;font-size:10.5px;font-weight:600;white-space:nowrap;margin-left:8px;padding:1px 7px;border-radius:99px;vertical-align:1px}
+  .pd .lst.done{color:var(--verde);background:#dcfce7}
+  .pd .lst.tinto{color:var(--azul);background:#dbeafe}
+  main .pd table tbody td.telahead{text-align:left;padding:8px 10px 2px 34px !important;font-size:10.5px !important;font-weight:600;color:var(--gris);text-transform:uppercase;letter-spacing:.05em}
+  main .pd table tbody td.linea{text-align:left;padding-left:46px !important}
+  main .pd table tbody td.notaped{text-align:left;padding-left:34px !important;color:var(--gris);font-style:italic}
+  .pd td.notaped b{font-style:normal;font-weight:600;color:#475569;margin-right:4px}
+  .pd .btnmemo{font-size:12px;padding:4px 11px;border-radius:7px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;white-space:nowrap;line-height:1.3}
+  .pd .btnmemo:hover{background:var(--azul);border-color:var(--azul)}
+  .pd .btnmemo--cancelar{font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid #fecaca;background:#fff;color:var(--rojo);cursor:pointer;white-space:nowrap;margin-left:8px;line-height:1.3}
+  .pd .btnmemo--cancelar:hover{background:#fef2f2;border-color:var(--rojo)}
+  .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--ink)}
+  .pd .vendname{font-size:11.5px;color:var(--gris)}
+  .pd .kgs{font-weight:600;color:var(--ink)}
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="pd">
-  <h1>Pedidos pendientes</h1>
-  <p class="nota">Lo que los clientes pidieron y todavía no se despachó, contra lo que hay en bodega
-  y lo que se está produciendo. Rollos enteros; cuellos y puños en unidades. Fuente: Asinfo.</p>
+  <div class="top">
+    <div>
+      <h1>Pedidos pendientes</h1>
+      <p class="nota">Lo que se pidió y todavía no se despachó, contra bodega y producción. Fuente: Asinfo.</p>
+    </div>
+    {% if disponible and categorias %}
+    <div class="acciones no-print">
+      <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
+      <button type="button" class="btn" onclick="window.print()">Imprimir</button>
+    </div>
+    {% endif %}
+  </div>
 
   {% if not disponible %}
     <div class="aviso">
@@ -123,10 +154,6 @@
     <div class="aviso">No hay pedidos pendientes de menos de {{ dias_pedido_max }} días.</div>
   {% else %}
 
-  <div class="acciones no-print">
-    <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
-    <button type="button" class="btn" onclick="window.print()">Imprimir</button>
-  </div>
   <div class="ver no-print">
     <span class="cap">Ver por</span>
     {% for c in cortes %}
@@ -291,14 +318,13 @@
 
   {# ═══════════ PEDIDO ═══════════ #}
   {% elif corte == 'pedido' %}
-    <p class="nota">Un renglón por pedido, con su vendedor tal como lo tiene Asinfo.
-      Abrí un pedido para ver sus telas. <b>Enviar memo</b> le manda el pedido completo
-      a la fábrica (pestaña Memos del programa de fórmulas); ahí lo toman y pasa a «en proceso».</p>
+    <p class="nota" style="margin:0 0 10px">Abrí un pedido para ver sus telas. <b>Enviar memo</b> se lo manda a la fábrica
+      (pestaña Memos del programa de fórmulas); ahí lo toman y pasa a «en proceso».</p>
     {# Filtro (dueña 31/08: "me falta poder filtrar en esta página"): por
        texto —pedido, cliente o vendedor— y por etapa. Todo del lado del
        navegador: las filas ya están en la página. #}
     <div class="buscar no-print">
-      <input id="fped" type="search" placeholder="Filtrar pedido, cliente o vendedor…" autocomplete="off">
+      <input id="fped" type="search" placeholder="Pedido, cliente o vendedor" autocomplete="off" aria-label="Filtrar pedidos">
       <span class="fet" id="fet">
         <button type="button" class="on" data-et="">Todos</button>
         <button type="button" data-et="sinmemo">Sin memo</button>
@@ -309,29 +335,29 @@
       <span class="muted" id="fpcount"></span>
     </div>
     <table>
-      <colgroup><col style="width:14%"><col style="width:11%"><col style="width:10%"><col style="width:16%"><col style="width:19%"><col style="width:30%"></colgroup>
-      <thead><tr><th>Pedido</th><th>Desde</th><th>Cliente</th><th>Vendedor</th><th>Pedido</th><th>Memo</th></tr></thead>
+      <colgroup><col style="width:13%"><col style="width:9%"><col style="width:9%"><col style="width:19%"><col style="width:7%"><col style="width:9%"><col style="width:34%"></colgroup>
+      <thead><tr><th>Pedido</th><th class="izq">Desde</th><th class="izq">Cliente</th><th class="izq">Vendedor</th><th>Telas</th><th>Kg</th><th class="izq no-print">Memo</th></tr></thead>
       <tbody>
         {% for p in pedidos_lista %}
           {% set et0 = etapas.get(p.numero) %}
           <tr class="pedrow" data-num="{{ p.numero }}"
               data-k="{{ (p.numero ~ ' ' ~ p.codigo_cliente ~ ' ' ~ p.cliente ~ ' ' ~ p.dueno.codigo ~ ' ' ~ p.dueno.nombre)|lower }}"
               data-et="{{ et0.pedido if et0 else 'sinmemo' }}">
-            <td class="cod">
+            <td>
               <button type="button" class="abrir" aria-expanded="false" data-fila="m-{{ p.numero }}">
-                <span class="chev" aria-hidden="true"></span><span class="npd" style="color:#0f172a">{{ p.numero }}</span>
+                <span class="chev" aria-hidden="true"></span><span class="npd">{{ p.numero }}</span>
               </button>
             </td>
-            <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
-            <td><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
-            <td style="text-align:left">
+            <td class="izq {{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
+            <td class="izq"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
+            <td class="izq">
               {% if p.dueno.codigo %}<span class="vend">{{ p.dueno.codigo }}</span> <span class="vendname">{{ p.dueno.nombre }}</span>
               {% elif p.dueno.nombre %}<span class="vendname">{{ p.dueno.nombre }}</span>
               {% else %}<span class="muted">—</span>{% endif %}
             </td>
-            <td>{{ p.n_lineas }} <span class="u">{{ 'tela' if p.n_lineas == 1 else 'telas' }}</span>
-              · {{ p.total_kg|num_es(0) }} <span class="u">kg{% if not p.kg_completo %} + un{% endif %}</span></td>
-            <td class="no-print">
+            <td>{{ p.n_lineas }}</td>
+            <td class="kgs">{{ p.total_kg|num_es(0) }}{% if not p.kg_completo %} <span class="u">+ un</span>{% endif %}</td>
+            <td class="izq memo no-print">
               {# La tira de pasos del pedido (dueña 27/08, la misma del
                  portal): Enviado el memo · En tintura cuando la OFT tiene
                  orden de salida de material · Terminado cuando se cerró. #}
@@ -346,17 +372,15 @@
                   {% for rot in ['Enviado', 'En tintura', 'Terminado'] %}
                     {% set i = loop.index0 %}
                     {% if i > 0 %}<i class="sep {{ 'done' if _n >= i }}"></i>{% endif %}
-                    <span class="st {{ 'done' if i < _n else ('on' if i == _n) }}">
-                      <b>{{ '✓' if i < _n or (_n == 2 and i == 2) else '●' if i == _n else '○' }}</b>{{ rot }}
-                    </span>
+                    <span class="st {{ 'done' if i < _n or (_n == 2 and i == 2) else ('on' if i == _n) }}"><b></b>{{ rot }}</span>
                   {% endfor %}
                 </div>
                 {% if m and m.estado == 'pendiente' and tiene_permiso('pedidos.enviar_memo') %}
-                  <form method="post" action="{{ url_for('pedidos.cancelar_memo') }}" style="display:inline;margin-left:6px"
+                  <form method="post" action="{{ url_for('pedidos.cancelar_memo') }}" style="display:inline"
                         onsubmit="return confirm('¿Cancelar el memo del pedido {{ p.numero }}? Vas a poder mandarlo de nuevo.');">
                     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                     <input type="hidden" name="numero" value="{{ p.numero }}">
-                    <button type="submit" class="btnmemo btnmemo--cancelar">Cancelar memo</button>
+                    <button type="submit" class="btnmemo btnmemo--cancelar" title="La fábrica todavía no lo tomó">Cancelar</button>
                   </form>
                 {% endif %}
               {% elif tiene_permiso('pedidos.enviar_memo') %}
@@ -366,30 +390,32 @@
                   <input type="hidden" name="numero" value="{{ p.numero }}">
                   <button type="submit" class="btnmemo">Enviar memo</button>
                 </form>
-              {% else %}<span class="muted">—</span>{% endif %}
+              {% else %}<span class="muted">Sin memo</span>{% endif %}
             </td>
           </tr>
           {# TMT 27/08 ("no me separó"): agrupado por TELA — el nombre una
-             vez y sus colores debajo. #}
-          {% for tela, items in p.lineas|groupby('tela') %}
+             vez y sus colores debajo. La cantidad cae bajo "Telas" y los
+             kilos bajo "Kg", así el detalle suma a la vista. #}
+          {% set grupos = p.lineas|groupby('tela') %}
+          {% for tela, items in grupos %}
             <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              <td colspan="6" class="telahead">{{ tela }}</td>
+              <td colspan="7" class="telahead">{{ tela }}</td>
             </tr>
             {% for l in items %}
             {% set le = et.lineas.get(l.producto) if et else none %}
-            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              <td class="cod" colspan="2" style="padding-left:44px"><span class="color">{{ l.color }}</span> <span class="prod">{{ l.producto }}</span></td>
-              <td colspan="2" style="text-align:left">
-                {%- if le == 'terminado' %}<span class="lst done">✓ Terminado</span>
-                {%- elif le == 'en_tintura' %}<span class="lst tinto">● En tintura</span>{% endif %}</td>
+            <tr class="det{% if loop.last and grupos|length == loop.index0 + 1 and not p.descripcion %} ultima{% endif %}" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td class="linea" colspan="4"><span class="color">{{ l.color }}</span><span class="prod">{{ l.producto }}</span>
+                {%- if le == 'terminado' %}<span class="lst done">Terminado</span>
+                {%- elif le == 'en_tintura' %}<span class="lst tinto">En tintura</span>{% endif %}</td>
               <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
-              <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }} <span class="u">kg</span>{% else %}—{% endif %}</td>
+              <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
+              <td class="no-print"></td>
             </tr>
             {% endfor %}
           {% endfor %}
           {% if p.descripcion %}
-            <tr class="det" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              <td colspan="6" class="masinfo" style="color:#475569">Nota del pedido: {{ p.descripcion }}</td>
+            <tr class="det ultima" data-grupo="m-{{ p.numero }}" data-fila-hija>
+              <td colspan="7" class="notaped"><b>Nota del pedido</b> {{ p.descripcion }}</td>
             </tr>
           {% endif %}
         {% endfor %}
@@ -417,10 +443,9 @@
     </table>
   {% endif %}
 
-  <p class="nota">
-    Bodega y producción se pasan a rollos a {{ kg_por_rollo|num_es(1) }} kg cada uno (ahí el dato nace en kilos).
-    Los pedidos de más de {{ dias_pedido_max }} días y las órdenes lanzadas hace más de
-    {{ dias_produccion_viva }} no entran a la cuenta.
+  <p class="pie">
+    Rollos enteros ({{ kg_por_rollo|num_es(1) }} kg cada uno); cuellos y puños en unidades.
+    No entran los pedidos de más de {{ dias_pedido_max }} días ni las órdenes lanzadas hace más de {{ dias_produccion_viva }}.
   </p>
   {% endif %}
 </div>
@@ -499,6 +524,8 @@
         if (!filas.length) { return; }
         var abierta = b.getAttribute('aria-expanded') !== 'true';
         b.setAttribute('aria-expanded', abierta ? 'true' : 'false');
+        var fila = b.closest('tr');
+        if (fila) { fila.classList.toggle('open', abierta); }
         filas.forEach(function (f) { f.classList.toggle('open', abierta); });
       });
     });
