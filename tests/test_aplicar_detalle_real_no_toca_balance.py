@@ -56,10 +56,13 @@ def test_aplica_solo_las_10_columnas_de_detalle_con_update(app, monkeypatch):
     )
     _login(app)
     client = app.test_client()
+    # Mes SIN override de _MATERIA_PRIMA_VERIFICADA (ese caso tiene su
+    # propio test dedicado abajo) -- éste prueba el mecanismo genérico:
+    # los 10 campos reconstruidos pasan tal cual, nada de balance se toca.
     resp = client.post(
         "/admin/regenerar-snapshot/",
-        data={"anio": "2026", "mes": "8",
-              "anio_detalle": "2026", "mes_detalle": "8",
+        data={"anio": "2026", "mes": "6",
+              "anio_detalle": "2026", "mes_detalle": "6",
               "aplicar_detalle_real": "1"},
     )
     assert resp.status_code == 200
@@ -84,7 +87,7 @@ def test_aplica_solo_las_10_columnas_de_detalle_con_update(app, monkeypatch):
         assert campo.upper() + " =" in set_clause
 
     assert "fecha = %(fecha)s" in sql
-    assert params["fecha"].isoformat() == "2026-08-31"
+    assert params["fecha"].isoformat() == "2026-06-30"
     for k, v in CAMPOS.items():
         assert params[k] == v
 
