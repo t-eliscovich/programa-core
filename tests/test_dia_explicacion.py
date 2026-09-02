@@ -385,6 +385,51 @@ def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
     assert fam["utilidad"] == 1700.0
 
 
+def test_el_residuo_tambien_baja_el_porcentaje():
+    """Tamara 2026-09-02 — la pantalla decía "explicado 100,0 %" al lado de
+    "descuadre de $ -502.169,27".
+
+    Las dos cosas eran ciertas por separado: `explicado_pct` sólo miraba los
+    movimientos marcados `sin_explicar` (de lo que ANOTÉ, ¿cuánto quedó sin
+    nombre?), y el residuo —la plata que se movió y para la que no hay NI UNA
+    fila— no entraba, así que no lo bajaba. El porcentaje que mide el
+    entrenamiento estaba ciego justo a la falla más grande.
+    """
+    # Un solo movimiento chico anotado, y medio millón que nadie registró.
+    movs = [{"aporte": 1000.0, "familia": "utilidad", "regla": "Venta facturada",
+             "componente": "facturas"}]
+    caps = _caps(0.0, -501_169.27)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
+         patch.object(dia, "_rows", return_value=movs):
+        e = dia.explicar(date(2026, 9, 1))
+
+    assert e["d_utilidad"] == -501_169.27
+    assert e["residuo"] == -502_169.27          # el descuadre real de la pantalla
+    assert e["sin_explicar"] == []              # nada MARCADO sin explicar...
+    # ...y sin embargo el porcentaje no puede decir 100.
+    assert e["explicado_pct"] < 1.0, (
+        "el residuo tiene que bajar el porcentaje: si no, la pantalla dice "
+        "'explicado 100 %' arriba de un descuadre de medio millón"
+    )
+    assert e["ok"] is False
+
+
+def test_un_dia_que_cierra_sigue_dando_cien():
+    """El arreglo no puede castigar a un día sano: sin residuo y sin nada
+    marcado, el porcentaje sigue siendo 100."""
+    movs = [{"aporte": 1700.0, "familia": "utilidad", "regla": "Venta facturada",
+             "componente": "facturas"}]
+    caps = _caps(0.0, 1700.0)
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
+         patch.object(dia, "_rows", return_value=movs):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["residuo"] == 0.0
+    assert e["explicado_pct"] == 100.0
+    assert e["ok"] is True
+
+
 def test_explicar_baja_el_porcentaje_cuando_hay_algo_sin_explicar():
     movs = [
         {"aporte": 900.0, "familia": "utilidad", "regla": "Venta facturada",

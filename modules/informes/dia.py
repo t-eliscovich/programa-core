@@ -1552,9 +1552,30 @@ def explicar(fecha=None) -> dict:
 
     total = round(sum(_f(m.get("aporte")) for m in movs), 2)
     out["residuo"] = round(out["d_utilidad"] - total, 2)
+
+    # ⭐ Tamara 2026-09-02 — el RESIDUO entra en el porcentaje.
+    #
+    # Hasta hoy `explicado_pct` sólo miraba los movimientos marcados
+    # `sin_explicar`: de lo que ANOTÉ, ¿cuánto quedó sin nombre? El residuo —la
+    # plata que se movió y para la que no hay NI UNA fila de movimiento— no
+    # entraba, así que no lo bajaba. Resultado: la pantalla podía decir
+    # "explicado 100,0 %" al lado de "descuadre de $ -502.169,27" y las dos
+    # cosas eran ciertas por separado. Es exactamente lo que devolvió
+    # /informes/dia del 01/09/2026, y es lo que hace que el número no se pueda
+    # creer: el porcentaje que mide el entrenamiento estaba ciego justo a la
+    # falla más grande.
+    #
+    # El docstring de `motores_del_dia` ya decía la regla ("el #ajuste baja el
+    # explicado_pct en vez de disimularse"); esto la hace valer también para lo
+    # que ni siquiera llegó a ser un #ajuste. `out["ok"]` no cambia: ya exigía
+    # |residuo| < 1.
+    residuo_abs = abs(out["residuo"])
     ciego = round(sum(abs(_f(m.get("aporte"))) for m in out["sin_explicar"]), 2)
     bruto = round(sum(abs(_f(m.get("aporte"))) for m in movs), 2)
-    out["explicado_pct"] = round(100.0 * (1 - ciego / bruto), 1) if bruto else 100.0
+    ciego_total = round(ciego + residuo_abs, 2)
+    bruto_total = round(bruto + residuo_abs, 2)
+    out["explicado_pct"] = (round(100.0 * (1 - ciego_total / bruto_total), 1)
+                            if bruto_total else 100.0)
     out["ok"] = abs(out["residuo"]) < 1 and not out["sin_explicar"]
     return out
 
