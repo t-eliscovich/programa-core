@@ -27,33 +27,13 @@
   {% endif %}
 
   {% if puede_generar_manual %}
-  <div class="no-print mb-6 px-4 py-3 rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-700 text-sm">
-    <b>Generar manualmente</b> — para un mes que se cerró bien en
-    <code>scintela.historia</code> pero se quedó sin paquete (el disparo
-    automático sólo corre el MISMO día que cierra el mes; el cron mensual
-    siempre corre al día siguiente). Arma el PDF con el estado de HOY —
-    usalo sólo si todavía no cambió nada relevante desde el cierre real.
-    <form method="post" action="{{ url_for('informes.cierres_generar_manual') }}"
-          class="mt-2 flex items-center gap-2 flex-wrap" id="form-generar-manual">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      <input type="number" name="anio" placeholder="año (2026)"
-             class="w-24 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900" min="2020" max="2100">
-      <input type="number" name="mes" placeholder="mes (1-12)"
-             class="w-28 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900" min="1" max="12">
-      <button type="submit"
-              class="text-sm px-3 py-1.5 rounded border border-amber-500 text-amber-700 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40">
-        Generar y guardar
-      </button>
-      <span id="generar-manual-status" class="text-xs text-slate-500"></span>
-    </form>
-  </div>
-
   <div class="no-print mb-6 px-4 py-3 rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/40 dark:border-slate-700 text-sm">
-    <b>Subir un PDF a mano</b> — para un mes que cerró tarde, donde ni
-    siquiera "Generar y guardar" sirve (ya pasaron días y Cartera/Anticipos/
-    Gastos ya no se parecen al cierre real). Si alguien bajó el PDF real
-    el mismo día del cierre (por ejemplo con "Vista previa"), subilo acá
-    para archivarlo en el mismo lugar que los generados solos.
+    <b>Subir un PDF a mano</b> — para un mes que cerró tarde, donde ya
+    pasaron días y Cartera/Anticipos/Gastos ya no se parecen al cierre
+    real (armarlo con el estado de HOY archivaría un número falso). Si
+    alguien bajó el PDF real el mismo día del cierre (por ejemplo con
+    "Vista previa"), subilo acá para archivarlo en el mismo lugar que
+    los generados solos.
     <form method="post" action="{{ url_for('informes.cierres_subir_manual') }}"
           class="mt-2 flex items-center gap-2 flex-wrap" id="form-subir-manual">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -105,38 +85,6 @@
 
 {% if puede_generar_manual %}
 <script>
-(function () {
-  var form = document.getElementById('form-generar-manual');
-  if (!form) return;
-  var statusEl = document.getElementById('generar-manual-status');
-  form.addEventListener('submit', function (ev) {
-    ev.preventDefault();
-    var fd = new FormData(form);
-    statusEl.textContent = 'Generando…';
-    statusEl.style.color = '#64748b';
-    fetch(form.action, {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'X-CSRFToken': fd.get('csrf_token') },
-      body: fd,
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (j) {
-        if (j && j.ok) {
-          statusEl.textContent = j.razon || 'Listo ✓';
-          statusEl.style.color = '#16a34a';
-          setTimeout(function () { location.reload(); }, 800);
-        } else {
-          statusEl.textContent = (j && (j.razon || j.error)) || 'No se pudo generar';
-          statusEl.style.color = '#dc2626';
-        }
-      })
-      .catch(function () {
-        statusEl.textContent = 'No se pudo generar';
-        statusEl.style.color = '#dc2626';
-      });
-  });
-})();
 (function () {
   var form = document.getElementById('form-subir-manual');
   if (!form) return;

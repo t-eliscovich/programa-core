@@ -1980,38 +1980,6 @@ def cierres_vista_previa():
     )
 
 
-@informes_bp.route("/cierres/generar", methods=["POST"])
-@requiere_login
-@requiere_permiso("usuarios.admin")
-def cierres_generar_manual():
-    """Genera y GUARDA (a diferencia de "Vista previa") el paquete PDF de un
-    (anio, mes) puntual, con el estado de HOY.
-
-    Tamara 2026-09-01 — el disparo automático sólo corre el mismo día que
-    cierra el mes (`_es_live` en `crear_snapshot_historia`); el cron mensual
-    SIEMPRE corre al día siguiente, así que en la práctica ningún mes lo
-    dispara solo (agosto e igual julio se quedaron sin paquete). Este botón
-    es la vía manual para esos casos: admin-only, útil sobre todo los
-    primeros días del mes siguiente, mientras el estado de HOY todavía se
-    parece al del cierre (sin eso, archivaría pantallas de un mes distinto
-    con el rótulo del que cerró — por eso NO se dispara solo).
-    """
-    try:
-        anio = int(request.form.get("anio") or 0)
-        mes = int(request.form.get("mes") or 0)
-    except (TypeError, ValueError):
-        anio = mes = 0
-    if not (2020 <= anio <= 2100 and 1 <= mes <= 12):
-        return jsonify({"ok": False, "error": "período inválido"}), 400
-
-    from modules.informes import cierres_paquete
-
-    r = cierres_paquete.generar_y_guardar(
-        anio, mes, usuario=f"manual-{(g.user or {}).get('username', 'admin')}"
-    )
-    return jsonify({"ok": bool(r.get("aplicado")), **r})
-
-
 @informes_bp.route("/cierres/subir", methods=["POST"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
