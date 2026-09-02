@@ -9594,9 +9594,31 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
     utin = gv("v4") + gv("v5") + gv("v6") + ga("dcc")
     gasto = gv("v7") + gv("v8") + gv("v9") + ga("deprcar")
 
+    # Tamara 2026-09-02, "no es algo menor": kcom (kg de Materia Prima)
+    # reconstruido para agosto daba 523.712 kg contra 408.972 reales del PDF
+    # de cierre. `compras_mes_corriente().kg` es SUM(compra.kg) CRUDO, y el
+    # propio docstring de `kg_hilado_mes` documenta ese SUM roto para
+    # compras de importación: los recargos (CAE/flete/seguro) REPITEN el kg
+    # de la fila principal -- "70.354 kg contados dos veces", medido
+    # 31/07/2026. `compras_mes_corriente` ya calcula el número bueno
+    # (dedup por grupo de importación) y lo trae en `hilado_kg`, pero NO lo
+    # usa para valuar -- ese switch está apagado a propósito para el
+    # BALANCE EN VIVO (decisión de la dueña: no mover la utilidad ~$210k de
+    # golpe sin que se revise antes). Acá es distinto: esto sólo reconstruye
+    # el DETALLE de un mes YA CERRADO para reconciliar contra un papel
+    # externo -- ni gasto ni gstotal usan kcom/ucom, así que no hay riesgo
+    # de mover la utilidad. Usar el número deduplicado si Asinfo contestó
+    # (`disponible`); si no, cae al SUM crudo de siempre (fail-soft, igual
+    # que el resto de esta función).
+    _hil = (mp or {}).get("hilado_kg") or {}
+    kcom_valor = (
+        float(_hil["kg"]) if _hil.get("disponible") and _hil.get("kg") is not None
+        else float((mp or {}).get("kg") or 0)
+    )
+
     campos = {
         "ucom": float((mp or {}).get("importe") or 0),
-        "kcom": float((mp or {}).get("kg") or 0),
+        "kcom": kcom_valor,
         "utej": utej,
         "ktej": float((tej or {}).get("kg_total") or 0),
         "utin": utin,
@@ -9612,7 +9634,7 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
         "mes": mes,
         "campos": campos,
         "fuente": {
-            "ucom/kcom": "compras_mes_corriente(meses_atras) -- scintela.compra tipo H, fecha en el mes",
+            "ucom/kcom": "ucom: SUM(compra.importe) tipo H. kcom: compras_mes_corriente().hilado_kg (dedup por grupo de importación, kg_hilado_mes) si Asinfo contestó -- si no, SUM(compra.kg) crudo",
             "utej/ktej": "V1+V2+V3+amort(DTJ)+tejido_mes_componentes(meses_atras).us_externo -- xgast+compra",
             "utin": "V4+V5+V6+amort(DCC) -- scintela.xgast",
             "ktin": "tinto_mes_componentes(anio, mes).ktint -- scintela.tinto + formulas_app, fecha en el mes",
