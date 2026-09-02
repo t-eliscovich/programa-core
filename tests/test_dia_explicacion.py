@@ -1883,3 +1883,46 @@ def test_la_pantalla_festeja_el_dia_de_20000_kg(app, fake_db):
          patch.object(dia, "deuda_hoy", return_value={"n": 0, "total": 0.0}), \
          patch.object(dia, "racha_limpia", return_value=0):
         assert "🎉" not in c.get("/informes/dia").data.decode()
+
+
+# ---------------------------------------------------------------------------
+# OP = aporte del accionista, no una compra
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-02: septiembre arrancó con 90.152 de utilidad y el 01/09 dos
+# líneas OP habían sumado 117.887 — más que todo el arranque. En la pantalla
+# decían "Deuda nueva cargada", igual que una compra a un proveedor.
+
+
+def test_una_linea_op_se_llama_aporte_del_accionista():
+    etq = "Deuda OP 100335 · AC 47/49/54/55/61/62/67"
+    nombre, fam = dia.regla("totp", "alta", "p9001", -96_227.02, etq)
+    assert nombre == "Aporte del accionista (OP)"
+    # La familia NO cambia: mover el número de familia mueve la utilidad, y esa
+    # es una decisión de la dueña. Acá sólo se le pone nombre.
+    assert fam == "utilidad"
+
+
+def test_una_compra_normal_sigue_diciendo_deuda_nueva():
+    etq = "Deuda AQ 10106 · 165 30"
+    nombre, fam = dia.regla("totp", "alta", "p9002", 8_652.60, etq)
+    assert nombre == "Deuda nueva cargada"
+    assert fam == "utilidad"
+
+
+def test_no_confunde_un_proveedor_que_empieza_con_op():
+    """`OPM` es un cliente/proveedor real. El match pide 'OP' como palabra."""
+    nombre, _ = dia.regla("totp", "alta", "p9003", 1_000.0, "Deuda OPM 55 · algo")
+    assert nombre == "Deuda nueva cargada"
+
+
+def test_sin_etiqueta_se_comporta_como_antes():
+    """Los callers viejos (y los tests que llaman con 4 args) no cambian."""
+    assert dia.regla("totp", "alta", "p9004", 100.0)[0] == "Deuda nueva cargada"
+
+
+def test_la_linea_op_consumida_y_la_corregida_tambien_tienen_nombre():
+    etq = "Deuda OP 100334 · OP AI 52/53"
+    assert dia.regla("totp", "baja", "p9005", -21_659.97, etq)[0] == (
+        "Aporte del accionista (OP) consumido")
+    assert dia.regla("totp", "cambio", "p9005", 500.0, etq)[0] == (
+        "Aporte del accionista (OP) corregido")
