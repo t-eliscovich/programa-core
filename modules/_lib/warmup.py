@@ -36,7 +36,18 @@ _LOG = logging.getLogger(__name__)
 # Con 60s, cada caché se refresca como mucho 60s después de vencer, y un
 # usuario que caiga justo en la ventana paga 1-2 funciones (1-4s), no la
 # carga fría entera.
-_INTERVALO_SECS = 60
+_INTERVALO_SECS = 20
+
+#: Cuántos pasos corren A LA VEZ. TMT 2026-09-02 (dueña: *"¿páginas lentas?"*):
+#: medido en vivo, un ciclo frío tardaba 88 s corriendo los 33 pasos uno atrás
+#: del otro (facturas_rango_ancho 20 s, produccion_terminado 17 s, balance 13 s).
+#: Como todas las cachés vencen juntas —las carga el mismo ciclo—, cada 5 min
+#: había una ventana de hasta 88 s + 60 s en la que el que abría /pedidos o
+#: /produccion-terminado-asinfo pagaba la carga fría (10 s). De a tres, el
+#: ciclo baja a ~25 s; con el intervalo en 20 s la ventana queda en segundos.
+#: Tres y no diez: Metabase ya se ahogó con un JOIN (31/08) y los pasos que
+#: siguen son consultas pesadas contra el ERP de la fábrica.
+_PASOS_A_LA_VEZ = 3
 _started = False
 
 
@@ -172,7 +183,9 @@ def _warm_once() -> None:
     # calentador llegó a ella y cuánto tardó el ciclo. TMT 2026-09-02.
     corridos: list[dict] = []
     t_ciclo = time.time()
-    for nombre, fn in pasos:
+
+    def _correr(paso):
+        nombre, fn = paso
         t0 = time.time()
         error = ""
         try:
@@ -180,8 +193,18 @@ def _warm_once() -> None:
         except Exception as e:  # noqa: BLE001 -- fail-soft por paso
             error = str(e)[:200]
             _LOG.warning("warmup asinfo %s: %s", nombre, e)
-        corridos.append({"paso": nombre, "ms": round((time.time() - t0) * 1000),
-                         "error": error})
+        return {"paso": nombre, "ms": round((time.time() - t0) * 1000),
+                "error": error}
+
+    # El primero (alinear el balance) va SOLO y antes: tira dos cachés para
+    # releerlas juntas, y si corriera a la par de los pasos que las leen, les
+    # tiraría lo que acaban de traer. El resto va de a `_PASOS_A_LA_VEZ`.
+    corridos.append(_correr(pasos[0]))
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=_PASOS_A_LA_VEZ,
+                            thread_name_prefix="warmup-paso") as pool:
+        corridos.extend(pool.map(_correr, pasos[1:]))
     try:
         from modules._lib import medidor
 

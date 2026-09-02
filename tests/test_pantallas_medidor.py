@@ -20,6 +20,7 @@ Lo que protegen estos tests, en orden de qué tan caro sería que se rompa:
 from __future__ import annotations
 
 import inspect
+import time
 
 import pytest
 
@@ -400,3 +401,35 @@ def test_la_pantalla_muestra_el_puente_y_el_calentador(app, fake_db):
 def test_la_pantalla_sin_calentador_lo_dice(app, fake_db):
     html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
     assert "no terminó ningún ciclo" in html
+
+
+def test_el_calentador_corre_los_pasos_de_a_varios_y_alinea_primero(monkeypatch):
+    """TMT 2026-09-02: un ciclo frío de 88 s en serie dejaba ventanas de más
+    de un minuto con las pantallas de Asinfo frías. Los pasos van de a tres,
+    menos el primero (alinear el balance), que tira cachés y va solo, antes."""
+    import threading
+
+    from modules._lib import warmup
+
+    assert warmup._PASOS_A_LA_VEZ >= 2
+    assert warmup._INTERVALO_SECS <= 30
+    src = inspect.getsource(warmup._warm_once)
+    assert "corridos.append(_correr(pasos[0]))" in src
+    assert src.index("_correr(pasos[0])") < src.index("pool.map(_correr, pasos[1:])")
+
+    # Y que de verdad haya más de un hilo trabajando en un ciclo.
+    hilos = set()
+    from modules.asinfo import service as asvc
+
+    def _paso(*a, **k):
+        hilos.add(threading.current_thread().name)
+        time.sleep(0.05)
+        return []
+
+    for nombre in ("inventario_por_etapa", "movimiento_bodega_mes", "hilado_recibido_mes",
+                   "fabricacion_flujo_mes", "despacho_fisico_mes", "importaciones_asinfo",
+                   "importaciones_kg", "produccion_tejeduria_mes", "ventas_facturado_kg",
+                   "facturas_periodo", "stock_asinfo_lote_totales", "fabricacion_proceso"):
+        monkeypatch.setattr(asvc, nombre, _paso, raising=False)
+    warmup._warm_once()
+    assert len([h for h in hilos if h.startswith("warmup-paso")]) >= 2
