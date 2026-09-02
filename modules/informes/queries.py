@@ -2906,6 +2906,17 @@ def _periodo_actual_ec() -> str:
     return (row or {}).get("p") or ""
 
 
+def _periodo_nombre_es(periodo: str | None) -> str:
+    """'2026-08' → 'agosto 2026'. Devuelve el período crudo si no parsea."""
+    from modules.iniciales.queries import MESES_ES
+
+    try:
+        y, m = str(periodo or "").split("-")
+        return f"{MESES_ES[int(m) - 1].lower()} {int(y)}"
+    except (ValueError, IndexError, TypeError):
+        return str(periodo or "")
+
+
 def _periodo_anterior_ec() -> str:
     """Período 'YYYY-MM' del mes ANTERIOR al mes en curso (hora Ecuador)."""
     row = db.fetch_one(
@@ -3019,7 +3030,24 @@ def gastos_proyectado_mes_get(periodo: str | None = None) -> dict:
     Tamara 2026-07-22: reemplaza el localStorage por navegador que usaba la
     fila "Gastos proyectados este mes" de /informes/gastos. Ahora se guardan en
     `scintela.gastos_proyectado_mes`, compartidos por todos los usuarios.
-    Devuelve 0 en cada rubro si no hay fila cargada para el período.
+
+    Andrés 2026-09-02 ("la proyección de la utilidad está dando un valor raro"):
+    esta tabla NO tenía rollover de mes. El día 1 de cada mes la fila del período
+    nuevo no existe todavía → los tres rubros salían 0, y como la Utilidad
+    Esperada del balance es `venta proyectada − GASTOS PROYECTADOS − costo
+    directo`, el gasto fijo del mes entero desaparecía de la cuenta y la utilidad
+    se disparaba (de más, por todo el presupuesto: cientos de miles de U$). De
+    yapa, la columna "Proyecciones" de Tejeduría / Tintorería / Administración /
+    Costo Total quedaba en blanco.
+
+    Ahora, si falta la fila del período, HEREDA la del último período anterior
+    que tenga algo cargado — el mismo criterio de rollover que ya usa
+    `scintela.iniciales` (ver `auto_cerrar_mes_si_corresponde`). El valor
+    heredado es de sólo lectura: no se escribe una fila nueva, así que en cuanto
+    alguien guarda el presupuesto real del mes, éste pisa la herencia.
+
+    Devuelve además `heredado` (bool) y `periodo_origen` (de qué mes salieron los
+    números) para que la pantalla lo diga en vez de disimularlo.
     """
     per = periodo or _periodo_actual_ec()
     row = db.fetch_one(
@@ -3030,11 +3058,48 @@ def gastos_proyectado_mes_get(periodo: str | None = None) -> dict:
         """,
         (per,),
     )
+    if row:
+        return {
+            "periodo": per,
+            "tej": float(row.get("tej") or 0),
+            "tin": float(row.get("tin") or 0),
+            "adm": float(row.get("adm") or 0),
+            "heredado": False,
+            "periodo_origen": per,
+        }
+
+    # Sin fila para el período → heredar el último mes cargado. `periodo` es
+    # TEXT 'YYYY-MM' (migración 0126), así que el orden lexicográfico ES el
+    # cronológico. Se exige total > 0: una fila vieja en cero no es presupuesto,
+    # es lo mismo que no tener nada.
+    prev = db.fetch_one(
+        """
+        SELECT periodo, tej, tin, adm
+          FROM scintela.gastos_proyectado_mes
+         WHERE periodo < %s
+           AND (COALESCE(tej, 0) + COALESCE(tin, 0) + COALESCE(adm, 0)) > 0
+         ORDER BY periodo DESC
+         LIMIT 1
+        """,
+        (per,),
+    )
+    if not prev:
+        return {
+            "periodo": per,
+            "tej": 0.0,
+            "tin": 0.0,
+            "adm": 0.0,
+            "heredado": False,
+            "periodo_origen": None,
+        }
     return {
         "periodo": per,
-        "tej": float((row or {}).get("tej") or 0),
-        "tin": float((row or {}).get("tin") or 0),
-        "adm": float((row or {}).get("adm") or 0),
+        "tej": float(prev.get("tej") or 0),
+        "tin": float(prev.get("tin") or 0),
+        "adm": float(prev.get("adm") or 0),
+        "heredado": True,
+        "periodo_origen": prev.get("periodo"),
+        "periodo_origen_nom": _periodo_nombre_es(prev.get("periodo")),
     }
 
 

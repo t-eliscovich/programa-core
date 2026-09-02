@@ -327,6 +327,19 @@
         <tr class="proyectado no-print">
           <td class="row-label">
             Gs. Proy. mes actual
+            {# Andrés 2026-09-02 — el presupuesto no tenía rollover: el día 1 los
+               tres casilleros salían vacíos y la Utilidad Esperada del balance
+               (venta proy − ESTOS gastos − costo directo) se disparaba por todo
+               el gasto fijo del mes. Ahora se heredan del último mes cargado y
+               lo decimos acá; en cuanto se guardan valores propios, el aviso se
+               va (la fila del período ya existe). #}
+            {% if proy and proy.heredado %}
+              <span id="proy-heredado"
+                    style="font-weight:400;font-size:11px;color:#b45309;margin-left:6px;"
+                    title="Todavía no se cargó el presupuesto de gastos de este mes. Mientras tanto el balance usa estos valores. Editalos y se guardan para el mes en curso.">
+                heredados de {{ proy.periodo_origen_nom or proy.periodo_origen }} — revisalos
+              </span>
+            {% endif %}
             <span id="proy-status" style="font-weight:400;font-size:11px;color:#64748b;margin-left:6px;"></span>
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           </td>
@@ -414,7 +427,12 @@
     })
       .then(function (r) { return r.json(); })
       .then(function (j) {
-        if (j && j.ok) { setStatus('Guardado ✓', '#16a34a'); }
+        if (j && j.ok) {
+          setStatus('Guardado ✓', '#16a34a');
+          // Ya hay fila propia del período: dejan de ser heredados.
+          var her = document.getElementById('proy-heredado');
+          if (her && her.parentNode) her.parentNode.removeChild(her);
+        }
         else { setStatus('No se pudo guardar', '#dc2626'); }
       })
       .catch(function () { setStatus('No se pudo guardar', '#dc2626'); });
