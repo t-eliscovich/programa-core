@@ -433,18 +433,6 @@ armada para el próximo.
 cerrados no bloquea nada el resto de la vida del proceso (salvo
 `PERIODO_GUARD_STRICT=1`). Determinístico, no transitorio, pero vale saberlo.
 
-### [M] compras_mes_corriente (Materia Prima) no cuadra contra el papel
-Al reconstruir "Detalle real de 2026-08" (`/admin/regenerar-snapshot/`) para
-el incidente de agosto (ver `historia_detalle_mes_cerrado`), Materia Prima
-dio kg=523.712 / $1.319.703 -- el PDF de cierre ("Vista previa cierre
-31-08-2026") muestra COMPRAS HILADO 408.972 kg / $1.289.746 (tipo='H', igual
-filtro). El $ está cerca (+2,3%) pero el kg difiere ~28%. No se tocó (no es
-lo que reportó Tamara, y `kcom/ucom` no entran en la identidad Activo=
-Pasivo+Patrimonio que ya vigila `/admin/health/historia-balance-cierra`) --
-pero huele a que el ajuste de kg de compras BAP/importación (comentario
-2026-07-23 en la misma función) esté sumando de más para un mes ya cerrado.
-Revisar antes de usar esta función para el próximo cierre atrasado.
-
 ---
 
 ## Proceso
