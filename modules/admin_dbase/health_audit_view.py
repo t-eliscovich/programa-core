@@ -2300,28 +2300,19 @@ def saldos_alertas(resumen: dict) -> dict:
 _HISTORIA_BALANCE_TOL_US = 1000.0
 
 
-@bp.route("/historia-balance-cierra", methods=["GET"])
-@requiere_login
-@requiere_permiso("usuarios.admin")
-def historia_balance_cierra():
-    """Alerta si, en la última fila de `scintela.historia`, Total Activo
-    (banco+cart+anticipos+ustock+uqui+maquinaria+realty) no cierra contra
-    Pasivo (deuda) + Patrimonio."""
-    alerts = []
-    stats = {}
+_HISTORIA_BALANCE_COLS = """
+    SELECT id_historia, fecha, banco, cart, anticipos, ustock, uqui,
+           maquinaria, realty, deuda, patrimonio, usuario_crea
+      FROM scintela.historia
+"""
 
-    row = db.fetch_one(
-        """
-        SELECT id_historia, fecha, banco, cart, anticipos, ustock, uqui,
-               maquinaria, realty, deuda, patrimonio, usuario_crea
-          FROM scintela.historia
-         ORDER BY fecha DESC, id_historia DESC
-         LIMIT 1
-        """
-    )
-    if not row:
-        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
 
+def _historia_balance_evaluar(row, etiqueta):
+    """Total Activo vs Pasivo+Patrimonio sobre UNA fila de historia.
+
+    Devuelve (stats, alerta_o_None). `etiqueta` dice qué fila es, porque las
+    dos que miramos se rompen por motivos distintos.
+    """
     total_activo = (
         float(row.get("banco") or 0) + float(row.get("cart") or 0)
         + float(row.get("anticipos") or 0) + float(row.get("ustock") or 0)
@@ -2330,27 +2321,83 @@ def historia_balance_cierra():
     )
     esperado = float(row.get("deuda") or 0) + float(row.get("patrimonio") or 0)
     delta = total_activo - esperado
+    stats = {
+        "id_historia": row.get("id_historia"),
+        "fecha": str(row.get("fecha")),
+        "usuario_crea": row.get("usuario_crea"),
+        "total_activo": round(total_activo, 2),
+        "pasivo_mas_patrimonio": round(esperado, 2),
+        "patrimonio": round(float(row.get("patrimonio") or 0), 2),
+        "delta": round(delta, 2),
+    }
+    if abs(delta) < _HISTORIA_BALANCE_TOL_US:
+        return stats, None
+    return stats, {
+        "severity": "high",
+        "category": "balance_no_cierra",
+        "msg": (
+            f"scintela.historia id={row.get('id_historia')} "
+            f"({row.get('fecha')}, usuario_crea={row.get('usuario_crea')}, "
+            f"{etiqueta}): Total Activo − (Pasivo+Patrimonio) = {delta:+,.2f}. "
+            f"Revisar banco/cart/anticipos/ustock/uqui/maquinaria/realty "
+            f"contra un papel verificado -- mismo síntoma que el "
+            f"incidente de agosto 2026."
+        ),
+    }
 
-    stats["id_historia"] = row.get("id_historia")
-    stats["fecha"] = str(row.get("fecha"))
-    stats["usuario_crea"] = row.get("usuario_crea")
-    stats["total_activo"] = round(total_activo, 2)
-    stats["pasivo_mas_patrimonio"] = round(esperado, 2)
-    stats["delta"] = round(delta, 2)
 
-    if abs(delta) >= _HISTORIA_BALANCE_TOL_US:
-        alerts.append({
-            "severity": "high",
-            "category": "balance_no_cierra",
-            "msg": (
-                f"scintela.historia id={row.get('id_historia')} "
-                f"({row.get('fecha')}, usuario_crea={row.get('usuario_crea')}): "
-                f"Total Activo − (Pasivo+Patrimonio) = {delta:+,.2f}. "
-                f"Revisar banco/cart/anticipos/ustock/uqui/maquinaria/realty "
-                f"contra un papel verificado -- mismo síntoma que el "
-                f"incidente de agosto 2026."
-            ),
-        })
+@bp.route("/historia-balance-cierra", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def historia_balance_cierra():
+    """Alerta si Total Activo (banco+cart+anticipos+ustock+uqui+maquinaria+
+    realty) no cierra contra Pasivo (deuda) + Patrimonio.
+
+    Mira DOS filas, no una:
+
+    * `ultima` — la última fila escrita. Es lo que este chequeo hacía desde que
+      se creó (2026-09-01).
+    * `patant` — la fila de CIERRE que alimenta el PATANT del mes en curso, o
+      sea la que fija la utilidad de todos los días del mes.
+
+    Tamara 2026-09-02 — el chequeo nació el 01/09 para que el desbalance de
+    agosto ($976K) "no vuelva a pasar", pero miraba sólo `ORDER BY fecha DESC
+    LIMIT 1`. Apenas se escribió la primera foto diaria de septiembre, la última
+    fila pasó a ser esa foto —que se rehace todos los días y siempre cierra— y
+    el cierre de agosto quedó fuera del radar para siempre. Era la única fila
+    que importaba: el mes entero come de su `patrimonio`.
+
+    La consulta de `patant` es LA MISMA que `informes.queries.historia_ultimo_mes`
+    (fecha < primer día del mes en curso, hora Ecuador). No es una definición
+    nueva: si se cambia allá hay que cambiarla acá, y por eso va con el mismo
+    comentario.
+    """
+    alerts = []
+    stats = {}
+
+    ultima = db.fetch_one(
+        _HISTORIA_BALANCE_COLS + " ORDER BY fecha DESC, id_historia DESC LIMIT 1"
+    )
+    if ultima:
+        st, al = _historia_balance_evaluar(ultima, "última fila")
+        stats["ultima"] = st
+        if al:
+            alerts.append(al)
+
+    patant = db.fetch_one(
+        _HISTORIA_BALANCE_COLS
+        + """ WHERE fecha < date_trunc('month',
+                     (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)::date
+             ORDER BY fecha DESC, id_historia DESC
+             LIMIT 1"""
+    )
+    if patant:
+        st, al = _historia_balance_evaluar(
+            patant, "cierre que alimenta el PATANT del mes en curso"
+        )
+        stats["patant"] = st
+        if al:
+            alerts.append(al)
 
     return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
 
