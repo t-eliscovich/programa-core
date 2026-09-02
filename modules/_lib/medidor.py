@@ -79,9 +79,11 @@ def arrancar() -> None:
     _LOCAL.peor_sql = ""
     _LOCAL.puente_ms = 0.0
     _LOCAL.puente_n = 0
+    _LOCAL.asinfo_ms = 0.0
+    _LOCAL.formulas_ms = 0.0
 
 
-def anotar_puente(ms: float) -> None:
+def anotar_puente(ms: float, fuente: str = "asinfo") -> None:
     """Una ida al PUENTE que terminó — Metabase (Asinfo) o la base de formulas.
 
     TMT 2026-09-02 (dueña: *"¿páginas lentas?"*). Medidas las pantallas en
@@ -95,6 +97,12 @@ def anotar_puente(ms: float) -> None:
         return
     _LOCAL.puente_ms = getattr(_LOCAL, "puente_ms", 0.0) + ms
     _LOCAL.puente_n = getattr(_LOCAL, "puente_n", 0) + 1
+    # Y por separado, porque se arreglan distinto: Asinfo pasa por Metabase
+    # (≥ 500 ms cada ida, se cachea) y formulas es un Postgres al lado (ms).
+    if fuente == "formulas":
+        _LOCAL.formulas_ms = getattr(_LOCAL, "formulas_ms", 0.0) + ms
+    else:
+        _LOCAL.asinfo_ms = getattr(_LOCAL, "asinfo_ms", 0.0) + ms
 
 
 def anotar_consulta(ms: float, sql: str) -> None:
@@ -118,6 +126,8 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
     n, ms_sql = getattr(_LOCAL, "n", 0), getattr(_LOCAL, "ms", 0.0)
     peor_ms, peor_sql = getattr(_LOCAL, "peor_ms", 0.0), getattr(_LOCAL, "peor_sql", "")
     puente_ms, puente_n = getattr(_LOCAL, "puente_ms", 0.0), getattr(_LOCAL, "puente_n", 0)
+    asinfo_ms = getattr(_LOCAL, "asinfo_ms", 0.0)
+    formulas_ms = getattr(_LOCAL, "formulas_ms", 0.0)
     _LOCAL.activo = False
     if not activo or not ruta:
         return
@@ -131,7 +141,7 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
                 "ruta": ruta, "metodo": metodo, "visitas": 0, "ms": [],
                 "ms_max": 0.0, "consultas": 0, "consultas_max": 0,
                 "ms_sql": 0.0, "peor_sql": "", "peor_sql_ms": 0.0,
-                "ms_puente": 0.0, "puente": 0,
+                "ms_puente": 0.0, "puente": 0, "ms_asinfo": 0.0, "ms_formulas": 0.0,
             }
         fila["visitas"] += 1
         fila["ms"].append(ms)
@@ -142,6 +152,8 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
         fila["ms_sql"] += ms_sql
         fila["ms_puente"] += puente_ms
         fila["puente"] += puente_n
+        fila["ms_asinfo"] += asinfo_ms
+        fila["ms_formulas"] += formulas_ms
         if peor_ms > fila["peor_sql_ms"]:
             fila["peor_sql_ms"], fila["peor_sql"] = peor_ms, peor_sql
 
@@ -150,6 +162,7 @@ def cerrar(ruta: str, metodo: str, ms: float, codigo: int = 200) -> None:
                 "ruta": ruta, "metodo": metodo, "codigo": codigo, "ms": round(ms),
                 "consultas": n, "ms_sql": round(ms_sql),
                 "puente": puente_n, "ms_puente": round(puente_ms),
+                "ms_asinfo": round(asinfo_ms), "ms_formulas": round(formulas_ms),
                 "peor_sql": peor_sql, "peor_sql_ms": round(peor_ms),
                 "cuando": time.time(),
             })
@@ -179,6 +192,8 @@ def resumen() -> list[dict]:
         f["ms_sql_prom"] = round(f["ms_sql"] / max(1, f["visitas"]))
         f["ms_puente_prom"] = round(f["ms_puente"] / max(1, f["visitas"]))
         f["puente_prom"] = round(f["puente"] / max(1, f["visitas"]), 1)
+        f["ms_asinfo_prom"] = round(f["ms_asinfo"] / max(1, f["visitas"]))
+        f["ms_formulas_prom"] = round(f["ms_formulas"] / max(1, f["visitas"]))
         f["peor_sql_ms"] = round(f["peor_sql_ms"])
         salida.append(f)
     salida.sort(key=lambda f: -f["total_s"])

@@ -299,14 +299,17 @@ def test_el_puente_se_cuenta_aparte_de_la_base():
     medidor.arrancar()
     medidor.anotar_consulta(5, "SELECT 1")
     medidor.anotar_puente(700)
-    medidor.anotar_puente(300)
+    medidor.anotar_puente(300, "formulas")
     medidor.cerrar("/produccion-terminado-asinfo", "GET", 1200)
     f = medidor.resumen()[0]
     assert f["ms_sql_prom"] == 5
     assert f["ms_puente_prom"] == 1000
     assert f["puente_prom"] == 2
+    # Y por separado: Asinfo se cachea, formulas no hace falta.
+    assert f["ms_asinfo_prom"] == 700 and f["ms_formulas_prom"] == 300
     lenta = medidor.lentas()[0]
     assert lenta["ms_puente"] == 1000 and lenta["puente"] == 2
+    assert lenta["ms_asinfo"] == 700 and lenta["ms_formulas"] == 300
 
 
 def test_una_ida_al_puente_desde_un_hilo_de_fondo_no_se_cuenta():
@@ -345,12 +348,13 @@ def test_formulas_le_avisa_al_medidor(monkeypatch):
     formulas_db.fetch_one("SELECT 1")
     medidor.cerrar("/z", "GET", 10)
     assert medidor.resumen()[0]["puente_prom"] == 2
+    assert medidor.resumen()[0]["ms_asinfo_prom"] == 0     # fue formulas, no Asinfo
 
 
 def test_medir_el_puente_no_puede_romper_la_consulta(monkeypatch):
     from modules._lib import formulas_db
 
-    monkeypatch.setattr(medidor, "anotar_puente", lambda ms: 1 / 0)
+    monkeypatch.setattr(medidor, "anotar_puente", lambda ms, *a: 1 / 0)
     formulas_db._medir(0.0)             # no tira: eso es todo el test
     from modules._lib import metabase_client
     metabase_client._anotar(2, 1.0, True)

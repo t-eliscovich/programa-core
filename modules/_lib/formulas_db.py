@@ -88,7 +88,7 @@ def _medir(t0: float) -> None:
     try:
         from modules._lib import medidor
 
-        medidor.anotar_puente((time.monotonic() - t0) * 1000)
+        medidor.anotar_puente((time.monotonic() - t0) * 1000, "formulas")
     except Exception:  # noqa: BLE001
         pass
 

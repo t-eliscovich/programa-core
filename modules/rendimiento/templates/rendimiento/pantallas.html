@@ -73,7 +73,9 @@
           </td>
           <td class="px-3 py-2 text-right text-slate-500">{{ f.ms_sql_prom }} ms</td>
           <td class="px-3 py-2 text-right {{ 'text-rose-700 dark:text-rose-400 font-semibold' if f.ms_puente_prom >= 500 else 'text-slate-500' }}">
-            {% if f.puente_prom %}{{ f.ms_puente_prom }} ms ({{ f.puente_prom }}){% else %}—{% endif %}
+            {% if f.puente_prom %}{{ f.ms_puente_prom }} ms ({{ f.puente_prom }})
+              <div class="text-xs font-normal text-slate-500">Asinfo {{ f.ms_asinfo_prom }} · formulas {{ f.ms_formulas_prom }}</div>
+            {% else %}—{% endif %}
           </td>
         </tr>
         {% if f.peor_sql %}
@@ -110,7 +112,7 @@
           <td class="px-3 py-2 text-right font-semibold">{{ v.ms }} ms</td>
           <td class="px-3 py-2 text-right text-slate-500">{{ v.consultas }} consultas</td>
           <td class="px-3 py-2 text-right text-slate-500">{{ v.ms_sql }} ms de base</td>
-          <td class="px-3 py-2 text-right text-slate-500">{% if v.puente %}{{ v.ms_puente }} ms de puente ({{ v.puente }}){% endif %}</td>
+          <td class="px-3 py-2 text-right text-slate-500">{% if v.puente %}{{ v.ms_puente }} ms de puente ({{ v.puente }}: Asinfo {{ v.ms_asinfo }} · formulas {{ v.ms_formulas }}){% endif %}</td>
           <td class="px-3 py-2 text-xs text-slate-500">
             {% if v.peor_sql %}la peor: {{ v.peor_sql_ms }} ms{% endif %}
           </td>

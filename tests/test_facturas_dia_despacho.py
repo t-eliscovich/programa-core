@@ -466,3 +466,47 @@ def test_la_fila_que_coincide_no_se_pinta(app, fake_db):
         body = c.get("/facturas/dia?fecha=2026-08-19").get_data(as_text=True)
     cuerpo = body[body.index("Guías del día"):]
     assert "bg-red-50" not in cuerpo
+
+
+# ── Las cuatro preguntas a Asinfo van a la vez (TMT 2026-09-02) ─────────────
+# Medida en vivo, la pantalla tardaba 2,0 s SIEMPRE con 10 ms de base propia:
+# eran los cuatro peajes del puente, uno atrás del otro.
+
+def test_las_cuatro_preguntas_a_asinfo_van_a_la_vez():
+    import threading
+    import time
+
+    hilos = set()
+
+    def _lenta(valor):
+        def _f(dia):
+            hilos.add(threading.current_thread().name)
+            time.sleep(0.15)
+            return valor
+        return _f
+
+    t0 = time.monotonic()
+    with patch.object(dd, "_documentos_pc", return_value=_pc(_DOCS)), \
+         patch.object(dd, "_guias", _lenta(_GUIAS)), \
+         patch.object(dd, "_kg_con_guia_de_hoy", _lenta({"001-099-000182010": 612.35})), \
+         patch.object(dd, "_doc_por_guia", _lenta({"DES-95512": {"001-099-000182010": 612.35}})), \
+         patch.object(dd, "_docs_sin_autorizar", _lenta(set())):
+        d = dd.cuadre(DIA)
+    tardo = time.monotonic() - t0
+    assert d["residuo"] == 0.0 and d["asinfo_ok"] is True
+    assert len(hilos) >= 2, "corrieron en un solo hilo: una atrás de otra"
+    assert tardo < 0.45, f"4 × 0,15 s en serie = 0,6 s; a la vez ≈ 0,15 s (tardó {tardo:.2f})"
+
+
+def test_si_una_de_las_cuatro_falla_la_pantalla_sigue_sin_asinfo():
+    def _explota(dia):
+        raise RuntimeError("Metabase caído")
+
+    with patch.object(dd, "_documentos_pc", return_value=_pc(_DOCS)), \
+         patch.object(dd, "_guias", return_value=_GUIAS), \
+         patch.object(dd, "_kg_con_guia_de_hoy", return_value={}), \
+         patch.object(dd, "_doc_por_guia", _explota), \
+         patch.object(dd, "_docs_sin_autorizar", return_value=set()):
+        d = dd.cuadre(DIA)
+    assert d["asinfo_ok"] is False
+    assert d["facturado"]["kg"] == 1014.70

@@ -260,10 +260,22 @@ def cuadre(fecha) -> dict:
     sin_autorizar_docs: set[str] = set()
     asinfo_ok = True
     try:
-        guias = _guias(dia)
-        ligado = _kg_con_guia_de_hoy(dia)
-        por_guia = _doc_por_guia(dia)
-        sin_autorizar_docs = _docs_sin_autorizar(dia)
+        # Las cuatro preguntas a Asinfo no dependen una de otra: van A LA VEZ.
+        # TMT 2026-09-02 (dueña: *"¿páginas lentas?"*): medida en vivo, la
+        # pantalla tardaba 2,0 s SIEMPRE con 10 ms de base propia — eran los
+        # cuatro peajes del puente, uno atrás del otro. Juntos cuestan lo que
+        # el más lento.
+        from concurrent.futures import ThreadPoolExecutor
+
+        with ThreadPoolExecutor(max_workers=4, thread_name_prefix="cuadre") as pool:
+            f_guias = pool.submit(_guias, dia)
+            f_ligado = pool.submit(_kg_con_guia_de_hoy, dia)
+            f_por_guia = pool.submit(_doc_por_guia, dia)
+            f_sin_aut = pool.submit(_docs_sin_autorizar, dia)
+        guias = f_guias.result()
+        ligado = f_ligado.result()
+        por_guia = f_por_guia.result()
+        sin_autorizar_docs = f_sin_aut.result()
     except Exception as e:  # noqa: BLE001 -- el ERP nunca tumba la pantalla
         _LOG.warning("no pude leer los despachos del %s: %s", dia, e)
         asinfo_ok = False
