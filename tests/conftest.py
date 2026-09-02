@@ -209,10 +209,13 @@ def _vaciar_cache_tintoreria_mensual():
     hereda entre tests: un test que falsea las órdenes del mes le dejaría
     su tabla al siguiente."""
     from modules.comparativa_tintoreria import views as _ctv
+    from modules.tintura import service as _tsvc
 
     _ctv.reset_tintoreria_mensual_cache()
+    _tsvc.reset_tinto_equiv_cache()
     yield
     _ctv.reset_tintoreria_mensual_cache()
+    _tsvc.reset_tinto_equiv_cache()
 
 
 @pytest.fixture(autouse=True)

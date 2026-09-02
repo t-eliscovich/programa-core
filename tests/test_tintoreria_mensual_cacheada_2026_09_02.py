@@ -69,3 +69,43 @@ def test_el_calentador_la_refresca():
     from modules._lib import warmup
 
     assert "tintoreria_mensual_cacheada(yy, mm)" in inspect.getsource(warmup._warm_once)
+
+
+# ── Las órdenes del mes de formulas, cacheadas ──────────────────────────────
+
+def test_las_ordenes_del_mes_se_piden_una_vez_por_tres_minutos(monkeypatch):
+    from datetime import date
+
+    from modules.tintura import service as tsvc
+
+    llamadas = []
+    monkeypatch.setattr(tsvc, "_tinto_equiv_formulas",
+                        lambda d, h, ex: llamadas.append((d, h, ex)) or ["orden"])
+    a = tsvc.tinto_equiv_formulas(date(2026, 9, 1), date(2026, 9, 30), excluir_lavados=False)
+    b = tsvc.tinto_equiv_formulas(date(2026, 9, 1), date(2026, 9, 30), excluir_lavados=False)
+    assert a == b == ["orden"] and len(llamadas) == 1
+    tsvc.tinto_equiv_formulas(date(2026, 9, 1), date(2026, 9, 30))   # con lavados excluidos: otra
+    assert len(llamadas) == 2
+    a.append("mutación del que llamó")
+    assert tsvc.tinto_equiv_formulas(date(2026, 9, 1), date(2026, 9, 30), excluir_lavados=False) == ["orden"]
+
+
+def test_sin_ordenes_no_se_cachea(monkeypatch):
+    from modules.tintura import service as tsvc
+
+    respuestas = [[], ["orden"]]
+    monkeypatch.setattr(tsvc, "_tinto_equiv_formulas", lambda d, h, ex: respuestas.pop(0))
+    assert tsvc.tinto_equiv_formulas() == []
+    assert tsvc.tinto_equiv_formulas() == ["orden"]
+
+
+def test_el_balance_lee_el_quimico_por_la_cache_del_flujo():
+    """`quimicos_flujo.fisico_total_al_dia` es el MISMO número que pedía el
+    balance a formulas en cada visita, con 240 s de caché y calentador. Y el
+    colorante físico (otra ida) sólo se pide si el total no está."""
+    from modules.informes import queries as q
+
+    src = inspect.getsource(q.informe_balance)
+    assert "_qf_bal.fisico_total_al_dia(today_ec())" in src
+    assert "quimico_total_fisico(today_ec())" not in src
+    assert src.index("fisico_total_al_dia(today_ec())") < src.index("stock_colorante_fisico(today_ec())")

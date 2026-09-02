@@ -707,7 +707,40 @@ def costo_por_orden(
     return {str(r.get("numero") or ""): _f(r.get("costo_us")) for r in rows}
 
 
+# TMT 2026-09-02 (dueña: *"¿páginas lentas?"*). El balance pide las órdenes
+# del mes DOS veces por visita (tinto del mes y bajos/fuertes), y el flujo
+# otra: la misma pregunta a formulas, ~50–100 ms cada una, en cada pantalla.
+# Las órdenes de tintura cambian de a pocas por día: 3 minutos de caché por
+# (desde, hasta, lavados). Un fallo ([]) no se guarda.
+_EQUIV_CACHE: dict[tuple, tuple[float, list]] = {}
+_EQUIV_TTL_SECS = 180.0
+
+
+def reset_tinto_equiv_cache() -> None:
+    """Olvida las órdenes cacheadas (tests, y quien quiera el dato fresco)."""
+    _EQUIV_CACHE.clear()
+
+
 def tinto_equiv_formulas(
+    creacion_desde: date | None = None,
+    creacion_hasta: date | None = None,
+    excluir_lavados: bool = True,
+) -> list[TintoEquivOrden]:
+    """`_tinto_equiv_formulas` con caché de 3 minutos (ver arriba)."""
+    import time as _t
+
+    clave = (creacion_desde, creacion_hasta, bool(excluir_lavados))
+    ahora = _t.time()
+    guardado = _EQUIV_CACHE.get(clave)
+    if guardado and (ahora - guardado[0]) < _EQUIV_TTL_SECS:
+        return list(guardado[1])
+    filas = _tinto_equiv_formulas(creacion_desde, creacion_hasta, excluir_lavados)
+    if filas:
+        _EQUIV_CACHE[clave] = (ahora, list(filas))
+    return filas
+
+
+def _tinto_equiv_formulas(
     creacion_desde: date | None = None,
     creacion_hasta: date | None = None,
     excluir_lavados: bool = True,

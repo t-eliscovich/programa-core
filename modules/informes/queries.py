@@ -5623,17 +5623,24 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     global _VQX_ULTIMO_BUENO
     _vqx_bueno = False
     try:
-        from modules.tintura import service as _tsvc_q
-        _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
-        if _vqx_col > 0:
-            vqx = _vqx_col   # fallback: colorante físico
-        # TOTAL (incluye auxiliares) = mismo número que el flujo / formulas.
-        from modules.informes.quimico_inv_formulas import quimico_total_fisico
-        _vqx_tot = quimico_total_fisico(today_ec())
+        # TOTAL (incluye auxiliares) = mismo número que el flujo / formulas —
+        # y por la MISMA caché que usa el flujo (`quimicos_flujo`, 240 s, la
+        # refresca el calentador). TMT 2026-09-02 (dueña: *"¿páginas
+        # lentas?"*): el balance pedía este número a formulas en cada visita
+        # (157 ms) y ANTES, por las dudas, el colorante físico (otra ida) que
+        # sólo sirve si el total no está. Ahora el total va primero, cacheado,
+        # y el colorante se pide únicamente cuando hace falta.
+        from modules.informes import quimicos_flujo as _qf_bal
+        _vqx_tot = _qf_bal.fisico_total_al_dia(today_ec())
         if _vqx_tot is not None and _vqx_tot > 0:
             vqx = float(_vqx_tot)   # Stock Quí. = químico total (con aux) → entra a la utilidad
             _vqx_bueno = True
             _VQX_ULTIMO_BUENO = vqx
+        else:
+            from modules.tintura import service as _tsvc_q
+            _vqx_col = float(_tsvc_q.stock_colorante_fisico(today_ec()) or 0)
+            if _vqx_col > 0:
+                vqx = _vqx_col   # fallback: colorante físico
     except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
         pass
     if not _vqx_bueno and _VQX_ULTIMO_BUENO:
