@@ -516,7 +516,19 @@ def hay_desfase(filas: list[dict]) -> bool:
     return any((f.get("doc_id") or "").startswith("#ajuste:") for f in filas)
 
 
-def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, str]:
+def _es_op(etiqueta: str | None) -> bool:
+    """¿Esta fila de posdat es una línea OP (aporte del accionista)?
+
+    `_det_totp` arma la etiqueta como `f"Deuda {prov} {num} · {concepto}"`, así
+    que el proveedor está ahí. El `doc_id` es `p{id_posdat}` y NO lo trae — y no
+    se puede cambiar, porque es la clave con la que se matchea contra la foto
+    anterior.
+    """
+    return (etiqueta or "").strip().upper().startswith("DEUDA OP ")
+
+
+def regla(componente: str, tipo: str, doc_id: str, delta: float,
+          etiqueta: str | None = "") -> tuple[str, str]:
     """(nombre en castellano, familia) de un movimiento.
 
     `familia`:
@@ -556,6 +568,27 @@ def regla(componente: str, tipo: str, doc_id: str, delta: float) -> tuple[str, s
     if componente == "totp":
         # Ojo con el signo: `delta` es del componente, y el pasivo aporta al
         # revés. Una deuda que SUBE (delta > 0) BAJA la utilidad.
+        #
+        # ⭐ Tamara 2026-09-02 — OP NO es una compra: es el aporte del accionista
+        # (over-price), que se carga como una compra NEGATIVA y por lo tanto
+        # REDUCE el pasivo. Como un pasivo que baja sube la utilidad uno a uno,
+        # una línea OP nueva entra al día como resultado positivo sin serlo: es
+        # capital que entró, no algo que se ganó vendiendo.
+        #
+        # El 01/09/2026 fueron DOS líneas —OP 100335 y OP 100334— por 117.887,
+        # y septiembre arrancó con 90.152 de utilidad. O sea que el aporte
+        # explica MÁS que todo el arranque, y en la pantalla decía sólo "Deuda
+        # nueva cargada", igual que una compra a un proveedor.
+        #
+        # Acá se le pone NOMBRE. La FAMILIA no cambia a propósito: moverla de
+        # familia mueve la utilidad, y esa es una decisión de la dueña, no algo
+        # que deba colarse en un rótulo.
+        if _es_op(etiqueta):
+            if tipo == "alta":
+                return "Aporte del accionista (OP)", "utilidad"
+            if tipo == "baja":
+                return "Aporte del accionista (OP) consumido", "traspaso"
+            return "Aporte del accionista (OP) corregido", "utilidad"
         if tipo == "alta":
             return "Deuda nueva cargada", "utilidad"
         if tipo == "baja":
@@ -773,7 +806,7 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
         if abs(d) < UMBRAL:
             continue
         tipo = "cambio" if antes else "alta"
-        r, fam = regla(f["componente"], tipo, f["doc_id"], d)
+        r, fam = regla(f["componente"], tipo, f["doc_id"], d, f.get("etiqueta"))
         movs.append({
             "componente": f["componente"], "tipo": tipo, "doc_id": f["doc_id"],
             "etiqueta": f.get("etiqueta"),
@@ -791,7 +824,7 @@ def diff(nueva: list[dict], vieja: dict) -> list[dict]:
         if abs(imp0) < UMBRAL:
             continue
         d = round(-imp0, 2)
-        r, fam = regla(comp, "baja", clave[1], d)
+        r, fam = regla(comp, "baja", clave[1], d, a.get("etiqueta"))
         movs.append({
             "componente": comp, "tipo": "baja", "doc_id": clave[1],
             "etiqueta": a.get("etiqueta"),
