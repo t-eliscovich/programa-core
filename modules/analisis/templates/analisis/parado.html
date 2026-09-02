@@ -600,8 +600,13 @@ function abrir(tr){
 // mismo. Se guardan también en el navegador para el que vuelve al día
 // siguiente; la URL gana sobre lo guardado, porque si alguien te mandó un link
 // es porque quiere que veas ESO.
+// ⚠ Reportado 02/09/2026: "siempre me aparece lo que filtro otra persona".
+// La llave era UNA sola para todo el navegador — en una compu compartida (o
+// entre un vendedor y la oficina en el mismo Chrome) el filtro de uno se lo
+// comía el otro. La llave ahora lleva el USUARIO logueado adentro: cada quien
+// recuerda lo suyo, y alguien que entra por primera vez entra sin filtros.
 const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vendido', 'vend'];
-const LLAVE = 'saldos-filtros';
+const LLAVE = 'saldos-filtros-' + {{ (g.user.username or '')|tojson }};
 
 function guardarFiltros(){
   const v = {};
