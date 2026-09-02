@@ -24,7 +24,12 @@ Dos frenos, a propósito distintos:
 
 Fail-soft total: cualquier excepción se loguea y devuelve. Apagable con
 ANALISIS_AUTO=0. No corre bajo pytest. Cada cuánto, con
-ANALISIS_REFRESCO_HORAS (default 3).
+ANALISIS_REFRESCO_HORAS (default 0.25 = 15 minutos).
+
+⭐ Dueña 2026-09-02: *"hacé que se recargue lo de competencia cada 15 mins.
+tiene mucho delay, quizás un vendedor lo imprime y ya se vendió"*. Antes eran
+3 horas: un vendedor imprimía su hoja y salía a ofrecer tela que otro ya había
+vendido a la mañana. Traer la foto tarda ~10 s, así que cada 15 min es barato.
 """
 from __future__ import annotations
 
@@ -47,12 +52,13 @@ _ESPERA_TRAS_ERROR_SEGS = 15 * 60
 def _horas() -> float:
     """Cada cuántas horas se trae la foto de nuevo."""
     try:
-        v = float(os.environ.get("ANALISIS_REFRESCO_HORAS", "3"))
+        v = float(os.environ.get("ANALISIS_REFRESCO_HORAS", "0.25"))
     except (TypeError, ValueError):
-        return 3.0
+        return 0.25
     # Traer la foto tarda ~10 s y borra y reescribe `parado_foto` entera: por
-    # abajo de media hora no tiene sentido y sólo castiga a Asinfo.
-    return v if v >= 0.5 else 0.5
+    # abajo de 15 minutos no tiene sentido y sólo castiga a Asinfo. El ciclo del
+    # hilo de fondo es de 120 s, así que 0.25 h se cumple con margen.
+    return v if v >= 0.25 else 0.25
 
 
 def _toca() -> bool:

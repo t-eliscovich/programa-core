@@ -60,7 +60,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
 <h1>Saldos, tela por tela</h1>
 <p class="sub">
 {% if estado.actualizado %}
-  Datos de Asinfo al {{ estado.actualizado | hora_ec('%d/%m/%Y %H:%M') }} · se actualiza sola
+  Datos de Asinfo al {{ estado.actualizado | hora_ec('%d/%m/%Y %H:%M') }} · se actualiza sola cada 15 minutos
 {% else %}
   Todavía no se trajeron los datos — toque «Actualizar»
 {% endif %}
@@ -254,10 +254,10 @@ th.ord.desc::after{content:" ↓";opacity:1}
 
 {# ⭐ El botón «Actualizar desde Asinfo» se fue (dueña 25/08/2026: "borra
    tambien el boton de actualizar desde asinfo"). No hace falta: el hilo de
-   fondo la refresca sola cada 3 horas (ver `auto_refresco.py`), y la bajada de
+   fondo la refresca sola cada 15 minutos (ver `auto_refresco.py`; eran 3 horas hasta el 02/09/2026), y la bajada de
    arriba dice de cuándo son los datos.
    ⚠ La RUTA sigue viva a propósito (/analisis/parado/actualizar): es la salida
-   de emergencia si Asinfo estuvo caído y no se puede esperar tres horas.
+   de emergencia si Asinfo estuvo caído y no se puede esperar 15 minutos.
    ⚠ Y la barra entera se fue con ella: Excel, Imprimir y PDF subieron al lado
    del título, y «Ver por cliente» salió porque ya es una pestaña del menú. #}
 <div class="caja larga"><table id="tabla">

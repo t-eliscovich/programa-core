@@ -87,10 +87,16 @@ def test_se_apaga_con_la_variable(monkeypatch):
     assert ar.correr_si_toca()["corrio"] is False
 
 
-def test_no_baja_de_media_hora(monkeypatch):
+def test_cada_15_minutos_y_no_baja_de_ahi(monkeypatch):
+    """Dueña 02/09/2026: cada 15 minutos, porque con 3 horas un vendedor
+    imprimía la hoja y salía a ofrecer tela que ya se había vendido."""
+    monkeypatch.setattr(ar.os, "environ", {})
+    assert ar._horas() == 0.25
     monkeypatch.setattr(ar.os, "environ", {"ANALISIS_REFRESCO_HORAS": "0.01"})
-    assert ar._horas() == 0.5
+    assert ar._horas() == 0.25
     monkeypatch.setattr(ar.os, "environ", {"ANALISIS_REFRESCO_HORAS": "cada tanto"})
+    assert ar._horas() == 0.25
+    monkeypatch.setattr(ar.os, "environ", {"ANALISIS_REFRESCO_HORAS": "3"})
     assert ar._horas() == 3.0
 
 
