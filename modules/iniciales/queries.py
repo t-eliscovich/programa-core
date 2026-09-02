@@ -374,9 +374,22 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
         # duplicados históricos y queremos la más reciente (ver por_mes()).
         ult = db.fetch_one(
             """
+            -- Tamara 2026-09-02: la lista de columnas tiene que ser LA MISMA
+            -- que la de `informes.queries.rollover_y_writeback_iniciales`
+            -- (`_row_new`). Las dos crean la fila del mes nuevo y las dos son
+            -- idempotentes, así que gana la que corra primero — y hasta hoy
+            -- ésta se olvidaba de `pre`, `dificil`, `pretej`, `pretin` y
+            -- `preadm`. Septiembre 2026 la creó ésta y quedó SIN precio
+            -- objetivo (la pantalla /informes/iniciales lo muestra en blanco
+            -- mientras todos los otros meses tienen 8,55/8,52/8,58…).
+            -- Ese `pre` es el que el balance usa como precio de respaldo para
+            -- proyectar cuando el mes todavía no tiene ventas; en 0, la fila
+            -- Proyección vuelve a salir en 0 el día 1. Hay un test que compara
+            -- los dos juegos de columnas para que no se separen de nuevo.
             SELECT hilado, tejido, terminado, vq,
-                   um, uk, uq, uf,
-                   kprog, gprog, numnot, pretot
+                   um, uk, uq, uf, pre,
+                   kprog, gprog, numnot, dificil,
+                   pretej, pretin, preadm, pretot
               FROM scintela.iniciales
              ORDER BY id_iniciales DESC
              LIMIT 1
@@ -399,11 +412,13 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
             INSERT INTO scintela.iniciales
                 (mesnum, mesnom, yy,
                  hilado, tejido, terminado, vq,
-                 um, uk, uq, uf,
-                 kprog, gprog, numnot, pretot,
+                 um, uk, uq, uf, pre,
+                 kprog, gprog, numnot, dificil,
+                 pretej, pretin, preadm, pretot,
                  usuario_crea)
             VALUES (%s, %s, %s,
                     %s, %s, %s, %s,
+                    %s, %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s, %s, %s, %s,
                     %s)
@@ -414,7 +429,10 @@ def cerrar_mes_auto(fecha_cierre: date | None = None,
                 ult.get("hilado"), ult.get("tejido"), ult.get("terminado"),
                 ult.get("vq"),
                 ult.get("um"), ult.get("uk"), ult.get("uq"), ult.get("uf"),
+                ult.get("pre"),
                 ult.get("kprog"), ult.get("gprog"), ult.get("numnot"),
+                ult.get("dificil"),
+                ult.get("pretej"), ult.get("pretin"), ult.get("preadm"),
                 ult.get("pretot"),
                 (usuario or "auto")[:50],
             ),
