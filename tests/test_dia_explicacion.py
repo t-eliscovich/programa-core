@@ -385,6 +385,47 @@ def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
     assert fam["utilidad"] == 1700.0
 
 
+def test_el_cambio_de_patant_del_primero_de_mes_deja_de_ser_un_descuadre():
+    """Tamara 2026-09-02 — /informes/dia del 01/09 decía
+    "descuadre de $ -502.169,27, avisá".
+
+    No era un descuadre. Los once componentes son `patr`, pero la utilidad es
+    `patr − PATANT`, y PATANT no estaba en la lista. El primero de cada mes
+    PATANT salta del cierre anterior al nuevo, y ese salto ES la utilidad del
+    mes que cerró: 21.732.772,07 (agosto) − 502.169,27 = 21.230.602,80 (julio).
+    Pasa TODOS los primeros de mes, por construcción.
+    """
+    # patant = patr_neto + uret - utilidad
+    #   31/08: 21.230.602,80 + 149.003,95 - (-501.169,27) ... armamos al revés:
+    ayer = dict(_caps(0.0, 0.0)[0], utilidad=0.0, uret=0.0,
+                patr_neto=21_230_602.80, fecha_ec=date(2026, 8, 31))
+    hoy = dict(_caps(0.0, 0.0)[1], utilidad=-502_169.27, uret=0.0,
+               patr_neto=21_230_602.80, fecha_ec=date(2026, 9, 1))
+    with patch.object(dia, "capturas", return_value=[ayer, hoy]), \
+         patch.object(dia, "ventana", return_value=(ayer, hoy)), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 9, 1))
+
+    assert e["d_utilidad"] == -502_169.27
+    comp = {c["col"]: c["aporte"] for c in e["componentes"]}
+    assert "patant" in comp, "el salto de PATANT tiene que aparecer con nombre"
+    assert comp["patant"] == -502_169.27
+    # Y explica el Δ entero: ya no queda descuadre.
+    assert round(sum(comp.values()), 2) == e["d_utilidad"]
+
+
+def test_una_foto_sin_patr_neto_no_inventa_un_movimiento_de_patant():
+    """Las fotos viejas no tienen con qué despejar PATANT. Saltear es correcto;
+    tomar el None como 0 metería un movimiento del tamaño del patrimonio."""
+    ayer = dict(_caps(0.0, 0.0)[0], utilidad=0.0, patr_neto=None)
+    hoy = dict(_caps(0.0, 0.0)[1], utilidad=1000.0, patr_neto=21_230_602.80)
+    with patch.object(dia, "capturas", return_value=[ayer, hoy]), \
+         patch.object(dia, "ventana", return_value=(ayer, hoy)), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 9, 1))
+    assert "patant" not in {c["col"] for c in e["componentes"]}
+
+
 def test_la_ventana_de_24h_no_es_nula_aunque_las_dos_fotos_sean_a_la_misma_hora():
     """Tamara 2026-09-02 — /informes/dia del 01/09: "las dos fotos son de las
     19:00, del día todavía no se puede decir nada", sobre un día con 155.871 de

@@ -50,11 +50,46 @@ COMPONENTES: tuple[tuple[str, int], ...] = (
     ("caja", 1), ("bancos", 1), ("cheques", 1), ("facturas", 1),
     ("antic", 1), ("vsto", 1), ("vqx", 1), ("umaq", 1), ("uact", 1),
     ("totp", -1), ("uret", 1),
+    # ⭐ Tamara 2026-09-02 — el DOCEAVO. Los once de arriba son `patr`, pero la
+    # utilidad es `patr − PATANT`, y PATANT (el patrimonio del último cierre)
+    # no estaba. Cuando cambia, el Δ se mueve y las once celdas quedan vacías.
+    #
+    # Pasa TODOS LOS PRIMEROS DE MES, por construcción: al rodar el mes, PATANT
+    # salta del cierre anterior al nuevo, y ese salto es exactamente la utilidad
+    # del mes que cerró. /informes/dia del 01/09/2026 lo mostró como "descuadre
+    # de $ -502.169,27, avisá" — y 21.732.772,07 (cierre de agosto) − 502.169,27
+    # da 21.230.602,80, el cierre de julio. No era un descuadre: era agosto
+    # entrando al PATANT.
+    #
+    # Sale de lo que la foto YA guarda (`patr_neto + uret − utilidad`), así que
+    # no hace falta migración. Mismo criterio y mismo signo que en
+    # `informes.traza`. Ver `patant_de`.
+    ("patant", -1),
 )
+
+
+def patant_de(fila: dict) -> float | None:
+    """PATANT de una foto, despejado de lo que la foto ya guarda.
+
+        utilidad = patr − patant     y     patr = patr_neto + uret
+        ⇒ patant = patr_neto + uret − utilidad
+
+    None si a la foto le falta alguno de los tres — y None NO es 0: una foto sin
+    el dato se saltea en el Δ en vez de inventar un movimiento del tamaño del
+    patrimonio entero.
+    """
+    try:
+        pn, ut = fila.get("patr_neto"), fila.get("utilidad")
+        if pn is None or ut is None:
+            return None
+        return float(pn) + float(fila.get("uret") or 0) - float(ut)
+    except (TypeError, ValueError):
+        return None
 
 SIGNO = dict(COMPONENTES)
 
 ETIQUETAS = {
+    "patant": "Cierre anterior (PATANT)",
     "caja": "Caja", "bancos": "Bancos", "cheques": "Cheques",
     "facturas": "Facturas", "antic": "Anticipos", "vsto": "Stock MP+Prod.",
     "vqx": "Stock Químicos", "umaq": "Maquinaria", "uact": "Terrenos/Edif.",
