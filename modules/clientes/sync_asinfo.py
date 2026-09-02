@@ -553,8 +553,12 @@ def _pct(v) -> str:
     return f"{txt}%"
 
 
-def _n_clientes(n: int) -> str:
-    return "1 cliente" if n == 1 else f"{n} clientes"
+def _titulo_y_detalle(prefijo: str, cambios: list[str]) -> tuple[str, str | None]:
+    """Uno solo: todo en el título ("… de cliente FLK 5% → 7%"), sin detalle.
+    Varios: el número en el título y los cambios en el detalle (máx. 8)."""
+    if len(cambios) == 1:
+        return f"{prefijo} cliente {cambios[0]}", None
+    return f"{prefijo} {len(cambios)} clientes", ", ".join(cambios[:8])[:200]
 
 
 def _avisar_descuentos(cambiado: list[dict], raras: list[dict]) -> None:
@@ -572,12 +576,11 @@ def _avisar_descuentos(cambiado: list[dict], raras: list[dict]) -> None:
         hoy = datetime.now(UTC).strftime("%Y%m%d")
         # de cuánto a cuánto, por cliente: sin eso el aviso obliga a abrir la
         # pantalla del sync para saber si el cambio fue de 5 a 7 o de 12 a 0
-        cods = ", ".join(f"{d['cod']} {_pct(d['antes'])} → {_pct(d['ahora'])}"
-                         for d in sorted(pisados, key=lambda d: d["cod"])[:8])
+        cambios = [f"{d['cod']} {_pct(d['antes'])} → {_pct(d['ahora'])}"
+                   for d in sorted(pisados, key=lambda d: d["cod"])]
+        titulo, detalle = _titulo_y_detalle("Asinfo cambió el descuento de", cambios)
         avisar(
-            fuente="clientes", nivel="alerta",
-            titulo=f"Asinfo cambió el descuento de {_n_clientes(len(pisados))}",
-            detalle=f"Se pisó el que tenía la ficha. {cods}"[:200],
+            fuente="clientes", nivel="alerta", titulo=titulo, detalle=detalle,
             url="/clientes/sync-asinfo",
             clave=f"clientes-desc-pisados-{hoy}",
         )
@@ -601,12 +604,11 @@ def _avisar_vendedores(cambiado: list[dict], raros: list[dict]) -> None:
     pisados = [d for d in cambiado if d["antes"]]
     if pisados:
         hoy = datetime.now(UTC).strftime("%Y%m%d")
-        cods = ", ".join(f"{d['cod']} {d['antes']} → {d['ahora']}"
-                         for d in sorted(pisados, key=lambda d: d["cod"])[:8])
+        cambios = [f"{d['cod']} {d['antes']} → {d['ahora']}"
+                   for d in sorted(pisados, key=lambda d: d["cod"])]
+        titulo, detalle = _titulo_y_detalle("Asinfo cambió el vendedor de", cambios)
         avisar(
-            fuente="clientes", nivel="alerta",
-            titulo=f"Asinfo cambió el vendedor de {_n_clientes(len(pisados))}",
-            detalle=f"Se pisó el que tenía la ficha. {cods}"[:200],
+            fuente="clientes", nivel="alerta", titulo=titulo, detalle=detalle,
             url="/clientes/sync-asinfo",
             clave=f"clientes-vend-pisados-{hoy}",
         )
