@@ -3000,6 +3000,50 @@ def venta_proyectada_mes_get(periodo: str | None = None) -> float | None:
     return kg if kg > 0 else None
 
 
+def venta_proyectada_mes_vigente(periodo: str | None = None) -> dict:
+    """Kg de venta proyectada VIGENTE para el período, heredando si hace falta.
+
+    Andrés 2026-09-02 — hermano de `gastos_proyectado_mes_get`. La tabla
+    `scintela.venta_proyectada_mes` tampoco tiene rollover: el mes nuevo arranca
+    sin fila y la pantalla volvía al `kprog` de `scintela.iniciales`. No daba un
+    número absurdo (kprog rueda de mes), pero SÍ pisaba en silencio la meta con
+    la que venían trabajando: si en agosto la habían movido a mano, el 1° de
+    septiembre reaparecía el kprog viejo del ERP y nadie se enteraba.
+
+    Ahora hereda el último período cargado y lo dice. Sólo lectura: no escribe
+    fila, así que el primer guardado del mes pisa la herencia. Si nunca se cargó
+    nada devuelve kg None y el balance sigue cayendo al `kprog` de Iniciales,
+    igual que siempre.
+    """
+    per = periodo or _periodo_actual_ec()
+    kg = venta_proyectada_mes_get(per)
+    if kg:
+        return {"periodo": per, "kg": kg, "heredado": False,
+                "periodo_origen": per, "periodo_origen_nom": None}
+
+    prev = db.fetch_one(
+        """
+        SELECT periodo, kg
+          FROM scintela.venta_proyectada_mes
+         WHERE periodo < %s
+           AND COALESCE(kg, 0) > 0
+         ORDER BY periodo DESC
+         LIMIT 1
+        """,
+        (per,),
+    )
+    if not prev:
+        return {"periodo": per, "kg": None, "heredado": False,
+                "periodo_origen": None, "periodo_origen_nom": None}
+    return {
+        "periodo": per,
+        "kg": float(prev.get("kg") or 0),
+        "heredado": True,
+        "periodo_origen": prev.get("periodo"),
+        "periodo_origen_nom": _periodo_nombre_es(prev.get("periodo")),
+    }
+
+
 def venta_proyectada_mes_set(
     kg: float, usuario: str | None = None, periodo: str | None = None
 ) -> dict:
