@@ -117,3 +117,58 @@ def test_la_utilidad_esperada_no_se_infla_al_arrancar_el_mes(monkeypatch):
 
     assert round(up_bug - up_con_fix, 2) == round(gastos_heredados, 2)
     assert gastos_heredados > 800_000  # el desvío que veía Andrés, no un redondeo
+
+
+# ---------------------------------------------------------------------------
+# Hermano del anterior: los KG de la fila Proyección (scintela.venta_proyectada_mes)
+# ---------------------------------------------------------------------------
+# Tampoco tenía rollover. No daba un número absurdo —el balance caía al `kprog`
+# de `scintela.iniciales`, que sí rueda— pero pisaba en silencio la meta con la
+# que venían trabajando: el 1° reaparecía el kprog viejo del ERP.
+
+AGOSTO_KG = {"periodo": "2026-08", "kg": 300_000.0}
+
+
+def _install_kg(monkeypatch, *, filas):
+    def fake_fetch_one(sql, params=None):
+        s = " ".join(sql.split())
+        params = params or ()
+        if "FROM scintela.venta_proyectada_mes WHERE periodo = %s" in s:
+            return next((f for f in filas if f["periodo"] == params[0]), None)
+        if "FROM scintela.venta_proyectada_mes WHERE periodo < %s" in s:
+            previas = [f for f in filas
+                       if f["periodo"] < params[0] and (f.get("kg") or 0) > 0]
+            return max(previas, key=lambda f: f["periodo"]) if previas else None
+        raise AssertionError(f"query inesperada: {s}")
+
+    monkeypatch.setattr(queries.db, "fetch_one", fake_fetch_one, raising=True)
+    monkeypatch.setattr(queries, "_periodo_actual_ec", lambda: "2026-09", raising=True)
+
+
+def test_kg_del_mes_cargado_no_hereda(monkeypatch):
+    _install_kg(monkeypatch, filas=[AGOSTO_KG, {"periodo": "2026-09", "kg": 310_000.0}])
+    r = queries.venta_proyectada_mes_vigente()
+    assert r["kg"] == 310_000.0
+    assert r["heredado"] is False
+
+
+def test_kg_de_mes_nuevo_hereda_el_ultimo_cargado(monkeypatch):
+    _install_kg(monkeypatch, filas=[AGOSTO_KG])
+    r = queries.venta_proyectada_mes_vigente()
+    assert r["kg"] == 300_000.0
+    assert r["heredado"] is True
+    assert r["periodo_origen_nom"] == "agosto 2026"
+
+
+def test_kg_sin_nada_cargado_nunca_deja_que_mande_el_kprog(monkeypatch):
+    """kg None → el balance cae al `kprog` de Iniciales, como siempre."""
+    _install_kg(monkeypatch, filas=[])
+    r = queries.venta_proyectada_mes_vigente()
+    assert r["kg"] is None
+    assert r["heredado"] is False
+    assert r["periodo_origen"] is None
+
+
+def test_kg_periodo_explicito_respeta_el_argumento(monkeypatch):
+    _install_kg(monkeypatch, filas=[AGOSTO_KG])
+    assert queries.venta_proyectada_mes_vigente("2026-08")["heredado"] is False

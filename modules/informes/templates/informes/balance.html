@@ -385,6 +385,10 @@
     background: rgb(15 23 42); color: rgb(241 245 249); border-color: rgb(71 85 105);
   }
   .informe-balance .vp-status { font-size: 11px; margin-left: 6px; color: rgb(100 116 139); }
+  /* Andrés 2026-09-02 — los kg de la Proyección heredados del mes anterior
+     (todavía no se fijó la meta de este mes). Ámbar, como el aviso gemelo de
+     /informes/gastos, para que se note sin gritar. */
+  .informe-balance .vp-heredado { font-size: 11px; margin-left: 6px; color: rgb(180 83 9); }
   .informe-balance .vp-print { display: none; }
   @media print {
     .informe-balance .vp-print { display: inline; }
@@ -505,7 +509,7 @@
           </tr>
             {% else %}
           <tr class="{{ _clase_css.get(row.clase, 'fila-dato') }}{% if row.label == 'Utilidad Real' %} fila-celeste{% endif %}{% if row.label == 'Costo Total' %} fila-costo-total{% endif %}"{% if row.ayuda %} title="{{ row.ayuda }}"{% endif %}>
-            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}</td>
+            <td class="label-cell">{% if row.label in _row_links %}<a href="{{ _row_links[row.label] }}" class="hover:text-blue-600 hover:underline">{{ row.label }}</a>{% else %}{{ row.label }}{% endif %}{% if row.label == 'Proyección' %}{% if row.heredado_de %}<span id="vp-heredado" class="vp-heredado no-print" title="Los kg de la proyección todavía no se fijaron para este mes: son los de {{ row.heredado_de }}. Editá el casillero y quedan guardados para el mes en curso.">de {{ row.heredado_de }}</span>{% endif %}<span id="vp-status" class="vp-status no-print"></span>{% endif %}</td>
             {# Federico 2026-07-22 — badge "parcial · N días" eliminado del cuadro
                (ocupaba una fila extra bajo Utilidad Real; no hace falta). #}
             <td class="num-cell">{% if row.label == 'Proyección' %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="number" min="0" step="1" inputmode="numeric" id="vp-kg-input" class="vp-input no-print" value="{{ row.kg | round(0, 'common') | int if row.kg is not none else '' }}" aria-label="Kg de venta proyectada (editable)"><span class="vp-print">{% if row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</span>{% elif row.kg is not none %}{{ row.kg | num_es(0) }}{% endif %}</td>

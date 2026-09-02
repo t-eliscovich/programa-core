@@ -927,13 +927,34 @@ def balance():
             # PISA el KGPRO de iniciales y recalcula la venta proyectada
             # (kg × precio). Ese kg alimenta la Utilidad Proyectada (venta proy
             # y costos directos). Se aplica ANTES de calcular la utilidad.
-            _vp_kg, _e = _safe(queries.venta_proyectada_mes_get, None)
+            # Andrés 2026-09-02 — `venta_proyectada_mes_vigente` hereda el kg del
+            # último mes cargado cuando el mes nuevo todavía no tiene fila (antes
+            # el 1° reaparecía el `kprog` viejo de Iniciales y la meta con la que
+            # venían trabajando se perdía sin aviso). Sin nada cargado nunca,
+            # sigue cayendo al kprog, igual que antes.
+            _vp, _e = _safe(
+                queries.venta_proyectada_mes_vigente,
+                {"kg": None, "heredado": False},
+            )
+            _vp = _vp or {"kg": None, "heredado": False}
+            _vp_kg = _vp.get("kg")
             if _vp_kg and _vp_kg > 0:
                 for _r in _tabla:
                     if _r.get("label") == "Proyección":
                         _precio = float(_r.get("ukg") or 0)
                         _r["kg"] = _vp_kg
                         _r["us"] = _vp_kg * _precio
+                        if _vp.get("heredado"):
+                            _r["heredado_de"] = (
+                                _vp.get("periodo_origen_nom")
+                                or _vp.get("periodo_origen")
+                            )
+                            _r["ayuda"] = (
+                                (_r.get("ayuda") or "")
+                                + " ⚠ Los kg todavía no se fijaron para este mes: "
+                                f"son los de {_r['heredado_de']}. Editá el "
+                                "casillero y quedan guardados para el mes en curso."
+                            )
                         break
 
             _proy = queries.gastos_proyectado_mes_get()

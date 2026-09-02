@@ -60,8 +60,8 @@ def _correr(app, fake_db, proy):
     c = _login(app, fake_db)
     bal = _balance_fake()
     with patch.object(informes_queries, "informe_balance", return_value=bal), \
-         patch.object(informes_queries, "venta_proyectada_mes_get",
-                      return_value=None), \
+         patch.object(informes_queries, "venta_proyectada_mes_vigente",
+                      return_value={"kg": None, "heredado": False}), \
          patch.object(informes_queries, "gastos_proyectado_mes_get",
                       return_value=proy), \
          patch("modules.posdat.queries.persistir_acumulacion_yy", lambda: None), \
@@ -129,8 +129,8 @@ def test_dia_1_sin_ventas_ni_tintura_no_da_una_utilidad_absurda(app, fake_db):
         ]},
     })
     with patch.object(informes_queries, "informe_balance", return_value=bal), \
-         patch.object(informes_queries, "venta_proyectada_mes_get",
-                      return_value=None), \
+         patch.object(informes_queries, "venta_proyectada_mes_vigente",
+                      return_value={"kg": None, "heredado": False}), \
          patch.object(informes_queries, "gastos_proyectado_mes_get",
                       return_value=proy), \
          patch("modules.posdat.queries.persistir_acumulacion_yy", lambda: None), \
@@ -150,3 +150,43 @@ def test_heredado_sin_nombre_lindo_cae_al_periodo_crudo(app, fake_db):
             "heredado": True, "periodo_origen": "2026-08"}
     _r, fila = _correr(app, fake_db, proy)
     assert "2026-08" in fila["ayuda"]
+
+
+def test_kg_heredado_del_mes_anterior_se_usa_y_se_avisa(app, fake_db):
+    """La meta de kg con la que venían trabajando no se pierde el 1°, y se dice.
+
+    Antes: sin fila del mes nuevo, la pantalla volvía al `kprog` de Iniciales sin
+    aviso. Ahora hereda el último kg cargado, lo marca en la fila y lo explica en
+    la ayuda; el primer guardado del mes pisa la herencia.
+    """
+    proy = {"periodo": "2026-09", "tej": 130_000.0, "tin": 372_000.0,
+            "adm": 305_000.0, "heredado": False, "periodo_origen": "2026-09"}
+    c = _login(app, fake_db)
+    bal = _balance_fake()
+    with patch.object(informes_queries, "informe_balance", return_value=bal), \
+         patch.object(informes_queries, "venta_proyectada_mes_vigente",
+                      return_value={"kg": 300_000.0, "heredado": True,
+                                    "periodo_origen": "2026-08",
+                                    "periodo_origen_nom": "agosto 2026"}), \
+         patch.object(informes_queries, "gastos_proyectado_mes_get",
+                      return_value=proy), \
+         patch("modules.posdat.queries.persistir_acumulacion_yy", lambda: None), \
+         patch("modules.iniciales.views.auto_cerrar_mes_si_corresponde",
+               lambda: None):
+        r = c.get("/informes/balance")
+    assert r.status_code == 200, r.data[:400]
+
+    proyeccion = next(f for f in bal["resultados"]["tabla"]
+                      if f["label"] == "Proyección")
+    # El kg heredado PISA el kgpro y arrastra la venta proyectada (kg × precio).
+    assert proyeccion["kg"] == 300_000.0
+    assert proyeccion["us"] == 300_000.0 * 8.10
+    assert proyeccion["heredado_de"] == "agosto 2026"
+    assert "todavía no se fijaron para este mes" in proyeccion["ayuda"]
+    # Y el chip llega a la pantalla.
+    assert "de agosto 2026" in r.data.decode("utf-8")
+
+    # La utilidad esperada se calcula sobre esos kg, no sobre los 320.000.
+    fila = _fila_utilidad_esperada(bal)
+    esperado = 300_000.0 * 8.10 - 807_000.0 - 300_000.0 * (2.92 + 0.64) * 1.045
+    assert round(fila["us"], 2) == round(esperado, 2)
