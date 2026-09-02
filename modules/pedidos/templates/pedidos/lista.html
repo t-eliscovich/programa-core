@@ -114,6 +114,8 @@
   .pd .steps .sep{width:8px;height:1.5px;background:#cbd5e1;margin:0 4px;flex:0 0 auto}
   .pd .steps .sep.done{background:var(--verde)}
   /* la etapa de UNA línea, al lado de su tela */
+  /* debajo del paso «En tintura» de la tira (≈ el ancho de «● Enviado —») */
+  main .pd table tbody td.etapa{padding-left:70px !important}
   .pd .lst{display:inline-block;font-size:10.5px;font-weight:600;white-space:nowrap;padding:1px 7px;border-radius:99px}
   .pd .lst.done{color:var(--verde);background:#dcfce7}
   .pd .lst.tinto{color:var(--azul);background:#dbeafe}
@@ -417,7 +419,7 @@
               <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
               <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
               {# la etapa de ESTA línea, debajo de la tira del pedido #}
-              <td class="izq no-print">
+              <td class="izq etapa no-print">
                 {%- if le == 'terminado' %}<span class="lst done">Terminado</span>
                 {%- elif le == 'en_tintura' %}<span class="lst tinto">En tintura</span>{% endif %}</td>
             </tr>
