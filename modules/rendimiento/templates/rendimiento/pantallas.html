@@ -78,9 +78,10 @@
             {% else %}—{% endif %}
           </td>
         </tr>
-        {% if f.peor_sql %}
+        {% if f.peor_sql or f.peor_puente %}
         <tr class="border-0">
           <td colspan="8" class="px-3 pb-2">
+            {% if f.peor_sql %}
             <details>
               <summary class="text-xs text-slate-500 cursor-pointer">
                 su consulta más lenta — {{ f.peor_sql_ms }} ms
@@ -88,6 +89,16 @@
               <pre class="mt-1 bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 rounded
                           p-2 text-xs overflow-x-auto">{{ f.peor_sql }}</pre>
             </details>
+            {% endif %}
+            {% if f.peor_puente %}
+            <details>
+              <summary class="text-xs text-slate-500 cursor-pointer">
+                su ida al puente más lenta — {{ f.peor_puente_ms }} ms
+              </summary>
+              <pre class="mt-1 bg-slate-50 dark:bg-slate-800 border dark:border-slate-700 rounded
+                          p-2 text-xs overflow-x-auto">{{ f.peor_puente }}</pre>
+            </details>
+            {% endif %}
           </td>
         </tr>
         {% endif %}

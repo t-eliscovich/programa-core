@@ -79,7 +79,7 @@ def _conn():
         _pool.putconn(c)
 
 
-def _medir(t0: float) -> None:
+def _medir(t0: float, sql: str = "") -> None:
     """Le cuenta al termómetro (/admin/pantallas) una ida a formulas.
 
     TMT 2026-09-02: las pantallas lentas tenían casi nada de base propia; el
@@ -88,7 +88,7 @@ def _medir(t0: float) -> None:
     try:
         from modules._lib import medidor
 
-        medidor.anotar_puente((time.monotonic() - t0) * 1000, "formulas")
+        medidor.anotar_puente((time.monotonic() - t0) * 1000, "formulas", sql)
     except Exception:  # noqa: BLE001
         pass
 
@@ -106,7 +106,7 @@ def fetch_all(sql: str, params: tuple | list = ()) -> list[dict]:
         _log.warning("formulas_db.fetch_all falló: %s", e)
         return []
     finally:
-        _medir(t0)
+        _medir(t0, sql)
 
 
 def fetch_one(sql: str, params: tuple | list = ()) -> dict | None:
@@ -122,7 +122,7 @@ def fetch_one(sql: str, params: tuple | list = ()) -> dict | None:
         _log.warning("formulas_db.fetch_one falló: %s", e)
         return None
     finally:
-        _medir(t0)
+        _medir(t0, sql)
 
 
 def healthcheck() -> bool:

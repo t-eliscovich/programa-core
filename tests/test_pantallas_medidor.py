@@ -298,8 +298,8 @@ def test_limpiar_tambien_borra_las_consultas_contadas():
 def test_el_puente_se_cuenta_aparte_de_la_base():
     medidor.arrancar()
     medidor.anotar_consulta(5, "SELECT 1")
-    medidor.anotar_puente(700)
-    medidor.anotar_puente(300, "formulas")
+    medidor.anotar_puente(700, "asinfo", "Metabase db 2")
+    medidor.anotar_puente(300, "formulas", "SELECT  1\n  FROM orden")
     medidor.cerrar("/produccion-terminado-asinfo", "GET", 1200)
     f = medidor.resumen()[0]
     assert f["ms_sql_prom"] == 5
@@ -310,6 +310,8 @@ def test_el_puente_se_cuenta_aparte_de_la_base():
     lenta = medidor.lentas()[0]
     assert lenta["ms_puente"] == 1000 and lenta["puente"] == 2
     assert lenta["ms_asinfo"] == 700 and lenta["ms_formulas"] == 300
+    # Y la ida más lenta, con qué era: es lo que dice QUÉ cachear.
+    assert f["peor_puente_ms"] == 700 and f["peor_puente"] == "asinfo: Metabase db 2"
 
 
 def test_una_ida_al_puente_desde_un_hilo_de_fondo_no_se_cuenta():
@@ -394,11 +396,12 @@ def test_un_ciclo_del_calentador_cronometra_cada_paso(monkeypatch):
 
 def test_la_pantalla_muestra_el_puente_y_el_calentador(app, fake_db):
     medidor.arrancar()
-    medidor.anotar_puente(640)
+    medidor.anotar_puente(640, "asinfo", "Metabase db 2")
     medidor.cerrar("/produccion-terminado-asinfo", "GET", 700)
     medidor.anotar_calentador([{"paso": "pedidos_pendientes", "ms": 3000, "error": ""}], 3.0)
     html = _login(app, fake_db).get("/admin/pantallas").get_data(as_text=True)
     assert "De eso, puente" in html and "640 ms (1.0)" in html
+    assert "su ida al puente más lenta" in html
     assert "El calentador" in html and "pedidos_pendientes" in html
 
 

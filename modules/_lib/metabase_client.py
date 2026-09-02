@@ -51,7 +51,7 @@ def _anotar(db: int, ms: float, ok: bool, error: str = "") -> None:
     try:
         from modules._lib import medidor as _medidor
 
-        _medidor.anotar_puente(ms)  # el termómetro de /admin/pantallas
+        _medidor.anotar_puente(ms, "asinfo", f"Metabase db {db}" + (f" — {error}" if error else ""))
     except Exception:  # noqa: BLE001 -- medir jamás rompe una consulta
         pass
     try:
