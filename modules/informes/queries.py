@@ -9613,6 +9613,132 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
     }
 
 
+def historia_balance_fijo_mes_cerrado(anio: int, mes: int) -> dict:
+    """Reconstruye maquinaria/realty/stock (kg) de un mes YA CERRADO de
+    `scintela.historia` -- las 3 columnas de ACTIVO FIJO que
+    `historia_detalle_mes_cerrado` deja afuera a propósito.
+
+    Tamara 2026-09-01 (incidente del cierre de agosto, segunda vuelta):
+    "ventas, esta mal el numero en historia" -- después de aplicar el
+    detalle real (kcom/.../uvent) seguían con el placeholder de julio
+    `anticipos`, `maquinaria`, `realty` y `stock`, y el Total Activo de
+    la pantalla de Historia no cerraba contra Pasivo+Patrimonio (faltaban
+    ~$976K). La razón por la que antes se los dejó afuera
+    (`historia_detalle_mes_cerrado` dixit: "son saldos de un día, mismo
+    problema que la cartera") es CIERTA para `informe_balance_as_of()`
+    -- esa rama resta `coef_amortizacion(as_of) * cuota` sobre un
+    `amortizac` que, si el cron del mes siguiente YA corrió (nuestro
+    caso: es 01/09 y `actualizar_amortizacion()` ya sumó la cuota de
+    agosto), vuelve a restar la MISMA cuota una segunda vez -- daba
+    $33.750 (maquinaria) y $14.450 (edificios) de menos, verificado
+    contra "Vista previa cierre 31-08-2026.pdf".
+
+    Pero maquinaria/realty NO son como la cartera: no dependen de cobros
+    futuros, son una amortización determinística. Una vez que
+    `actualizar_amortizacion()` corrió para el mes target (columna
+    `ult_mes_amortizado` ya avanzada más allá de ese mes), el valor en
+    libros CERRADO de ese mes es simplemente `inicial - amortizac` de
+    HOY, sin restar ningún coeficiente adicional -- `amortizac` ya
+    incluye la cuota de ese mes. Verificado 2026-09-01: esta cuenta dio
+    EXACTO contra el PDF de cierre (maquinaria 1.038.550, realty
+    2.364.564) y, sumada a banco+cartera+anticipos+stock ya anclados,
+    hace que Total Activo − Pasivo = Patrimonio (antes desbalanceaba en
+    $976K).
+
+    `stock` (histórico: HI+TJ+PF en KG) sale de `scintela.iniciales`, la
+    misma fuente que ya usa `informe_balance_as_of` para VSTO ("el stock
+    de CIERRE queda escrito en esa fila (write-back del PRG L517) y
+    SOBREVIVE al purge") -- no hace falta reconstruir nada, sólo leerla.
+
+    `anticipos` SIGUE sin reconstrucción propia acá: depende del cruce
+    vivo con Asinfo (`anticipos_con_mercaderia_recibida`), que es
+    estado-del-momento y no "como estaba tal día" (mismo problema que la
+    cartera, documentado en su propio docstring). Se completa a mano
+    desde afuera (el PDF de cierre, u otro papel verificado) -- por eso
+    NO está en `campos` acá.
+
+    Devuelve `{ok, anio, mes, campos: {maquinaria, realty, stock},
+    fuente: {...}}`, o `{ok: False, razon: ...}` si la amortización del
+    mes target todavía no corrió (en ese caso el cálculo de-arriba SÍ
+    aplicaría y esta función no sirve todavía).
+    """
+    hoy = today_ec()
+    meses_atras = (hoy.year - anio) * 12 + (hoy.month - mes)
+    if meses_atras < 1:
+        return {"ok": False, "razon": "el mes tiene que ser un mes ya cerrado"}
+
+    yyyymm_target = anio * 100 + mes
+
+    # Guardia: sólo es seguro leer `inicial - amortizac` sin restar ningún
+    # coeficiente si `actualizar_amortizacion()` YA aplicó la cuota del mes
+    # target a TODAS las filas vivas (si no, todavía estamos "dentro" del
+    # mes target y hace falta el coeficiente prorateado de la rama as_of).
+    _min_am = db.fetch_one(
+        """
+        SELECT MIN(ult_mes_amortizado) AS m
+          FROM scintela.activos
+         WHERE borrado_en IS NULL
+        """
+    ) or {}
+    min_am = _min_am.get("m")
+    if min_am is None or int(min_am) <= yyyymm_target:
+        return {
+            "ok": False,
+            "razon": (
+                f"la amortización de {anio}-{mes:02d} todavía no corrió para "
+                f"todos los activos (ult_mes_amortizado mínimo = {min_am}) -- "
+                "esperar al cron del día 1 del mes siguiente."
+            ),
+        }
+
+    _act = db.fetch_one(
+        """
+        SELECT
+          COALESCE(SUM(CASE WHEN tipo IN ('M','C','K')
+                             THEN GREATEST(COALESCE(inicial,0)-COALESCE(amortizac,0),0)
+                             ELSE 0 END),0) AS maquinaria,
+          COALESCE(SUM(CASE WHEN tipo IN ('I','T')
+                             THEN GREATEST(COALESCE(inicial,0)-COALESCE(amortizac,0),0)
+                             ELSE 0 END),0) AS realty
+          FROM scintela.activos
+         WHERE borrado_en IS NULL
+        """
+    ) or {}
+
+    _inic = db.fetch_one(
+        """
+        SELECT hilado, tejido, terminado
+          FROM scintela.iniciales
+         WHERE yy = %s AND mesnum = %s
+         ORDER BY id_iniciales DESC
+         LIMIT 1
+        """,
+        (anio, mes),
+    ) or {}
+    stock = (
+        float(_inic.get("hilado") or 0)
+        + float(_inic.get("tejido") or 0)
+        + float(_inic.get("terminado") or 0)
+    )
+
+    campos = {
+        "maquinaria": float(_act.get("maquinaria") or 0),
+        "realty": float(_act.get("realty") or 0),
+        "stock": stock,
+    }
+    return {
+        "ok": True,
+        "anio": anio,
+        "mes": mes,
+        "campos": campos,
+        "fuente": {
+            "maquinaria": "SUM(inicial-amortizac) WHERE tipo IN (M,C,K) -- scintela.activos, amortizac de HOY ya incluye la cuota del mes target",
+            "realty": "SUM(inicial-amortizac) WHERE tipo IN (I,T) -- scintela.activos, ídem",
+            "stock": "iniciales.hilado+tejido+terminado del mes target -- write-back que sobrevive al purge (misma fuente que VSTO en informe_balance_as_of)",
+        },
+    }
+
+
 def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
                             forzar: bool = False,
                             dry_run: bool = False) -> dict:

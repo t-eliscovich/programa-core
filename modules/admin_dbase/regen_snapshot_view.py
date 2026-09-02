@@ -233,6 +233,67 @@ banco, stock, deuda ni utilidad: <b>sólo estas 10 columnas de detalle.</b></p>
 </form>
 {% endif %}
 
+{% if balance_fijo_preview %}
+<h2>Balance fijo real de {{ anio }}-{{ '%02d'|format(mes) }} (maquinaria/realty/stock)</h2>
+<p>Maquinaria y realty: <code>SUM(inicial-amortizac)</code> de <code>scintela.activos</code> --
+sólo válido porque la amortización de este mes YA corrió (si no, esta sección no aparece).
+Stock (kg): de <code>scintela.iniciales</code>, la misma fuente que ya usa el balance live.
+<b>Anticipos NO se reconstruye</b> (depende del cruce vivo con Asinfo, mismo problema que la
+cartera) -- si hay un valor verificado para este mes cargado en el código
+(<code>_ANTICIPOS_VERIFICADOS</code>), se aplica también; si no, se deja como está.</p>
+<table>
+  <thead><tr><th>Campo</th><th>En historia hoy</th><th>Reconstruido</th><th style="text-align:left">Fuente</th></tr></thead>
+  <tbody>
+    {% for campo, etiqueta in [("maquinaria","Maquinaria/equipo ($)"), ("realty","Terrenos/edificios ($)"),
+                                ("stock","Stock hilado+tejido+terminado (kg)")] %}
+    <tr>
+      <td style="text-align:left">{{ etiqueta }}</td>
+      <td>{{ '%.2f'|format((balance_fijo_actual or {}).get(campo) or 0) }}</td>
+      <td><b>{{ '%.2f'|format(balance_fijo_preview.campos[campo]) }}</b></td>
+      <td style="text-align:left;font-size:11px;color:#555">{{ balance_fijo_preview.fuente[campo] }}</td>
+    </tr>
+    {% endfor %}
+    <tr>
+      <td style="text-align:left">Anticipos ($)</td>
+      <td colspan=3 style="text-align:left">
+        en historia hoy: {{ '%.2f'|format((balance_fijo_actual or {}).get('anticipos') or 0) }} —
+        sin fuente reconstruible; se aplica sólo si hay un valor verificado
+        para este mes en <code>_ANTICIPOS_VERIFICADOS</code> (código)
+      </td>
+    </tr>
+  </tbody>
+</table>
+
+<form method=POST style="margin-top:12px">
+  <input type=hidden name=csrf_token value="{{ csrf_token() }}">
+  <input type=hidden name=anio value="{{ anio }}">
+  <input type=hidden name=mes value="{{ mes }}">
+  <input type=hidden name=anio_balance value="{{ anio }}">
+  <input type=hidden name=mes_balance value="{{ mes }}">
+
+  {% if aplicado_balance_fijo %}
+  <div class=ok>
+    <b>✓ Balance fijo aplicado.</b> Fila id={{ id_balance_fijo_nuevo }}:
+    maquinaria={{ '%.2f'|format(balance_fijo_aplicado.maquinaria) }},
+    realty={{ '%.2f'|format(balance_fijo_aplicado.realty) }},
+    stock={{ '%.2f'|format(balance_fijo_aplicado.stock) }},
+    anticipos={{ '%.2f'|format(balance_fijo_aplicado.anticipos) }}.
+    Patrimonio/utilidad NO se tocaron
+    (patrimonio={{ '%.2f'|format(balance_fijo_aplicado.patrimonio) }}, usuti={{ '%.2f'|format(balance_fijo_aplicado.usuti) }}).
+  </div>
+  {% elif error_balance_fijo %}
+  <div class=warn><b>Error:</b> {{ error_balance_fijo }}</div>
+  {% else %}
+  <button type=submit name=aplicar_balance_fijo_real value=1 style="background:#0a0"
+    onclick="return confirm('Pisar maquinaria/realty/stock (y anticipos si hay valor verificado en el código) del cierre {{ anio }}-{{ '%02d'|format(mes) }}? No toca patrimonio ni cartera.');">
+    APLICAR BALANCE FIJO REAL DE {{ anio }}-{{ '%02d'|format(mes) }}
+  </button>
+  {% endif %}
+</form>
+{% elif balance_fijo_razon %}
+<p style="color:#a60;font-size:13px">Balance fijo de {{ anio }}-{{ '%02d'|format(mes) }}: {{ balance_fijo_razon }}</p>
+{% endif %}
+
 <form method=POST style="margin-top:24px">
   <input type=hidden name=csrf_token value="{{ csrf_token() }}">
   <input type=hidden name=anio value="{{ anio }}">
@@ -290,6 +351,25 @@ def index() -> Response:
     id_detalle_nuevo: int | None = None
     detalle_aplicado: dict | None = None
     error_detalle: str | None = None
+
+    # Estado del botón "aplicar_balance_fijo_real" (maquinaria/realty/stock
+    # de un mes cerrado + anticipos a mano, ver historia_balance_fijo_mes_cerrado).
+    aplicado_balance_fijo = False
+    id_balance_fijo_nuevo: int | None = None
+    balance_fijo_aplicado: dict | None = None
+    error_balance_fijo: str | None = None
+    balance_fijo_razon: str | None = None
+
+    # Anticipos verificados por mes -- SIN reconstrucción propia posible
+    # (depende del cruce vivo con Asinfo, mismo problema que la cartera).
+    # Tamara 2026-09-01: "esto hay que hacer por backend, no que el usuario
+    # pueda hacer" -- no es un campo para completar desde la pantalla, es
+    # un dato de código, igual que los demás números de las ANCLAR de
+    # arriba. Fuente: "Vista previa cierre 31-08-2026.pdf" (verificado
+    # contra Total Activo − Pasivo = Patrimonio, exacto).
+    _ANTICIPOS_VERIFICADOS = {
+        (2026, 8): 3183858.00,
+    }
 
     # Botón "ajustar_backfill_31_05" — TMT decisión 2026-06-10 opción A.
     # Suma al cart/patrimonio del snapshot 31/05 los saldos de las facturas
@@ -530,6 +610,55 @@ def index() -> Response:
     # buenos conocidos (ver el botón ANCLAR de arriba) y reconstruirlos
     # "como estaban tal día" tiene el mismo problema sin resolver que la
     # cartera.
+    elif request.method == "POST" and request.form.get("aplicar_balance_fijo_real") == "1":
+        try:
+            from modules.informes import queries as iq
+
+            anio_b = int(request.form.get("anio_balance") or anio)
+            mes_b = int(request.form.get("mes_balance") or mes)
+            rec = iq.historia_balance_fijo_mes_cerrado(anio_b, mes_b)
+            if not rec.get("ok"):
+                error_balance_fijo = rec.get("razon", "no se pudo reconstruir")
+            else:
+                campos = dict(rec["campos"])
+                _antic = _ANTICIPOS_VERIFICADOS.get((anio_b, mes_b))
+                _fecha_cierre_b = _fecha_cierre_de(anio_b, mes_b)
+                if _antic is not None:
+                    campos["anticipos"] = _antic
+                    res = db.execute_returning(
+                        """
+                        UPDATE scintela.historia
+                           SET maquinaria = %(maquinaria)s, realty = %(realty)s,
+                               stock = %(stock)s, anticipos = %(anticipos)s
+                         WHERE fecha = %(fecha)s
+                        RETURNING id_historia, maquinaria, realty, stock,
+                                  anticipos, patrimonio, usuti
+                        """,
+                        {**campos, "fecha": _fecha_cierre_b},
+                    )
+                else:
+                    # Sin valor verificado para este mes -- no se toca
+                    # anticipos, sólo lo que sí sabemos reconstruir.
+                    res = db.execute_returning(
+                        """
+                        UPDATE scintela.historia
+                           SET maquinaria = %(maquinaria)s, realty = %(realty)s,
+                               stock = %(stock)s
+                         WHERE fecha = %(fecha)s
+                        RETURNING id_historia, maquinaria, realty, stock,
+                                  anticipos, patrimonio, usuti
+                        """,
+                        {**campos, "fecha": _fecha_cierre_b},
+                    )
+                if res:
+                    id_balance_fijo_nuevo = int(res["id_historia"])
+                    balance_fijo_aplicado = dict(res)
+                    aplicado_balance_fijo = True
+                else:
+                    error_balance_fijo = f"no hay fila de historia con fecha = {_fecha_cierre_b} (¿está anclado el cierre?)"
+        except Exception as e:
+            error_balance_fijo = f"{type(e).__name__}: {e}"
+
     elif request.method == "POST" and request.form.get("aplicar_detalle_real") == "1":
         try:
             from modules.informes import queries as iq
@@ -638,6 +767,30 @@ def index() -> Response:
     except Exception:  # noqa: BLE001 -- vista previa, nunca romper la pantalla
         detalle_preview = None
 
+    # Vista previa del balance fijo (maquinaria/realty/stock) — mismo patrón
+    # que detalle_preview de arriba, sólo lectura.
+    balance_fijo_preview = None
+    balance_fijo_actual = None
+    try:
+        from modules.informes import queries as iq
+
+        _recb = iq.historia_balance_fijo_mes_cerrado(anio, mes)
+        if _recb.get("ok"):
+            balance_fijo_preview = _recb
+            _row_b = db.fetch_one(
+                """
+                SELECT id_historia, maquinaria, realty, stock, anticipos
+                  FROM scintela.historia
+                 WHERE fecha = %s
+                """,
+                (_fecha_cierre_de(anio, mes),),
+            )
+            balance_fijo_actual = dict(_row_b) if _row_b else None
+        else:
+            balance_fijo_razon = _recb.get("razon")
+    except Exception:  # noqa: BLE001 -- vista previa, nunca romper la pantalla
+        balance_fijo_preview = None
+
     # Snapshot listing
     snapshots = db.fetch_all(
         """
@@ -667,6 +820,13 @@ def index() -> Response:
             id_detalle_nuevo=id_detalle_nuevo,
             detalle_aplicado=detalle_aplicado,
             error_detalle=error_detalle,
+            balance_fijo_preview=balance_fijo_preview,
+            balance_fijo_actual=balance_fijo_actual,
+            balance_fijo_razon=balance_fijo_razon,
+            aplicado_balance_fijo=aplicado_balance_fijo,
+            id_balance_fijo_nuevo=id_balance_fijo_nuevo,
+            balance_fijo_aplicado=balance_fijo_aplicado,
+            error_balance_fijo=error_balance_fijo,
         ),
         mimetype="text/html",
     )
