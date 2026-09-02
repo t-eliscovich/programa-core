@@ -48,7 +48,8 @@
   .pd tbody tr:last-child td{border-bottom:0}
   main .pd table thead th{background:var(--fondo);color:var(--gris);font-size:10.5px !important;font-weight:600;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--linea);white-space:nowrap;overflow:visible;text-overflow:clip;position:sticky;top:0;z-index:2;padding:6px 8px !important}
   .pd tbody tr:hover td{background:#fcfdfe}
-  .pd tr.pedrow.open td{background:#eef2f7;border-bottom-color:var(--linea)}
+  .pd tr.pedrow.open td{background:#e8edf5}
+  main .pd table tbody tr.pedrow.open>td{border-bottom-width:0}
   .pd .muted{color:#94a3b8;font-size:11.5px;font-weight:400}
   .pd .u{font-size:11px;color:var(--gris);font-weight:500}
   .pd .falta{color:var(--rojo);font-weight:700}
@@ -75,8 +76,8 @@
   .pd tr.det.open{display:table-row}
   .pd tr.vr{display:none}
   .pd tr.vr.open{display:table-row}
-  main .pd table tbody tr.det>td{background:var(--fondo);font-size:12px !important;color:#475569;padding-top:4px !important;padding-bottom:4px !important;border-bottom-color:#eef2f6}
-  .pd tr.det.ultima>td{border-bottom:1px solid var(--linea)}
+  main .pd table tbody tr.det>td{background:var(--fondo);font-size:12px !important;color:#475569;padding-top:4px !important;padding-bottom:4px !important;border-bottom-width:0}
+  main .pd table tbody tr.det.ultima>td{border-bottom-width:1px;padding-bottom:8px !important}
   main .pd table tbody td.masinfo{text-align:left;padding-left:34px !important}
   .pd td.masinfo a{font-size:11.5px;color:var(--azul);text-decoration:none}
   .pd td.masinfo a:hover{text-decoration:underline}
@@ -101,8 +102,8 @@
   .pd .fet button.on{background:#fff;color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(15,23,42,.12)}
   .pd .fet button:focus-visible,.pd .btn:focus-visible,.pd .abrir:focus-visible{outline:2px solid var(--azul);outline-offset:2px}
   /* corte pedido: la tira de pasos (Enviado → En tintura → Terminado) */
-  .pd td.memo{white-space:normal;overflow:visible;text-overflow:clip}
-  .pd td.memo form{white-space:nowrap}
+  .pd td.memo{white-space:nowrap;overflow:visible;text-overflow:clip}
+  .pd td.memo form{display:inline}
   .pd .steps{display:inline-flex;align-items:center;gap:0;min-width:0;vertical-align:middle}
   .pd .steps .st{display:inline-flex;align-items:center;gap:3px;font-size:10.5px;font-weight:500;color:#94a3b8;white-space:nowrap;letter-spacing:0;text-transform:none}
   .pd .steps .st b{display:inline-block;width:7px;height:7px;border-radius:50%;border:1.5px solid #cbd5e1;background:#fff;font-size:0;line-height:0}
@@ -110,21 +111,21 @@
   .pd .steps .st.done b{background:var(--verde);border-color:var(--verde)}
   .pd .steps .st.on{color:var(--azul);font-weight:700}
   .pd .steps .st.on b{background:var(--azul);border-color:var(--azul);box-shadow:0 0 0 2.5px #dbeafe}
-  .pd .steps .sep{width:10px;height:1.5px;background:#cbd5e1;margin:0 4px;flex:0 0 auto}
+  .pd .steps .sep{width:8px;height:1.5px;background:#cbd5e1;margin:0 4px;flex:0 0 auto}
   .pd .steps .sep.done{background:var(--verde)}
   /* la etapa de UNA línea, al lado de su tela */
   .pd .lst{display:inline-block;font-size:10.5px;font-weight:600;white-space:nowrap;margin-left:8px;padding:1px 7px;border-radius:99px;vertical-align:1px}
   .pd .lst.done{color:var(--verde);background:#dcfce7}
   .pd .lst.tinto{color:var(--azul);background:#dbeafe}
-  main .pd table tbody td.telahead{text-align:left;padding:7px 10px 3px 34px !important;font-size:13px !important;font-weight:700;color:var(--ink);background:#f1f5f9}
-  main .pd table tbody tr.telarow>td{background:#f1f5f9;font-size:12px !important;color:var(--gris)}
+  main .pd table tbody td.telahead{text-align:left;padding-left:34px !important;font-size:13px !important;font-weight:700;color:var(--ink)}
+  main .pd table tbody tr.telarow>td{background:#eef2f7;font-size:12px !important;color:var(--gris);padding-top:6px !important;padding-bottom:6px !important}
   main .pd table tbody td.linea{text-align:left;padding-left:46px !important}
   main .pd table tbody td.notaped{text-align:left;padding-left:34px !important;color:var(--gris);font-style:italic}
   .pd td.notaped b{font-style:normal;font-weight:600;color:#475569;margin-right:4px}
   .pd .btnmemo{font-size:12px;padding:4px 11px;border-radius:7px;border:1px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;white-space:nowrap;line-height:1.3}
   .pd .btnmemo:hover{background:var(--azul);border-color:var(--azul)}
-  .pd .btnmemo--cancelar{font-size:11px;padding:2px 8px;border-radius:6px;border:1px solid #fecaca;background:#fff;color:var(--rojo);cursor:pointer;white-space:nowrap;margin-left:8px;line-height:1.3}
-  .pd .btnmemo--cancelar:hover{background:#fef2f2;border-color:var(--rojo)}
+  .pd .btnmemo--cancelar{font-size:11px;padding:0;border:0;background:none;color:var(--rojo);cursor:pointer;white-space:nowrap;margin-left:10px;line-height:1.3;text-decoration:underline dotted;text-underline-offset:2px}
+  .pd .btnmemo--cancelar:hover{text-decoration-style:solid}
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--ink)}
   .pd .vendname{font-size:11.5px;color:var(--gris)}
   .pd .kgs{font-weight:600;color:var(--ink)}
@@ -337,7 +338,7 @@
       <span class="muted" id="fpcount"></span>
     </div>
     <table>
-      <colgroup><col style="width:15%"><col style="width:8%"><col style="width:8%"><col style="width:19%"><col style="width:7%"><col style="width:9%"><col style="width:34%"></colgroup>
+      <colgroup><col style="width:14%"><col style="width:8%"><col style="width:8%"><col style="width:17%"><col style="width:7%"><col style="width:9%"><col style="width:37%"></colgroup>
       <thead><tr><th>Pedido</th><th class="izq">Desde</th><th class="izq">Cliente</th><th class="izq">Vendedor</th><th>Telas</th><th>Kg</th><th class="izq no-print">Memo</th></tr></thead>
       <tbody>
         {% for p in pedidos_lista %}
@@ -400,6 +401,7 @@
              kilos bajo "Kg", así el detalle suma a la vista. #}
           {% set grupos = p.lineas|groupby('tela') %}
           {% for tela, items in grupos %}
+            {% set tela_ultima = loop.last %}
             {% set ns = namespace(cant=0, kg=0, un='', kg_ok=true) %}
             {% for l in items %}{% set ns.cant = ns.cant + l.cantidad %}{% set ns.un = l.unidad %}{% if l.kg is none %}{% set ns.kg_ok = false %}{% else %}{% set ns.kg = ns.kg + l.kg %}{% endif %}{% endfor %}
             <tr class="det telarow" data-grupo="m-{{ p.numero }}" data-fila-hija>
@@ -410,7 +412,7 @@
             </tr>
             {% for l in items %}
             {% set le = et.lineas.get(l.producto) if et else none %}
-            <tr class="det{% if loop.last and grupos|length == loop.index0 + 1 and not p.descripcion %} ultima{% endif %}" data-grupo="m-{{ p.numero }}" data-fila-hija>
+            <tr class="det{% if loop.last and tela_ultima and not p.descripcion %} ultima{% endif %}" data-grupo="m-{{ p.numero }}" data-fila-hija>
               <td class="linea" colspan="4"><span class="color">{{ l.color }}</span><span class="prod">{{ l.producto }}</span>
                 {%- if le == 'terminado' %}<span class="lst done">Terminado</span>
                 {%- elif le == 'en_tintura' %}<span class="lst tinto">En tintura</span>{% endif %}</td>
@@ -512,9 +514,10 @@
           });
         });
         var fc = document.getElementById('fpcount');
-        if (fc) { fc.textContent = (q || etActiva) ? (n + (n === 1 ? ' pedido' : ' pedidos')) : ''; }
+        if (fc) { fc.textContent = n + (n === 1 ? ' pedido' : ' pedidos'); }
       }
       fped.addEventListener('input', filtrarPedidos);
+      filtrarPedidos();
       fet.querySelectorAll('button').forEach(function (b) {
         b.addEventListener('click', function () {
           etActiva = b.dataset.et;
