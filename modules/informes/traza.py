@@ -311,6 +311,25 @@ COMPONENTES = (
     ("caja", 1), ("bancos", 1), ("cheques", 1), ("facturas", 1),
     ("antic", 1), ("vsto", 1), ("vqx", 1), ("umaq", 1), ("uact", 1),
     ("totp", -1), ("uret", 1),
+    # ⭐ Tamara 2026-09-02 — el DOCEAVO, y el que faltaba.
+    #
+    # Los once de arriba son `patr`. Pero la utilidad es `patr − PATANT`, y
+    # PATANT (el patrimonio del último cierre, scintela.historia) no estaba en
+    # la lista. Cuando cambia, el Δ de la utilidad se mueve y las once celdas
+    # quedan VACÍAS: el síntoma exacto de "no cierra", sin nada que mirar.
+    #
+    # Pasó el 02/09/2026: entre las 08:02 y las 08:20 la utilidad saltó a
+    # +1.971.282 y volvió a −709.403 (Δ +2.679.072 y −2.677.092) con la única
+    # celda escrita en Stock, +1.450 y +531. No se movió NADA del patrimonio:
+    # se movió el cierre contra el que se compara —una regeneración de snapshot
+    # borra la fila y la vuelve a insertar, y en esa ventana `historia_ultimo_mes`
+    # devuelve un cierre más viejo—. Durante esos 18 minutos el balance mostró
+    # 1,97 MILLONES de utilidad a quien lo abriera.
+    #
+    # No hace falta migración: PATANT sale de lo que la foto YA guarda,
+    # `patr_neto + uret − utilidad` (ver `_patant_de`). Signo −1, como los
+    # pasivos: si el cierre anterior sube, la utilidad baja.
+    ("patant", -1),
 )
 
 ETIQUETAS = {
@@ -318,7 +337,27 @@ ETIQUETAS = {
     "facturas": "Facturas", "antic": "Anticipos", "vsto": "Stock MP+Prod.",
     "vqx": "Stock Químicos", "umaq": "Maquinaria", "uact": "Terrenos/Edif.",
     "totp": "Pasivos", "uret": "Dividendos",
+    "patant": "Cierre anterior (PATANT)",
 }
+
+
+def _patant_de(fila: dict) -> float | None:
+    """PATANT de una foto, despejado de lo que la foto ya guarda.
+
+        utilidad = patr − patant        y     patr = patr_neto + uret
+        ⇒ patant = patr_neto + uret − utilidad
+
+    Devuelve None si a la foto le falta alguno de los tres (las anteriores a
+    que existiera `patr_neto` no se pueden reconstruir). None NO es 0: una foto
+    sin el dato se saltea en el Δ en vez de inventar un movimiento gigante.
+    """
+    try:
+        pn, ur, ut = fila.get("patr_neto"), fila.get("uret"), fila.get("utilidad")
+        if pn is None or ut is None:
+            return None
+        return float(pn) + float(ur or 0) - float(ut)
+    except (TypeError, ValueError):
+        return None
 
 
 #: Las columnas de la grilla. Muestran el Δ del componente, no su saldo.
@@ -339,7 +378,7 @@ COLUMNAS_DELTA = ("caja", "bancos", "cheques", "facturas", "antic",
 #: no necesito"). Siguen moviendo la utilidad —la amortización, todos los
 #: días— así que su suma va en una columna "Otros": sin ella, esas filas
 #: muestran un Δ con las ocho celdas vacías, que es el síntoma de "no cierra".
-COLUMNAS_OTROS = ("umaq", "uact", "uret")
+COLUMNAS_OTROS = ("umaq", "uact", "uret", "patant")
 
 #: Rótulos cortos para la grilla. Con `table-layout:fixed` el ancho lo fija el
 #: CSS, pero un encabezado largo igual obliga a envolver en dos líneas y empuja
@@ -485,8 +524,13 @@ def con_deltas(filas: list[dict]) -> list[dict]:
     `filas` viene de `ultimas()`: más nueva primero. La última no tiene contra
     qué compararse y queda con delta None.
     """
+    # PATANT es derivado, no una columna guardada: se calcula una vez por foto
+    # y viaja en la fila para que el Δ lo trate como un componente más (y para
+    # que el detalle pueda mostrarlo). Ver `_patant_de`.
+    filas = [dict(f, patant=_patant_de(f)) for f in (filas or [])]
+
     out = []
-    for i, f in enumerate(filas or []):
+    for i, f in enumerate(filas):
         fila = dict(f)
         prev = filas[i + 1] if (i + 1) < len(filas) else None
         if not prev:
@@ -505,6 +549,11 @@ def con_deltas(filas: list[dict]) -> list[dict]:
             fila["d_utilidad"] = None
         movs = []
         for col, signo in COMPONENTES:
+            # PATANT es derivado y puede faltar en fotos viejas. Sin las dos
+            # puntas no hay Δ que calcular: saltear es correcto, tratar el None
+            # como 0 inventaría un movimiento del tamaño del patrimonio.
+            if col == "patant" and (f.get(col) is None or prev.get(col) is None):
+                continue
             try:
                 d = float(f.get(col) or 0) - float(prev.get(col) or 0)
             except (TypeError, ValueError):
