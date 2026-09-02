@@ -88,8 +88,13 @@ def test_presupuesto_propio_del_mes_no_avisa_nada(app, fake_db):
     assert b"agosto 2026" not in r.data
 
 
-def test_presupuesto_heredado_descuenta_igual_y_lo_avisa(app, fake_db):
-    """El caso del 02/09: septiembre sin cargar, hereda agosto."""
+def test_presupuesto_heredado_descuenta_igual_sin_avisar(app, fake_db):
+    """El caso del 02/09: septiembre sin cargar, hereda agosto.
+
+    Federico 2026-09-02: mientras no se cambien, los gastos del mes anterior SON
+    los del mes en curso — no es un faltante, así que no se avisa en ningún lado
+    ("toda proyección se sobreentiende que es para el mes en curso").
+    """
     proy = {"periodo": "2026-09", "tej": 130_000.0, "tin": 372_000.0,
             "adm": 305_000.0, "heredado": True, "periodo_origen": "2026-08",
             "periodo_origen_nom": "agosto 2026"}
@@ -100,9 +105,10 @@ def test_presupuesto_heredado_descuenta_igual_y_lo_avisa(app, fake_db):
     # El bug: sin descontar el gasto fijo la fila salía 807k más arriba.
     assert round(VENTA_PROY - COSTO_DIRECTO - esperado, 2) == 807_000.0
 
-    assert "todavía no se cargó" in fila["ayuda"]
-    assert "agosto 2026" in fila["ayuda"]
-    assert "agosto 2026" in r.data.decode("utf-8")
+    assert "todavía no se cargó" not in fila["ayuda"]
+    assert "⚠" not in fila["ayuda"]
+    assert "agosto 2026" not in fila["ayuda"]
+    assert b"agosto 2026" not in r.data
 
 
 def test_dia_1_sin_ventas_ni_tintura_no_da_una_utilidad_absurda(app, fake_db):
@@ -147,19 +153,22 @@ def test_dia_1_sin_ventas_ni_tintura_no_da_una_utilidad_absurda(app, fake_db):
     assert fila["us"] > 0, "el día 1 la Utilidad Esperada no tiene por qué ser negativa"
 
 
-def test_heredado_sin_nombre_lindo_cae_al_periodo_crudo(app, fake_db):
+def test_heredado_no_nombra_el_mes_de_origen_en_ningun_lado(app, fake_db):
+    """Federico 2026-09-02: ni el nombre lindo ni el período crudo. La ayuda de
+    la fila explica la fórmula y nada más."""
     proy = {"periodo": "2026-09", "tej": 1.0, "tin": 0.0, "adm": 0.0,
             "heredado": True, "periodo_origen": "2026-08"}
     _r, fila = _correr(app, fake_db, proy)
-    assert "2026-08" in fila["ayuda"]
+    assert "2026-08" not in fila["ayuda"]
 
 
-def test_kg_heredado_del_mes_anterior_se_usa_y_se_avisa(app, fake_db):
-    """La meta de kg con la que venían trabajando no se pierde el 1°, y se dice.
+def test_kg_heredado_del_mes_anterior_se_usa_sin_cartel(app, fake_db):
+    """La meta de kg con la que venían trabajando no se pierde el 1°.
 
-    Antes: sin fila del mes nuevo, la pantalla volvía al `kprog` de Iniciales sin
-    aviso. Ahora hereda el último kg cargado, lo marca en la fila y lo explica en
-    la ayuda; el primer guardado del mes pisa la herencia.
+    Antes: sin fila del mes nuevo, la pantalla volvía al `kprog` de Iniciales.
+    Ahora hereda el último kg cargado. Federico 2026-09-02: si no se cambia la
+    meta, se asume que sigue siendo la misma para el mes en curso — sin chip
+    ámbar en la pantalla; el primer guardado del mes pisa la herencia igual.
     """
     proy = {"periodo": "2026-09", "tej": 130_000.0, "tin": 372_000.0,
             "adm": 305_000.0, "heredado": False, "periodo_origen": "2026-09"}
@@ -183,10 +192,10 @@ def test_kg_heredado_del_mes_anterior_se_usa_y_se_avisa(app, fake_db):
     # El kg heredado PISA el kgpro y arrastra la venta proyectada (kg × precio).
     assert proyeccion["kg"] == 300_000.0
     assert proyeccion["us"] == 300_000.0 * 8.10
-    assert proyeccion["heredado_de"] == "agosto 2026"
-    assert "todavía no se fijaron para este mes" in proyeccion["ayuda"]
-    # Y el chip llega a la pantalla.
-    assert "de agosto 2026" in r.data.decode("utf-8")
+    assert "heredado_de" not in proyeccion          # sin chip en la pantalla
+    assert "agosto 2026" not in (proyeccion.get("ayuda") or "")
+    # El texto sólo puede aparecer en el title (tooltip), nunca como chip.
+    assert 'id="vp-heredado"' not in r.data.decode("utf-8")
 
     # La utilidad esperada se calcula sobre esos kg, no sobre los 320.000.
     fila = _fila_utilidad_esperada(bal)

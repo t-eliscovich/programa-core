@@ -944,17 +944,11 @@ def balance():
                         _precio = float(_r.get("ukg") or 0)
                         _r["kg"] = _vp_kg
                         _r["us"] = _vp_kg * _precio
-                        if _vp.get("heredado"):
-                            _r["heredado_de"] = (
-                                _vp.get("periodo_origen_nom")
-                                or _vp.get("periodo_origen")
-                            )
-                            _r["ayuda"] = (
-                                (_r.get("ayuda") or "")
-                                + " ⚠ Los kg todavía no se fijaron para este mes: "
-                                f"son los de {_r['heredado_de']}. Editá el "
-                                "casillero y quedan guardados para el mes en curso."
-                            )
+                        # Federico 2026-09-02: si no se cambia la meta, se ASUME
+                        # que sigue siendo la misma para el mes en curso. NO es un
+                        # faltante y no se avisa en ningún lado ("toda proyección
+                        # se sobreentiende que es para el mes en curso"): ni chip
+                        # en la pantalla ni leyenda en el tooltip.
                         break
 
             _proy = queries.gastos_proyectado_mes_get()
@@ -966,10 +960,9 @@ def balance():
             # Andrés 2026-09-02 — si el presupuesto del mes todavía no se cargó,
             # `gastos_proyectado_mes_get` hereda el del último mes cargado (antes
             # devolvía 0 y la Utilidad Esperada salía inflada por todo el gasto
-            # fijo). Lo decimos en la ayuda de la fila en vez de disimularlo.
-            _proy_origen = (
-                _proy.get("periodo_origen_nom") or _proy.get("periodo_origen")
-            ) if _proy.get("heredado") else None
+            # fijo). Federico 2026-09-02: eso NO es un faltante — mientras no se
+            # cambien, los gastos del mes anterior SON los del mes en curso, y no
+            # se avisa en ningún lado.
 
             def _cell(_lbl, _k):
                 for _r in _tabla:
@@ -1015,14 +1008,6 @@ def balance():
                         "base, compartidos por todos los usuarios) − Costos "
                         "directos: kg proy × Materia Prima $/kg × 1,045 (4,5% "
                         "de desperdicio) + kg proy × Colorantes/Quím. $/kg."
-                        + (
-                            " ⚠ El presupuesto de gastos de este mes todavía no "
-                            f"se cargó: se están usando los de {_proy_origen}. "
-                            "Cargalos en Informes → Gastos (fila «Gs. Proy. mes "
-                            "actual»)."
-                            if _proy_origen
-                            else ""
-                        )
                     )
                     break
 
