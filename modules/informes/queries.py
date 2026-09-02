@@ -4378,6 +4378,12 @@ def resultados_costos_tabla(
     # días del mes. Default 0 → los callers viejos no cambian de resultado.
     precio_meta: float = 0.0,
     col_ukg_meta: float = 0.0,
+    # Andrés 2026-09-02 (segunda vuelta) — KR = kg de las órdenes de tintura del
+    # mes (`scintela.tinto.kr`), el denominador que va EN FASE con ITIN. Ver el
+    # bloque de `col_ukg_proy`. OJO la diferencia entre None y 0: None = el caller
+    # no lo pasa (compat, se proyecta con el $/kg de la fila); 0 = el mes todavía
+    # no tiene órdenes de tintura, y ahí hay que ir a la meta, NO a la fila.
+    kr_tinto: float | None = None,
     # TMT 2026-06-23 (dueña): presupuesto de gastos POR ÁREA (dBase XPRETEJ/
     # XPRETIN/XPREADM de INICIALES) → columna "Proyectado" GS.PROY vs GS.ACT.
     pretej: float = 0.0,
@@ -4463,13 +4469,37 @@ def resultados_costos_tabla(
     # historia. Caída a ktint si no se pasa (compat con callers viejos).
     col_kg = float(ktint_colorantes) if ktint_colorantes else ktint
     col_ukg = _div(col_us, col_kg)
-    # Andrés 2026-09-02 — mismo problema que el precio, del otro lado: el $/kg de
-    # Colorantes es consumo del mes ÷ kg terminados del mes, y los primeros días
-    # del mes puede ser 0 (todavía no se tinturó) o estar deformado. La FILA sigue
-    # mostrando el live; para PROYECTAR se usa el efectivo (live, sino la tarifa
-    # meta `uq` de Iniciales). Sin esto, un 0 acá dejaba el costo directo corto y
-    # la Utilidad Esperada de más.
-    col_ukg_proy, col_ukg_proy_src = _eff_rate(col_ukg, col_ukg_meta)
+    # ¿Con qué $/kg de colorantes se PROYECTA el mes entero?
+    #
+    # NO con el de la fila. El $/kg que se muestra es `consumo físico del mes ÷ kg
+    # de TERMINADO ingresados en el mes`, y esas dos magnitudes vienen de sistemas
+    # distintos que NO van al mismo ritmo: el consumo de químico se registra
+    # cuando se tintura, los ingresos de terminado entran a Asinfo después. Los
+    # primeros días del mes el numerador ya corrió y el denominador todavía no, y
+    # el cociente sale deformado hacia arriba.
+    #
+    # Medido en producción el 02/09/2026 (Andrés: *"sigue mal la esperada"*):
+    # 14.605 U$ ÷ 5.380 kg = 2,715 U$/kg contra una tarifa objetivo de ~0,64 —
+    # más de 4×. Multiplicado por los 320.000 kg de la meta, ese error metía
+    # ~660.000 U$ de costo inventado y hundía la Utilidad Esperada a −24.364
+    # cuando la cuenta sana daba ~+670.000. (El arreglo anterior sólo cubría el
+    # caso `col_ukg == 0`; acá el valor no es 0, es incorrecto — más peligroso,
+    # porque parece un dato.)
+    #
+    # Para proyectar se usa ITIN/KR: importe y kg de las MISMAS órdenes de tintura
+    # del mes (`scintela.tinto`). Al salir de las mismas filas están en fase por
+    # construcción, así que el cociente es un costo unitario válido aunque el mes
+    # recién arranque. Es además la fórmula del dBase (INFORMES.PRG L419:
+    # `UMX + ITIN/KR`). Si no hay KR todavía, cae a la tarifa meta `uq` de
+    # Iniciales; y si el caller no pasa KR, al $/kg de la fila (compat).
+    #
+    # La FILA no cambia: sigue mostrando el físico sobre kg terminados, que es la
+    # foto correcta del mes (decisión de la dueña 2026-07-21, coherente con el
+    # stock físico). Lo que cambia es sólo con qué se proyecta.
+    _col_ukg_en_fase = (
+        col_ukg if kr_tinto is None else _div(float(itin or 0), float(kr_tinto))
+    )
+    col_ukg_proy, col_ukg_proy_src = _eff_rate(_col_ukg_en_fase, col_ukg_meta)
 
     # Federico 2026-07-27: Materia Prima se mide sobre los KG VENDIDOS (costeo de
     # lo vendido), NO sobre el hilado consumido del mes. kg = kg vendidos;
@@ -4535,7 +4565,7 @@ def resultados_costos_tabla(
     # dBase usa ITIN/KR (no ITIN/KTINT = col_ukg) en el costo variable de la
     # proyección (PRG L419: (UMX+ITIN/KR)). `ktint` param = KR (tin.kr). Sutil
     # pero mueve ~7k en la UT.PROY. TMT 2026-06-05.
-    _col_kr, _ = _eff_rate(_div(float(itin or 0), ktint), col_ukg_meta)
+    _col_kr = col_ukg_proy
     _costo_var_kg = (mp_ukg + _col_kr) * float(factor_desperdicio or 1.0)
     _margen_var_kg = precio_proy - _costo_var_kg
     _gasto_fijo_restante = float(pretot or 0) - (tej_us + tin_us + adm_us)
@@ -4565,7 +4595,15 @@ def resultados_costos_tabla(
                    "igual que la PROYECCIÓN del dBase (INFORMES.PRG)."
                    + (" Todavía no hay ventas este mes: se proyecta con el "
                       "precio objetivo de Iniciales."
-                      if precio_proy_src == "meta" else ""))},
+                      if precio_proy_src == "meta" else "")
+                   + (" Colorantes se proyecta con la tarifa objetivo de "
+                      "Iniciales (todavía no hay órdenes de tintura del mes)."
+                      if col_ukg_proy_src == "meta"
+                      else (" Colorantes se proyecta a "
+                            f"{col_ukg_proy:,.3f} U$/kg (importe y kg de las "
+                            "órdenes de tintura del mes), que puede diferir del "
+                            "$/kg de la fila: ésa mide el químico físico sobre "
+                            "los kg terminados que ya entraron a Asinfo.")))},
         {"label": "COSTOS", "clase": "seccion"},
         {"label": "Materia Prima",
          "kg": (float(mp_kg) if mp_kg else None),
@@ -5806,6 +5844,11 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         # `precio_eff` / `uq_eff`, que este mismo archivo ya usa para proy_uvent.
         precio_meta=inic_pre,
         col_ukg_meta=inic_uq,
+        # KR real de `scintela.tinto` — OJO: el param `ktint` de arriba lleva los
+        # kg de TERMINADO de Asinfo (decisión dueña 2026-07-17 para las filas),
+        # que NO están en fase con ITIN. Para proyectar hace falta el par
+        # ITIN/KR de las mismas órdenes. Ver `col_ukg_proy`.
+        kr_tinto=float(tin.get("kr") or 0),
         # Costo Total (columna Proyectado) = suma de los 3 gastos proyectados de
         # la página de Gastos (Tej+Tint+Adm). Federico 2026-07-27.
         pretot=pretot_res,

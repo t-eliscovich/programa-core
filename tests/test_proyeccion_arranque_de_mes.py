@@ -87,3 +87,72 @@ def test_sin_metas_cargadas_el_comportamiento_es_el_de_antes():
     assert p["ukg"] == 8.10
     assert p["costo_var_ukg"] == 2.92
     assert p["meta_precio"] is False and p["meta_costo"] is False
+
+
+# ---------------------------------------------------------------------------
+# Segunda vuelta — Andrés 2026-09-02: "sigue mal la esperada"
+# ---------------------------------------------------------------------------
+# El arreglo de arriba sólo cubría `col_ukg == 0`. Pero a principio de mes el
+# $/kg de colorantes no da 0: da un número DEFORMADO, que es peor porque parece
+# un dato. Es `consumo físico ÷ kg de terminado ingresados`, y esas dos
+# magnitudes vienen de sistemas que no van al mismo ritmo — el consumo se
+# registra al tinturar, el terminado entra a Asinfo después.
+#
+# Para proyectar se usa ITIN/KR: importe y kg de las MISMAS órdenes de tintura,
+# en fase por construcción. Es la fórmula del dBase (INFORMES.PRG L419).
+
+
+def test_para_proyectar_manda_itin_sobre_kr_no_el_ukg_de_la_fila():
+    tab = _tabla(
+        # Fila: 14.605 U$ de químico físico sobre 5.380 kg terminados = 2,715.
+        col_us_fisico=14_605.0, ktint=5_380.0, ktint_colorantes=5_380.0,
+        # Órdenes de tintura del mes: 12.000 U$ sobre 18.750 kg = 0,64.
+        itin=12_000.0, kr_tinto=18_750.0,
+        col_ukg_meta=0.70,
+    )
+    assert round(_row(tab, "Colorantes/Quím.")["ukg"], 3) == 2.715  # la fila no cambia
+    p = _row(tab, "Proyección")
+    assert round(p["costo_var_ukg"], 4) == round(2.92 + 0.64, 4)    # proyecta con ITIN/KR
+    assert p["meta_costo"] is False
+
+
+def test_sin_ordenes_de_tintura_todavia_cae_a_la_meta():
+    tab = _tabla(col_us_fisico=14_605.0, ktint=5_380.0, ktint_colorantes=5_380.0,
+                 itin=0.0, kr_tinto=0.0, col_ukg_meta=0.70)
+    p = _row(tab, "Proyección")
+    assert round(p["costo_var_ukg"], 4) == round(2.92 + 0.70, 4)
+    assert p["meta_costo"] is True
+
+
+def test_caller_sin_kr_conserva_el_comportamiento_viejo():
+    """Compat: sin `kr_tinto` se sigue proyectando con el $/kg de la fila."""
+    tab = _tabla(col_us_fisico=14_605.0, ktint=5_380.0, ktint_colorantes=5_380.0,
+                 col_ukg_meta=0.70)
+    assert round(_row(tab, "Proyección")["costo_var_ukg"], 3) == round(2.92 + 2.715, 3)
+
+
+def test_regresion_produccion_02_09_2026():
+    """Los números que Andrés vio en pantalla, con y sin el arreglo.
+
+    Fila Colorantes 2,715 U$/kg (14.605 ÷ 5.380) contra una tarifa real de 0,64:
+    más de 4×. Sobre los 320.000 kg de la meta eso metía ~660.000 U$ de costo
+    inventado y dejaba la Utilidad Esperada en −24.364 en vez de ~+669.000.
+    """
+    proy_us, gastos, proy_kg, mp = 2_716_189.0, 815_000.0, 320_000.0, 3.044
+
+    def utilidad(col_ukg_proy):
+        return proy_us - gastos - proy_kg * (mp + col_ukg_proy) * 1.045
+
+    # Lo que se veía en pantalla, con el $/kg deformado de la fila.
+    assert round(utilidad(2.715)) == -24_621          # pantalla: -24.364 (redondeo)
+    # Con el par en fase ITIN/KR.
+    assert round(utilidad(0.64)) == 669_259
+    # El arreglo tiene que mover la fila del rojo al verde, ~700k.
+    assert utilidad(0.64) - utilidad(2.715) > 690_000
+
+    # Y la tabla, armada con esos mismos insumos, proyecta con ITIN/KR.
+    tab = _tabla(venta_kg=33_578.0, venta_us=285_014.0, mp_ukg=mp, kgpro=proy_kg,
+                 col_us_fisico=14_605.0, ktint=5_380.0, ktint_colorantes=5_380.0,
+                 itin=12_000.0, kr_tinto=18_750.0, col_ukg_meta=0.70)
+    p = _row(tab, "Proyección")
+    assert round(proy_us - gastos - p["kg"] * p["costo_var_ukg"] * 1.045) == 669_259
