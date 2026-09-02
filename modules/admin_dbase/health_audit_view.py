@@ -2403,6 +2403,92 @@ def historia_balance_cierra():
 
 
 # ---------------------------------------------------------------------------
+# El crédito OP (aporte del accionista) contado dos veces, o de menos
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-02: "¿el saldo OP cierra contra los aportes y retiros?".
+#
+# El crédito OP vive en DOS lugares y `compras.queries.crear` los mantiene a los
+# dos: la compra NEGATIVA (`scintela.compra`, codigo_prov='OP') y su ESPEJO en
+# `scintela.posdat` (prov='OP', banc=0), que es el que entra al balance vía TOTP.
+# Una línea OP cargada a mano existe SÓLO en posdat (lleva `num` de la serie de
+# posdat, 1003xx, no un `numero` de compra).
+#
+# Las dos pantallas cuentan distinto:
+#   · `retiros.queries.saldo_op()`   — el titular "Saldo OP": suma SÓLO compra.
+#     No ve las líneas cargadas a mano → muestra MENOS crédito del que hay.
+#   · `retiros.queries.lineas_op()`  — el listado por línea: UNION ALL de compra
+#     Y posdat, sin deduplicar → cuenta DOS VECES cada crédito que sí tiene
+#     compra detrás.
+#
+# Las dos no pueden estar bien a la vez. Esto no arregla ninguna: las MIDE, que
+# es lo que faltaba para poder decidir cuál es la buena.
+_OP_TOL_US = 1.0
+
+
+@bp.route("/op-cierra", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def op_cierra():
+    """El crédito OP visto por las tres fuentes, y si cuadran entre sí."""
+    alerts: list[dict] = []
+    stats: dict = {}
+
+    def _n(row, k="s"):
+        return round(float((row or {}).get(k) or 0), 2)
+
+    # 1. Crédito por compra OP (lo que suma el titular `saldo_op`).
+    cred_compra = -_n(db.fetch_one(
+        "SELECT COALESCE(SUM(importe), 0) AS s FROM scintela.compra "
+        "WHERE UPPER(TRIM(codigo_prov)) = 'OP' AND COALESCE(stat, '') <> 'Y'"))
+
+    # 2. Crédito por posdat OP — el que de verdad está en el balance (TOTP).
+    cred_posdat = -_n(db.fetch_one(
+        "SELECT COALESCE(SUM(importe), 0) AS s FROM scintela.posdat "
+        "WHERE UPPER(TRIM(prov)) = 'OP' AND COALESCE(banc, 0) = 0 "
+        "  AND (anulada IS NOT TRUE OR anulada IS NULL)"))
+
+    # 3. Retiros OP.
+    retirado = _n(db.fetch_one(
+        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+        "WHERE UPPER(TRIM(de)) = 'OP'"))
+
+    stats["credito_compras"] = cred_compra
+    stats["credito_posdat"] = cred_posdat
+    stats["retirado"] = retirado
+    stats["disponible_segun_posdat"] = round(cred_posdat - retirado, 2)
+    # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes.
+    stats["credito_como_lo_suma_lineas_op"] = round(cred_compra + cred_posdat, 2)
+    stats["delta_compras_vs_posdat"] = round(cred_compra - cred_posdat, 2)
+
+    if abs(cred_compra - cred_posdat) >= _OP_TOL_US:
+        alerts.append({
+            "severity": "medium",
+            "category": "op_credito_no_cuadra",
+            "msg": (
+                f"El crédito OP por compras ({cred_compra:,.2f}) no coincide con "
+                f"el de posdatados ({cred_posdat:,.2f}); difieren "
+                f"{cred_compra - cred_posdat:+,.2f}. El titular 'Saldo OP' suma "
+                f"sólo las compras y no ve las líneas cargadas a mano; el "
+                f"listado por línea suma las dos fuentes y duplica las que sí "
+                f"tienen compra detrás. Revisar /posdat?tab=op y los retiros OP."
+            ),
+        })
+
+    if retirado - cred_posdat >= _OP_TOL_US:
+        alerts.append({
+            "severity": "high",
+            "category": "op_retirado_de_mas",
+            "msg": (
+                f"Se retiró más crédito OP del que hay cargado: retirado "
+                f"{retirado:,.2f} contra un crédito de {cred_posdat:,.2f} "
+                f"({retirado - cred_posdat:+,.2f} de más)."
+            ),
+        })
+
+    return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+
+
+# ---------------------------------------------------------------------------
 # Precios de /precios vs la lista vigente de Asinfo
 # ---------------------------------------------------------------------------
 # TMT 2026-09-02 (Tamara): si Asinfo cambia la lista y nadie trae los cambios,
@@ -2449,6 +2535,7 @@ def health_all():
     resp19 = saldos_coherente()
     resp20 = historia_balance_cierra()
     resp21 = precios_asinfo()
+    resp22 = op_cierra()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2516,6 +2603,7 @@ def health_all():
         "saldos": data19,
         "historia_balance_cierra": data20,
         "precios_asinfo": data21,
+        "op_cierra": json.loads(resp22.get_data(as_text=True)),
     })
 
 
