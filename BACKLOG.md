@@ -244,6 +244,26 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
+### [S] `/stock/fabricacion-tc` arma el balance entero para un pie de página
+Medido el 02/09 (Tamara: *"¿páginas lentas?"*): la pantalla tarda lo que el
+balance (129 consultas) porque `stock_queries.resumen_stock()` llama a
+`informe_balance()` sólo para mostrar "Valor del stock (programa): $ · kg" al
+pie. Opciones: pedir el pie con un `fetch` aparte al abrir, o una caché corta
+del balance (con cuidado: el balance se relee después de cada carga).
+`modules/stock_asinfo/views.py:_fabricacion_page`, `modules/stock/queries.py`.
+
+### [S] `/cheques`: los nombres se buscan ANTES del LIMIT
+La consulta del listado (284 ms, `modules/cheques/queries.py` `WITH filtrados`)
+resuelve 5 subconsultas correlacionadas (cliente, vendedor, banco, proveedor)
+para TODOS los cheques filtrados y recién después corta la página. Mover los
+nombres afuera del `filtrados` (después del `LIMIT`) los deja en 50 filas. El
+`saldo_acumulado` (window) sí necesita el conjunto entero, pero sobre `c.*`.
+
+### [XS] El termómetro no ve las idas al puente hechas en hilos
+`medidor.anotar_puente` es thread-local: lo que `/facturas/dia` pide a Asinfo
+desde su `ThreadPoolExecutor` no se cuenta (la pantalla muestra "—"). Pasarle
+el contexto a los hilos, o sumar en el hilo principal lo que devuelven.
+
 ### [XS] Despacho sin factura: las muestras chicas avisan igual
 Un despacho de 0,5 kg (MUESTRAS ING ANDRES, 28/08) enciende la misma alerta
 que uno de 988 kg. El de hilo sin orden tiene piso de 200 kg; éste no tiene.
