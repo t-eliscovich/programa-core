@@ -97,6 +97,11 @@
     border-radius: 2px;
   }
 
+  /* Botón "Ver más" — clase propia (no [hidden]: hay reglas de otras
+     pantallas que lo pisan con display: — ver memoria). TMT 2026-09-02. */
+  .cuenta-card-extra { display: none; }
+  #cuenta-grid.cuenta-grid-todas .cuenta-card-extra { display: block; }
+
   /* Estado pills en la tabla */
   .pill {
     display: inline-block;
@@ -370,13 +375,14 @@
       <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Por cuenta ▸</h2>
       <span class="text-xs text-slate-500">{{ cuentas | length }} cuenta{{ 's' if cuentas | length != 1 else '' }} con anticipo vivo · US$ {{ resumen.total_vivos | num_es(0) }}</span>
     </summary>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      {% for c in cuentas[:12] %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" id="cuenta-grid">
+      {% for c in cuentas %}
       {# Bug TMT 2026-05-13: c.total_vivo viene como decimal.Decimal del SUM
          de postgres y max_saldo es float — Python 3 no permite Decimal/float
          directo. Casteo ambos a float. #}
       {% set pct = ((c.total_vivo | float) / max_saldo * 100) if max_saldo and max_saldo > 0 else 0 %}
-      <a href="{{ url_for('dolares.lista', cta=c.cta, solo_vivos='1') }}" class="cuenta-card block group">
+      <a href="{{ url_for('dolares.lista', cta=c.cta, solo_vivos='1') }}"
+         class="cuenta-card block group{{ ' cuenta-card-extra' if loop.index > 12 else '' }}">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 mb-1">
@@ -405,10 +411,14 @@
       {% endfor %}
     </div>
     {% if cuentas | length > 12 %}
-    <p class="text-xs text-slate-500 mt-3">
-      Mostrando las 12 cuentas con mayor saldo. Hay {{ cuentas | length - 12 }} más con anticipo vivo
-      — usá el filtro de abajo o el CSV para ver el resto.
-    </p>
+    {# TMT 2026-09-02 (Tamara: "pone un botón de ver más") — mismo patrón que
+       Posdatados/Por proveedor: las cards de más de 12 ya están en el DOM
+       (clase .cuenta-card-extra, display:none) y el botón las destapa. #}
+    <button type="button"
+            onclick="var g=document.getElementById('cuenta-grid'); var abrio=g.classList.toggle('cuenta-grid-todas'); this.textContent = abrio ? 'Ver menos' : 'Ver {{ cuentas | length - 12 }} más';"
+            class="mt-3 text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+      Ver {{ cuentas | length - 12 }} más
+    </button>
     {% endif %}
   </details>
   {% endif %}

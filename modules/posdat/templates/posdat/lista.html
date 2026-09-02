@@ -53,6 +53,12 @@
     background: rgb(244 63 94); /* rose-500 — es deuda, no saldo a favor */
     border-radius: 2px;
   }
+  /* Botón "Ver más" — las cards de más de 12 nacen ocultas (clase propia,
+     no el atributo [hidden]: hay reglas de otras pantallas que lo pisan
+     con display: — ver memoria). El grid las muestra al togglear
+     .prov-grid-todos. TMT 2026-09-02. */
+  .prov-card-extra { display: none; }
+  #prov-grid.prov-grid-todos .prov-card-extra { display: block; }
 </style>
 {% endblock %}
 
@@ -151,7 +157,12 @@
      TMT 2026-09-02 (Tamara: "hacer igual un por cuenta en posdatados", el
      pedido de Anticipos USD). Colapsable, cerrado por defecto — el hero de
      arriba alcanza para el pantallazo. No aparece en tab=yy: ahí "proveedor"
-     son sólo los códigos YY/RT, no tiene sentido armar cards con eso. #}
+     son sólo los códigos YY/RT, no tiene sentido armar cards con eso.
+     TMT 2026-09-02 (Tamara: "pone un botón de ver más"): las cards de más de
+     12 se renderizan igual (así el botón no dispara otra carga de página)
+     pero arrancan con `.prov-card-extra` (display:none por CSS); el botón
+     les saca esa clase al grid contenedor. Sin JS framework — un onclick
+     inline alcanza para un toggle así. #}
   {% if proveedores %}
   {% set max_deuda = proveedores[0].total_abierto | float if proveedores[0].total_abierto else 0 %}
   <details class="mb-6">
@@ -159,12 +170,13 @@
       <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Por proveedor ▸</h2>
       <span class="text-xs text-slate-500">{{ proveedores | length }} proveedor{{ 'es' if proveedores | length != 1 else '' }} con deuda abierta · {{ (proveedores | sum(attribute='total_abierto')) | money_es }}</span>
     </summary>
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-      {% for p in proveedores[:12] %}
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3" id="prov-grid">
+      {% for p in proveedores %}
       {# Mismo cuidado que dolares.por_cuenta() (TMT 2026-05-13): total_abierto
          viene como Decimal de postgres y max_deuda es float — castear ambos. #}
       {% set pct = ((p.total_abierto | float) / max_deuda * 100) if max_deuda and max_deuda > 0 else 0 %}
-      <a href="{{ url_for('posdat.lista', prov=p.prov, tab=tab) }}" class="prov-card block group">
+      <a href="{{ url_for('posdat.lista', prov=p.prov, tab=tab) }}"
+         class="prov-card block group{{ ' prov-card-extra' if loop.index > 12 else '' }}">
         <div class="flex items-start justify-between gap-2">
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2 mb-1">
@@ -193,10 +205,11 @@
       {% endfor %}
     </div>
     {% if proveedores | length > 12 %}
-    <p class="text-xs text-slate-500 mt-3">
-      Mostrando los 12 proveedores con más deuda. Hay {{ proveedores | length - 12 }} más con deuda abierta
-      — usá el filtro de abajo o el CSV para ver el resto.
-    </p>
+    <button type="button"
+            onclick="var g=document.getElementById('prov-grid'); var abrio=g.classList.toggle('prov-grid-todos'); this.textContent = abrio ? 'Ver menos' : 'Ver {{ proveedores | length - 12 }} más';"
+            class="mt-3 text-xs px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200 font-medium hover:bg-slate-100 dark:hover:bg-slate-800">
+      Ver {{ proveedores | length - 12 }} más
+    </button>
     {% endif %}
   </details>
   {% endif %}
