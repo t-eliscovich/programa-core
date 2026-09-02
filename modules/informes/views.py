@@ -958,11 +958,19 @@ def balance():
 
             _proy_us = _cell("Proyección", "us")
             _proy_kg = _cell("Proyección", "kg")
-            _mp_ukg = _cell("Materia Prima", "ukg")
-            _col_ukg = _cell("Colorantes/Quím.", "ukg")
+            # Andrés 2026-09-02 — el costo variable unitario para PROYECTAR viene
+            # de la fila Proyección (`costo_var_ukg`): son las tarifas EFECTIVAS
+            # (live del mes, y si todavía es 0 la meta de Iniciales). Leer los
+            # $/kg de las filas de costos, como se hacía antes, daba 0 los
+            # primeros días del mes —sin tintura no hay $/kg de colorantes— y la
+            # Utilidad Esperada salía de más. Fallback a las filas para no
+            # depender de la clave si alguien arma la tabla a mano.
+            _costo_var_ukg = _cell("Proyección", "costo_var_ukg") or (
+                _cell("Materia Prima", "ukg") + _cell("Colorantes/Quím.", "ukg")
+            )
             # Federico 2026-07-27: desperdicio 4,5% (1.045), consistente con el
             # Costo Total del cuadro (que usa 1.045 sobre MP+Col). Antes 1.05.
-            _costo_directo = _proy_kg * (_mp_ukg + _col_ukg) * 1.045
+            _costo_directo = _proy_kg * _costo_var_ukg * 1.045
             _up_us = _proy_us - _gastos_proy - _costo_directo
             for _r in _tabla:
                 if _r.get("label") == "Utilidad Esperada":
