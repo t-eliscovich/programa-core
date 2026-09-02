@@ -138,6 +138,122 @@ def test_vista_previa_si_falla_redirige_con_flash(app, fake_db, monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# /informes/cierres/subir — archivar un PDF subido a mano (recovery de un
+# cierre tardío donde ni "Generar y guardar" sirve más).
+# ---------------------------------------------------------------------------
+
+def _pdf_valido() -> bytes:
+    return _pdf_de_una_pagina()
+
+
+def test_subir_manual_sin_permiso_404(app, fake_db):
+    c = _login(app, fake_db, ["informes.ver"])  # sin usuarios.admin
+    r = c.post("/informes/cierres/subir", data={"anio": "2026", "mes": "8"})
+    assert r.status_code == 404
+
+
+def test_subir_manual_periodo_invalido_400(app, fake_db):
+    c = _login(app, fake_db, ["usuarios.admin"])
+    r = c.post("/informes/cierres/subir", data={"anio": "2026", "mes": "13"})
+    assert r.status_code == 400
+
+
+def test_subir_manual_sin_archivo_400(app, fake_db):
+    c = _login(app, fake_db, ["usuarios.admin"])
+    r = c.post("/informes/cierres/subir", data={"anio": "2026", "mes": "8"})
+    assert r.status_code == 400
+    assert "archivo" in r.get_json()["error"]
+
+
+def test_subir_manual_llama_guardar_manual_subido_con_los_bytes(
+        app, fake_db, monkeypatch):
+    recibido = {}
+
+    def _fake_guardar(anio, mes, pdf_bytes, usuario):
+        recibido["args"] = (anio, mes, pdf_bytes, usuario)
+        return {"aplicado": True, "anio": anio, "mes": mes,
+                "razon": "ok", "paginas": 1, "tamano_bytes": len(pdf_bytes)}
+
+    monkeypatch.setattr(cierres_paquete, "guardar_manual_subido", _fake_guardar)
+    c = _login(app, fake_db, ["usuarios.admin"])
+    r = c.post(
+        "/informes/cierres/subir",
+        data={"anio": "2026", "mes": "8",
+              "pdf": (io.BytesIO(b"%PDF-contenido"), "cierre.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+    anio, mes, pdf_bytes, usuario = recibido["args"]
+    assert (anio, mes) == (2026, 8)
+    assert pdf_bytes == b"%PDF-contenido"
+
+
+def test_subir_manual_propaga_el_rechazo_de_guardar_manual_subido(
+        app, fake_db, monkeypatch):
+    monkeypatch.setattr(
+        cierres_paquete, "guardar_manual_subido",
+        lambda anio, mes, pdf_bytes, usuario: {
+            "aplicado": False, "anio": anio, "mes": mes,
+            "razon": "el archivo no es un PDF"},
+    )
+    c = _login(app, fake_db, ["usuarios.admin"])
+    r = c.post(
+        "/informes/cierres/subir",
+        data={"anio": "2026", "mes": "8",
+              "pdf": (io.BytesIO(b"no soy un pdf"), "cierre.pdf")},
+        content_type="multipart/form-data",
+    )
+    assert r.status_code == 200
+    body = r.get_json()
+    assert body["ok"] is False
+    assert "no es un PDF" in body["razon"]
+
+
+# ---------------------------------------------------------------------------
+# guardar_manual_subido — valida antes de archivar
+# ---------------------------------------------------------------------------
+
+def test_guardar_manual_subido_rechaza_bytes_que_no_son_pdf():
+    r = cierres_paquete.guardar_manual_subido(
+        2026, 8, b"esto no empieza con %PDF-", usuario="tester")
+    assert r["aplicado"] is False
+    assert "%PDF-" in r["razon"]
+
+
+def test_guardar_manual_subido_rechaza_vacio():
+    r = cierres_paquete.guardar_manual_subido(2026, 8, b"", usuario="tester")
+    assert r["aplicado"] is False
+
+
+def test_guardar_manual_subido_rechaza_pdf_corrupto():
+    r = cierres_paquete.guardar_manual_subido(
+        2026, 8, b"%PDF-1.4\nesto no es un pdf de verdad, faltan los objetos",
+        usuario="tester")
+    assert r["aplicado"] is False
+
+
+def test_guardar_manual_subido_rechaza_demasiado_grande(monkeypatch):
+    monkeypatch.setattr(cierres_paquete, "_MAX_BYTES_SUBIDO", 10)
+    r = cierres_paquete.guardar_manual_subido(
+        2026, 8, _pdf_valido(), usuario="tester")
+    assert r["aplicado"] is False
+    assert "pesa más" in r["razon"]
+
+
+@pytest.mark.db
+def test_guardar_manual_subido_archiva_un_pdf_valido(migrated_db):
+    pdf_bytes = _pdf_valido()
+    r = cierres_paquete.guardar_manual_subido(2025, 2, pdf_bytes, usuario="tamara")
+    assert r["aplicado"] is True
+    assert r["paginas"] == 1
+    assert cierres_paquete.obtener(2025, 2) == pdf_bytes
+    fila = next(f for f in cierres_paquete.listar()
+                if f["anio"] == 2025 and f["mes"] == 2)
+    assert fila["generado_por"] == "subido:tamara"
+
+
+# ---------------------------------------------------------------------------
 # generar_y_guardar — nunca revienta
 # ---------------------------------------------------------------------------
 

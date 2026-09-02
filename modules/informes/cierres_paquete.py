@@ -219,6 +219,65 @@ def generar_y_guardar(anio: int, mes: int, usuario: str = "auto") -> dict:
         }
 
 
+#: tamaño máximo de un PDF subido a mano -- generoso (el paquete armado
+#: normalmente pesa <1MB), pero evita que alguien suba cualquier cosa.
+_MAX_BYTES_SUBIDO = 20 * 1024 * 1024
+
+
+def guardar_manual_subido(anio: int, mes: int, pdf_bytes: bytes,
+                           usuario: str) -> dict:
+    """Archiva un PDF que alguien subió A MANO como el paquete de (anio, mes).
+
+    Tamara 2026-09-02: agosto cerró un día tarde (`crear_snapshot_historia`
+    cayó en la rama `_as_of`), así que el disparo automático de
+    `generar_y_guardar` se salteó -- un backfill no tiene de dónde sacar
+    Cartera/Gastos/Activos de un mes que ya pasó (ver el docstring de este
+    módulo). El botón manual "Generar y guardar" tampoco sirve pasados unos
+    días: arma el PDF con el estado de HOY, y para el 02/09 Anticipos ya
+    estaba $454k más alto que al cierre del 31/08 -- archivaría un número
+    falso con el rótulo "Agosto 2026".
+
+    La única fuente confiable en ese caso es un PDF que alguien haya bajado
+    EL MISMO DÍA del cierre real (por ejemplo con "Vista previa (con los
+    datos de hoy)", que si se usa el día del cierre captura exactamente eso)
+    y guardado afuera del sistema. Esta función lo archiva en
+    `scintela.cierre_paquete` para que quede en el mismo lugar que los
+    generados automáticamente -- incluye 'subido' en `generado_por` para
+    que se note en la lista que no salió del mecanismo automático.
+
+    Valida que sea un PDF de verdad (encabezado %PDF- + `pypdf` lo puede
+    abrir) antes de guardar -- un archivo cualquiera con extensión .pdf no
+    debería poder pisar el archivo."""
+    from pypdf import PdfReader
+
+    if not pdf_bytes or not pdf_bytes.startswith(b"%PDF-"):
+        return {"aplicado": False, "anio": anio, "mes": mes,
+                "razon": "el archivo no es un PDF (falta el encabezado %PDF-)."}
+    if len(pdf_bytes) > _MAX_BYTES_SUBIDO:
+        return {"aplicado": False, "anio": anio, "mes": mes,
+                "razon": f"el archivo pesa más de "
+                         f"{_MAX_BYTES_SUBIDO // (1024 * 1024)}MB."}
+    try:
+        paginas = len(PdfReader(io.BytesIO(pdf_bytes)).pages)
+    except Exception as e:  # noqa: BLE001 -- pypdf tira varios tipos con contenido roto
+        return {"aplicado": False, "anio": anio, "mes": mes,
+                "razon": f"el PDF está corrupto o no se pudo leer: {e}"}
+    if paginas == 0:
+        return {"aplicado": False, "anio": anio, "mes": mes,
+                "razon": "el PDF no tiene páginas."}
+
+    id_paquete = guardar(anio, mes, pdf_bytes, paginas,
+                          usuario=f"subido:{usuario}")
+    return {
+        "aplicado": True, "anio": anio, "mes": mes,
+        "id_paquete": id_paquete, "paginas": paginas,
+        "tamano_bytes": len(pdf_bytes),
+        "razon": f"PDF subido a mano archivado como el cierre de "
+                 f"{nombre_mes(mes)} {anio} ({paginas} páginas, "
+                 f"{len(pdf_bytes):,} bytes).",
+    }
+
+
 def listar() -> list[dict]:
     """Los paquetes ya generados, del más nuevo al más viejo."""
     filas = db.fetch_all(

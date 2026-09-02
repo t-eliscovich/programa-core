@@ -47,6 +47,29 @@
       <span id="generar-manual-status" class="text-xs text-slate-500"></span>
     </form>
   </div>
+
+  <div class="no-print mb-6 px-4 py-3 rounded border border-slate-300 bg-slate-50 dark:bg-slate-800/40 dark:border-slate-700 text-sm">
+    <b>Subir un PDF a mano</b> — para un mes que cerró tarde, donde ni
+    siquiera "Generar y guardar" sirve (ya pasaron días y Cartera/Anticipos/
+    Gastos ya no se parecen al cierre real). Si alguien bajó el PDF real
+    el mismo día del cierre (por ejemplo con "Vista previa"), subilo acá
+    para archivarlo en el mismo lugar que los generados solos.
+    <form method="post" action="{{ url_for('informes.cierres_subir_manual') }}"
+          class="mt-2 flex items-center gap-2 flex-wrap" id="form-subir-manual">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="number" name="anio" placeholder="año (2026)"
+             class="w-24 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900" min="2020" max="2100">
+      <input type="number" name="mes" placeholder="mes (1-12)"
+             class="w-28 px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900" min="1" max="12">
+      <input type="file" name="pdf" accept="application/pdf"
+             class="text-xs">
+      <button type="submit"
+              class="text-sm px-3 py-1.5 rounded border border-slate-500 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-900/40">
+        Subir y archivar
+      </button>
+      <span id="subir-manual-status" class="text-xs text-slate-500"></span>
+    </form>
+  </div>
   {% endif %}
 
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
@@ -110,6 +133,43 @@
       })
       .catch(function () {
         statusEl.textContent = 'No se pudo generar';
+        statusEl.style.color = '#dc2626';
+      });
+  });
+})();
+(function () {
+  var form = document.getElementById('form-subir-manual');
+  if (!form) return;
+  var statusEl = document.getElementById('subir-manual-status');
+  form.addEventListener('submit', function (ev) {
+    ev.preventDefault();
+    var fd = new FormData(form);
+    if (!fd.get('pdf') || !fd.get('pdf').name) {
+      statusEl.textContent = 'Elegí un archivo PDF primero';
+      statusEl.style.color = '#dc2626';
+      return;
+    }
+    statusEl.textContent = 'Subiendo…';
+    statusEl.style.color = '#64748b';
+    fetch(form.action, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'X-CSRFToken': fd.get('csrf_token') },
+      body: fd,
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (j) {
+        if (j && j.ok) {
+          statusEl.textContent = j.razon || 'Listo ✓';
+          statusEl.style.color = '#16a34a';
+          setTimeout(function () { location.reload(); }, 800);
+        } else {
+          statusEl.textContent = (j && (j.razon || j.error)) || 'No se pudo subir';
+          statusEl.style.color = '#dc2626';
+        }
+      })
+      .catch(function () {
+        statusEl.textContent = 'No se pudo subir';
         statusEl.style.color = '#dc2626';
       });
   });

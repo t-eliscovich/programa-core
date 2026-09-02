@@ -2012,6 +2012,37 @@ def cierres_generar_manual():
     return jsonify({"ok": bool(r.get("aplicado")), **r})
 
 
+@informes_bp.route("/cierres/subir", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cierres_subir_manual():
+    """Archiva un PDF subido a mano como el paquete de (anio, mes) -- para
+    un cierre que se fue tarde y para el que "Generar y guardar" (el estado
+    de HOY) ya no sirve porque pasaron días y la cartera/anticipos/gastos
+    cambiaron. Tamara 2026-09-02: agosto necesitaba justamente esto -- el
+    PDF real del cierre existía (bajado el mismo 31/08 con "Vista previa"),
+    pero nunca se archivó porque el disparo automático se salteó."""
+    try:
+        anio = int(request.form.get("anio") or 0)
+        mes = int(request.form.get("mes") or 0)
+    except (TypeError, ValueError):
+        anio = mes = 0
+    if not (2020 <= anio <= 2100 and 1 <= mes <= 12):
+        return jsonify({"ok": False, "error": "período inválido"}), 400
+
+    archivo = request.files.get("pdf")
+    if not archivo or not archivo.filename:
+        return jsonify({"ok": False, "error": "no se recibió ningún archivo"}), 400
+
+    from modules.informes import cierres_paquete
+
+    r = cierres_paquete.guardar_manual_subido(
+        anio, mes, archivo.read(),
+        usuario=(g.user or {}).get("username", "admin"),
+    )
+    return jsonify({"ok": bool(r.get("aplicado")), **r})
+
+
 @informes_bp.route("/cierres/<int:anio>/<int:mes>/pdf")
 @requiere_login
 @requiere_permiso("informes.ver")
