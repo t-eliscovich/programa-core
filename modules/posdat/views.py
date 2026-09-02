@@ -534,9 +534,19 @@ def lista():
             }
         except Exception:  # noqa: BLE001
             conteos_tab = {"posdatados": {}, "yy": {}}
+
+        # TMT 2026-09-02 (Tamara): bloque "Por proveedor", análogo a
+        # dolares.por_cuenta(). No se muestra en tab=yy (ahí "proveedor" son
+        # sólo los códigos YY/RT — ver comentario de la query).
+        try:
+            proveedores = queries.por_proveedor(tab=tab) if tab != "yy" else []
+        except Exception:  # noqa: BLE001
+            proveedores = []
+
         error = None
     except Exception as e:
         filas, resumen, conteos_tab, error = [], {}, {"posdatados": {}, "yy": {}}, str(e)
+        proveedores = []
 
     if request.args.get("export") == "csv":
         # TMT 2026-05-20 — sale "proveedor" (nombre) del CSV, igual que
@@ -655,6 +665,7 @@ def lista():
         error=error,
         tab=tab,
         conteos_tab=conteos_tab,
+        proveedores=proveedores,
         total_importe=total_importe,
         total_cuota_mensual=total_cuota_mensual,
         total_cuota_diaria=total_cuota_diaria,

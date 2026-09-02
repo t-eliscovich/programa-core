@@ -961,6 +961,47 @@ def buscar(
     return rows
 
 
+def por_proveedor(tab: str = "posdatados") -> list[dict]:
+    """Deuda abierta agregada por proveedor — análogo a dolares.por_cuenta().
+
+    Una fila por proveedor con: prov, nombre, total_abierto, n_abiertas,
+    prox_vencimiento. Ordenado por total_abierto DESC (el proveedor con
+    más deuda primero).
+
+    TMT 2026-09-02 (Tamara: "hacer igual un por cuenta en posdatados" —
+    el pedido de Anticipos USD, acá "cuenta" es proveedor). Mismo criterio
+    que `dolares.por_cuenta()` (comentario TMT 2026-08-07 en
+    modules/dolares/views.py): es el universo COMPLETO de deuda abierta
+    (banc=0, no anulada), sin filtrar por prov/q/fecha — filtrarla igual
+    que `buscar()` dejaría, con `?prov=XX` puesto, una sola card (peor que
+    no mostrar nada). El único corte que sí respeta es el TAB, porque
+    Posdatados y YY son dos universos distintos (no un filtro más).
+    """
+    tab_norm = (tab or "posdatados").strip().lower()
+    return db.fetch_all(
+        """
+        SELECT UPPER(TRIM(pd.prov))                    AS prov,
+               COALESCE(MAX(p.nombre), '')              AS nombre,
+               COALESCE(SUM(pd.importe), 0)             AS total_abierto,
+               COUNT(*)                                 AS n_abiertas,
+               MIN(pd.fechad)                           AS prox_vencimiento
+        FROM scintela.posdat pd
+        LEFT JOIN scintela.proveedor p ON p.codigo_prov = pd.prov
+        WHERE pd.prov IS NOT NULL AND TRIM(pd.prov) <> ''
+          AND COALESCE(pd.banc, 0) = 0
+          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+          AND (
+                (%(tab)s = 'yy'         AND UPPER(COALESCE(pd.prov,'')) IN ('YY','RT'))
+             OR (%(tab)s = 'posdatados' AND UPPER(COALESCE(pd.prov,'')) NOT IN ('YY','RT'))
+             OR (%(tab)s = 'todos')
+          )
+        GROUP BY UPPER(TRIM(pd.prov))
+        ORDER BY total_abierto DESC, prov ASC
+        """,
+        {"tab": tab_norm},
+    )
+
+
 def resumen(
     prov: str | None = None,
     *,

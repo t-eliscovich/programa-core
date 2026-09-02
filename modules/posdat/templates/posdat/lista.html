@@ -9,6 +9,53 @@
     <strong>Posdatados</strong>
   {% endif %}
 {% endblock %}
+
+{% block head_extra %}
+<style>
+  /* Cards "Por proveedor" — mismo patrón visual que las cards "Por cuenta"
+     de Anticipos USD (modules/dolares/templates/dolares/lista.html).
+     TMT 2026-09-02 (Tamara). */
+  .prov-card {
+    background: rgb(255 255 255);
+    border: 1px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 12px 14px;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .prov-card:hover {
+    border-color: rgb(148 163 184);
+    box-shadow: 0 1px 3px rgb(15 23 42 / 0.06);
+  }
+  .dark .prov-card { background: rgb(15 23 42); border-color: rgb(51 65 85); }
+  .dark .prov-card:hover { border-color: rgb(100 116 139); }
+  .prov-card .prov-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 11px;
+    background: rgb(241 245 249);
+    color: rgb(51 65 85);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+  .dark .prov-card .prov-code { background: rgb(30 41 59); color: rgb(203 213 225); }
+  .prov-card .prov-bar {
+    height: 4px;
+    background: rgb(226 232 240);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+  .dark .prov-card .prov-bar { background: rgb(30 41 59); }
+  .prov-card .prov-bar > span {
+    display: block;
+    height: 100%;
+    background: rgb(244 63 94); /* rose-500 — es deuda, no saldo a favor */
+    border-radius: 2px;
+  }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="max-w-full">
   <div class="flex items-start justify-between gap-6 mb-6 flex-wrap">
@@ -98,6 +145,60 @@
       <div class="mt-1 text-xs text-rose-700">cuánto crece el saldo en un mes sin pagos</div>
     </div>
   </div>
+  {% endif %}
+
+  {# ----- Cards "Por proveedor" — top 12, ranked por deuda abierta -----
+     TMT 2026-09-02 (Tamara: "hacer igual un por cuenta en posdatados", el
+     pedido de Anticipos USD). Colapsable, cerrado por defecto — el hero de
+     arriba alcanza para el pantallazo. No aparece en tab=yy: ahí "proveedor"
+     son sólo los códigos YY/RT, no tiene sentido armar cards con eso. #}
+  {% if proveedores %}
+  {% set max_deuda = proveedores[0].total_abierto | float if proveedores[0].total_abierto else 0 %}
+  <details class="mb-6">
+    <summary class="flex items-baseline justify-between mb-3 cursor-pointer select-none list-none">
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Por proveedor ▸</h2>
+      <span class="text-xs text-slate-500">{{ proveedores | length }} proveedor{{ 'es' if proveedores | length != 1 else '' }} con deuda abierta · {{ (proveedores | sum(attribute='total_abierto')) | money_es }}</span>
+    </summary>
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+      {% for p in proveedores[:12] %}
+      {# Mismo cuidado que dolares.por_cuenta() (TMT 2026-05-13): total_abierto
+         viene como Decimal de postgres y max_deuda es float — castear ambos. #}
+      {% set pct = ((p.total_abierto | float) / max_deuda * 100) if max_deuda and max_deuda > 0 else 0 %}
+      <a href="{{ url_for('posdat.lista', prov=p.prov, tab=tab) }}" class="prov-card block group">
+        <div class="flex items-start justify-between gap-2">
+          <div class="min-w-0 flex-1">
+            <div class="flex items-center gap-2 mb-1">
+              <span class="prov-code">{{ p.prov }}</span>
+              {% if p.n_abiertas and p.n_abiertas > 1 %}
+              <span class="text-[10px] text-slate-500">{{ p.n_abiertas }} partidas</span>
+              {% endif %}
+            </div>
+            {% if p.nombre %}
+            <div class="text-sm text-slate-700 dark:text-slate-200 truncate" title="{{ p.nombre }}">
+              {{ p.nombre }}
+            </div>
+            {% endif %}
+          </div>
+          <div class="text-right shrink-0">
+            <div class="text-base font-semibold text-rose-700 dark:text-rose-400 tabular-nums">
+              {{ p.total_abierto | money_es }}
+            </div>
+            {% if p.prox_vencimiento %}
+            <div class="text-[10px] text-slate-500 mt-0.5">vence {{ p.prox_vencimiento | fecha_es }}</div>
+            {% endif %}
+          </div>
+        </div>
+        <div class="prov-bar"><span style="width:{{ pct }}%"></span></div>
+      </a>
+      {% endfor %}
+    </div>
+    {% if proveedores | length > 12 %}
+    <p class="text-xs text-slate-500 mt-3">
+      Mostrando los 12 proveedores con más deuda. Hay {{ proveedores | length - 12 }} más con deuda abierta
+      — usá el filtro de abajo o el CSV para ver el resto.
+    </p>
+    {% endif %}
+  </details>
   {% endif %}
 
   {% if error %}

@@ -365,7 +365,9 @@
   {% set max_saldo = cuentas[0].total_vivo | float if cuentas[0].total_vivo else 0 %}
   <details class="mb-6">
     <summary class="flex items-baseline justify-between mb-3 cursor-pointer select-none list-none">
-      <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-600 dark:text-slate-300">Por cuenta ▸</h2>
+      {# TMT 2026-09-02 (Tamara): "un poco más marcado" — de font-semibold/
+         slate-600 a font-bold/slate-700 (y su par dark), mismo tamaño. #}
+      <h2 class="text-sm font-bold uppercase tracking-wider text-slate-700 dark:text-slate-200">Por cuenta ▸</h2>
       <span class="text-xs text-slate-500">{{ cuentas | length }} cuenta{{ 's' if cuentas | length != 1 else '' }} con anticipo vivo · US$ {{ resumen.total_vivos | num_es(0) }}</span>
     </summary>
     <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
