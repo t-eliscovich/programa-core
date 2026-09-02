@@ -135,3 +135,10 @@ def test_cada_pregunta_tiene_su_propia_entrada(monkeypatch):
     hs.despachos_sin_of(dias=0)
     assert len(n) == 2
     hs.reset_cache()
+
+
+def test_las_telas_nuevas_del_rotativo_tambien_se_calientan():
+    """02/09/2026: /inventario-rotativo seguía tardando 1,3 s en caliente —
+    `rotativo()` estaba calentado pero `nuevos()` (otra ida a Asinfo) no."""
+    src = inspect.getsource(warmup._warm_once)
+    assert "_rot.nuevos()" in src

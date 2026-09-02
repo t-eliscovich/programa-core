@@ -149,6 +149,9 @@ def _warm_once() -> None:
         pasos += [
             ("hilo_esperando_orden", lambda: _hso.despachos_sin_of(dias=0)),
             ("inventario_rotativo", lambda: _rot.rotativo()),
+            # La pantalla también pregunta cuántas telas son NUEVAS (otra ida,
+            # 1,2 s medida en vivo el 02/09) y esa no se calentaba.
+            ("inventario_rotativo_nuevos", lambda: _rot.nuevos()),
             ("produccion_terminado", lambda: _term.resumen(yy, mm)),
             # /pedidos tardaba 3,6 s SIEMPRE: sus tres consultas iban a Asinfo
             # sin cache. Ahora cachean 5 min y acá se refrescan antes de que
