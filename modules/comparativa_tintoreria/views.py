@@ -27,6 +27,41 @@ comparativa_tintoreria_bp = Blueprint(
 )
 
 
+# ── COSTOS DE TINTORERÍA del mes, en caché ──────────────────────────────────
+# TMT 2026-09-02 (dueña: *"¿páginas lentas?"*). El balance en caliente eran
+# 129 consultas (300 ms) más 9 idas a formulas (550 ms, la mitad del tiempo), y
+# el termómetro dijo cuál era la peor: las órdenes del mes de formulas, que
+# _build_tintoreria_mensual pide en cada visita para sacar UN número (t_imp /
+# t_kg del mes). Las órdenes de tintura cambian de a pocas por día: 3 minutos
+# de caché no le mueven un centavo a nadie, y el balance, el flujo y el stock
+# dejan de cruzar el puente en cada visita. El calentador la refresca.
+_TINT_MENSUAL_CACHE: dict[tuple[int, int], tuple[float, dict | None]] = {}
+_TINT_MENSUAL_TTL_SECS = 180.0
+
+
+def reset_tintoreria_mensual_cache() -> None:
+    """Olvida lo cacheado (tests, y quien quiera el dato fresco)."""
+    _TINT_MENSUAL_CACHE.clear()
+
+
+def tintoreria_mensual_cacheada(anio: int, mes: int) -> dict | None:
+    """`_build_tintoreria_mensual(anio, mes)` con caché de 3 minutos.
+
+    Un fallo (None) no se guarda: la próxima visita vuelve a intentar.
+    """
+    import time as _t
+
+    clave = (int(anio), int(mes))
+    ahora = _t.time()
+    guardado = _TINT_MENSUAL_CACHE.get(clave)
+    if guardado and (ahora - guardado[0]) < _TINT_MENSUAL_TTL_SECS:
+        return guardado[1]
+    valor = _build_tintoreria_mensual(anio, mes)
+    if valor is not None:
+        _TINT_MENSUAL_CACHE[clave] = (ahora, valor)
+    return valor
+
+
 def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -> dict | None:
     """Devuelve la estructura {filas, promedio, total, limite_bajos} con TODOS
     los meses del año `anio` que tengan data (hasta el mes `mes` inclusive).

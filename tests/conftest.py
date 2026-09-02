@@ -204,6 +204,18 @@ def _vaciar_cache_de_hojas():
 
 
 @pytest.fixture(autouse=True)
+def _vaciar_cache_tintoreria_mensual():
+    """La caché de 3 min de COSTOS DE TINTORERÍA (TMT 2026-09-02) no se
+    hereda entre tests: un test que falsea las órdenes del mes le dejaría
+    su tabla al siguiente."""
+    from modules.comparativa_tintoreria import views as _ctv
+
+    _ctv.reset_tintoreria_mensual_cache()
+    yield
+    _ctv.reset_tintoreria_mensual_cache()
+
+
+@pytest.fixture(autouse=True)
 def _reset_tarifa_hilado_global():
     """Aislar el $/kg de hilado que `modules.asinfo.service` cachea EN EL PROCESO.
 

@@ -5757,8 +5757,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     _col_us_fisico = None
     _col_kg_tint = None
     try:
-        from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
-        _tm_bal = _build_tintoreria_mensual(yy_actual, mesnum_actual)
+        from modules.comparativa_tintoreria.views import tintoreria_mensual_cacheada
+        _tm_bal = tintoreria_mensual_cacheada(yy_actual, mesnum_actual)
         _filas_bal = (_tm_bal or {}).get("filas") or []
         if _filas_bal and _filas_bal[0].get("t_imp") is not None:
             _col_us_fisico = float(_filas_bal[0]["t_imp"])

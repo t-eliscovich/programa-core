@@ -135,6 +135,13 @@ def _warm_once() -> None:
         ("fabricacion_proceso_53", lambda: asvc.fabricacion_proceso(53)),
     ]
     try:
+        # COSTOS DE TINTORERÍA del mes: la mitad del tiempo del balance en
+        # caliente eran sus idas a formulas (TMT 2026-09-02).
+        from modules.comparativa_tintoreria import views as _ctv
+        pasos.append(("tintoreria_mensual", lambda: _ctv.tintoreria_mensual_cacheada(yy, mm)))
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("warmup tintoreria mensual: %s", e)
+    try:
         from modules.asinfo import hilo_sin_of as _hso
         from modules.inventario_rotativo import service as _rot
         from modules.pedidos import service as _ped

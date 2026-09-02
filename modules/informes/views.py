@@ -2968,10 +2968,10 @@ def flujo_produccion():
     _tint_mensual = None
     _proy_quimico = None
     try:
-        from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
+        from modules.comparativa_tintoreria.views import tintoreria_mensual_cacheada
         _s = _time_fp.perf_counter()
         _tint_mensual, _e_tint = _safe(
-            lambda: _build_tintoreria_mensual(anio, mes), None)
+            lambda: tintoreria_mensual_cacheada(anio, mes), None)
         _timings["tintoreria_mensual"] = round(_time_fp.perf_counter() - _s, 3)
         g._tint_mensual = _tint_mensual
         _filas_t = (_tint_mensual or {}).get("filas") or []
