@@ -723,27 +723,36 @@ def index() -> Response:
             # el día del incidente. `crear_snapshot_historia` sólo escribe
             # UNA fila (la del último día) de todos modos, así que borrar
             # más que esa fila nunca fue necesario.
+            # Tamara 2026-09-02 — el borrado ya NO se hace acá.
+            #
+            # Hasta hoy esta pantalla borraba la fila del cierre en su propia
+            # transacción y RECIÉN DESPUÉS llamaba a crear_snapshot_historia,
+            # que abre otra. Entre el commit del DELETE y el INSERT,
+            # `scintela.historia` se quedaba SIN el cierre — y `PATANT` (que es
+            # `historia_ultimo_mes().patrimonio`) caía al cierre anterior, meses
+            # más viejo y millones más bajo. Como `utilidad = patr − PATANT`, el
+            # balance mostraba una utilidad inflada por esa diferencia a
+            # cualquiera que lo abriera en esa ventana. Y la ventana no es
+            # instantánea: recrear la foto llama a `informe_balance()`, que sale
+            # a Asinfo y a formulas_app.
+            #
+            # Pasó el 02/09/2026: entre las 08:02 y las 08:20 —18 minutos— la
+            # utilidad estuvo en +1.971.282 en vez de −709.403. Se ve en
+            # /informes/traza como un Δ de ±2,68 M sin nada atribuido.
+            #
+            # `crear_snapshot_historia(forzar=True)` hace el DELETE y el INSERT
+            # DENTRO de una sola transacción con advisory lock, que es
+            # exactamente lo que hacía falta: nunca hay un instante sin cierre.
+            # El borrado de acá era la forma de conseguir el efecto de `forzar`
+            # sin pasarlo; pasarlo es mejor y no deja hueco.
             _fecha_cierre = _fecha_cierre_de(anio, mes)
-            with db.tx() as conn:
-                rows = db.fetch_all(
-                    """
-                    SELECT id_historia FROM scintela.historia
-                     WHERE fecha = %s
-                    """,
-                    (_fecha_cierre,), conn=conn,
-                ) or []
-                n_borrados = len(rows)
-                if n_borrados:
-                    db.execute(
-                        """
-                        DELETE FROM scintela.historia
-                         WHERE fecha = %s
-                        """,
-                        (_fecha_cierre,), conn=conn,
-                    )
-            # 2. Recrear (fuera de la tx del DELETE — crear_snapshot_historia
-            #    abre su propia tx con advisory lock)
-            res = iq.crear_snapshot_historia(anio, mes, usuario="regen-admin")
+            n_borrados = len(db.fetch_all(
+                "SELECT id_historia FROM scintela.historia WHERE fecha = %s",
+                (_fecha_cierre,),
+            ) or [])  # sólo para el reporte: quién se va a pisar.
+            res = iq.crear_snapshot_historia(
+                anio, mes, usuario="regen-admin", forzar=True
+            )
             if res.get("aplicado"):
                 aplicado = True
                 id_nuevo = res.get("id_historia")
