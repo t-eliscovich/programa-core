@@ -176,3 +176,38 @@ def test_la_fila_se_llama_ventas_y_todo_lo_que_la_busca_por_ese_nombre():
     tpl = (ROOT / "modules/informes/templates/informes/balance.html").read_text(encoding="utf-8")
     assert "'Ventas':" in tpl                      # mapa _row_links
     assert "row.label == 'Ventas'" in tpl          # prefijo "kg." en Proyecciones
+
+
+def test_colorantes_kg_y_us_del_mismo_universo():
+    """BUG Federico 2026-09-02: el $ de Colorantes salía de la tabla COSTOS DE
+    TINTORERÍA (órdenes terminadas de formulas: 14.605 $ sobre 22.112 kg) pero
+    el kg venía del cuadro MOVIMIENTOS de Asinfo (bodega 53: ~5.3k kg) → el
+    unitario daba 2,760 $/kg en vez de 0,660 y reventaba la Utilidad Esperada.
+    El kg y el $ tienen que venir de la MISMA fila. Idem Tintorería: los mismos
+    22.112 kg que /informes/flujo-produccion usa en "Gs. Producción"."""
+    tab = _tabla(
+        col_us_fisico=14_605.0,
+        ktint_colorantes=22_112.0,
+        ktint=22_112.0,
+        v4=45_905.0, v5=0.0, v6=0.0, dcc=1_000.0,
+    )
+    col = _row(tab, "Colorantes/Quím.")
+    assert abs(col["kg"] - 22_112.0) < 1e-6
+    assert abs(col["ukg"] - 0.660) < 0.001        # 14.605 / 22.112 (tabla de tintorería)
+    tin = _row(tab, "Tintorería")
+    assert abs(tin["kg"] - 22_112.0) < 1e-6
+    assert abs(tin["ukg"] - 2.121) < 0.001        # 46.905 / 22.112 (Gs. Producción del flujo)
+
+
+def test_utilidad_esperada_costo_directo_45_solo_en_mp():
+    """Fórmula de la Utilidad Esperada (override server-side en views.balance):
+    venta proyectada − gastos proyectados − kg proy × (MP × 1,045 + Colorantes).
+    Federico 2026-09-02: el 4,5% de desperdicio va SOLO sobre la materia prima;
+    los colorantes entran a valor pleno (0,660 × 320.000 = 211.200)."""
+    kg_proy, precio = 320_000.0, 8.488
+    mp_ukg, col_ukg = 3.0437, 0.660
+    gastos_proy = 165_000.0 + 360_000.0 + 290_000.0
+    costo_directo = kg_proy * (mp_ukg * 1.045 + col_ukg)
+    assert abs(kg_proy * col_ukg - 211_200.0) < 1.0
+    ue = kg_proy * precio - gastos_proy - costo_directo
+    assert abs(ue - 672_180.0) < 1_000.0

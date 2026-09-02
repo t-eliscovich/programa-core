@@ -989,9 +989,21 @@ def balance():
             _costo_var_ukg = _cell("Proyección", "costo_var_ukg") or (
                 _cell("Materia Prima", "ukg") + _cell("Colorantes/Quím.", "ukg")
             )
+            # Federico 2026-09-02: el 4,5% de desperdicio va SOLO sobre la MP, así
+            # que las dos patas se necesitan por separado. Si la fila Proyección
+            # no las trae (tabla armada a mano), la de colorantes se despeja del
+            # total efectivo — nunca de la fila LIVE, que el día 1 es 0.
+            _mp_var_ukg = (_cell("Proyección", "mp_var_ukg")
+                           or _cell("Materia Prima", "ukg"))
+            _col_var_ukg = _cell("Proyección", "col_var_ukg") or max(
+                _costo_var_ukg - _mp_var_ukg, 0.0
+            )
             # Federico 2026-07-27: desperdicio 4,5% (1.045), consistente con el
             # Costo Total del cuadro (que usa 1.045 sobre MP+Col). Antes 1.05.
-            _costo_directo = _proy_kg * _costo_var_ukg * 1.045
+            # Federico 2026-09-02: el 4,5% queda SOLO sobre la Materia Prima; los
+            # colorantes/químicos entran a valor pleno (su cuenta, textual:
+            # 0,660 $/kg × 320.000 kg = 211.200).
+            _costo_directo = _proy_kg * (_mp_var_ukg * 1.045 + _col_var_ukg)
             _up_us = _proy_us - _gastos_proy - _costo_directo
             for _r in _tabla:
                 if _r.get("label") == "Utilidad Esperada":
@@ -1001,8 +1013,8 @@ def balance():
                     _r["ayuda"] = (
                         "Venta proyectada − Gastos proyectados del mes (de la "
                         "base, compartidos por todos los usuarios) − Costos "
-                        "directos (kg proy × (Materia Prima + Colorantes/Quím. "
-                        "unitarios) × 1,045 = 4,5% de desperdicio)."
+                        "directos: kg proy × Materia Prima $/kg × 1,045 (4,5% "
+                        "de desperdicio) + kg proy × Colorantes/Quím. $/kg."
                         + (
                             " ⚠ El presupuesto de gastos de este mes todavía no "
                             f"se cargó: se están usando los de {_proy_origen}. "

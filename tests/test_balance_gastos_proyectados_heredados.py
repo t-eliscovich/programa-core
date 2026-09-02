@@ -72,8 +72,10 @@ def _correr(app, fake_db, proy):
     return r, _fila_utilidad_esperada(bal)
 
 
-# Costo directo = 320.000 × (2,92 + 0,64) × 1,045
-COSTO_DIRECTO = 320_000.0 * (2.92 + 0.64) * 1.045
+# Costo directo = 320.000 × (2,92 × 1,045 + 0,64) — Federico 2026-09-02: el
+# 4,5% de desperdicio aplica SOLO sobre la materia prima; los colorantes van a
+# valor pleno.
+COSTO_DIRECTO = 320_000.0 * (2.92 * 1.045 + 0.64)
 VENTA_PROY = 2_592_000.0
 
 
@@ -140,7 +142,7 @@ def test_dia_1_sin_ventas_ni_tintura_no_da_una_utilidad_absurda(app, fake_db):
     assert r.status_code == 200, r.data[:400]
 
     fila = _fila_utilidad_esperada(bal)
-    esperado = 320_000.0 * 8.57 - 807_000.0 - 320_000.0 * (2.92 + 0.64) * 1.045
+    esperado = 320_000.0 * 8.57 - 807_000.0 - 320_000.0 * (2.92 * 1.045 + 0.64)
     assert round(fila["us"], 2) == round(esperado, 2)
     assert fila["us"] > 0, "el día 1 la Utilidad Esperada no tiene por qué ser negativa"
 
@@ -188,5 +190,5 @@ def test_kg_heredado_del_mes_anterior_se_usa_y_se_avisa(app, fake_db):
 
     # La utilidad esperada se calcula sobre esos kg, no sobre los 320.000.
     fila = _fila_utilidad_esperada(bal)
-    esperado = 300_000.0 * 8.10 - 807_000.0 - 300_000.0 * (2.92 + 0.64) * 1.045
+    esperado = 300_000.0 * 8.10 - 807_000.0 - 300_000.0 * (2.92 * 1.045 + 0.64)
     assert round(fila["us"], 2) == round(esperado, 2)

@@ -4557,7 +4557,12 @@ def resultados_costos_tabla(
          # (Materia Prima + Colorantes, tarifas EFECTIVAS). Lo consume
          # views.balance() para la Utilidad Esperada, así no tiene que leer los
          # $/kg LIVE de las filas de costos —que a principio de mes son 0—.
+         # Federico 2026-09-02: van también SEPARADOS, porque el 4,5% de
+         # desperdicio se aplica sólo sobre la Materia Prima (los colorantes
+         # entran a valor pleno). `costo_var_ukg` queda para compatibilidad.
          "costo_var_ukg": (mp_ukg + col_ukg_proy),
+         "mp_var_ukg": mp_ukg,
+         "col_var_ukg": col_ukg_proy,
          "meta_precio": (precio_proy_src == "meta"),
          "meta_costo": (col_ukg_proy_src == "meta"),
          "clase": "dato",
@@ -4583,16 +4588,16 @@ def resultados_costos_tabla(
                    "tejeduría; U$/kg = costo / esos kg.")},
         {"label": "Tintorería", "kg": ktint, "ukg": tin_ukg, "us": tin_us,
          "proy": (float(pretin or 0) or None), "clase": "dato",
-         "ayuda": ("kg = Ingresos de TERMINADO del cuadro MOVIMIENTOS DEL MES "
-                   "(INICIAL ASINFO) del Flujo de producción (lo producido "
-                   "por tintorería). Costo = V4+V5+V6 + depreciación de "
-                   "tintorería; U$/kg = costo / esos kg.")},
+         "ayuda": ("kg = TERMINADO de la tabla COSTOS DE TINTORERÍA del Flujo "
+                   "de producción (los mismos kg de su fila Gs. Producción). "
+                   "Costo = V4+V5+V6 + depreciación de tintorería; "
+                   "U$/kg = costo / esos kg.")},
         {"label": "Colorantes/Quím.", "kg": col_kg, "ukg": col_ukg,
          "us": col_us, "clase": "dato",
-         "ayuda": ("kg = Ingresos de TERMINADO del cuadro MOVIMIENTOS DEL MES "
-                   "(INICIAL ASINFO), igual que Tintorería. $ = consumo de "
-                   "colorantes/químicos de las órdenes de tintura del mes; "
-                   "U$/kg = $ / esos kg.")},
+         "ayuda": ("kg y $ salen de la MISMA fila de COSTOS DE TINTORERÍA "
+                   "(Flujo de producción): $ = colorantes y auxiliares de las "
+                   "órdenes terminadas del mes, kg = terminado de esas órdenes. "
+                   "U$/kg = $ / esos kg — el mismo 0,660 de esa tabla.")},
         {"label": "Subtotal +4.5%", "kg": None, "ukg": sub_ukg, "us": sub_us,
          "clase": "subtotal",
          "ayuda": ("Tejeduria + Tintoreria + merma*(Materia Prima + Colorantes). "
@@ -5742,15 +5747,25 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # Flujos y Resultados dan IGUAL para químicos. Antes usaba el consumido
     # físico (quimico_consumido_us) y difería ~3k del Total de tintorería.
     # Fail-soft → ITIN del dBase.
+    # Federico 2026-09-02 — BUG del $/kg de Colorantes: el $ salía de esta tabla
+    # (universo órdenes terminadas de formulas, 22.112 kg en 09/2026) pero el kg
+    # venía de `_tin_kg_balance` (ingresos bodega 53 de Asinfo, 5.291 kg) →
+    # numerador y denominador de DOS universos distintos y el unitario salía
+    # 2,760 $/kg en vez de 0,660 (4,2x inflado). Eso reventaba la Utilidad
+    # Esperada (daba -39.580 cuando correspondía +672.179). Ahora el kg viaja
+    # JUNTO con el $: `t_kg` de la misma fila de COSTOS DE TINTORERÍA.
     _col_us_fisico = None
+    _col_kg_tint = None
     try:
         from modules.comparativa_tintoreria.views import _build_tintoreria_mensual
         _tm_bal = _build_tintoreria_mensual(yy_actual, mesnum_actual)
         _filas_bal = (_tm_bal or {}).get("filas") or []
         if _filas_bal and _filas_bal[0].get("t_imp") is not None:
             _col_us_fisico = float(_filas_bal[0]["t_imp"])
+            _col_kg_tint = float(_filas_bal[0].get("t_kg") or 0) or None
     except Exception:  # noqa: BLE001 -- fail-soft, queda el ITIN
         _col_us_fisico = None
+        _col_kg_tint = None
 
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
@@ -5783,8 +5798,18 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         # MOVIMIENTOS (INICIAL ASINFO) — dueña 2026-07-17: todas las filas
         # de COSTOS salen del cuadro visible. Fallback: kr/ktint de
         # tinto/formulas si Asinfo no respondió.
-        ktint=(_tin_kg_balance or float(tin.get("kr") or 0)),
-        ktint_colorantes=(_tin_kg_balance or float(tin.get("ktint") or 0)),
+        # Federico 2026-09-02: mismo criterio que Colorantes — el kg de
+        # Tintorería es el TERMINADO de la tabla COSTOS DE TINTORERÍA (22.112
+        # en 09/2026), el mismo que /informes/flujo-produccion usa en la fila
+        # "Gs. Producción" (46.905 / 22.112 = 2,121 $/kg). Con los ingresos de
+        # bodega 53 de Asinfo (5.380) el $/kg salía 8,864 — ni el flujo ni el
+        # balance daban lo mismo para el MISMO gasto.
+        ktint=(_col_kg_tint or _tin_kg_balance or float(tin.get("kr") or 0)),
+        # Federico 2026-09-02: kg de la fila Colorantes = los MISMOS kg que
+        # generaron el $ (Total de COSTOS DE TINTORERÍA). Fallback al cuadro
+        # de Asinfo / tinto sólo si la tabla de tintorería no respondió.
+        ktint_colorantes=(_col_kg_tint or _tin_kg_balance
+                          or float(tin.get("ktint") or 0)),
         col_us_fisico=_col_us_fisico,
         v7=gxg["v7"],
         v8=gxg["v8"],
