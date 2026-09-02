@@ -98,6 +98,7 @@ from modules.informes.foto import (  # noqa: F401  (re-export)
 )
 from modules.informes.foto import diff as _diff  # noqa: F401  (re-export)
 from modules.informes.foto import guardada as _foto_guardada  # noqa: F401
+from modules.informes.foto import patant_de as _patant_de
 
 _LOG = logging.getLogger("programa_core.dia")
 
@@ -1531,7 +1532,18 @@ def explicar(fecha=None) -> dict:
     out["desde"], out["hasta"] = desde, hasta
     out["d_utilidad"] = round(_f(hasta.get("utilidad")) - _f(desde.get("utilidad")), 2)
 
+    # PATANT es derivado, no una columna guardada: se calcula por foto para que
+    # el Δ lo trate como un componente más. Ver `foto.patant_de` y el comentario
+    # de `foto.COMPONENTES`. Sin esto, el primero de cada mes el salto de PATANT
+    # —que es la utilidad del mes que cerró— sale como descuadre sin nombre.
+    desde = dict(desde, patant=_patant_de(desde))
+    hasta = dict(hasta, patant=_patant_de(hasta))
+
     for c, s in COMPONENTES:
+        # Sin las dos puntas no hay Δ que calcular: saltear es correcto, tratar
+        # el None como 0 inventaría un movimiento del tamaño del patrimonio.
+        if c == "patant" and (desde.get(c) is None or hasta.get(c) is None):
+            continue
         d = round(_f(hasta.get(c)) - _f(desde.get(c)), 2)
         if abs(d) < UMBRAL:
             continue
