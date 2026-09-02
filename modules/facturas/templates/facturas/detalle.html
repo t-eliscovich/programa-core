@@ -14,7 +14,7 @@
         Factura {{ fact.numf_completo or ('N° ' ~ fact.numf) }}
       </h1>
       <p class="text-sm text-slate-500 mt-1">
-        {{ fact.fecha | fecha_es }}
+        {{ fact.fecha | fecha_es }}{% if fact.hora_emision %} {{ fact.hora_emision }}{% endif %}
         {% if fact.vencimiento %} · vence {{ fact.vencimiento | fecha_es }}{% endif %}
         {# Vocabulario canónico (2026-04-29) — ver docs/SKILL_ADDENDUM_BATCH_18.md #}
         {% if fact.stat == 'Z' %}

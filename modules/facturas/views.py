@@ -190,6 +190,20 @@ def _auto_cargar_facturas_hoy() -> dict:
             except Exception:
                 # _CargaAsinfoSkip u otro — no cargamos esa fila, seguimos.
                 continue
+        # La hora de emisión de las de HOY que todavía no la tienen (mig
+        # 0239) — una sola pregunta a Asinfo por corrida, no una por factura.
+        try:
+            from modules.asinfo import hora_emision as _hora
+            _sin_hora = db.fetch_all(
+                "SELECT id_factura, numf_completo FROM scintela.factura "
+                " WHERE fecha = %s AND hora_emision IS NULL "
+                "   AND numf_completo IS NOT NULL",
+                (hoy,),
+            ) or []
+            _hora.completar(_sin_hora)
+        except Exception as _e:
+            from modules._lib.silencios import avisar
+            avisar(__name__, "_auto_cargar_facturas_hoy", _e)
         # Retenciones de HOY (idempotente) — que también se carguen solas.
         try:
             from modules.retenciones import queries as _ret_q
@@ -922,6 +936,18 @@ def detalle(id_factura: int):
     except Exception as _e:  # noqa: BLE001 — si falla, se pide aparte
         from modules._lib.silencios import avisar
         avisar(__name__, "detalle_en_cache", _e)
+    # La hora de emisión (TMT 2026-09-02, dueña: *"hora y minutos de emitida,
+    # no segundos"*). La auto-carga la guarda para las del día; para las que
+    # ya estaban se pregunta acá UNA vez y queda guardada (mig 0239). Si
+    # Asinfo no contesta, la ficha abre sin hora y la próxima vez vuelve a
+    # preguntar.
+    if fact.get("numf_completo") and not fact.get("hora_emision"):
+        try:
+            from modules.asinfo import hora_emision
+            hora_emision.completar([fact])
+        except Exception as _e:  # noqa: BLE001 — fail-soft, como el puente
+            from modules._lib.silencios import avisar
+            avisar(__name__, "detalle_hora_emision", _e)
     return render_template(
         "facturas/detalle.html",
         fact=fact,

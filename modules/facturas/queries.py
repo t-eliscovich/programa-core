@@ -786,6 +786,7 @@ def por_id_interno(id_factura: int) -> dict | None:
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
+               to_char(f.hora_emision, 'HH24:MI') AS hora_emision,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago,
                -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
@@ -817,6 +818,7 @@ def por_id(id_factura: int) -> dict | None:
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
+               to_char(f.hora_emision, 'HH24:MI') AS hora_emision,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago,
                -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
@@ -882,6 +884,7 @@ def por_numf_completo(numf_completo: str) -> dict | None:
         SELECT f.id_factura, f.numf, f.numf_completo, f.fecha, f.vencimiento,
                f.codigo_cli, f.kg, f.importe, f.abono, f.retencion, f.saldo,
                f.stat, f.condic, f.tipo, f.pase, f.clave,
+               to_char(f.hora_emision, 'HH24:MI') AS hora_emision,
                COALESCE(c.nombre, '')    AS cliente,
                c.ruc, c.telefono, c.pago,
                -- ⭐ El vendedor del CLIENTE, que es el que cobra la comisión
@@ -1542,3 +1545,16 @@ def conteos_por_vista() -> dict:
     out["estado"] = total_row
     out["todas"] = total_row
     return out
+
+
+def guardar_hora_emision(id_factura: int, hora: str) -> None:
+    """La hora a la que Asinfo emitió el documento ('HH:MM'), mig 0239.
+
+    Sólo se escribe si todavía no había: la hora de emisión no cambia nunca,
+    y así dos procesos preguntando a la vez no se pisan.
+    """
+    db.execute(
+        "UPDATE scintela.factura SET hora_emision = %s::time "
+        " WHERE id_factura = %s AND hora_emision IS NULL",
+        (hora, id_factura),
+    )
