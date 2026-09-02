@@ -4329,6 +4329,11 @@ def resultados_costos_tabla(
     # Defaults conservadores → callers viejos no rompen (UT.PROY cae a 0).
     kgpro: float = 0.0,
     pretot: float = 0.0,
+    # Andrés 2026-09-02 — tarifas META de `scintela.iniciales` (pre / uq) para
+    # que las PROYECCIONES no se armen con una tarifa live de 0 los primeros
+    # días del mes. Default 0 → los callers viejos no cambian de resultado.
+    precio_meta: float = 0.0,
+    col_ukg_meta: float = 0.0,
     # TMT 2026-06-23 (dueña): presupuesto de gastos POR ÁREA (dBase XPRETEJ/
     # XPRETIN/XPREADM de INICIALES) → columna "Proyectado" GS.PROY vs GS.ACT.
     pretej: float = 0.0,
@@ -4379,8 +4384,17 @@ def resultados_costos_tabla(
 
     # PROYECCIÓN — dBase INFORMES.PRG L4: PROYECCION = KGPRO (meta del mes) × precio,
     # NO regla de 3 (venta_kg × 30/día). Antes daba ~379k kg en vez de la meta. TMT 2026-06-05.
+    #
+    # Andrés 2026-09-02 — el precio de la PROYECCIÓN es el EFECTIVO: el live del
+    # mes si ya hay ventas, sino la tarifa meta de Iniciales (`pre`). El día 1,
+    # antes de la primera factura, `precio` es 0 y la Proyección salía en 0 → la
+    # Utilidad Esperada quedaba en −(gastos + costo directo), varios millones en
+    # rojo. `informe_balance` ya usaba este mismo criterio para su `proy_uvent`
+    # (precio_eff); la TABLA se había quedado con el precio crudo. La fila Ventas
+    # sigue mostrando el precio real (0 es 0) — el fallback es sólo para proyectar.
     proy_kg = float(kgpro or 0)
-    proy_us = proy_kg * precio
+    precio_proy, precio_proy_src = _eff_rate(precio, precio_meta)
+    proy_us = proy_kg * precio_proy
 
     mp_ukg = float(mp_ukg or 0)
 
@@ -4405,6 +4419,13 @@ def resultados_costos_tabla(
     # historia. Caída a ktint si no se pasa (compat con callers viejos).
     col_kg = float(ktint_colorantes) if ktint_colorantes else ktint
     col_ukg = _div(col_us, col_kg)
+    # Andrés 2026-09-02 — mismo problema que el precio, del otro lado: el $/kg de
+    # Colorantes es consumo del mes ÷ kg terminados del mes, y los primeros días
+    # del mes puede ser 0 (todavía no se tinturó) o estar deformado. La FILA sigue
+    # mostrando el live; para PROYECTAR se usa el efectivo (live, sino la tarifa
+    # meta `uq` de Iniciales). Sin esto, un 0 acá dejaba el costo directo corto y
+    # la Utilidad Esperada de más.
+    col_ukg_proy, col_ukg_proy_src = _eff_rate(col_ukg, col_ukg_meta)
 
     # Federico 2026-07-27: Materia Prima se mide sobre los KG VENDIDOS (costeo de
     # lo vendido), NO sobre el hilado consumido del mes. kg = kg vendidos;
@@ -4470,9 +4491,9 @@ def resultados_costos_tabla(
     # dBase usa ITIN/KR (no ITIN/KTINT = col_ukg) en el costo variable de la
     # proyección (PRG L419: (UMX+ITIN/KR)). `ktint` param = KR (tin.kr). Sutil
     # pero mueve ~7k en la UT.PROY. TMT 2026-06-05.
-    _col_kr = _div(float(itin or 0), ktint)
+    _col_kr, _ = _eff_rate(_div(float(itin or 0), ktint), col_ukg_meta)
     _costo_var_kg = (mp_ukg + _col_kr) * float(factor_desperdicio or 1.0)
-    _margen_var_kg = precio - _costo_var_kg
+    _margen_var_kg = precio_proy - _costo_var_kg
     _gasto_fijo_restante = float(pretot or 0) - (tej_us + tin_us + adm_us)
     _utproy = (
         float(utilidad_econ or 0)
@@ -4487,10 +4508,20 @@ def resultados_costos_tabla(
         {"label": "Ventas", "kg": venta_kg, "ukg": precio, "us": venta_us,
          "clase": "dato",
          "ayuda": "Facturas del mes en curso (stat != X). U$/kg = U$ / Kg."},
-        {"label": "Proyección", "kg": proy_kg, "ukg": precio, "us": proy_us,
+        {"label": "Proyección", "kg": proy_kg, "ukg": precio_proy, "us": proy_us,
+         # `costo_var_ukg` = costo variable unitario con el que hay que proyectar
+         # (Materia Prima + Colorantes, tarifas EFECTIVAS). Lo consume
+         # views.balance() para la Utilidad Esperada, así no tiene que leer los
+         # $/kg LIVE de las filas de costos —que a principio de mes son 0—.
+         "costo_var_ukg": (mp_ukg + col_ukg_proy),
+         "meta_precio": (precio_proy_src == "meta"),
+         "meta_costo": (col_ukg_proy_src == "meta"),
          "clase": "dato",
          "ayuda": ("Meta del mes (KPROG de Iniciales) × precio promedio — "
-                   "igual que la PROYECCIÓN del dBase (INFORMES.PRG).")},
+                   "igual que la PROYECCIÓN del dBase (INFORMES.PRG)."
+                   + (" Todavía no hay ventas este mes: se proyecta con el "
+                      "precio objetivo de Iniciales."
+                      if precio_proy_src == "meta" else ""))},
         {"label": "COSTOS", "clase": "seccion"},
         {"label": "Materia Prima",
          "kg": (float(mp_kg) if mp_kg else None),
@@ -5725,6 +5756,12 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         uret=0.0,
         # UT.PROY estilo dBase — gastos proyectados de scintela.iniciales.
         kgpro=kgpro,
+        # Andrés 2026-09-02 — tarifas META de Iniciales para que la PROYECCIÓN no
+        # se arme con las tarifas live del mes cuando todavía valen 0 (día 1: sin
+        # facturas → precio 0; sin tintura → colorantes 0). Mismo criterio que
+        # `precio_eff` / `uq_eff`, que este mismo archivo ya usa para proy_uvent.
+        precio_meta=inic_pre,
+        col_ukg_meta=inic_uq,
         # Costo Total (columna Proyectado) = suma de los 3 gastos proyectados de
         # la página de Gastos (Tej+Tint+Adm). Federico 2026-07-27.
         pretot=pretot_res,
