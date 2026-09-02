@@ -371,6 +371,18 @@ def index() -> Response:
         (2026, 8): 3183858.00,
     }
 
+    # Materia Prima (kcom/ucom) -- Tamara 2026-09-02 "no es algo menor":
+    # probado en vivo que NINGUNA reconstrucción automática cuadra para un
+    # mes ya cerrado (ver el docstring largo en historia_detalle_mes_cerrado:
+    # el SUM crudo repite recargos de importación, y kg_hilado_mes -- que
+    # debería arreglarlo -- da PEOR porque su índice de importaciones es el
+    # estado ACTUAL de Asinfo, no el de agosto). Misma categoría que
+    # anticipos: se completa con el valor verificado de un papel externo.
+    # Fuente: "Vista previa cierre 31-08-2026.pdf", tabla COMPRAS HILADO.
+    _MATERIA_PRIMA_VERIFICADA = {
+        (2026, 8): {"kcom": 408972.0, "ucom": 1289746.0},
+    }
+
     # Botón "ajustar_backfill_31_05" — TMT decisión 2026-06-10 opción A.
     # Suma al cart/patrimonio del snapshot 31/05 los saldos de las facturas
     # backfill que tienen fecha <= 31/05 (= ventas de mayo que en dBase ya
@@ -669,7 +681,11 @@ def index() -> Response:
             if not rec.get("ok"):
                 error_detalle = rec.get("razon", "no se pudo reconstruir")
             else:
-                campos = rec["campos"]
+                campos = dict(rec["campos"])
+                _mp_verif = _MATERIA_PRIMA_VERIFICADA.get((anio_d, mes_d))
+                if _mp_verif:
+                    campos["kcom"] = _mp_verif["kcom"]
+                    campos["ucom"] = _mp_verif["ucom"]
                 _fecha_cierre_d = _fecha_cierre_de(anio_d, mes_d)
                 res = db.execute_returning(
                     """
@@ -753,6 +769,14 @@ def index() -> Response:
 
         _rec = iq.historia_detalle_mes_cerrado(anio, mes)
         if _rec.get("ok"):
+            _mp_verif_preview = _MATERIA_PRIMA_VERIFICADA.get((anio, mes))
+            if _mp_verif_preview:
+                _rec = dict(_rec, campos={**_rec["campos"], **_mp_verif_preview})
+                _rec["fuente"] = dict(_rec["fuente"])
+                _rec["fuente"]["ucom/kcom"] = (
+                    "Vista previa cierre 31-08-2026.pdf (tabla COMPRAS HILADO) -- "
+                    "sin reconstrucción automática confiable, ver docstring"
+                )
             detalle_preview = _rec
             _row_actual = db.fetch_one(
                 """

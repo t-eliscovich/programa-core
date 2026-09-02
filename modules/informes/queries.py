@@ -9596,29 +9596,22 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
 
     # Tamara 2026-09-02, "no es algo menor": kcom (kg de Materia Prima)
     # reconstruido para agosto daba 523.712 kg contra 408.972 reales del PDF
-    # de cierre. `compras_mes_corriente().kg` es SUM(compra.kg) CRUDO, y el
-    # propio docstring de `kg_hilado_mes` documenta ese SUM roto para
-    # compras de importación: los recargos (CAE/flete/seguro) REPITEN el kg
-    # de la fila principal -- "70.354 kg contados dos veces", medido
-    # 31/07/2026. `compras_mes_corriente` ya calcula el número bueno
-    # (dedup por grupo de importación) y lo trae en `hilado_kg`, pero NO lo
-    # usa para valuar -- ese switch está apagado a propósito para el
-    # BALANCE EN VIVO (decisión de la dueña: no mover la utilidad ~$210k de
-    # golpe sin que se revise antes). Acá es distinto: esto sólo reconstruye
-    # el DETALLE de un mes YA CERRADO para reconciliar contra un papel
-    # externo -- ni gasto ni gstotal usan kcom/ucom, así que no hay riesgo
-    # de mover la utilidad. Usar el número deduplicado si Asinfo contestó
-    # (`disponible`); si no, cae al SUM crudo de siempre (fail-soft, igual
-    # que el resto de esta función).
-    _hil = (mp or {}).get("hilado_kg") or {}
-    kcom_valor = (
-        float(_hil["kg"]) if _hil.get("disponible") and _hil.get("kg") is not None
-        else float((mp or {}).get("kg") or 0)
-    )
-
+    # de cierre. Probado en vivo: `compras_mes_corriente().hilado_kg`
+    # (kg_hilado_mes, dedup por grupo de importación) NO arregla esto para
+    # un mes que ya pasó -- dio 597.023,84, todavía peor que el SUM crudo.
+    # Motivo: `_index_importaciones_por_codigo` indexa el estado ACTUAL de
+    # Asinfo y desempata por "fecha más cercana" cuando un código se repite
+    # entre campañas -- exactamente el mismo problema documentado para
+    # `anticipos_con_mercaderia_recibida` (el cruce vivo con Asinfo no sirve
+    # para reconstruir "cómo estaba tal mes", sólo "cómo está ahora"). kcom
+    # queda entonces en la MISMA categoría que anticipos/maquinaria/realty/
+    # stock: sin fuente propia reconstruible acá. Se deja el SUM crudo de
+    # siempre (con el bug de duplicación de recargos ya conocido) y quien
+    # aplique el detalle real puede pisarlo con el valor verificado de un
+    # papel externo -- ver `_MATERIA_PRIMA_VERIFICADA` en regen_snapshot_view.
     campos = {
         "ucom": float((mp or {}).get("importe") or 0),
-        "kcom": kcom_valor,
+        "kcom": float((mp or {}).get("kg") or 0),
         "utej": utej,
         "ktej": float((tej or {}).get("kg_total") or 0),
         "utin": utin,
@@ -9634,7 +9627,7 @@ def historia_detalle_mes_cerrado(anio: int, mes: int) -> dict:
         "mes": mes,
         "campos": campos,
         "fuente": {
-            "ucom/kcom": "ucom: SUM(compra.importe) tipo H. kcom: compras_mes_corriente().hilado_kg (dedup por grupo de importación, kg_hilado_mes) si Asinfo contestó -- si no, SUM(compra.kg) crudo",
+            "ucom/kcom": "SUM(compra.importe) / SUM(compra.kg) tipo H -- SIN reconstrucción propia confiable para un mes cerrado (kg_hilado_mes probado y descartado, ver docstring); pisar con un valor verificado si hace falta",
             "utej/ktej": "V1+V2+V3+amort(DTJ)+tejido_mes_componentes(meses_atras).us_externo -- xgast+compra",
             "utin": "V4+V5+V6+amort(DCC) -- scintela.xgast",
             "ktin": "tinto_mes_componentes(anio, mes).ktint -- scintela.tinto + formulas_app, fecha en el mes",

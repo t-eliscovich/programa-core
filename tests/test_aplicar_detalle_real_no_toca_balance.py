@@ -89,6 +89,53 @@ def test_aplica_solo_las_10_columnas_de_detalle_con_update(app, monkeypatch):
         assert params[k] == v
 
 
+def test_agosto_2026_pisa_kcom_ucom_con_el_valor_verificado_del_pdf(app, monkeypatch):
+    """Tamara 2026-09-02, 'no es algo menor': ninguna reconstrucción
+    automática de Materia Prima cuadra contra un mes cerrado (probado en
+    vivo: SUM crudo da 523.712 kg, kg_hilado_mes da 597.023 -- las dos
+    lejos de los 408.972 reales). Para agosto 2026 puntual, el UPDATE
+    tiene que aplicar el valor verificado contra 'Vista previa cierre
+    31-08-2026.pdf' (kcom=408972.0, ucom=1289746.0), pisando lo que haya
+    devuelto `historia_detalle_mes_cerrado` para esos dos campos -- el
+    resto (ktej/utej/ktin/utin/gasto/gstotal/kvent/uvent) se aplica tal
+    cual lo reconstruido."""
+    updates: list[tuple[str, dict]] = []
+
+    def fake_execute_returning(sql, params=None, conn=None):
+        s = " ".join(sql.split())
+        updates.append((s, params))
+        return {"id_historia": 517, **params, "patrimonio": 21732772.07,
+                "usuti": 651173.41}
+
+    monkeypatch.setattr(db, "execute_returning", fake_execute_returning)
+    monkeypatch.setattr(db, "fetch_all", lambda *a, **kw: [])
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **kw: None)
+    monkeypatch.setattr(
+        iq, "historia_detalle_mes_cerrado",
+        lambda anio, mes: {
+            "ok": True, "anio": anio, "mes": mes,
+            "campos": {**CAMPOS, "kcom": 523712.46, "ucom": 1319702.88},
+            "fuente": {},
+        },
+    )
+    _login(app)
+    client = app.test_client()
+    resp = client.post(
+        "/admin/regenerar-snapshot/",
+        data={"anio": "2026", "mes": "8",
+              "anio_detalle": "2026", "mes_detalle": "8",
+              "aplicar_detalle_real": "1"},
+    )
+    assert resp.status_code == 200
+    assert updates, "el POST tendría que haber corrido el UPDATE"
+    _, params = updates[0]
+    assert params["kcom"] == 408972.0
+    assert params["ucom"] == 1289746.0
+    # el resto de los campos reconstruidos NO se pisan
+    assert params["ktej"] == CAMPOS["ktej"]
+    assert params["kvent"] == CAMPOS["kvent"]
+
+
 def test_no_reconstruido_no_hace_ningun_update(app, monkeypatch):
     """Si el mes no está cerrado (ok=False), no se toca la base."""
     updates: list = []

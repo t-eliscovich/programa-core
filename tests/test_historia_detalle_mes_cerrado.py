@@ -83,43 +83,6 @@ def test_campos_usan_las_mismas_formulas_que_gastos_mes_anterior(monkeypatch):
     assert campos["ktin"] != campos["ktej"]
 
 
-def test_kcom_usa_el_kg_deduplicado_de_importacion_si_asinfo_contesto(monkeypatch):
-    """Tamara 2026-09-02, 'no es algo menor': kcom reconstruido para agosto
-    daba 523.712 kg contra 408.972 reales -- SUM(compra.kg) crudo repite el
-    kg de los recargos de importación (CAE/flete/seguro). Si Asinfo contestó
-    (`hilado_kg.disponible`), usar el kg deduplicado, no el SUM crudo."""
-    _patch_hoy(monkeypatch, 2026, 9, 1)
-    mp = {
-        "importe": 1319702.88,
-        "kg": 523712.46,  # SUM crudo, con los recargos duplicados
-        "hilado_kg": {"kg": 408972.0, "disponible": True},
-    }
-    with patch.object(queries, "gastos_xgast_v1_a_v9_mes", return_value={}), \
-         patch.object(queries, "amortizaciones_mensuales", return_value={}), \
-         patch.object(queries, "tejido_mes_componentes", return_value={}), \
-         patch.object(queries, "compras_mes_corriente", return_value=mp), \
-         patch.object(queries, "ventas_mes_corriente_resultado", return_value={}), \
-         patch.object(queries, "tinto_mes_componentes", return_value={}):
-        out = queries.historia_detalle_mes_cerrado(2026, 8)
-    assert out["campos"]["kcom"] == 408972.0        # deduplicado, NO el SUM crudo
-    assert out["campos"]["ucom"] == 1319702.88       # ucom no cambia -- no tiene ese bug
-
-
-def test_kcom_cae_al_sum_crudo_si_asinfo_no_contesto(monkeypatch):
-    """Fail-soft: sin `hilado_kg.disponible`, usar el SUM de siempre --
-    mejor un número con el bug conocido que romper la reconstrucción."""
-    _patch_hoy(monkeypatch, 2026, 9, 1)
-    mp = {"importe": 1000.0, "kg": 2000.0, "hilado_kg": {"disponible": False}}
-    with patch.object(queries, "gastos_xgast_v1_a_v9_mes", return_value={}), \
-         patch.object(queries, "amortizaciones_mensuales", return_value={}), \
-         patch.object(queries, "tejido_mes_componentes", return_value={}), \
-         patch.object(queries, "compras_mes_corriente", return_value=mp), \
-         patch.object(queries, "ventas_mes_corriente_resultado", return_value={}), \
-         patch.object(queries, "tinto_mes_componentes", return_value={}):
-        out = queries.historia_detalle_mes_cerrado(2026, 8)
-    assert out["campos"]["kcom"] == 2000.0
-
-
 def test_tinto_mes_componentes_no_toca_dbase_para_un_mes_post_corte(monkeypatch):
     """Agosto 2026 es 100% posterior a CORTE_TINTURA (2026-07-01): la parte
     scintela.tinto no debe correr ninguna query, todo sale de formulas_app.
