@@ -1511,8 +1511,23 @@ def explicar(fecha=None) -> dict:
     # Con esta bandera la pantalla deja de afirmar sobre el día: el titular
     # pasa al acumulado del mes y lo derivado del Δ (lo cobrado, el porqué) no
     # se muestra. Lo MEDIDO del día —facturado, kilos, deuda— sigue.
-    out["ventana_nula"] = bool(desde.get("hora") and
-                               desde.get("hora") == hasta.get("hora"))
+    #
+    # ⚠ Tamara 2026-09-02 — comparaba SÓLO `hora`, que es
+    # `TO_CHAR(creado_en, 'HH24:MI')`: la hora del día, SIN fecha. Y la ventana
+    # de diseño es "cierre de ayer contra cierre de hoy" (ver el docstring de
+    # `explicar`), o sea las dos puntas caen a la misma hora casi por
+    # definición. Resultado: la ventana buena —24 h enteras— se declaraba nula.
+    # /informes/dia del 01/09/2026 decía "las dos fotos son de las 19:00, del
+    # día todavía no se puede decir nada" sobre un día que tenía 155.871 de
+    # facturado y un Δ de utilidad de medio millón. El delator estaba a la
+    # vista: si de verdad fueran la misma foto, el Δ sería 0, y no lo era.
+    # Ahora se exige también el MISMO DÍA, que es lo que el comentario de
+    # arriba siempre quiso decir.
+    out["ventana_nula"] = bool(
+        desde.get("hora")
+        and desde.get("hora") == hasta.get("hora")
+        and desde.get("fecha_ec") == hasta.get("fecha_ec")
+    )
     out["desde"], out["hasta"] = desde, hasta
     out["d_utilidad"] = round(_f(hasta.get("utilidad")) - _f(desde.get("utilidad")), 2)
 

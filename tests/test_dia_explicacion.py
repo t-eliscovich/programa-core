@@ -385,6 +385,44 @@ def test_explicar_cierra_sin_residuo_y_marca_el_cien_por_ciento():
     assert fam["utilidad"] == 1700.0
 
 
+def test_la_ventana_de_24h_no_es_nula_aunque_las_dos_fotos_sean_a_la_misma_hora():
+    """Tamara 2026-09-02 — /informes/dia del 01/09: "las dos fotos son de las
+    19:00, del día todavía no se puede decir nada", sobre un día con 155.871 de
+    facturado y medio millón de Δ.
+
+    `ventana_nula` comparaba SÓLO `hora` = TO_CHAR(creado_en,'HH24:MI'), la hora
+    del día SIN fecha. Y la ventana de diseño es "cierre de ayer contra cierre
+    de hoy": las dos puntas caen a la misma hora casi por definición. O sea que
+    la ventana BUENA se declaraba nula. Tiene que exigir el mismo DÍA, que es lo
+    que el comentario del código siempre quiso decir.
+    """
+    caps = _caps(0.0, 1700.0, facturas=1700.0)
+    assert caps[0]["hora"] == caps[1]["hora"] == "19:00"   # el caso normal
+    assert caps[0]["fecha_ec"] != caps[1]["fecha_ec"]
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 8, 4))
+    assert e["ventana_nula"] is False, (
+        "la ventana de 24 h (cierre de ayer → cierre de hoy) se estaba "
+        "declarando nula sólo porque las dos puntas caen a la misma hora"
+    )
+    assert e["d_utilidad"] == 1700.0
+
+
+def test_dos_fotos_del_mismo_minuto_del_mismo_dia_si_son_ventana_nula():
+    """Lo que la bandera SÍ tiene que cazar: la captura automática y un
+    "Capturar ahora" que caen juntos. Ahí el Δ es 0 por construcción."""
+    caps = _caps(500.0, 500.0)
+    caps[1]["fecha_ec"] = caps[0]["fecha_ec"]      # mismo día, misma hora
+    with patch.object(dia, "capturas", return_value=caps), \
+         patch.object(dia, "ventana", return_value=(caps[0], caps[1])), \
+         patch.object(dia, "_rows", return_value=[]):
+        e = dia.explicar(date(2026, 8, 3))
+    assert e["ventana_nula"] is True
+    assert e["d_utilidad"] == 0.0
+
+
 def test_el_residuo_tambien_baja_el_porcentaje():
     """Tamara 2026-09-02 — la pantalla decía "explicado 100,0 %" al lado de
     "descuadre de $ -502.169,27".
