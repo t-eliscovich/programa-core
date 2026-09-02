@@ -190,14 +190,16 @@ def test_si_cargan_la_orden_el_aviso_pasa_a_resuelto():
     no?"* → *"claro, campanita"*. Archivarlo lo apagaba en silencio y ella veía
     el anuncio bajar de 4 a 3 sin que nadie se lo dijera."""
     vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
-            "cantidad": 3240}
+            "cantidad": 3240,
+            "titulo": "Salieron 3.240 kg de hilo a Ponce — falta cargar orden de fabricación"}
     res, _p, resueltos = _correr([_caso(numero="OSM-000010462")],
                                  vivos=[vivo],
                                  ofts={"OSM-000010460": "OFT-000040516"})
     assert res["resueltos"] == 1
     _id, kw = resueltos[0]
     assert _id == 77
-    assert kw["titulo"] == "3.240 kg de hilo — orden cargada"
+    # qué y de quién se conserva del aviso original
+    assert kw["titulo"] == "3.240 kg de hilo a Ponce — orden cargada"
     assert kw["detalle"] == "OSM-000010460 → OFT-000040516"
 
 
@@ -205,7 +207,8 @@ def test_sin_saber_la_orden_igual_se_cierra():
     """Si Asinfo no contesta el número de la OFT, el aviso se cierra lo mismo:
     dejarlo en rojo diciendo 'falta cargar' sería peor que no nombrarla."""
     vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
-            "cantidad": 3240}
+            "cantidad": 3240,
+            "titulo": "Salieron 3.240 kg de hilo a Ponce — falta cargar orden de fabricación"}
     _, _p, resueltos = _correr([], vivos=[vivo], ofts={})
     assert resueltos[0][1]["detalle"] == "OSM-000010460"
 

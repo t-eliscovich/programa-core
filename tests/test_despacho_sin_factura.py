@@ -73,8 +73,8 @@ def test_lo_que_amanecio_sin_factura_si_avisa():
     res, puestos = _correr(HOY + AYER)
     assert res["avisados"] == 1
     a = puestos[0]
-    assert a["titulo"] == ("Despacho sin factura del 2026-08-10 · 988 kg · "
-                           "DES-000095134")
+    # fecha corta y kg enteros cuando son enteros
+    assert a["titulo"] == "Despacho sin factura del 10/08 · 988 kg · DES-000095134"
     assert a["nivel"] == "alerta"
     assert "TONO CEN S/M ADJUNTO FOTO" in a["detalle"]
 
@@ -161,3 +161,15 @@ def test_si_asinfo_no_habla_no_se_rompe_nada():
     with patch("modules._lib.metabase_client.fetch_dataset",
                side_effect=RuntimeError("Metabase 502")):
         assert ds.pendientes() == []
+
+
+def test_medio_kilo_no_sale_como_cero():
+    """Salía "0 kg" en el título y "0,5 kg" en el detalle del mismo aviso."""
+    from modules.asinfo import despacho_sin_factura as d
+    c = {"dia": "2026-08-28", "kg": 0.5, "numero": "DES-1", "nota": "",
+         "creado": "17:50"}
+    assert d._titulo(c) == "Despacho sin factura del 28/08 · 0,5 kg · DES-1"
+    assert d._detalle(c).startswith("Salió el 28/08 a las 17:50")
+    assert d._kg_txt(987.8) == "988"
+    assert d._kg_txt(9.96) == "10,0"
+    assert d._dia_es("raro") == "raro"

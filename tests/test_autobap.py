@@ -459,3 +459,29 @@ def test_el_ambiguo_avisa_una_vez_por_codigo():
 def test_avisar_ambiguos_nunca_levanta():
     with patch("modules.avisos.avisar", side_effect=Exception("caído")):
         autobap._avisar_ambiguos([{"codigo_prov": "AC", "ref": 58}])
+
+
+def test_resumen_otra_parte_de_la_importacion():
+    """AC 34 se cargó el 10/08 con 19.550 kg y $ 60.277; el 17/08 salió otra
+    vez "AC 34 · 19.550 kg · $ 1.502,84" — los gastos, con los kg del hilo
+    como si fuera una importación de 19 t a 8 centavos."""
+    r = autobap.resumen({
+        "tipo": "conversion", "im_numero": "IM-0000600", "codigo_prov": "AC",
+        "ref_num": 34, "kg": None, "importe": 1502.84,
+        "mensaje": "AC 34 · $ 1.502,84 · Se cargó a compras" + autobap.OTRA_PARTE,
+    })
+    assert r["titulo"] == "AC 34 · $ 1.502,84"
+    assert r["detalle"] == ("Se cargó a compras · otra parte de la importación, "
+                            "el hilo ya estaba cargado")
+
+
+def test_ya_cargada_es_fail_soft(monkeypatch):
+    monkeypatch.setattr(autobap.db, "fetch_one", lambda *a, **k: {"?column?": 1})
+    assert autobap._ya_cargada("AC", 34) is True
+    monkeypatch.setattr(autobap.db, "fetch_one", lambda *a, **k: None)
+    assert autobap._ya_cargada("AC", 34) is False
+
+    def _boom(*a, **k):
+        raise RuntimeError("sin base")
+    monkeypatch.setattr(autobap.db, "fetch_one", _boom)
+    assert autobap._ya_cargada("AC", 34) is False

@@ -588,8 +588,11 @@ def _avisar_descuentos(cambiado: list[dict], raras: list[dict]) -> None:
         cods = ", ".join(f"{r['cod']} ({r['lista']})" for r in raras[:5])
         avisar(
             fuente="clientes", nivel="alerta",
-            titulo=f"{len(raras)} listas de descuento de Asinfo que no entiendo",
-            detalle=f"No se cargó nada para: {cods}"[:200],
+            titulo=(f"Descuento mal cargado en Asinfo: {cods}" if len(raras) == 1
+                    else f"{len(raras)} descuentos mal cargados en Asinfo"),
+            detalle=("La lista no tiene porcentaje. No se cargó nada."
+                     if len(raras) == 1 else
+                     f"Las listas no tienen porcentaje. No se cargó nada para: {cods}")[:200],
             url="/clientes/sync-asinfo",
             clave=f"clientes-listas-raras-{len(raras)}",
         )
@@ -616,8 +619,11 @@ def _avisar_vendedores(cambiado: list[dict], raros: list[dict]) -> None:
         cods = ", ".join(f"{r['cod']} ({r['agente']})" for r in raros[:5])
         avisar(
             fuente="clientes", nivel="alerta",
-            titulo=f"{len(raros)} vendedores de Asinfo que no conozco",
-            detalle=f"No se tocó el vendedor de: {cods}"[:200],
+            titulo=(f"Vendedor mal cargado en Asinfo: {cods}" if len(raros) == 1
+                    else f"{len(raros)} vendedores mal cargados en Asinfo"),
+            detalle=("Ese vendedor no existe en el programa. No se tocó."
+                     if len(raros) == 1 else
+                     f"Esos vendedores no existen en el programa. No se tocó: {cods}")[:200],
             url="/clientes/sync-asinfo",
             clave=f"clientes-agentes-raros-{len(raros)}",
         )

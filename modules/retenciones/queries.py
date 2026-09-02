@@ -645,8 +645,9 @@ def aplicar_retenciones_asinfo(desde, hasta, usuario: str = "web",
             _n = res["n_aplicadas"]
             _av.avisar(
                 fuente="retenciones",
-                titulo=(f"Se cargaron {_n} retencion{'es' if _n != 1 else ''} "
-                        f"por $ {_money(res['total_aplicado'])}"),
+                titulo=(("Se cargó 1 retención" if _n == 1
+                         else f"Se cargaron {_n} retenciones")
+                        + f" por $ {_money(res['total_aplicado'])}"),
                 importe=res["total_aplicado"], cantidad=_n,
                 url="/facturas/retenciones-asinfo",
                 clave=f"retenciones:{_hoy()}:{batch_id}",
@@ -874,8 +875,9 @@ def mover_retencion_del_abono(desde, hasta, numeros=None,
             _n = res["n_movidas"]
             _av.avisar(
                 fuente="retenciones",
-                titulo=(f"Se separaron {_n} retencion{'es' if _n != 1 else ''} "
-                        f"del abono por $ {_money(res['total_movido'])}"),
+                titulo=(("Se separó 1 retención" if _n == 1
+                         else f"Se separaron {_n} retenciones")
+                        + f" del abono por $ {_money(res['total_movido'])}"),
                 importe=res["total_movido"], cantidad=_n,
                 url="/facturas/retenciones-en-abono",
                 clave=f"retenciones-mover:{_hoy()}:{batch_id}",

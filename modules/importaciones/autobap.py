@@ -238,6 +238,27 @@ def _url_del_aviso(tipo: str, id_compra) -> str:
 ICONOS = {"conversion": "✅", "freno": "⛔", "error": "⚠️"}
 
 
+OTRA_PARTE = " · otra parte de la importación, el hilo ya estaba cargado"
+
+
+def _ya_cargada(codigo_prov: str, ref) -> bool:
+    """¿Ya hubo una conversión de esta misma importación? Fail-soft: False."""
+    try:
+        row = db.fetch_one(
+            """
+            SELECT 1 FROM scintela.autobap_log
+             WHERE tipo = 'conversion' AND codigo_prov = %s
+               AND ref_num IS NOT DISTINCT FROM %s
+             LIMIT 1
+            """,
+            (codigo_prov, ref),
+        )
+        return bool(row)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("_ya_cargada %s %s: %s", codigo_prov, ref, e)
+        return False
+
+
 def _codigo(a: dict) -> str:
     """`AI 11` — el nombre con el que la dueña pide y busca la importación.
 
@@ -291,7 +312,8 @@ def resumen(a: dict) -> dict:
         return {
             "icono": icono,
             "titulo": " · ".join(partes),
-            "detalle": "Se cargó a compras",
+            "detalle": ("Se cargó a compras" + OTRA_PARTE if OTRA_PARTE in msg
+                        else "Se cargó a compras"),
         }
 
     if tipo == "freno":
@@ -549,6 +571,9 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
 
     hoy = today_ec()
     for g in p["grupos"]:
+        # Si esta importación YA se cargó antes, lo de ahora es otra parte
+        # (gastos, flete): sin los kg, que harían parecer 19 t a 8 centavos.
+        otra_parte = _ya_cargada(g["codigo_prov"], g["ref"])
         try:
             # ── GUARD 6: período contable cerrado ───────────────────────────
             asegurar_fecha_abierta(hoy)
@@ -569,12 +594,14 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
             avisar(
                 tipo="conversion", im_numero=g["im_numero"],
                 codigo_prov=g["codigo_prov"], ref_num=g["ref"], anio=g.get("anio"),
-                fecha_recepcion=g["fecha_recepcion"], kg=g.get("kg"),
+                fecha_recepcion=g["fecha_recepcion"],
+                kg=None if otra_parte else g.get("kg"),
                 n_anticipos=g["n"], importe=r.get("importe_total"),
                 id_compra=r.get("id_compra"), comprobante=r.get("comprobante"),
                 mensaje=(
                     f"{g['codigo_prov']} {g['ref']} · "
                     f"$ {num_es(r.get('importe_total'), 2)} · Se cargó a compras"
+                    + (OTRA_PARTE if otra_parte else "")
                 ),
             )
         except Exception as e:  # noqa: BLE001 -- una importación no frena al resto

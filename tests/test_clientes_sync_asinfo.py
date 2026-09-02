@@ -633,3 +633,20 @@ def test_pct_formato_ecuador():
     assert sa._pct(None) == "0%"
     assert sa._titulo_y_detalle("X de", ["A 5% → 7%", "B 12% → 0%"]) == (
         "X de 2 clientes", "A 5% → 7%, B 12% → 0%")
+
+
+def test_lista_rara_avisa_mal_cargado(monkeypatch):
+    """Tamara 02/09: "no entiendo" no → "mal cargado"."""
+    puestos = []
+    monkeypatch.setattr("modules.avisos.queries.avisar",
+                        lambda **kw: puestos.append(kw) or True)
+    sa._avisar_descuentos([], [{"cod": "FLK", "lista": "CONTADO"}])
+    assert puestos[0]["titulo"] == "Descuento mal cargado en Asinfo: FLK (CONTADO)"
+    assert puestos[0]["detalle"] == "La lista no tiene porcentaje. No se cargó nada."
+    puestos.clear()
+    sa._avisar_descuentos([], [{"cod": "A", "lista": "X"}, {"cod": "B", "lista": "Y"}])
+    assert puestos[0]["titulo"] == "2 descuentos mal cargados en Asinfo"
+    assert "A (X), B (Y)" in puestos[0]["detalle"]
+    puestos.clear()
+    sa._avisar_vendedores([], [{"cod": "FLK", "agente": "PEPE"}])
+    assert puestos[0]["titulo"] == "Vendedor mal cargado en Asinfo: FLK (PEPE)"

@@ -144,17 +144,32 @@ def sin_cargar_de_dias_anteriores() -> list[dict]:
     return [c for c in pendientes() if c["dia"] and c["dia"] < hoy]
 
 
-def _titulo(c: dict) -> str:
+def _dia_es(dia) -> str:
+    """'2026-08-28' → '28/08'. Lo que no parsea, sale como vino."""
+    try:
+        y, m, d = str(dia)[:10].split("-")
+        return f"{d}/{m}"
+    except ValueError:
+        return str(dia)
+
+
+def _kg_txt(kg) -> str:
+    """Entero de 10 kg para arriba; abajo, un decimal: '0,5 kg' no puede
+    salir como '0 kg'."""
     from filters import num_es
-    return (f"Despacho sin factura del {c['dia']} · "
-            f"{num_es(c['kg'], 0)} kg · {c['numero']}")
+    kg = float(kg or 0)
+    return num_es(kg, 0) if kg >= 10 else num_es(kg, 1)
+
+
+def _titulo(c: dict) -> str:
+    return (f"Despacho sin factura del {_dia_es(c['dia'])} · "
+            f"{_kg_txt(c['kg'])} kg · {c['numero']}")
 
 
 def _detalle(c: dict) -> str:
-    from filters import num_es
     nota = f" · {c['nota']}" if c["nota"] else ""
-    return (f"Salió el {c['dia']} a las {c['creado']} y sigue sin factura. "
-            f"{num_es(c['kg'], 1)} kg{nota}")
+    return (f"Salió el {_dia_es(c['dia'])} a las {c['creado']} y sigue sin factura. "
+            f"{_kg_txt(c['kg'])} kg{nota}")
 
 
 def revisar_si_toca() -> dict:

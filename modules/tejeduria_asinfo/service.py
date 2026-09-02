@@ -1003,8 +1003,8 @@ def _avisar_carga(res: dict) -> int:
         puestos += bool(_avisar(
             fuente="tejeduria",
             titulo=(f"{a['label']} · $ {num_es(a['importe'], 2)}"),
-            detalle=(f"Se cargaron {a['n']} compra"
-                     f"{'' if a['n'] == 1 else 's'} · "
+            detalle=(("Se cargó 1 compra" if a['n'] == 1
+                      else f"Se cargaron {a['n']} compras") + " · "
                      f"{num_es(a['kg'], 2)} kg"),
             importe=round(a["importe"], 2), cantidad=a["n"],
             url=_url_compras(cod, a["dias"]), clave=clave[:400],
@@ -1045,17 +1045,24 @@ def avisar_tejedores_nuevos(anio: int, mes: int) -> int:
     # 1) Tejedores que Asinfo trae y el programa NO reconoce.
     for d in data.get("desconocidos") or []:
         label = d.get("label") or "?"
+        # Las OFs que en Asinfo vienen sin tejedor salen con label "?": el
+        # aviso tiene que decir eso, no un signo de pregunta.
+        titulo = (f"Tejedor sin reconocer: {label}" if label != "?" else
+                  f"{d['ofs']} orden{'' if d['ofs'] == 1 else 'es'} sin tejedor en Asinfo"
+                  + (f" ({d['ejemplo']})" if d.get("ejemplo") else ""))
         puestos += bool(_avisar(
             fuente="tejeduria",
             nivel="alerta",
-            titulo=f"Tejedor sin reconocer: {label}",
+            titulo=titulo,
             detalle=(f"Produjo {d['ofs']} orden{'' if d['ofs'] == 1 else 'es'} · "
                      f"{num_es(d['kg'], 2)} kg este mes y se está contando como "
                      f"producción propia. Hay que darlo de alta para poder "
                      f"cargarle las compras."),
             cantidad=d["ofs"],
             url="/produccion-tejeduria-asinfo",
-            clave=f"tejeduria:sin-reconocer:{anio}-{mes:02d}:{label}:{d['ofs']}"[:400],
+            # UNA vez por tejedor y mes: con el conteo de OFs adentro salía
+            # de nuevo cada vez que producía otra orden (5 veces en 2 semanas).
+            clave=f"tejeduria:sin-reconocer:{anio}-{mes:02d}:{label}"[:400],
         ))
 
     # 2) Tejedores reconocidos con OFs esperando y SIN tarifa cargada.

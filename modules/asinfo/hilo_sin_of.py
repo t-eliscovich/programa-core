@@ -406,7 +406,7 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
     try:
         vivos = db.fetch_all(
             """
-            SELECT id_aviso, clave, cantidad
+            SELECT id_aviso, clave, cantidad, titulo
               FROM scintela.aviso
              WHERE clave LIKE 'hilo-sin-of:%%'
                AND nivel <> 'ok'
@@ -436,8 +436,11 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
     n = 0
     for osm, a in mios.items():
         oft = ofts.get(osm)
-        titulo = (f"{_kg_txt(a.get('cantidad') or 0)} kg de hilo — "
-                  "orden cargada")
+        # "Salieron 849 kg de hilo a Ponce — falta cargar…" → se conserva
+        # el "de hilo a Ponce": sin eso el resuelto no dice ni qué ni de quién.
+        m = re.search(r"kg (de .+?) — ", str(a.get("titulo") or ""))
+        que = m.group(1) if m else "de hilo"
+        titulo = f"{_kg_txt(a.get('cantidad') or 0)} kg {que} — orden cargada"
         detalle = f"{osm} → {oft}" if oft else osm
         try:
             if avisos.resolver(int(a["id_aviso"]), titulo=titulo,

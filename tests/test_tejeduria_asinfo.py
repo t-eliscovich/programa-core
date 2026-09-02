@@ -961,6 +961,18 @@ def test_aviso_sin_reconocer_no_manda_al_tarifario():
     assert a["titulo"] == "Tejedor sin reconocer: R UNDA"
     assert a["url"] == "/produccion-tejeduria-asinfo"
     assert "producción propia" in a["detalle"]
+    # una vez por tejedor y mes: el conteo de OFs NO va en la clave (salía
+    # 5 veces en 2 semanas con cada orden nueva)
+    assert a["clave"] == "tejeduria:sin-reconocer:2026-07:R UNDA"
+
+
+def test_ofs_sin_tejedor_no_salen_como_signo_de_pregunta():
+    n, puestos = _avisos_de({
+        "disponible": True, "pendientes": [],
+        "desconocidos": [{"cod": "", "label": "?", "kg": 891.72, "ofs": 1,
+                          "ejemplo": "OFT-000040500"}]})
+    assert n == 1
+    assert puestos[0]["titulo"] == "1 orden sin tejedor en Asinfo (OFT-000040500)"
 
 
 def test_aviso_no_se_repite_pero_sigue_a_las_ofs_nuevas():
