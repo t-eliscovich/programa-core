@@ -9095,7 +9095,16 @@ def balance_components_as_of(as_of) -> dict:
             )
             SELECT
               COALESCE(SUM(CASE WHEN tipo IN ('M','C','K') THEN GREATEST(valor_calc,0) ELSE 0 END),0) AS umaq,
-              COALESCE(SUM(CASE WHEN tipo = 'I'           THEN GREATEST(valor_calc,0) ELSE 0 END),0) AS uact
+              -- TMT 2026-09-02 (incidente cierre agosto): faltaba 'T'
+              -- (terrenos) -- la rama LIVE (línea ~681, UACT FOR TIPO IN
+              -- ('I','T')) sí lo incluye. Sin esto, esta rama as_of
+              -- infravalora realty por el total de terrenos ($1.465.000
+              -- verificado 09/2026) cada vez que se usa para un mes que
+              -- ya pasó. No fue lo que rompió agosto (esa vez no se llegó
+              -- a usar esta rama para maquinaria/realty), pero es un bug
+              -- real e independiente -- corregido acá para que no
+              -- rompa el próximo cierre que sí caiga en esta rama.
+              COALESCE(SUM(CASE WHEN tipo IN ('I','T')     THEN GREATEST(valor_calc,0) ELSE 0 END),0) AS uact
             FROM v
             """,
             (as_of,),

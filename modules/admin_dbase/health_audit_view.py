@@ -2261,6 +2261,77 @@ def saldos_alertas(resumen: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Total Activo tiene que cerrar contra Pasivo + Patrimonio en la última fila
+# de scintela.historia -- identidad contable básica, cierta en CUALQUIER
+# snapshot (de cierre o diario), no sólo al cierre.
+# ---------------------------------------------------------------------------
+#
+# Tamara 2026-09-02 ("no puede volver a pasar"): el incidente de agosto 2026
+# (ancla-agosto-manual dejó anticipos/maquinaria/realty pisados con julio)
+# desbalanceaba $976K entre Total Activo y Pasivo+Patrimonio, y nadie lo vio
+# hasta que Tamara preguntó por qué Ventas estaba mal en Historia. Esta
+# identidad HUBIERA prendido la alarma sola el mismo 01/09. No reemplaza el
+# watchdog de utilidad (que compara live contra snapshot); esto compara la
+# fila guardada CONTRA SÍ MISMA.
+_HISTORIA_BALANCE_TOL_US = 1000.0
+
+
+@bp.route("/historia-balance-cierra", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def historia_balance_cierra():
+    """Alerta si, en la última fila de `scintela.historia`, Total Activo
+    (banco+cart+anticipos+ustock+uqui+maquinaria+realty) no cierra contra
+    Pasivo (deuda) + Patrimonio."""
+    alerts = []
+    stats = {}
+
+    row = db.fetch_one(
+        """
+        SELECT id_historia, fecha, banco, cart, anticipos, ustock, uqui,
+               maquinaria, realty, deuda, patrimonio, usuario_crea
+          FROM scintela.historia
+         ORDER BY fecha DESC, id_historia DESC
+         LIMIT 1
+        """
+    )
+    if not row:
+        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
+
+    total_activo = (
+        float(row.get("banco") or 0) + float(row.get("cart") or 0)
+        + float(row.get("anticipos") or 0) + float(row.get("ustock") or 0)
+        + float(row.get("uqui") or 0) + float(row.get("maquinaria") or 0)
+        + float(row.get("realty") or 0)
+    )
+    esperado = float(row.get("deuda") or 0) + float(row.get("patrimonio") or 0)
+    delta = total_activo - esperado
+
+    stats["id_historia"] = row.get("id_historia")
+    stats["fecha"] = str(row.get("fecha"))
+    stats["usuario_crea"] = row.get("usuario_crea")
+    stats["total_activo"] = round(total_activo, 2)
+    stats["pasivo_mas_patrimonio"] = round(esperado, 2)
+    stats["delta"] = round(delta, 2)
+
+    if abs(delta) >= _HISTORIA_BALANCE_TOL_US:
+        alerts.append({
+            "severity": "high",
+            "category": "balance_no_cierra",
+            "msg": (
+                f"scintela.historia id={row.get('id_historia')} "
+                f"({row.get('fecha')}, usuario_crea={row.get('usuario_crea')}): "
+                f"Total Activo − (Pasivo+Patrimonio) = {delta:+,.2f}. "
+                f"Revisar banco/cart/anticipos/ustock/uqui/maquinaria/realty "
+                f"contra un papel verificado -- mismo síntoma que el "
+                f"incidente de agosto 2026."
+            ),
+        })
+
+    return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -2287,6 +2358,7 @@ def health_all():
     resp16 = competencia_coherente()
     resp17 = devuelto_sin_nd()
     resp19 = saldos_coherente()
+    resp20 = historia_balance_cierra()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2302,6 +2374,7 @@ def health_all():
     data16 = json.loads(resp16.get_data(as_text=True))
     data17 = json.loads(resp17.get_data(as_text=True))
     data19 = json.loads(resp19.get_data(as_text=True))
+    data20 = json.loads(resp20.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2329,7 +2402,8 @@ def health_all():
                and data6["ok"] and data7["ok"] and data9["ok"]
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
-               and data16["ok"] and data17["ok"] and data19["ok"]),
+               and data16["ok"] and data17["ok"] and data19["ok"]
+               and data20["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2349,6 +2423,7 @@ def health_all():
         "devuelto_sin_nd": data17,
         "primera_compra_asinfo": data18,
         "saldos": data19,
+        "historia_balance_cierra": data20,
     })
 
 
