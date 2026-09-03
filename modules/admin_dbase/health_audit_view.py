@@ -26,6 +26,7 @@ from flask import Blueprint, jsonify, request
 
 import db
 from auth import requiere_login, requiere_permiso
+from modules.informes.queries import INICIALES_COLUMNAS_QUE_VIAJAN
 
 bp = Blueprint("health_audit", __name__, url_prefix="/admin/health")
 
@@ -3145,11 +3146,6 @@ def hilado_stock_debug():
 #: Las columnas que la fila del mes nuevo tiene que traer del mes anterior —
 #: la MISMA lista que copian `rollover_y_writeback_iniciales` (`_row_new`) y
 #: `cerrar_mes_auto` (hay un test que las compara contra el código).
-INICIALES_COLUMNAS_QUE_VIAJAN: tuple[str, ...] = (
-    "hilado", "tejido", "terminado", "vq", "um", "uk", "uq", "uf", "pre",
-    "kprog", "gprog", "numnot", "dificil", "pretej", "pretin", "preadm",
-    "pretot",
-)
 
 #: Una provisión que en 48 h sube más de MEDIO mes no es la cuota diaria
 #: (1/30) ni un atraso del motor lazy (el calentador abre /informes/balance
@@ -3291,7 +3287,9 @@ def arranque_de_mes_alertas(datos: dict, hoy: _dt_date | None = None) -> dict:
                 f"La fila de Iniciales de {mes} nació sin "
                 f"{', '.join(perdidas)} (el mes anterior las tenía). Sin "
                 f"`pre` la Proyección sale en 0 hasta la primera factura. "
-                f"Se corrige en /iniciales.")
+                f"El cron las completa solo con las del mes anterior "
+                f"(/admin/health/snapshot-diario lo fuerza); o se cargan "
+                f"en /iniciales.")
 
     # 2. Gastos proyectados del mes: fila o herencia.
     gp = datos.get("gastos_proy") or {}

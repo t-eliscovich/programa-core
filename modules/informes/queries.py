@@ -10078,6 +10078,53 @@ _NUM_MES_EN = {1: "Jan", 2: "Feb", 3: "Mar", 4: "Apr", 5: "May", 6: "Jun",
                7: "Jul", 8: "Aug", 9: "Sep", 10: "Oct", 11: "Nov", 12: "Dec"}
 
 
+#: Las columnas que viajan de un mes al otro — la MISMA lista que copian
+#: `rollover_y_writeback_iniciales` (`_row_new`) y `cerrar_mes_auto`, y que
+#: vigila el health `arranque_de_mes` (`INICIALES_COLUMNAS_QUE_VIAJAN`).
+INICIALES_COLUMNAS_QUE_VIAJAN: tuple[str, ...] = (
+    "hilado", "tejido", "terminado", "vq", "um", "uk", "uq", "uf", "pre",
+    "kprog", "gprog", "numnot", "dificil", "pretej", "pretin", "preadm",
+    "pretot",
+)
+
+
+def completar_iniciales_desde_mes_anterior(fecha=None, dry_run: bool = False) -> dict:
+    """Rellena, en la fila de Iniciales del mes en curso, las columnas que
+    están NULL o 0 pero el mes anterior tenía. Devuelve {columna: valor}
+    con lo que completó (vacío si no había nada que completar).
+
+    Idempotente: la segunda corrida no encuentra nada vacío. Lo cargado a
+    mano nunca se pisa — sólo se toca lo que está en NULL/0.
+    """
+    from filters import today_ec
+
+    hoy = fecha or today_ec()
+    m, y = hoy.month, hoy.year
+    prev_m = 12 if m == 1 else m - 1
+    prev_y = y - 1 if m == 1 else y
+    actual = db.fetch_one(
+        "SELECT * FROM scintela.iniciales WHERE mesnum=%s AND yy=%s "
+        "ORDER BY id_iniciales DESC LIMIT 1", (m, y))
+    if not actual:
+        return {}
+    prev = db.fetch_one(
+        "SELECT * FROM scintela.iniciales WHERE mesnum=%s AND yy=%s "
+        "ORDER BY id_iniciales DESC LIMIT 1", (prev_m, prev_y))
+    if not prev:
+        return {}
+    faltan = {
+        c: prev.get(c) for c in INICIALES_COLUMNAS_QUE_VIAJAN
+        if float(prev.get(c) or 0) != 0 and float(actual.get(c) or 0) == 0
+    }
+    if faltan and not dry_run:
+        sets = ", ".join(f"{c}=%s" for c in faltan)
+        db.execute(
+            f"UPDATE scintela.iniciales SET {sets} WHERE id_iniciales=%s",
+            (*faltan.values(), actual["id_iniciales"]),
+        )
+    return {c: float(v) for c, v in faltan.items()}
+
+
 def rollover_y_writeback_iniciales(fecha=None, dry_run: bool = False) -> dict:
     """Replica el rollover automático del dBase (MENU.PRG/SETEO 246-262) + el
     write-back de stock (INFORMES.PRG 549-550), para que PC NO dependa de que
@@ -10148,6 +10195,21 @@ def rollover_y_writeback_iniciales(fecha=None, dry_run: bool = False) -> dict:
                 )
         else:
             out["rollover_error"] = f"no hay fila del mes anterior {prev_m:02d}/{prev_y} para copiar"
+
+    # (1b) COMPLETAR — las columnas que la fila del mes perdió al nacer.
+    #
+    # Tamara 2026-09-03: *"dejá que se autocomplete con el mes anterior hasta
+    # que alguien le ponga valores"*. Septiembre 2026 lo creó `cerrar_mes_auto`
+    # cuando todavía copiaba 12 columnas y no 17, y quedó sin `pre`, `pretej`,
+    # `pretin`, `preadm` — y así siguió tres días, con el health recién
+    # deployado gritando `iniciales_columna_perdida`. La regla es la misma que
+    # la del health: una columna que el mes anterior tenía y hoy está NULL o
+    # 0 se rellena con la del mes anterior. Sólo ESAS: lo que ya tiene valor
+    # (cargado a mano o por el write-back) no se toca, así que en cuanto
+    # alguien pone el suyo en /iniciales, gana el suyo.
+    completadas = completar_iniciales_desde_mes_anterior(hoy, dry_run=dry_run)
+    if completadas:
+        out["completadas"] = completadas
 
     # (2) WRITE-BACK — stock de cierre vivo a la fila del mes en curso
     bal = informe_balance()
