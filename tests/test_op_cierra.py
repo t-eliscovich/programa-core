@@ -30,7 +30,7 @@ def _app_ctx(app):
         yield
 
 
-def _run(*, compra, posdat, retiros, retiros_historicos=None,
+def _run(*, compra, posdat, retiros, consumido=0.0, retiros_historicos=None,
          desde=date(2026, 1, 15)):
     """`compra`/`posdat` son los SUM(importe) crudos (negativos para OP).
 
@@ -49,6 +49,8 @@ def _run(*, compra, posdat, retiros, retiros_historicos=None,
             return {"s": posdat}
         if "scintela.retiros" in s:
             return {"s": retiros if "fecha >= %s" in s else retiros_historicos}
+        if "scintela.op_retiro_linea" in s:
+            return {"s": consumido}
         raise AssertionError(f"query inesperada: {s}")
 
     with patch.object(hv.db, "fetch_one", side_effect=_fake):
@@ -58,13 +60,20 @@ def _run(*, compra, posdat, retiros, retiros_historicos=None,
         return vista().get_json()
 
 
-def test_cuando_cada_compra_tiene_su_espejo_no_alerta(_app_ctx):
-    """El caso sano: mismo crédito por las dos fuentes."""
-    d = _run(compra=-200_000.0, posdat=-200_000.0, retiros=150_000.0)
+def test_el_credito_consumido_no_es_un_descuadre(_app_ctx):
+    """El caso sano.
+
+    `crear_op` consume el crédito haciendo `importe += monto` sobre la fila
+    posdat de la línea, así que el posdat ENCOGE con cada retiro y la compra
+    no. Cargados 200.000, retirados (e imputados) 150.000: quedan 50.000 en
+    posdat. Eso cierra, no descuadra.
+    """
+    d = _run(compra=-200_000.0, posdat=-50_000.0, retiros=150_000.0,
+             consumido=150_000.0)
     assert d["ok"] is True
-    assert d["stats"]["credito_compras"] == 200_000.0
-    assert d["stats"]["credito_posdat"] == 200_000.0
-    assert d["stats"]["disponible_segun_posdat"] == 50_000.0
+    assert d["stats"]["residuo_compras_vs_posdat"] == 0.0
+    assert d["stats"]["consumido_bajo_posdat"] == 150_000.0
+    assert d["stats"]["disponible_saldo_op"] == 50_000.0
 
 
 def test_avisa_cuando_lineas_op_duplicaria_el_credito(_app_ctx):
@@ -80,16 +89,16 @@ def test_una_linea_op_cargada_a_mano_hace_saltar_la_alarma(_app_ctx):
     d = _run(compra=-105_926.13, posdat=-223_813.12, retiros=0.0)
     assert d["ok"] is False
     assert d["alerts"][0]["category"] == "op_credito_no_cuadra"
-    assert d["stats"]["delta_compras_vs_posdat"] == -117_886.99
+    assert d["stats"]["residuo_compras_vs_posdat"] == -117_886.99
     assert "cargadas a mano" in d["alerts"][0]["msg"]
 
 
-def test_avisa_si_se_retiro_mas_credito_del_que_hay(_app_ctx):
+def test_avisa_si_el_titular_da_disponible_negativo(_app_ctx):
     d = _run(compra=-100_000.0, posdat=-100_000.0, retiros=180_000.0)
     assert d["ok"] is False
     cats = {a["category"] for a in d["alerts"]}
-    assert "op_retirado_de_mas" in cats
-    assert d["stats"]["disponible_segun_compras"] == -80_000.0
+    assert "op_disponible_negativo" in cats
+    assert d["stats"]["disponible_saldo_op"] == -80_000.0
 
 
 def test_los_retiros_viejos_no_cuentan_como_agujero(_app_ctx):
@@ -106,23 +115,23 @@ def test_los_retiros_viejos_no_cuentan_como_agujero(_app_ctx):
     d = _run(compra=-603_162.32, posdat=-603_162.32,
              retiros=500_000.0, retiros_historicos=6_784_647.66)
     cats = {a["category"] for a in d["alerts"]}
-    assert "op_retirado_de_mas" not in cats
+    assert "op_disponible_negativo" not in cats
     assert d["stats"]["retirado"] == 500_000.0
     assert d["stats"]["retirado_historico"] == 6_784_647.66
-    assert d["stats"]["disponible_segun_compras"] == 103_162.32
+    assert d["stats"]["disponible_saldo_op"] == 103_162.32
 
 
-def test_el_faltante_de_posdat_solo_no_dispara_el_rojo(_app_ctx):
+def test_produccion_03_09_el_consumo_explica_casi_todo(_app_ctx):
     """Producción 03/09: compras 603.162,32 y posdat 223.813,12.
 
-    El espejo posdat se escribe sólo mientras la línea tiene saldo, así que las
-    líneas ya consumidas no están. Ese lado SIEMPRE queda de menos: medirlo
-    contra los retiros da un agujero falso. Avisa el amarillo, no el rojo.
+    La diferencia de 379.349,20 NO es un descuadre: es crédito consumido. Si
+    las imputaciones suman esos mismos 379.349,20, cierra y no alerta.
     """
-    d = _run(compra=-603_162.32, posdat=-223_813.12, retiros=500_000.0)
+    d = _run(compra=-603_162.32, posdat=-223_813.12, retiros=500_000.0,
+             consumido=379_349.2)
     cats = {a["category"] for a in d["alerts"]}
-    assert cats == {"op_credito_no_cuadra"}
-    assert d["stats"]["delta_compras_vs_posdat"] == 379_349.2
+    assert "op_credito_no_cuadra" not in cats
+    assert d["stats"]["residuo_compras_vs_posdat"] == 0.0
 
 
 def test_sin_nada_cargado_no_revienta(_app_ctx):

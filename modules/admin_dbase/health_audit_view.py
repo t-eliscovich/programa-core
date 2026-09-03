@@ -19,6 +19,7 @@ TMT 2026-06-10.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date as _dt_date
 
 from flask import Blueprint, jsonify, request
@@ -1734,6 +1735,81 @@ _HILADO_UKG_TOL_US = 10000.0
 _TRAZA_FRESCA_MIN = 20
 
 
+#: Cuántos minutos después de la hora se puede tardar la captura antes de
+#: encender la luz. El hilo pasa cada 2 min, así que en la práctica entra
+#: 19:00-19:02; 45 deja pasar un deploy largo o un arranque lento del hilo sin
+#: encender nada, y sigue avisando MUCHO antes de que termine el día.
+_DIA_CAPTURA_GRACIA_MIN = 45
+
+
+@bp.route("/dia-captura", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def dia_captura_health():
+    """¿Se clavaron las capturas ancla del día, o el hilo dejó de anclar?
+
+    🚨 TMT 2026-09-03: el 02/09 `patant` entró a `foto.COMPONENTES` como
+    componente derivado y `dia.capturar()` —que recorre esa lista contra
+    `_CLAVE_BALANCE`— reventó con KeyError en cada tick. `capturar` NUNCA
+    levanta (cuelga del hilo de fondo, no puede tumbar nada), así que la
+    mañana del 03/09 no hubo captura y nadie se enteró hasta que alguien miró
+    a mano. `traza_fresca` no lo caza: vigila `scintela.traza_utilidad`, que
+    se siguió grabando lo más bien — lo que falló fue el ANCLA.
+
+    Es el pedido del 2026-08-10 (*"y también algo que avise si no está
+    guardando"*) para el otro lado. Mismo criterio que `traza_fresca`: no
+    pregunta "¿explotó?" sino **"¿está la captura?"**, así que caza cualquier
+    motivo —el KeyError, el hilo muerto, la base caída— y no sólo la excepción
+    que alguien pensó en atrapar.
+    """
+    from modules.informes import dia as _dia
+
+    if os.environ.get("DIA_EXPLICACION", "1").strip() == "0":
+        return jsonify({"ok": True, "alerts": [], "stats": {"apagado": True}})
+
+    ahora = _dia.ahora_ec()
+    hoy = _dia.hoy_ec()
+    horas = {
+        "manana": _dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),
+        "cierre": _dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
+    }
+    hechas = {r["momento"]: r.get("creado_en") for r in (db.fetch_all(
+        "SELECT momento, creado_en FROM scintela.dia_captura "
+        "WHERE fecha_ec = %s AND momento IN ('manana', 'cierre')", (hoy,)) or [])}
+
+    alerts: list[dict] = []
+    detalle: dict = {}
+    for momento, hora in horas.items():
+        # Minutos desde que le tocaba. Negativo = todavía no es la hora.
+        vence = ahora.replace(hour=hora, minute=0, second=0, microsecond=0)
+        atraso = round((ahora - vence).total_seconds() / 60.0, 1)
+        esta = momento in hechas
+        detalle[momento] = {
+            "hora": hora,
+            "hecha": esta,
+            "creado_en": str(hechas[momento]) if esta else None,
+            "atraso_min": atraso,
+        }
+        if esta or atraso < _DIA_CAPTURA_GRACIA_MIN:
+            continue
+        alerts.append({
+            "severity": "high",
+            "category": "dia_captura_faltante",
+            "msg": (
+                f"Falta la captura '{momento}' de {hoy}: le tocaba a las "
+                f"{hora:02d}:00 y ya pasaron {atraso:.0f} minutos. El ancla del "
+                f"día no se clavó — la nota del cierre se queda sin ventana. "
+                f"Mirar el log del hilo ('dia: no pude capturar')."
+            ),
+        })
+
+    return jsonify({"ok": not alerts, "alerts": alerts,
+                    "stats": {"fecha_ec": str(hoy),
+                              "ahora_ec": ahora.strftime("%Y-%m-%d %H:%M"),
+                              "gracia_min": _DIA_CAPTURA_GRACIA_MIN,
+                              "momentos": detalle}})
+
+
 @bp.route("/traza-fresca", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -2468,45 +2544,77 @@ def op_cierra():
     else:
         retirado = 0.0
 
+    # 4. Crédito ya CONSUMIDO del lado posdat. `retiros.crear_op` imputa el
+    #    retiro haciendo `importe += monto` sobre la fila posdat de la línea
+    #    (modules/retiros/queries.py:243-250), así que el posdat encoge a
+    #    medida que se retira. La compra NO se toca nunca.
+    #    Ergo: `credito_compras` es "cuánto se cargó" y `credito_posdat` es
+    #    "cuánto queda". Son cantidades DISTINTAS y compararlas por igualdad
+    #    no mide nada. TMT 2026-09-03: la primera versión de este chequeo las
+    #    comparaba así y llamó "descuadre" a la plata legítimamente consumida.
+    consumido = 0.0
+    try:
+        consumido = _n(db.fetch_one(
+            "SELECT COALESCE(SUM(monto), 0) AS s "
+            "FROM scintela.op_retiro_linea "
+            "WHERE COALESCE(bajo_posdat, FALSE) IS TRUE"))
+    except Exception:  # noqa: BLE001
+        # Tabla PC-only (mig 0109) / columna de la 0111: si no están, el
+        # consumo nunca corrió y vale 0.
+        consumido = 0.0
+
+    # Con eso, lo que SÍ tiene que cerrar:
+    #     credito_posdat + consumido  ==  credito_compras + cargado_a_mano
+    # El residuo es el crédito que no se explica por ninguno de los dos lados.
+    # Negativo = hay más crédito en posdat del que las compras explican (las
+    # líneas cargadas a mano, que sólo viven ahí). Positivo = hay compras OP
+    # cuyo espejo posdat no está.
+    residuo = round(cred_compra - cred_posdat - consumido, 2)
+
     stats["credito_compras"] = cred_compra
     stats["credito_posdat"] = cred_posdat
+    stats["consumido_bajo_posdat"] = consumido
+    stats["residuo_compras_vs_posdat"] = residuo
     stats["desde"] = str(desde) if desde is not None else None
     stats["retirado"] = retirado
     stats["retirado_historico"] = retirado_total
-    stats["disponible_segun_compras"] = round(cred_compra - retirado, 2)
-    stats["disponible_segun_posdat"] = round(cred_posdat - retirado, 2)
+    stats["disponible_saldo_op"] = round(cred_compra - retirado, 2)
     # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes sin deduplicar,
     # así que las líneas que tienen compra Y espejo posdat entran dos veces.
     stats["credito_como_lo_suma_lineas_op"] = round(cred_compra + cred_posdat, 2)
-    stats["delta_compras_vs_posdat"] = round(cred_compra - cred_posdat, 2)
 
-    if abs(cred_compra - cred_posdat) >= _OP_TOL_US:
+    if abs(residuo) >= _OP_TOL_US:
+        _lado = ("hay más crédito en posdatados del que explican las compras "
+                 "(líneas cargadas a mano)" if residuo < 0 else
+                 "hay compras OP cuyo espejo en posdatados no está")
         alerts.append({
             "severity": "medium",
             "category": "op_credito_no_cuadra",
             "msg": (
-                f"El crédito OP por compras ({cred_compra:,.2f}) no coincide con "
-                f"el de posdatados ({cred_posdat:,.2f}); difieren "
-                f"{cred_compra - cred_posdat:+,.2f}. El titular 'Saldo OP' suma "
-                f"sólo las compras y no ve las líneas cargadas a mano; el "
-                f"listado por línea suma las dos fuentes y duplica las que sí "
-                f"tienen compra detrás. Revisar /posdat?tab=op y los retiros OP."
+                f"El crédito OP no cierra por {residuo:+,.2f}: cargado por "
+                f"compras {cred_compra:,.2f}, queda en posdatados "
+                f"{cred_posdat:,.2f} y se consumió {consumido:,.2f}. O sea, "
+                f"{_lado}. Revisar /posdat?tab=op."
             ),
         })
 
-    # El "retiró de más" se mide contra el crédito por COMPRAS y con el mismo
-    # piso de fecha — es exactamente el `disponible` que muestra el titular.
-    # Contra `cred_posdat` no se puede: los posdat de las líneas ya consumidas
-    # no existen (el espejo se escribe sólo mientras queda saldo), así que ese
-    # lado siempre está de menos y la comparación denuncia agujeros falsos.
+    # El disponible del titular 'Saldo OP', reproducido tal cual: crédito por
+    # compras menos los retiros desde la primera compra viva. En negativo
+    # significa que se pagó más de lo que la pantalla dice que hay cargado.
+    # Medium a propósito: el piso de fecha es una heurística (el DBF purga las
+    # compras viejas, y un retiro posterior al piso puede estar cancelando un
+    # crédito anterior ya purgado), así que un negativo NO es prueba de que
+    # falte plata — es que la pantalla no puede afirmar que cierra.
     if retirado - cred_compra >= _OP_TOL_US:
         alerts.append({
-            "severity": "high",
-            "category": "op_retirado_de_mas",
+            "severity": "medium",
+            "category": "op_disponible_negativo",
             "msg": (
-                f"Se retiró más crédito OP del que hay cargado: retirado "
+                f"El titular 'Saldo OP' da disponible negativo: retirado "
                 f"{retirado:,.2f} desde {desde} contra un crédito por compras "
-                f"de {cred_compra:,.2f} ({retirado - cred_compra:+,.2f} de más)."
+                f"de {cred_compra:,.2f} ({cred_compra - retirado:+,.2f}). "
+                f"Puede ser el piso de fecha (retiros que cancelan créditos "
+                f"que el DBF ya purgó) o crédito que falta cargar."
             ),
         })
 
@@ -2561,6 +2669,7 @@ def health_all():
     resp20 = historia_balance_cierra()
     resp21 = precios_asinfo()
     resp22 = op_cierra()
+    resp23 = dia_captura_health()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2578,6 +2687,7 @@ def health_all():
     data19 = json.loads(resp19.get_data(as_text=True))
     data20 = json.loads(resp20.get_data(as_text=True))
     data21 = json.loads(resp21.get_data(as_text=True))
+    data23 = json.loads(resp23.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2606,7 +2716,8 @@ def health_all():
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
-               and data20["ok"] and data21["ok"]),
+               and data20["ok"] and data21["ok"]
+               and data23["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2629,6 +2740,7 @@ def health_all():
         "historia_balance_cierra": data20,
         "precios_asinfo": data21,
         "op_cierra": json.loads(resp22.get_data(as_text=True)),
+        "dia_captura": data23,
     })
 
 
