@@ -525,8 +525,24 @@
             </td>
             {% endif %}
             <td class="px-4 py-1.5" style="white-space: nowrap;">{{ d.fecha | fecha_es }}</td>
-            <td class="px-4 py-1.5">
-              <a href="{{ url_for('dolares.lista', cta=d.cta) }}" class="font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">{{ d.cta }}</a>
+            <td class="px-4 py-1.5" style="white-space: nowrap;">
+              <a href="{{ url_for('dolares.lista', cta=d.cta) }}" class="cta-text font-mono text-xs px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700">{{ d.cta }}</a>
+              {% if vivo and tiene_permiso('facturas.crear') %}
+              {# TMT 2026-09-03 (dueña): un anticipo cargado en la cuenta
+                 equivocada (C2 en vez de MC) se muda desde acá. Sólo vivos. #}
+              <button type="button" class="btn-edit-cta no-print"
+                      title="Cambiar la cuenta de este anticipo (el código del proveedor)"
+                      style="margin-left:.35rem;color:rgb(100 116 139);font-size:12px;">✎</button>
+              <form method="post" class="cta-form" style="display:none;"
+                    action="{{ url_for('dolares.editar_cuenta', id_dolares=d.id_dolares) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input name="cta" maxlength="3" value="{{ d.cta }}" required
+                       style="width:3.5rem;padding:1px 6px;font-size:13px;"
+                       class="rounded border border-sky-400 bg-white dark:bg-slate-950 uppercase font-mono">
+                <button class="text-xs px-2 py-0.5 rounded bg-sky-600 text-white">Guardar</button>
+                <button type="button" class="btn-edit-cta-cancel text-xs text-slate-500">✕</button>
+              </form>
+              {% endif %}
             </td>
             {# TMT 2026-07-29 (dueña): el concepto se puede EDITAR (lapicito)
                para escribirle el AÑO de la importación — `58/26`. El número se
@@ -736,6 +752,25 @@ document.addEventListener('click', function (ev) {
     td2.querySelector('.conc-form').style.display = 'none';
     td2.querySelector('.conc-text').style.display = '';
     td2.querySelector('.btn-edit-conc').style.display = '';
+  }
+  // TMT 2026-09-03: mismo lapicito para la CUENTA.
+  var ec = ev.target.closest('.btn-edit-cta');
+  if (ec) {
+    var td3 = ec.closest('td');
+    td3.querySelector('.cta-text').style.display = 'none';
+    ec.style.display = 'none';
+    var f3 = td3.querySelector('.cta-form');
+    f3.style.display = 'inline';
+    var i3 = f3.querySelector('input[name="cta"]');
+    i3.focus(); i3.select();
+    return;
+  }
+  var cc = ev.target.closest('.btn-edit-cta-cancel');
+  if (cc) {
+    var td4 = cc.closest('td');
+    td4.querySelector('.cta-form').style.display = 'none';
+    td4.querySelector('.cta-text').style.display = '';
+    td4.querySelector('.btn-edit-cta').style.display = '';
   }
 });
 document.addEventListener('click', function (ev) {

@@ -861,3 +861,69 @@ def editar_concepto(
         )
     return {"cta": row.get("cta"), "anterior": anterior, "nuevo": nuevo,
             "cambio": True}
+
+
+def editar_cuenta(
+    *, id_dolares: int, cta: str, usuario: str = "web",
+) -> dict:
+    """Muda un anticipo VIVO a otra cuenta (proveedor).
+
+    TMT 2026-09-03 (dueña: *"C2 es en realidad el proveedor MC, ¿me ayudás a
+    cambiarlo?"*): el dBase abría una cuenta por máquina (C2 = "MCS 2DA MAQ.")
+    y encima el código C2 está repetido con COLOURTEX. Los anticipos de la
+    segunda máquina tienen que sumar en MC para que "Activar máquina" los vea
+    juntos. La cuenta nueva tiene que existir en `proveedor`; sólo se muda un
+    anticipo vivo (el consumido ya es historia de otra compra). Queda una
+    `mov_doble` `anticipo_cambio_cuenta` para el historial.
+    Devuelve {anterior, nuevo, importe, cambio}.
+    """
+    nueva = (cta or "").strip().upper()[:3]
+    if not nueva:
+        raise ValueError("La cuenta no puede quedar vacía.")
+    with db.tx() as conn:
+        row = db.fetch_one(
+            "SELECT id_dolares, fecha, cta, concepto, importe, st "
+            "  FROM scintela.dolares WHERE id_dolares = %s FOR UPDATE",
+            (int(id_dolares),), conn=conn,
+        )
+        if not row:
+            raise ValueError(f"No encontré el anticipo id={id_dolares}.")
+        if (row.get("st") or "").strip():
+            raise ValueError(
+                f"El anticipo ya está consumido o cancelado (st='{row['st'].strip()}'): "
+                "no se puede cambiar de cuenta."
+            )
+        anterior = (row.get("cta") or "").strip().upper()
+        if anterior == nueva:
+            return {"anterior": anterior, "nuevo": nueva,
+                    "importe": float(row.get("importe") or 0), "cambio": False}
+        prov = db.fetch_one(
+            "SELECT id_proveedor, nombre FROM scintela.proveedor "
+            " WHERE UPPER(TRIM(codigo_prov)) = %s ORDER BY id_proveedor LIMIT 1",
+            (nueva,), conn=conn,
+        )
+        if not prov:
+            raise ValueError(f"No hay proveedor con código {nueva}.")
+        db.execute(
+            "UPDATE scintela.dolares "
+            "   SET cta = %s, usuario_modifica = %s, "
+            "       fecha_modifica = CURRENT_TIMESTAMP "
+            " WHERE id_dolares = %s",
+            (nueva, usuario[:50], int(id_dolares)), conn=conn,
+        )
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="anticipo_cambio_cuenta",
+            origen_table="dolares", origen_id=int(id_dolares),
+            destino_table="dolares", destino_id=int(id_dolares),
+            importe=float(row.get("importe") or 0),
+            fecha=today_ec(),
+            concepto=(f"Anticipo {anterior} → {nueva} · "
+                      f"{(row.get('concepto') or '').strip()}")[:200],
+            usuario=usuario,
+            metadata={"cta_anterior": anterior, "cta_nueva": nueva,
+                      "nombre_nuevo": prov.get("nombre")},
+        )
+    return {"anterior": anterior, "nuevo": nueva,
+            "importe": float(row.get("importe") or 0), "cambio": True}

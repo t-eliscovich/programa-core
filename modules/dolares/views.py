@@ -6,7 +6,7 @@ import db
 from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
-from filters import today_ec
+from filters import num_es, today_ec
 from parsers import parse_date, parse_monto
 
 from . import queries
@@ -44,6 +44,36 @@ def _nombres_clientes(codigos: list[str]) -> dict[str, str]:
 # hoy usaba /anticipos tenía facturas.ver (Bodega/Alex, Ventas) pero NO
 # informes.ver — mismo patrón granular que /informes/deudas (2026-07-01):
 # se acepta cualquiera de los dos permisos, sin aflojar nada de escritura.
+
+def _parsear_codigo(codigo: str) -> tuple[str | None, int | None]:
+    """"C2" → (C2, None) · "AC 15" → (AC, 15) · "15" → (None, 15).
+
+    TMT 2026-09-03 (dueña: *"cuando filtro en anticipos no lo veo bien"*):
+    tipeando "C2" salía el GP "2 DO PAGO". El código con un DÍGITO adentro
+    (C2, P1…) no entraba en `[A-Za-z]{2,3}`, así que la cuenta quedaba vacía y
+    el 2 se tomaba como número de importación. Primero se mira por PALABRA:
+    una de 2-3 caracteres que empieza con letra es la cuenta; el número es la
+    otra. Lo pegado ("AC15") cae al parseo viejo.
+    """
+    import re as _re
+    cta = None
+    num = None
+    palabras = _re.findall(r"[A-Za-z0-9/]+", codigo or "")
+    resto = []
+    for p in palabras:
+        if cta is None and _re.fullmatch(r"[A-Za-z][A-Za-z0-9]{1,2}", p):
+            cta = p.upper()
+        else:
+            resto.append(p)
+    m_num = _re.search(r"\d{1,6}", " ".join(resto) if cta else (codigo or ""))
+    if cta is None:
+        m_cta = _re.search(r"[A-Za-z]{2,3}", codigo or "")
+        if m_cta:
+            cta = m_cta.group(0).upper()
+    if m_num:
+        num = int(m_num.group(0))
+    return cta, num
+
 @dolares_bp.route("/dolares")
 @requiere_login
 def lista():
@@ -101,14 +131,12 @@ def lista():
     codigo = "" if id_dolares else (request.args.get("codigo") or "").strip()
     concepto_num = None
     if codigo:
-        import re as _re_cod
-        m_cta = _re_cod.search(r"[A-Za-z]{2,3}", codigo)
-        m_num = _re_cod.search(r"\d{1,6}", codigo)
-        if m_cta:
-            cta = m_cta.group(0).upper()
-        if m_num:
-            q = m_num.group(0).lstrip("0") or m_num.group(0)
-            concepto_num = int(m_num.group(0))
+        cta_p, num_p = _parsear_codigo(codigo)
+        if cta_p:
+            cta = cta_p
+        if num_p is not None:
+            q = str(num_p)
+            concepto_num = num_p
     # Mes de recibido (la fecha de recepción se cuelga de Asinfo, se filtra en
     # Python porque no vive en scintela.dolares).
     recibido_mes = (
@@ -533,6 +561,47 @@ def editar_concepto(id_dolares: int):
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
         flash_exc("No pude editar el concepto", e)
+    return redirect(request.referrer or url_for("dolares.lista"))
+
+
+@dolares_bp.route("/dolares/anticipo/<int:id_dolares>/cuenta", methods=["POST"])
+@requiere_login
+@requiere_permiso("facturas.crear")
+def editar_cuenta(id_dolares: int):
+    """Muda un anticipo vivo a otra cuenta (lapicito de la columna Cuenta).
+
+    TMT 2026-09-03 (dueña): los anticipos de C2 ("MCS 2DA MAQ.") son del
+    proveedor MC. Ver `queries.editar_cuenta`.
+    """
+    cta = (request.form.get("cta") or "").strip().upper()
+    try:
+        usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        # El AÑO guardado cuelga de una firma que INCLUYE la cuenta: se muda
+        # igual que al editar el concepto.
+        from . import anio as _anio_mod
+        try:
+            _fila_antes = _anio_mod.fila_por_id(id_dolares)
+        except Exception:  # noqa: BLE001
+            _fila_antes = None
+        r = queries.editar_cuenta(id_dolares=id_dolares, cta=cta, usuario=usuario)
+        if r.get("cambio") and _fila_antes:
+            try:
+                _anio_mod.mudar(fila_antes=_fila_antes, id_dolares=id_dolares,
+                                usuario=usuario)
+            except Exception:  # noqa: BLE001 -- mudar el año nunca frena la edición
+                pass
+        if not r.get("cambio"):
+            flash("La cuenta no cambió.", "warn")
+        else:
+            flash(
+                f"Anticipo de $ {num_es(r['importe'], 2)}: cuenta "
+                f"{r['anterior']} → {r['nuevo']}.",
+                "ok",
+            )
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude cambiar la cuenta", e)
     return redirect(request.referrer or url_for("dolares.lista"))
 
 
