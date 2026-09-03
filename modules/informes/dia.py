@@ -1193,7 +1193,7 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
         f'max-width:480px;color:{_TINTA}">',
         f'<div style="font-size:12px;letter-spacing:.08em;color:{_GRIS}">INTELA</div>',
         f'<div style="font-size:14px;color:{_TINTA};padding-bottom:12px">'
-        f'Cierre de {cuando}: {rot}</div>',
+        f'Cierre {"de hoy" if cuando == "hoy" else "del fin de semana"}: {rot}</div>',
     ]
     if r.get("dia_parcial"):
         L.append(f'<div style="font-size:12px;color:{_GRIS};padding-bottom:10px">'

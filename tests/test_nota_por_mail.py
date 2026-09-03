@@ -254,6 +254,7 @@ def test_el_finde_dice_del_finde_y_no_del_dia():
          patch.object(dia, "cobranza_del_mes", return_value={"n": 0, "us": 0.0}):
         h = dia.nota_finde_html(date(2026, 8, 17))
     assert "Venta del finde" in h and "Utilidad del finde" in h
+    assert "Cierre del fin de semana:" in h and "de el" not in h
     assert "del día" not in h and "Cobranzas del mes" not in h
 
 
