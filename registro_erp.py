@@ -485,6 +485,13 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(correccion_prov_bp)
 
+    # Deudas de proveedores borradas de posdat sin pagarse (la procedure vieja
+    # `procesa_provisiones` del 01/09/2026). Lista + volver a ponerlas.
+    # Tamara 2026-09-03.
+    from modules.admin_dbase.deudas_borradas_view import bp as deudas_borradas_bp
+
+    app.register_blueprint(deudas_borradas_bp)
+
     # Vincular cheques históricos del dBase a sus facturas — TMT 2026-06-07.
     # /admin/abonos-historicos reconstruye el chequesxfact que el dBase nunca
     # guardó (CHEQUES.DBF no referencia la factura) y recalcula

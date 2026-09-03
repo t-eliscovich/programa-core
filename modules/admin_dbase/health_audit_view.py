@@ -2641,6 +2641,43 @@ def precios_asinfo():
 
 
 # ---------------------------------------------------------------------------
+# Deudas de proveedores que desaparecieron de posdat sin pagarse
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-03: el 01/09 la procedure vieja `procesa_provisiones` hizo
+# `DELETE FROM posdat WHERE fechad < hoy AND num <> 0` y se llevó 19 deudas
+# vivas (28.233,27). Ningún health lo vio: la utilidad subió, /compras mostró
+# esas compras como "pagadas" y el pasivo bajó sin débito en el banco. Esto
+# mira lo mismo que la pantalla /admin/deudas-borradas: compras a crédito
+# cuyo posdat ya no existe y a las que nadie les registró pago ni anulación.
+
+
+@bp.route("/deudas-desaparecidas", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def deudas_desaparecidas():
+    from modules.admin_dbase import deudas_borradas_view as _dbv
+    alerts = []
+    try:
+        stats = _dbv.resumen()
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [{
+            "severity": "high", "category": "deudas_desaparecidas_error",
+            "msg": f"No pude revisar las deudas borradas: {e}"}], "stats": {}})
+    if stats["n"]:
+        alerts.append({
+            "severity": "high",
+            "category": "deudas_desaparecidas",
+            "msg": (
+                f"{stats['n']} deuda(s) de proveedores por ${stats['total']:,.2f} "
+                f"desaparecieron de Posdatados sin pago ni anulación "
+                f"({', '.join(stats['proveedores'])}). La utilidad está alta en ese "
+                f"monto. Volver a ponerlas en /admin/deudas-borradas/."
+            ),
+        })
+    return jsonify({"ok": len(alerts) == 0, "alerts": alerts, "stats": stats})
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -2674,6 +2711,8 @@ def health_all():
     # Tamara 2026-09-03: el arranque del mes (iniciales, proyecciones, PATANT,
     # provisiones) — lo que el 01/09 se rompió sin que nadie avisara.
     resp24 = arranque_de_mes()
+    # Tamara 2026-09-03: deudas que se borraron de posdat sin pagarse.
+    resp25 = deudas_desaparecidas()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2693,6 +2732,7 @@ def health_all():
     data21 = json.loads(resp21.get_data(as_text=True))
     data23 = json.loads(resp23.get_data(as_text=True))
     data24 = json.loads(resp24.get_data(as_text=True))
+    data25 = json.loads(resp25.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2722,7 +2762,7 @@ def health_all():
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
-               and data23["ok"] and data24["ok"]),
+               and data23["ok"] and data24["ok"] and data25["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2747,6 +2787,7 @@ def health_all():
         "op_cierra": json.loads(resp22.get_data(as_text=True)),
         "dia_captura": data23,
         "arranque_de_mes": data24,
+        "deudas_desaparecidas": data25,
     })
 
 

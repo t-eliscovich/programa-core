@@ -968,6 +968,7 @@ ROTULO_JUNTADO = {
     # mezclarlas escondería una devolución grande adentro de un neto.
     "factura_devolucion": ("FA dev", ""),
     "compra_a_posdat": ("CP → DE", ""),
+    "posdat_restaurada": ("CP → DE", "restaurada"),
     # 🚨 TMT 2026-08-07, viendo ocho renglones seguidos de "RT TNZ ✗ FA":
     # *"esto también juntalo, retenciones es un solo movimiento"*. La
     # DESaplicada no lleva `batch_id` —la aplicada sí, por eso ésa ya salía en
