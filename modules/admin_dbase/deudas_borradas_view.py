@@ -16,14 +16,21 @@ dBase, quedaron borradas. Efecto: +28.233 de utilidad falsa en septiembre,
 19 deudas que ya no figuran en /posdat, y /compras mostrando esas compras
 como "Pagada: Sí" (esa columna deduce el pago de que NO quede deuda viva).
 
-Cómo se detecta, sin hardcodear ids: toda compra a crédito deja en
-`mov_doble` un `compra_a_posdat` (o `compra_saldo_a_posdat`) que apunta al
-posdat que creó. Si ese posdat YA NO EXISTE, la compra no está anulada, no se
-pagó al contado (`no_banco`, `cuenta_pagada`, `id_transaccion` vacíos) y
-ningún otro movimiento tocó ese posdat después (pago, anulación,
-restauración), la deuda se borró por fuera de la app. Eso es lo que la
-pantalla lista y, con confirmación, vuelve a crear con los MISMOS datos de la
-compra (fecha, vencimiento, proveedor, número, importe, concepto), banc=0.
+Cómo se detecta, sin hardcodear ids: la TRAZA (`dia_movimiento`) anota cada
+posdat que dejó de estar viva ("Deuda pagada o dada de baja"). Una baja
+legítima siempre tiene un movimiento que la explica — pago directo
+(`destino=posdat`), pago en lote (`metadata.id_posdats`), anulación o
+edición. Si no lo tiene, la posdat sigue sin existir, y su compra está viva y
+sin pagar al contado (`no_banco`, `cuenta_pagada`, `id_transaccion` vacíos),
+la deuda se borró por fuera de la app. Eso es lo que la pantalla lista y, con
+confirmación, vuelve a crear con los MISMOS datos de la compra (fecha,
+vencimiento, proveedor, número, importe, concepto), banc=0.
+
+Primer intento (03/09, revertido en el acto): buscar compras cuyo posdat ya no
+existe. Listaba $160K — porque el pago a varios proveedores con un cheque
+cierra las otras posdat sin anotarlas como destino, y porque el sync del dBase
+(hasta el 05/08) recreaba las posdat con otro id. Tamara: "no me cargues 160k
+de deudas". La traza no tiene ese problema: sólo entra lo que ESTABA vivo.
 
 Cada restauración deja un `mov_doble` tipo `posdat_restaurada`
 (compra → posdat nuevo, metadata con el id borrado): así queda en /historial
@@ -48,39 +55,80 @@ bp = Blueprint(
 
 TIPO_MD = "posdat_restaurada"
 
+#: Desde cuándo se puede afirmar que toda deuda que se cierra deja rastro en
+#: `mov_doble` (pago con `destino=posdat` o con la lista `metadata.id_posdats`,
+#: anulación, edición). Antes de esta fecha los cheques a varios proveedores
+#: no anotaban qué posdat cerraban (ej. 07/08 y 17/08: AQ 94/96/97/101/108,
+#: AQ 116/127, CC 2209 — pagadas, pero sin rastro por id), y una baja de
+#: entonces sin rastro NO es una deuda borrada. Verificado el 03/09/2026.
+DESDE = "2026-08-25"
+
+#: La fuente es la TRAZA: `dia_movimiento` anota, tick a tick, cada posdat que
+#: dejó de estar viva ("Deuda pagada o dada de baja", doc_id = 'p<id>'). Una
+#: baja legítima siempre tiene un movimiento que la explica; la que no lo tiene
+#: y cuya compra sigue viva y sin pagar, es una deuda que se borró por fuera.
 _SQL_DETECTAR = """
-SELECT m.id_mov_doble, m.destino_id AS id_posdat_borrado,
-       m.importe AS importe_md, m.fecha_operacion,
-       c.id_compra, c.fecha, c.fechad, c.codigo_prov, c.numero,
-       c.importe, c.concepto, c.clave, c.kg
-  FROM scintela.mov_doble m
-  JOIN scintela.compra c ON c.id_compra = m.origen_id
- WHERE m.tipo IN ('compra_a_posdat', 'compra_saldo_a_posdat')
-   AND m.origen_table = 'compra'
-   AND m.destino_table = 'posdat'
-   AND m.estado = 'activo'
-   -- el posdat que la compra creó ya no está
-   AND NOT EXISTS (SELECT 1 FROM scintela.posdat p
-                    WHERE p.id_posdat = m.destino_id)
+WITH bajas AS (
+  SELECT m.id_mov, t.creado_en, m.etiqueta, m.importe_antes AS importe_borrado,
+         substring(m.doc_id from 2)::int AS id_posdat
+    FROM scintela.dia_movimiento m
+    JOIN scintela.traza_utilidad t ON t.id_traza = m.id_traza
+   WHERE m.componente = 'totp'
+     AND m.regla = 'Deuda pagada o dada de baja'
+     AND m.doc_id ~ '^p[0-9]+$'
+     AND t.creado_en >= %(desde)s::date
+     -- la posdat sigue sin existir
+     AND NOT EXISTS (SELECT 1 FROM scintela.posdat p
+                      WHERE p.id_posdat = substring(m.doc_id from 2)::int)
+     -- y ningún movimiento la explica (pago directo, pago en lote, anulación, edición)
+     AND NOT EXISTS (SELECT 1 FROM scintela.mov_doble o
+                      WHERE o.tipo NOT IN ('compra_a_posdat', 'compra_saldo_a_posdat')
+                        AND ((o.destino_table = 'posdat' AND o.destino_id = substring(m.doc_id from 2)::int)
+                          OR (o.origen_table = 'posdat' AND o.origen_id = substring(m.doc_id from 2)::int)
+                          OR (o.metadata ? 'id_posdats'
+                              AND o.metadata->'id_posdats' @> to_jsonb(substring(m.doc_id from 2)::int))))
+),
+con_compra AS (
+  SELECT b.id_posdat AS id_posdat_borrado, b.creado_en AS borrada_en, b.importe_borrado,
+         c.id_compra, c.fecha, c.fechad, c.codigo_prov, c.numero, c.importe, c.concepto, c.clave,
+         c.stat, c.no_banco, c.cuenta_pagada, c.id_transaccion
+    FROM bajas b
+    -- la compra que creó esa posdat (alta a crédito)…
+    LEFT JOIN scintela.mov_doble l
+           ON l.tipo IN ('compra_a_posdat', 'compra_saldo_a_posdat')
+          AND l.origen_table = 'compra' AND l.destino_table = 'posdat'
+          AND l.destino_id = b.id_posdat
+    -- …o, si la posdat venía de antes del historial, la compra del mismo
+    -- proveedor, importe y concepto que dice la etiqueta de la traza
+    LEFT JOIN scintela.compra c
+           ON c.id_compra = COALESCE(l.origen_id,
+              (SELECT c2.id_compra FROM scintela.compra c2
+                WHERE UPPER(TRIM(c2.codigo_prov)) = split_part(b.etiqueta, ' ', 2)
+                  AND ABS(COALESCE(c2.importe, 0) - b.importe_borrado) < 0.01
+                  AND regexp_replace(upper(btrim(c2.concepto)), '[[:space:]]+', ' ', 'g')
+                      = regexp_replace(upper(split_part(b.etiqueta, '·', 2)), '^ +| +$', '', 'g')
+                ORDER BY c2.id_compra DESC LIMIT 1))
+)
+SELECT id_posdat_borrado, borrada_en, importe_borrado,
+       id_compra, fecha, fechad, codigo_prov, numero, importe, concepto, clave
+  FROM con_compra cc
+ WHERE id_compra IS NOT NULL
    -- la compra sigue viva y no se pagó al contado
-   AND COALESCE(c.stat, '') <> 'Y'
-   AND COALESCE(c.no_banco, 0) = 0
-   AND COALESCE(btrim(c.cuenta_pagada), '') = ''
-   AND c.id_transaccion IS NULL
-   -- nadie más tocó ese posdat (pago, anulación, restauración previa)
-   AND NOT EXISTS (SELECT 1 FROM scintela.mov_doble o
-                    WHERE o.id_mov_doble <> m.id_mov_doble
-                      AND ((o.destino_table = 'posdat' AND o.destino_id = m.destino_id)
-                        OR (o.origen_table = 'posdat' AND o.origen_id = m.destino_id)
-                        OR (o.tipo = %(tipo_rest)s AND o.origen_table = 'compra'
-                            AND o.origen_id = c.id_compra)))
- ORDER BY c.codigo_prov, c.numero, c.id_compra
+   AND COALESCE(stat, '') <> 'Y'
+   AND COALESCE(no_banco, 0) = 0
+   AND COALESCE(btrim(cuenta_pagada), '') = ''
+   AND id_transaccion IS NULL
+   -- y no la restauramos ya
+   AND NOT EXISTS (SELECT 1 FROM scintela.mov_doble r
+                    WHERE r.tipo = %(tipo_rest)s AND r.origen_table = 'compra'
+                      AND r.origen_id = cc.id_compra)
+ ORDER BY borrada_en, codigo_prov, numero, id_compra
 """
 
 
 def detectar() -> list[dict]:
     """Las deudas borradas por fuera de la app. Vacío = todo en orden."""
-    return db.fetch_all(_SQL_DETECTAR, {"tipo_rest": TIPO_MD}) or []
+    return db.fetch_all(_SQL_DETECTAR, {"tipo_rest": TIPO_MD, "desde": DESDE}) or []
 
 
 def resumen() -> dict:

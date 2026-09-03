@@ -47,7 +47,10 @@ class _Tx:
 
 # ── la consulta ──────────────────────────────────────────────────────────
 
-def test_detectar_pasa_el_tipo_de_restauracion_y_exige_las_cuatro_condiciones(monkeypatch):
+def test_detectar_parte_de_la_traza_y_exige_que_nada_explique_la_baja(monkeypatch):
+    """La fuente es `dia_movimiento` (lo que ESTABA vivo y dejó de estarlo), no
+    "compras sin posdat": el primer intento con eso listó $160K de deudas que
+    sí estaban pagadas (cheque a varios proveedores, sync del dBase)."""
     visto = {}
 
     def fake_fetch_all(sql, params=None, conn=None):
@@ -58,18 +61,31 @@ def test_detectar_pasa_el_tipo_de_restauracion_y_exige_las_cuatro_condiciones(mo
     monkeypatch.setattr(db, "fetch_all", fake_fetch_all)
     filas = v.detectar()
     assert len(filas) == 1
-    assert visto["params"] == {"tipo_rest": "posdat_restaurada"}
+    assert visto["params"] == {"tipo_rest": "posdat_restaurada", "desde": "2026-08-25"}
     sql = visto["sql"]
-    # El posdat de la compra ya no existe…
-    assert "NOT EXISTS (SELECT 1 FROM scintela.posdat p WHERE p.id_posdat = m.destino_id)" in sql
-    # …la compra está viva y no se pagó al contado…
-    assert "COALESCE(c.stat, '') <> 'Y'" in sql
-    assert "COALESCE(c.no_banco, 0) = 0" in sql
-    assert "c.id_transaccion IS NULL" in sql
+    # Parte de la traza: sólo posdat que estaban VIVAS y dejaron de estarlo…
+    assert "FROM scintela.dia_movimiento m" in sql
+    assert "m.regla = 'Deuda pagada o dada de baja'" in sql
+    assert "t.creado_en >= %(desde)s::date" in sql
+    # …que siguen sin existir…
+    assert "NOT EXISTS (SELECT 1 FROM scintela.posdat p WHERE p.id_posdat = substring(m.doc_id from 2)::int)" in sql
+    # …y que ningún movimiento explica: pago directo, pago EN LOTE (metadata), anulación.
+    assert "o.destino_table = 'posdat' AND o.destino_id = substring(m.doc_id from 2)::int" in sql
+    assert "o.metadata->'id_posdats' @> to_jsonb(substring(m.doc_id from 2)::int)" in sql
+    assert "o.tipo NOT IN ('compra_a_posdat', 'compra_saldo_a_posdat')" in sql
+    # La compra está viva y no se pagó al contado, y no la restauramos ya.
+    assert "COALESCE(stat, '') <> 'Y'" in sql
+    assert "COALESCE(no_banco, 0) = 0" in sql
+    assert "id_transaccion IS NULL" in sql
     assert "cuenta_pagada" in sql
-    # …y nadie más tocó ese posdat (pago, anulación, restauración previa).
-    assert "o.destino_table = 'posdat' AND o.destino_id = m.destino_id" in sql
-    assert "o.tipo = %(tipo_rest)s" in sql
+    assert "r.tipo = %(tipo_rest)s" in sql
+
+
+def test_desde_es_la_fecha_en_que_todo_pago_deja_rastro():
+    """Antes del 25/08 los cheques a varios proveedores no anotaban qué posdat
+    cerraban (07/08, 17/08): una baja sin rastro de entonces NO es una deuda
+    borrada. Si alguien corre la fecha hacia atrás, va a listar pagadas."""
+    assert v.DESDE == "2026-08-25"
 
 
 def test_resumen_cuenta_y_suma(monkeypatch):
