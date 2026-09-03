@@ -19,6 +19,7 @@ TMT 2026-06-10.
 from __future__ import annotations
 
 import logging
+import os
 from datetime import date as _dt_date
 
 from flask import Blueprint, jsonify, request
@@ -1734,6 +1735,81 @@ _HILADO_UKG_TOL_US = 10000.0
 _TRAZA_FRESCA_MIN = 20
 
 
+#: Cuántos minutos después de la hora se puede tardar la captura antes de
+#: encender la luz. El hilo pasa cada 2 min, así que en la práctica entra
+#: 19:00-19:02; 45 deja pasar un deploy largo o un arranque lento del hilo sin
+#: encender nada, y sigue avisando MUCHO antes de que termine el día.
+_DIA_CAPTURA_GRACIA_MIN = 45
+
+
+@bp.route("/dia-captura", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def dia_captura_health():
+    """¿Se clavaron las capturas ancla del día, o el hilo dejó de anclar?
+
+    🚨 TMT 2026-09-03: el 02/09 `patant` entró a `foto.COMPONENTES` como
+    componente derivado y `dia.capturar()` —que recorre esa lista contra
+    `_CLAVE_BALANCE`— reventó con KeyError en cada tick. `capturar` NUNCA
+    levanta (cuelga del hilo de fondo, no puede tumbar nada), así que la
+    mañana del 03/09 no hubo captura y nadie se enteró hasta que alguien miró
+    a mano. `traza_fresca` no lo caza: vigila `scintela.traza_utilidad`, que
+    se siguió grabando lo más bien — lo que falló fue el ANCLA.
+
+    Es el pedido del 2026-08-10 (*"y también algo que avise si no está
+    guardando"*) para el otro lado. Mismo criterio que `traza_fresca`: no
+    pregunta "¿explotó?" sino **"¿está la captura?"**, así que caza cualquier
+    motivo —el KeyError, el hilo muerto, la base caída— y no sólo la excepción
+    que alguien pensó en atrapar.
+    """
+    from modules.informes import dia as _dia
+
+    if os.environ.get("DIA_EXPLICACION", "1").strip() == "0":
+        return jsonify({"ok": True, "alerts": [], "stats": {"apagado": True}})
+
+    ahora = _dia.ahora_ec()
+    hoy = _dia.hoy_ec()
+    horas = {
+        "manana": _dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),
+        "cierre": _dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
+    }
+    hechas = {r["momento"]: r.get("creado_en") for r in (db.fetch_all(
+        "SELECT momento, creado_en FROM scintela.dia_captura "
+        "WHERE fecha_ec = %s AND momento IN ('manana', 'cierre')", (hoy,)) or [])}
+
+    alerts: list[dict] = []
+    detalle: dict = {}
+    for momento, hora in horas.items():
+        # Minutos desde que le tocaba. Negativo = todavía no es la hora.
+        vence = ahora.replace(hour=hora, minute=0, second=0, microsecond=0)
+        atraso = round((ahora - vence).total_seconds() / 60.0, 1)
+        esta = momento in hechas
+        detalle[momento] = {
+            "hora": hora,
+            "hecha": esta,
+            "creado_en": str(hechas[momento]) if esta else None,
+            "atraso_min": atraso,
+        }
+        if esta or atraso < _DIA_CAPTURA_GRACIA_MIN:
+            continue
+        alerts.append({
+            "severity": "high",
+            "category": "dia_captura_faltante",
+            "msg": (
+                f"Falta la captura '{momento}' de {hoy}: le tocaba a las "
+                f"{hora:02d}:00 y ya pasaron {atraso:.0f} minutos. El ancla del "
+                f"día no se clavó — la nota del cierre se queda sin ventana. "
+                f"Mirar el log del hilo ('dia: no pude capturar')."
+            ),
+        })
+
+    return jsonify({"ok": not alerts, "alerts": alerts,
+                    "stats": {"fecha_ec": str(hoy),
+                              "ahora_ec": ahora.strftime("%Y-%m-%d %H:%M"),
+                              "gracia_min": _DIA_CAPTURA_GRACIA_MIN,
+                              "momentos": detalle}})
+
+
 @bp.route("/traza-fresca", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -2593,6 +2669,7 @@ def health_all():
     resp20 = historia_balance_cierra()
     resp21 = precios_asinfo()
     resp22 = op_cierra()
+    resp23 = dia_captura_health()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2610,6 +2687,7 @@ def health_all():
     data19 = json.loads(resp19.get_data(as_text=True))
     data20 = json.loads(resp20.get_data(as_text=True))
     data21 = json.loads(resp21.get_data(as_text=True))
+    data23 = json.loads(resp23.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2638,7 +2716,8 @@ def health_all():
                and data10["ok"] and data11["ok"] and data12["ok"]
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
-               and data20["ok"] and data21["ok"]),
+               and data20["ok"] and data21["ok"]
+               and data23["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2661,6 +2740,7 @@ def health_all():
         "historia_balance_cierra": data20,
         "precios_asinfo": data21,
         "op_cierra": json.loads(resp22.get_data(as_text=True)),
+        "dia_captura": data23,
     })
 
 
