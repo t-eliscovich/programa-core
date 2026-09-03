@@ -1791,7 +1791,8 @@ def test_el_finde_compara_el_cierre_del_viernes_contra_el_del_domingo():
          patch.object(dia, "_rows", side_effect=_rows_fake), \
          patch.object(dia, "produccion_del_dia", return_value={"disponible": False}), \
          patch.object(dia, "ventas_del_dia", return_value={"n": 1, "kg": 10.0, "us": 500.0}), \
-         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}):
+         patch.object(dia, "compras_del_dia", return_value={"n": 0, "kg": 0.0, "us": 0.0}), \
+         patch.object(dia, "cobranza_entre", return_value={"n": 0, "us": 0.0}):
         r = dia.resumen_finde(date(2026, 8, 17))   # lunes
 
     assert r["ok"] is True and r["d_utilidad"] == 60.0

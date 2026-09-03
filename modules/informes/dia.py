@@ -615,6 +615,10 @@ def _resumen_rango(dia0, dia1) -> dict:
         # $61.847. La producción, en cambio, ya NO se deriva: ver
         # `produccion_del_dia`.
         "cobrado": round(_f(vn.get("us")) - d_cartera, 2),
+        # Lo INGRESADO por Cobranza (cheques + depósitos + efectivo): es lo que
+        # F. quiere ver en el mail. Es medido, no derivado: sobrevive a la
+        # ventana nula.
+        "cobranza": cobranza_entre(dia0, dia1),
         "tarifa_quieta": abs(_f(hil.get("d_p"))) < 0.00005 if hil else None,
         # Precio realizado y margen: los dos números con los que se dirige una
         # fábrica. El costo de lo despachado se valúa a la tarifa de terminado.
@@ -687,6 +691,40 @@ def ventas_del_mes(fecha) -> dict:
         """, (fecha, fecha))
     d = r[0] if r else {}
     return {"n": int(d.get("n") or 0), "kg": _f(d.get("kg")), "us": _f(d.get("us"))}
+
+
+def cobranza_entre(desde, hasta) -> dict:
+    """La plata que ENTRÓ por Cobranza entre dos días, ambos inclusive: cheques,
+    depósitos y efectivo ingresados, por su DÍA DE INGRESO.
+
+    F. (accionista) 2026-09-03, sobre el mail del cierre: *"Cobranzas del
+    día: … (estos serían los cheques o eft. ingresados)"*. NO es lo mismo que
+    `cobrado` de `resumen()`, que se DERIVA (facturado − Δ cartera) y siente
+    retenciones, NC y devoluciones. Acá se cuenta lo que se cargó en
+    `/cheques/nuevo`, con el MISMO día de ingreso que `/cheques/resumen-dia`
+    (`SQL_DIA_INGRESO`: `fecha_recibido`, y para lo nacido del dBase el
+    FECHING) — si los dos difieren, el que está mal es éste.
+
+    Afuera: las anuladas (`X`/`Y`) y el ESPEJO NB=98, que refleja un saldo a
+    favor y no es plata que entró.
+    """
+    from modules.cheques.queries import SQL_DIA_INGRESO
+
+    r = _rows(
+        f"""
+        SELECT COUNT(*) AS n, COALESCE(SUM(c.importe), 0) AS us
+          FROM scintela.cheque c
+         WHERE {SQL_DIA_INGRESO} BETWEEN %s AND %s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(c.no_banco, 0) <> 98
+        """, (desde, hasta))
+    d = r[0] if r else {}
+    return {"n": int(d.get("n") or 0), "us": _f(d.get("us"))}
+
+
+def cobranza_del_mes(fecha) -> dict:
+    """Lo ingresado por Cobranza en el mes hasta `fecha` inclusive."""
+    return cobranza_entre(fecha.replace(day=1), fecha)
 
 
 #: Los kilos facturados en un día que merecen festejo.
@@ -1044,12 +1082,6 @@ _FIESTA_FONDO = "#fbf6e6"
 _FIESTA_BORDE = "#e8dcb5"
 
 
-def _fila_html(rot: str, val: str) -> str:
-    return (f'<tr><td style="padding:7px 0;color:{_GRIS};font-size:13px">{rot}</td>'
-            f'<td style="padding:7px 0;text-align:right;font-size:13px;'
-            f'color:{_TINTA}">{val}</td></tr>')
-
-
 def nota_html(fecha=None) -> str:
     """La nota del cierre en HTML, para que el mail no muestre los asteriscos.
 
@@ -1085,56 +1117,83 @@ def nota_finde_html(lunes=None) -> str:
                       largo, "el fin de semana")
 
 
+def _celda_html(val: str, color: str = "", chica: bool = False) -> str:
+    est = ("padding:6px 0 6px 14px;text-align:right;white-space:nowrap;"
+           f"font-size:{12 if chica else 14}px;color:{color or _TINTA}")
+    return f'<td style="{est}">{val}</td>'
+
+
+def _renglon_html(rot: str, kg: str = "", pkg: str = "", us: str = "",
+                  color: str = "") -> str:
+    """Un renglón de la grilla: rótulo · kg · $/kg · $. Las celdas vacías
+    quedan vacías: la columna manda, no el dato."""
+    return (f'<tr><td style="padding:6px 0;font-size:14px;color:{_TINTA}">{rot}</td>'
+            f'{_celda_html(kg)}{_celda_html(pkg)}{_celda_html(us, color)}</tr>')
+
+
 def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
-    """El cuerpo del HTML, igual para un día que para el fin de semana."""
+    """El cuerpo del HTML, igual para un día que para el fin de semana.
+
+    F. (accionista) 2026-09-03: *"Este email diario está muy bien, aunque si
+    se pudiera me gustaría sugerir este formato"* — una GRILLA de
+    kg · $/kg · $ con venta, utilidad, producción y cobranzas, cada una del
+    día y del mes: *"estos son los datos que más miramos cada día"*. El
+    titular grande se fue; la grilla es la nota. Margen y devoluciones quedan
+    abajo, chicos.
+    """
     if not r.get("ok"):
         return ""
 
     h = r["hasta"]
     mes = MESES_LARGOS[fecha.month]
     d = r["d_utilidad"]
-    signo = "▲" if d >= 0 else "▼"
     color = _VERDE if d >= 0 else _ROJO
     mas = "+" if d >= 0 else "−"
+    tramo = "del día" if cuando == "hoy" else "del finde"
+
+    def _pkg(v):
+        return _n(v["us"] / v["kg"], 2) if _f(v.get("kg")) else ""
 
     filas = []
+    v = r["ventas"]
+    vm = ventas_del_mes(fecha)
+    if v["n"]:
+        filas.append(_renglon_html(f"Venta {tramo}", _n(v["kg"]), _pkg(v),
+                                   _n(v["us"])))
+    if vm.get("us"):
+        filas.append(_renglon_html("Venta del mes", _n(vm["kg"]), _pkg(vm),
+                                   _n(vm["us"])))
+    filas.append(_renglon_html(f"Utilidad {tramo}", us=f"{mas}{_n(abs(d))}",
+                               color=color))
+    filas.append(_renglon_html("Utilidad del mes", us=_n(h.get("utilidad"))))
     p = r.get("produccion") or {}
     if p.get("disponible") and not p.get("sin_fila") and _f(p.get("producido")):
-        filas.append(_fila_html("Producción", f"{_n(p.get('producido'))} kg"))
-    v = r["ventas"]
-    if v["n"]:
-        filas.append(_fila_html("Ventas", f"$ {_n(v['us'])} · {_n(v['kg'])} kg"))
+        filas.append(_renglon_html(f"Producción {tramo}", _n(p.get("producido"))))
+    pm = (p.get("mes") or {}).get("producido")
+    if pm:
+        filas.append(_renglon_html("Producción del mes", _n(pm)))
+    c = r.get("cobranza") or {}
+    cm = cobranza_del_mes(fecha)
+    if c.get("us"):
+        filas.append(_renglon_html(f"Cobranzas {tramo}", us=_n(c["us"])))
+    if cm.get("us"):
+        filas.append(_renglon_html("Cobranzas del mes", us=_n(cm["us"])))
+
+    pie = []
     if r.get("margen_pct") is not None:
-        filas.append(_fila_html("Margen", f"{_n(r['margen_pct'], 1)} %"))
-    if r.get("cobrado"):
-        filas.append(_fila_html("Cobrado", f"$ {_n(r['cobrado'])}"))
+        pie.append(f"Margen {_n(r['margen_pct'], 1)} %")
     dv = r.get("devoluciones") or {}
     if dv.get("n"):
         # Apagada a propósito: es un dato del día, no una alarma.
-        filas.append(
-            f'<tr><td style="padding:7px 0;color:{_GRIS};font-size:12px">'
-            f'Devoluciones</td><td style="padding:7px 0;text-align:right;'
-            f'font-size:12px;color:{_GRIS}">−$ {_n(dv["us"])} · '
-            f'{dv["n"]} documento{"" if dv["n"] == 1 else "s"}</td></tr>')
-
-    vm = ventas_del_mes(fecha)
-    pie = []
-    pm = (p.get("mes") or {}).get("producido")
-    if pm:
-        pie.append(f"{_n(pm)} kg producidos")
-    if vm.get("us"):
-        pie.append(f"{_n(vm['kg'])} kg vendidos · $ {_n(vm['us'])}")
+        pie.append(f"Devoluciones −$ {_n(dv['us'])} · {dv['n']} "
+                   f"documento{'' if dv['n'] == 1 else 's'}")
 
     L = [
         '<div style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;'
-        f'max-width:420px;color:{_TINTA}">',
+        f'max-width:480px;color:{_TINTA}">',
         f'<div style="font-size:12px;letter-spacing:.08em;color:{_GRIS}">INTELA</div>',
-        f'<div style="font-size:13px;color:{_GRIS};padding-bottom:14px">{rot}</div>',
-        f'<div style="font-size:13px;color:{_GRIS}">Utilidad de '
-        f'{MESES_LARGOS[fecha.month]}</div>',
-        f'<div style="font-size:26px;padding:2px 0">$ {_n(h.get("utilidad"), 0)}</div>',
-        f'<div style="font-size:14px;color:{color};padding-bottom:14px">'
-        f'{signo} {cuando} {mas}$ {_n(abs(d), 0)}</div>',
+        f'<div style="font-size:14px;color:{_TINTA};padding-bottom:12px">'
+        f'Cierre de {cuando}: {rot}</div>',
     ]
     if r.get("dia_parcial"):
         L.append(f'<div style="font-size:12px;color:{_GRIS};padding-bottom:10px">'
@@ -1151,13 +1210,15 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
                  f'margin-bottom:14px;font-size:14px;color:{_TINTA}">'
                  f'🎉🥳 ¡Día de más de {_n(KG_FIESTA)} kg! Hoy se facturaron '
                  f'<b>{_n(kg_fiesta)} kg</b>.</div>')
-    if filas:
-        L.append(f'<table style="width:100%;border-collapse:collapse;'
-                 f'border-top:1px solid {_LINEA}">{"".join(filas)}</table>')
+    cab = (f'<tr><td></td>{_celda_html("kg", _GRIS, True)}'
+           f'{_celda_html("$/kg", _GRIS, True)}{_celda_html("$", _GRIS, True)}</tr>')
+    L.append(f'<table style="border-collapse:collapse;border-top:1px solid {_LINEA};'
+             f'border-bottom:1px solid {_LINEA}">{cab}{"".join(filas)}</table>')
     if pie:
-        L.append(f'<div style="font-size:12px;color:{_GRIS};'
-                 f'border-top:1px solid {_LINEA};padding-top:10px;margin-top:12px">'
-                 f'Mes de {mes}: {" · ".join(pie)}</div>')
+        L.append(f'<div style="font-size:12px;color:{_GRIS};padding-top:10px">'
+                 f'{" · ".join(pie)}</div>')
+    L.append(f'<div style="font-size:11px;color:{_GRIS};padding-top:14px">'
+             f'Mes de {mes}. Cobranzas: cheques, depósitos y efectivo ingresados.</div>')
     L.append("</div>")
     return "".join(L)
 

@@ -167,6 +167,7 @@ _RES_OK = {"ok": True, "dia_parcial": False,
            "hasta": {"utilidad": 200538.0}, "d_utilidad": 43482.0,
            "ventas": {"n": 118, "kg": 15809.0, "us": 133547.0},
            "margen_pct": 37.9, "cobrado": 118132.0,
+           "cobranza": {"n": 12, "us": 98765.0},
            "produccion": {"disponible": True, "producido": 11808.0,
                           "mes": {"producido": 116052.0}}}
 _VM = {"n": 900, "kg": 105667.0, "us": 917352.0}
@@ -176,7 +177,9 @@ def _html(**over):
     from datetime import date
     res = {**_RES_OK, **over}
     with patch.object(dia, "resumen", return_value=res), \
-         patch.object(dia, "ventas_del_mes", return_value=_VM):
+         patch.object(dia, "ventas_del_mes", return_value=_VM), \
+         patch.object(dia, "cobranza_del_mes",
+                      return_value={"n": 300, "us": 654321.0}):
         return dia.nota_html(date(2026, 8, 12))
 
 
@@ -185,7 +188,7 @@ def test_el_mail_no_lleva_asteriscos_de_whatsapp():
     al lado de cada título."""
     h = _html()
     assert "*" not in h
-    assert "<div" in h and "$ 200.538" in h
+    assert "<div" in h and "200.538" in h
 
 
 def test_el_html_no_depende_de_nada_externo():
@@ -198,21 +201,75 @@ def test_el_html_no_depende_de_nada_externo():
 
 
 def test_el_dia_en_verde_y_en_rojo():
-    assert "▲ hoy +$ 43.482" in _html()
-    assert "▼ hoy −$ 43.482" in _html(d_utilidad=-43482.0)
+    assert "+43.482" in _html() and dia._VERDE in _html()
+    h = _html(d_utilidad=-43482.0)
+    assert "−43.482" in h and dia._ROJO in h
+
+
+# ── La grilla de F. ─────────────────────────────────────────────────────────
+# F. (accionista) 2026-09-03: *"me gustaría sugerir este formato: kg · $/kg · $
+# — venta, utilidad, producción y cobranzas, del día y del mes. Estos son los
+# datos que más miramos cada día."*
+
+def test_la_grilla_lleva_las_ocho_filas_de_f():
+    h = _html()
+    for rot in ("Venta del día", "Venta del mes", "Utilidad del día",
+                "Utilidad del mes", "Producción del día", "Producción del mes",
+                "Cobranzas del día", "Cobranzas del mes"):
+        assert rot in h, rot
+    # las tres columnas, con el $/kg calculado de los mismos kilos y pesos
+    assert ">kg<" in h and ">$/kg<" in h
+    assert "8,45" in h        # 133.547 / 15.809 del día
+    assert "8,68" in h        # 917.352 / 105.667 del mes
+    assert "98.765" in h and "654.321" in h   # cobranzas día y mes
+    assert "116.052" in h                     # producción del mes
+
+
+def test_cobranzas_son_lo_ingresado_no_lo_derivado():
+    """F.: *"estos serían los cheques o eft. ingresados"*. El `cobrado`
+    derivado (facturado − Δ cartera) no va al mail."""
+    h = _html(cobrado=118132.0, cobranza={"n": 1, "us": 500.0})
+    assert "118.132" not in h and "500" in h
 
 
 def test_si_un_dato_no_esta_la_fila_no_va():
     """Mismo criterio que el texto de WhatsApp: una fila en cero no dice nada."""
-    h = _html(produccion={"disponible": False}, cobrado=0,
+    h = _html(produccion={"disponible": False}, cobranza={"n": 0, "us": 0.0},
               ventas={"n": 0, "kg": 0, "us": 0}, margen_pct=None)
-    for rot in ("Producción", "Ventas", "Margen", "Cobrado"):
+    for rot in ("Producción del día", "Venta del día", "Margen",
+                "Cobranzas del día"):
         assert rot not in h
-    assert "$ 200.538" in h          # el titular queda igual
+    assert "200.538" in h          # la utilidad del mes queda siempre
 
 
 def test_el_tramo_corto_se_avisa_tambien_en_el_mail():
     assert "no son 24 h" in _html(dia_parcial=True)
+
+
+def test_el_finde_dice_del_finde_y_no_del_dia():
+    from datetime import date
+    res = {**_RES_OK, "dias": 2}
+    with patch.object(dia, "resumen_finde", return_value=res), \
+         patch.object(dia, "ventas_del_mes", return_value=_VM), \
+         patch.object(dia, "cobranza_del_mes", return_value={"n": 0, "us": 0.0}):
+        h = dia.nota_finde_html(date(2026, 8, 17))
+    assert "Venta del finde" in h and "Utilidad del finde" in h
+    assert "del día" not in h and "Cobranzas del mes" not in h
+
+
+def test_cobranza_entre_cuenta_por_dia_de_ingreso_sin_espejos():
+    """Mismo día de ingreso que /cheques/resumen-dia; el espejo NB=98 no es
+    plata que entró y las anuladas tampoco."""
+    from datetime import date
+    with patch.object(dia, "_rows", return_value=[{"n": 3, "us": 1500.0}]) as rows:
+        r = dia.cobranza_entre(date(2026, 9, 1), date(2026, 9, 3))
+    sql = rows.call_args[0][0]
+    assert r == {"n": 3, "us": 1500.0}
+    assert "fecha_recibido" in sql and "<> 98" in sql and "('X', 'Y')" in sql
+    assert rows.call_args[0][1] == (date(2026, 9, 1), date(2026, 9, 3))
+    with patch.object(dia, "_rows", return_value=[]) as rows:
+        assert dia.cobranza_del_mes(date(2026, 9, 3)) == {"n": 0, "us": 0.0}
+    assert rows.call_args[0][1] == (date(2026, 9, 1), date(2026, 9, 3))
 
 
 def test_sin_resumen_el_html_es_vacio_y_el_mail_sale_igual():
@@ -414,7 +471,7 @@ def _res(devol_n=0, devol_us=0.0):
             "ventas": {"n": 113, "kg": 14781.0, "us": 127267.0},
             "devoluciones": {"n": devol_n, "kg": 0.0, "us": devol_us},
             "produccion": {"disponible": False}, "cobrado": 5000.0,
-            "margen_pct": 40.4}
+            "cobranza": {"n": 0, "us": 0.0}, "margen_pct": 40.4}
 
 
 def test_la_devolucion_tiene_su_renglon_y_no_se_come_la_venta():
