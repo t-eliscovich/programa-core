@@ -71,3 +71,23 @@ def test_el_presupuesto_por_area_viaja_en_los_dos():
     for col in ("pretej", "pretin", "preadm", "pretot"):
         assert col in _cols_rollover(), col
         assert col in _cols_cerrar_mes_auto(), col
+
+
+def _cols_insert_rollover() -> set[str]:
+    """Columnas del INSERT de rollover_y_writeback_iniciales (el SQL, no el dict)."""
+    src = (ROOT / "modules" / "informes" / "queries.py").read_text(encoding="utf-8")
+    src = src[src.index("def rollover_y_writeback_iniciales"):]
+    i = src.index("INSERT INTO scintela.iniciales")
+    bloque = src[i:src.index("VALUES", i)]
+    bloque = bloque[bloque.index("("):]
+    return set(re.findall(r"[a-z_]+", bloque)) - _IGNORAR
+
+
+def test_el_rollover_inserta_todo_lo_que_copia():
+    """Tamara 2026-09-03: `_row_new` es lo que el test de arriba compara, pero
+    lo que llega a la base es el INSERT. Una columna sumada al dict y olvidada
+    en el SQL pasaría la paridad y aun así no viajaría."""
+    assert _cols_rollover() == _cols_insert_rollover(), (
+        f"  en _row_new y no en el INSERT: {sorted(_cols_rollover() - _cols_insert_rollover())}\n"
+        f"  en el INSERT y no en _row_new: {sorted(_cols_insert_rollover() - _cols_rollover())}"
+    )

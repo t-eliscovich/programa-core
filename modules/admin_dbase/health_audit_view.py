@@ -2670,6 +2670,9 @@ def health_all():
     resp21 = precios_asinfo()
     resp22 = op_cierra()
     resp23 = dia_captura_health()
+    # Tamara 2026-09-03: el arranque del mes (iniciales, proyecciones, PATANT,
+    # provisiones) — lo que el 01/09 se rompió sin que nadie avisara.
+    resp24 = arranque_de_mes()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2688,6 +2691,7 @@ def health_all():
     data20 = json.loads(resp20.get_data(as_text=True))
     data21 = json.loads(resp21.get_data(as_text=True))
     data23 = json.loads(resp23.get_data(as_text=True))
+    data24 = json.loads(resp24.get_data(as_text=True))
     # TMT 2026-07-09 (dueña "no debería cargarse automático?"): el cron diario
     # aplica las retenciones de Asinfo de los últimos 60 días. Las retenciones
     # llegan DESPUÉS de la factura (cuando el cliente paga/retiene), así que un
@@ -2717,7 +2721,7 @@ def health_all():
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
-               and data23["ok"]),
+               and data23["ok"] and data24["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2741,6 +2745,7 @@ def health_all():
         "precios_asinfo": data21,
         "op_cierra": json.loads(resp22.get_data(as_text=True)),
         "dia_captura": data23,
+        "arranque_de_mes": data24,
     })
 
 
@@ -3110,3 +3115,299 @@ def hilado_stock_debug():
         "historia_dia_a_dia": hist_trend,
         "compras": compras,
     })
+
+
+# ---------------------------------------------------------------------------
+# El arranque del mes: lo que se rompió el 01/09/2026 sin que nadie avisara
+# ---------------------------------------------------------------------------
+#
+# El cambio de mes del 01/09/2026 rompió cinco cosas distintas y ninguna la
+# detectó una alarma — se supo porque Andrés reclamó por WhatsApp que "la
+# proyección de la utilidad está dando un valor raro". Tamara: *"tener el
+# cierre de mes aceitado, que nunca más nos vuelva a pasar"*. Este chequeo
+# mira, para el mes en curso, exactamente los cinco lugares:
+#
+#   1. `scintela.iniciales`: ¿existe la fila del mes? ¿viajaron las 17 columnas
+#      o sólo 12? (septiembre nació sin `pre`, y la Proyección salió en 0).
+#   2. `scintela.gastos_proyectado_mes`: ¿hay fila o herencia? (sin ella
+#      desaparecían ~815.000 de gastos fijos de la proyección).
+#   3. `scintela.venta_proyectada_mes`: ídem.
+#   4. `scintela.gastos_mes_manual`: ¿se congeló el mes anterior?
+#   5. `historia_ultimo_mes()`: ¿el PATANT es del ÚLTIMO día del mes anterior?
+#   6. Las provisiones YY/RT: ¿alguna se cargó de un saque medio mes o más?
+#      (el motor viejo `procesa_provisiones` cargó el mes COMPLETO encima de la
+#      cuota diaria: 724.275 de más).
+#
+# Lo que se lee de la base va en `arranque_de_mes_datos()`; el juicio es
+# `arranque_de_mes_alertas()`, pura, para que los dry runs por escenario sean
+# tests y no visitas a producción.
+
+#: Las columnas que la fila del mes nuevo tiene que traer del mes anterior —
+#: la MISMA lista que copian `rollover_y_writeback_iniciales` (`_row_new`) y
+#: `cerrar_mes_auto` (hay un test que las compara contra el código).
+INICIALES_COLUMNAS_QUE_VIAJAN: tuple[str, ...] = (
+    "hilado", "tejido", "terminado", "vq", "um", "uk", "uq", "uf", "pre",
+    "kprog", "gprog", "numnot", "dificil", "pretej", "pretin", "preadm",
+    "pretot",
+)
+
+#: Una provisión que en 48 h sube más de MEDIO mes no es la cuota diaria
+#: (1/30) ni un atraso del motor lazy (el calentador abre /informes/balance
+#: cada 20 s, así que el atraso real es de minutos): es un "mes completo"
+#: cargado encima, como el 01/09/2026.
+_PROVISION_SALTO_MAX_FRACCION_MES = 0.5
+
+#: Ventana en la que se mira el salto de las provisiones. El cron del día 1
+#: corre a las 06:00 EC; 48 h deja que el chequeo lo vea aunque se abra
+#: recién al día siguiente.
+_PROVISION_VENTANA_HORAS = 48
+
+#: Desde qué día del mes se reclama que "Gastos mes anterior" no esté
+#: congelado: se congela solo al primer /informes/gastos del mes nuevo, así
+#: que el día 1 a la mañana es normal que todavía no esté.
+_GASTOS_MANUAL_DIA_DE_GRACIA = 2
+
+
+def _ultimo_dia_del_mes_anterior(hoy: _dt_date) -> _dt_date:
+    from datetime import timedelta
+    return hoy.replace(day=1) - timedelta(days=1)
+
+
+def _periodo(d: _dt_date) -> str:
+    return f"{d.year:04d}-{d.month:02d}"
+
+
+def _nombre_mes(d: _dt_date) -> str:
+    from modules.iniciales.queries import MESES_ES
+    return f"{MESES_ES[d.month - 1].lower()} {d.year}"
+
+
+def arranque_de_mes_datos(hoy: _dt_date | None = None) -> dict:
+    """Todo lo que `arranque_de_mes_alertas` necesita, leído de la base.
+
+    Cada lectura es fail-soft por separado: si una tabla no está, el resto
+    del chequeo igual se hace y el error queda en `errores`.
+    """
+    from modules.informes import queries as _iq
+
+    if hoy is None:
+        from filters import today_ec
+        hoy = today_ec()
+    prev = _ultimo_dia_del_mes_anterior(hoy)
+    datos: dict = {"hoy": hoy, "errores": {}}
+
+    def _leer(clave, fn):
+        try:
+            datos[clave] = fn()
+        except Exception as e:  # noqa: BLE001 -- fail-soft por bloque
+            datos[clave] = None
+            datos["errores"][clave] = str(e)
+
+    _leer("iniciales_hoy", lambda: db.fetch_one(
+        "SELECT * FROM scintela.iniciales WHERE mesnum = %s AND yy = %s "
+        "ORDER BY id_iniciales DESC LIMIT 1", (hoy.month, hoy.year)))
+    _leer("iniciales_prev", lambda: db.fetch_one(
+        "SELECT * FROM scintela.iniciales WHERE mesnum = %s AND yy = %s "
+        "ORDER BY id_iniciales DESC LIMIT 1", (prev.month, prev.year)))
+    _leer("gastos_proy", lambda: _iq.gastos_proyectado_mes_get(_periodo(hoy)))
+    _leer("venta_proy", lambda: _iq.venta_proyectada_mes_vigente(_periodo(hoy)))
+    _leer("gastos_manual_prev", lambda: _iq.gastos_mes_manual_get(_periodo(prev)))
+    _leer("patant", _iq.historia_ultimo_mes)
+    _leer("provisiones", lambda: _provisiones_con_salto(hoy))
+    return datos
+
+
+def _provisiones_con_salto(hoy: _dt_date) -> list[dict]:
+    """Las provisiones YY/RT vivas con su cuota mensual y cuánto subieron en
+    la ventana, según la traza (`dia_movimiento`, componente `totp`)."""
+    from modules.posdat import queries as _pq
+
+    filas = db.fetch_all(
+        f"""
+        SELECT id_posdat, prov, concepto, importe, baseline_date
+          FROM scintela.posdat
+         WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
+           AND COALESCE(banc, 0) = 0
+           AND {_pq.POSDAT_NO_ANULADA_WHERE}
+        """
+    ) or []
+    filas = [dict(f) for f in filas]
+    if not filas:
+        return []
+    _pq._resolver_cuotas(filas)
+    saltos = db.fetch_all(
+        """
+        SELECT m.doc_id, SUM(m.delta) AS delta
+          FROM scintela.dia_movimiento m
+          JOIN scintela.traza_utilidad t ON t.id_traza = m.id_traza
+         WHERE m.componente = 'totp'
+           AND t.creado_en >= CURRENT_TIMESTAMP - make_interval(hours => %s)
+         GROUP BY m.doc_id
+        """,
+        (_PROVISION_VENTANA_HORAS,),
+    ) or []
+    por_doc = {str(s.get("doc_id")): float(s.get("delta") or 0) for s in saltos}
+    return [{
+        "id_posdat": f.get("id_posdat"),
+        "prov": (f.get("prov") or "").strip(),
+        "concepto": (f.get("concepto") or "").strip(),
+        "cuota_mensual": float(f.get("cuota_mensual") or 0),
+        "delta_ventana": por_doc.get(f"p{f.get('id_posdat')}", 0.0),
+    } for f in filas]
+
+
+def _fmt_us(v: float) -> str:
+    """1234567.8 → '1.234.567,80' (formato EU/Ecuador)."""
+    return f"{v:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def arranque_de_mes_alertas(datos: dict, hoy: _dt_date | None = None) -> dict:
+    """Juzga los datos del arranque del mes. Pura: sin base, sin reloj."""
+    hoy = hoy or datos.get("hoy")
+    prev = _ultimo_dia_del_mes_anterior(hoy)
+    mes = _nombre_mes(hoy)
+    alerts: list = []
+    stats: dict = {"mes": _periodo(hoy), "errores": dict(datos.get("errores") or {})}
+
+    def _al(cat, msg, severity="high"):
+        alerts.append({"severity": severity, "category": cat, "msg": msg})
+
+    # 1. La fila de iniciales del mes y sus 17 columnas.
+    ini, ini_prev = datos.get("iniciales_hoy"), datos.get("iniciales_prev")
+    stats["iniciales"] = {"existe": bool(ini), "mes_anterior_existe": bool(ini_prev)}
+    if not ini:
+        _al("iniciales_faltante",
+            f"No hay fila de Iniciales para {mes}: el balance arranca sin "
+            f"stock de apertura ni metas. La crea el cron del día 1 "
+            f"(rollover) o cualquier entrada a /informes/balance.")
+    elif ini_prev:
+        perdidas = [
+            c for c in INICIALES_COLUMNAS_QUE_VIAJAN
+            if float(ini_prev.get(c) or 0) != 0 and float(ini.get(c) or 0) == 0
+        ]
+        stats["iniciales"]["columnas_perdidas"] = perdidas
+        if perdidas:
+            _al("iniciales_columna_perdida",
+                f"La fila de Iniciales de {mes} nació sin "
+                f"{', '.join(perdidas)} (el mes anterior las tenía). Sin "
+                f"`pre` la Proyección sale en 0 hasta la primera factura. "
+                f"Se corrige en /iniciales.")
+
+    # 2. Gastos proyectados del mes: fila o herencia.
+    gp = datos.get("gastos_proy") or {}
+    gp_total = float(gp.get("tej") or 0) + float(gp.get("tin") or 0) + float(gp.get("adm") or 0)
+    stats["gastos_proyectado"] = {"total": round(gp_total, 2),
+                                  "heredado": bool(gp.get("heredado")),
+                                  "periodo_origen": gp.get("periodo_origen")}
+    if gp_total <= 0:
+        _al("gastos_proyectado_sin_fila",
+            f"No hay gastos proyectados para {mes} ni un mes anterior del "
+            f"que heredarlos: la Utilidad Esperada se calcula sin gastos "
+            f"fijos. Se cargan en /informes/gastos.")
+
+    # 3. Venta proyectada del mes: fila o herencia.
+    vp = datos.get("venta_proy") or {}
+    stats["venta_proyectada"] = {"kg": vp.get("kg"), "heredado": bool(vp.get("heredado")),
+                                 "periodo_origen": vp.get("periodo_origen")}
+    if not vp.get("kg"):
+        _al("venta_proyectada_sin_fila",
+            f"No hay kilos de venta proyectada para {mes} ni un mes anterior "
+            f"del que heredarlos: la Proyección cae al kprog de Iniciales. "
+            f"Se cargan en /informes/balance.", severity="medium")
+
+    # 4. "Gastos mes anterior" congelado.
+    gm = datos.get("gastos_manual_prev")
+    stats["gastos_mes_anterior"] = {"periodo": _periodo(prev), "congelado": bool(gm)}
+    if not gm and hoy.day >= _GASTOS_MANUAL_DIA_DE_GRACIA:
+        _al("gastos_mes_anterior_sin_congelar",
+            f"Los gastos de {_nombre_mes(prev)} todavía no se congelaron: "
+            f"la fila 'Gastos mes anterior' sigue recalculándose. Se congela "
+            f"sola al abrir /informes/gastos.", severity="medium")
+
+    # 5. El PATANT: la foto del ÚLTIMO día del mes anterior.
+    pa = datos.get("patant")
+    fecha_pa = pa.get("fecha") if pa else None
+    from datetime import datetime as _dt_datetime
+    if isinstance(fecha_pa, _dt_datetime):
+        fecha_pa = fecha_pa.date()
+    stats["patant"] = {"fecha": str(fecha_pa) if fecha_pa else None,
+                       "esperada": str(prev),
+                       "patrimonio": float(pa.get("patrimonio") or 0) if pa else None}
+    if not pa:
+        _al("patant_faltante",
+            f"No hay ninguna foto de cierre anterior a {mes} en Historia: la "
+            f"utilidad del mes no tiene contra qué compararse.")
+    elif fecha_pa != prev:
+        _al("patant_de_otro_dia",
+            f"El PATANT de {mes} sale de la foto del {fecha_pa}, no del "
+            f"{prev}: la utilidad de todo el mes arranca contra un cierre "
+            f"que no es el del último día. Se rehace en /admin/regenerar-snapshot/.")
+    elif not float(pa.get("patrimonio") or 0):
+        _al("patant_en_cero",
+            f"La foto de cierre del {prev} tiene patrimonio 0: la utilidad "
+            f"de {mes} sería el patrimonio entero.")
+
+    # 6. Las provisiones YY/RT: ninguna puede haber saltado medio mes.
+    provs = datos.get("provisiones") or []
+    saltos = []
+    for p in provs:
+        mensual = float(p.get("cuota_mensual") or 0)
+        delta = float(p.get("delta_ventana") or 0)
+        if mensual > 0 and delta > mensual * _PROVISION_SALTO_MAX_FRACCION_MES:
+            saltos.append(p)
+    stats["provisiones"] = {"n": len(provs),
+                            "saltos": [{"prov": p["prov"], "concepto": p["concepto"],
+                                        "cuota_mensual": p["cuota_mensual"],
+                                        "delta_ventana": round(p["delta_ventana"], 2)}
+                                       for p in saltos]}
+    if saltos:
+        total = sum(float(p["delta_ventana"]) for p in saltos)
+        nombres = ", ".join(f"{p['prov']} {p['concepto'][:20]}".strip() for p in saltos[:4])
+        if len(saltos) > 4:
+            nombres += f" y {len(saltos) - 4} más"
+        cuantas = ("1 provisión subió" if len(saltos) == 1
+                   else f"{len(saltos)} provisiones subieron")
+        _al("provisiones_doble_carga",
+            f"{cuantas} {_fmt_us(total)} en "
+            f"{_PROVISION_VENTANA_HORAS} h ({nombres}): más de medio mes de "
+            f"un saque, como el doble cobro del 01/09/2026. La cuota diaria "
+            f"es el mensual ÷ días del mes. Se revisa en /posdat?tab=yy.")
+
+    return {"ok": not alerts, "alerts": alerts, "stats": stats}
+
+
+def _avisar_arranque_de_mes(resultado: dict) -> None:
+    """Deja las alarmas del arranque en la campanita. Nunca rompe el health.
+
+    La clave lleva el mes y las categorías: mientras la lista sea la misma no
+    se repite; si se resuelve una y queda otra, avisa de nuevo.
+    """
+    alerts = resultado.get("alerts") or []
+    if not alerts:
+        return
+    try:
+        from modules.avisos import avisar
+
+        mes = (resultado.get("stats") or {}).get("mes") or ""
+        cats = "|".join(sorted(a["category"] for a in alerts))
+        if len(alerts) == 1:
+            titulo, detalle = alerts[0]["msg"][:200], alerts[0]["msg"]
+        else:
+            titulo = f"El arranque de mes tiene {len(alerts)} cosas mal"
+            detalle = " · ".join(a["msg"] for a in alerts)
+        avisar(fuente="cierre", nivel="alerta", titulo=titulo, detalle=detalle,
+               cantidad=len(alerts), url="/admin/health/arranque-de-mes",
+               clave=f"health:arranque-de-mes:{mes}:{cats}")
+    except Exception as exc:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+        logging.getLogger("programa_core.health.arranque_de_mes").warning(
+            "no pude avisar el arranque de mes: %s", exc)
+
+
+@bp.route("/arranque-de-mes", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def arranque_de_mes():
+    """¿El mes arrancó entero? Iniciales, proyecciones, PATANT y provisiones."""
+    resultado = arranque_de_mes_alertas(arranque_de_mes_datos())
+    _avisar_arranque_de_mes(resultado)
+    return jsonify(resultado)
