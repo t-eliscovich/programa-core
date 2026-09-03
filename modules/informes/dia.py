@@ -157,8 +157,16 @@ def capturar(momento: str = "manual", bal: dict | None = None) -> dict:
                 "id_traza": foto.get("id_traza"),
                 "utilidad": _f(comp.get("utilidad")),
                 "patr_neto": round(_f(comp.get("patr")) - _f(comp.get("uret")), 2)}
+        # 🚨 Sólo lo que la foto GUARDA. `patant` entró a COMPONENTES el
+        # 02/09 (fbcebc5) como componente DERIVADO —sale de patr_neto + uret −
+        # utilidad, no tiene columna— y este loop, que lo buscaba en
+        # `_CLAVE_BALANCE`, reventó con KeyError en cada tick: la mañana del
+        # 03/09 no hubo captura y la nota del cierre se habría quedado sin
+        # ventana. Se filtra por el mapa, no por nombre, para que el próximo
+        # derivado no vuelva a tumbar la captura.
         for c, _s in COMPONENTES:
-            fila[c] = _f(comp.get(_CLAVE_BALANCE[c]))
+            if c in _CLAVE_BALANCE:
+                fila[c] = _f(comp.get(_CLAVE_BALANCE[c]))
         etapas = (bal or {}).get("stock_etapas") or {}
         for et in ("hilado", "tejido", "terminado"):
             e = etapas.get(et) or {}

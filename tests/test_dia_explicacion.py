@@ -250,6 +250,29 @@ def test_una_cobranza_con_retencion_no_netea_y_esa_es_la_noticia():
     assert round(sum(m["aporte"] for m in movs), 2) == -30.0
 
 
+# ── La captura sólo guarda lo que tiene columna ─────────────────────────────
+# 03/09/2026: `patant` entró a COMPONENTES como derivado (sin columna) y
+# `capturar()` reventó con KeyError en cada tick del hilo — la mañana del 03/09
+# no tuvo captura. Este test PROVOCA ese fallo: un componente sin clave.
+
+def test_un_componente_derivado_sin_columna_no_tumba_la_captura():
+    grabado = {}
+
+    def _ret(sql, fila):
+        grabado.update(fila)
+        return {"id_captura": 7}
+
+    foto = {"ok": True, "id_traza": 3, "bal": _bal(), "movimientos": 0}
+    with patch.object(dia, "COMPONENTES",
+                      tuple(dia.COMPONENTES) + (("derivado_nuevo", -1),)), \
+         patch("modules.informes.traza.registrar", return_value=foto), \
+         patch.object(dia.db, "execute_returning", side_effect=_ret):
+        r = dia.capturar("manana", bal=_bal())
+    assert r["ok"] is True, r
+    assert "derivado_nuevo" not in grabado and "patant" not in grabado
+    assert grabado["utilidad"] == 100.0 and grabado["momento"] == "manana"
+
+
 # ── Horarios: Ecuador, no el server ─────────────────────────────────────────
 
 def test_antes_de_las_siete_no_captura():
