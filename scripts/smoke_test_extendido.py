@@ -723,49 +723,21 @@ def test_E5_multi_cheque_batch_reverso_atomico() -> int:
 # ============================================================================
 
 def test_B1_cierre_mes_idempotente() -> int:
-    """correr_provisiones_diarias 2x el mismo día → 2da llamada no aplica.
+    """El motor VIEJO de provisiones ya no corre: levanta siempre.
 
-    Verifica el lock en sistema_meta + check `ult_fecha >= hoy`.
+    Tamara 2026-09-03: hasta hoy este smoke llamaba a
+    `correr_provisiones_diarias` DE VERDAD contra la base — o sea, corrido
+    contra producción le apilaba un día de cuota a las 12 provisiones YY/RT
+    encima del motor único (`persistir_acumulacion_yy`), el mismo doble cobro
+    del 01/09/2026. Ahora lo único que se verifica es que se niegue a correr.
     """
     from modules.informes import queries as qi
-    # Snapshot del marker actual.
-    row = db.fetch_one(
-        "SELECT valor FROM scintela.sistema_meta WHERE clave=%s",
-        ("provisiones_diarias_ult_fecha",),
-    )
-    valor_orig = (row or {}).get("valor")
-
     try:
-        res1 = qi.correr_provisiones_diarias(forzar=False)
-        res2 = qi.correr_provisiones_diarias(forzar=False)
-        asserts = 1
-        # Si res1 aplicó, res2 NO debe aplicar (mismo día).
-        if res1.get("aplicado"):
-            assert not res2.get("aplicado"), \
-                f"segunda corrida aplicó duplicado: res1={res1} res2={res2}"
-        # Marker no debe retroceder.
-        m_new = db.fetch_one(
-            "SELECT valor FROM scintela.sistema_meta WHERE clave=%s",
-            ("provisiones_diarias_ult_fecha",),
-        )
-        assert m_new, "marker no existe tras llamar provisiones diarias"
-        asserts += 1
-        # forzar=True con ya-al-día → rechazado.
-        res3 = qi.correr_provisiones_diarias(forzar=True)
-        if res2.get("ult_fecha_nueva", "")[:10] >= date.today().isoformat():
-            assert not res3.get("aplicado"), \
-                f"forzar=True duplicó día: {res3}"
-        asserts += 1
-    finally:
-        # Restaurar marker al valor original — no queremos contaminar.
-        if valor_orig:
-            db.execute(
-                """UPDATE scintela.sistema_meta SET valor=%s,
-                          actualizado=CURRENT_TIMESTAMP
-                    WHERE clave='provisiones_diarias_ult_fecha'""",
-                (valor_orig,),
-            )
-    return asserts
+        qi.correr_provisiones_diarias(forzar=True)
+    except RuntimeError as e:
+        assert "persistir_acumulacion_yy" in str(e), e
+        return 1
+    raise AssertionError("correr_provisiones_diarias volvió a correr: dos motores de devengo")
 
 
 def test_B2_ano_bisiesto_provision_feb29() -> int:

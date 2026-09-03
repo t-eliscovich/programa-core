@@ -19,6 +19,7 @@ import contextlib
 import os
 import sys
 from datetime import date, datetime
+from pathlib import Path
 
 import pytest
 
@@ -27,6 +28,7 @@ import pytest
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+ROOT = Path(_REPO_ROOT)
 
 
 class _FakeDB:
@@ -524,3 +526,79 @@ def test_snapshot_historia_no_forza_si_la_fila_es_manual(fake_db):
     ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
     llamada = fake_db.crear_snapshot_historia_calls[0]
     assert llamada["forzar"] is False
+
+
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-03 — "que nunca más nos vuelva a pasar": UN solo motor.
+# ---------------------------------------------------------------------------
+
+def _archivos_ejecutables():
+    """Todo .py/.sql/.sh/.ps1/.yml del repo menos tests y docs."""
+    for patron in ("*.py", "*.sql", "*.sh", "*.ps1", "*.yml"):
+        for f in ROOT.rglob(patron):
+            rel = f.relative_to(ROOT).as_posix()
+            if rel.startswith(("tests/", "docs/", ".git/", "skills/")) or "/_archive/" in rel:
+                continue
+            yield f
+
+
+def _lineas_de_codigo(f):
+    """Las líneas que EJECUTAN: sin comentarios, sin docstrings (aprox.)."""
+    en_doc = False
+    for linea in f.read_text(encoding="utf-8", errors="replace").splitlines():
+        s = linea.strip()
+        if s.count('"""') % 2 == 1:
+            en_doc = not en_doc
+            continue
+        if en_doc or s.startswith(("#", "--", "//")):
+            continue
+        yield linea
+
+
+def test_nadie_llama_a_la_procedure_vieja_en_todo_el_repo():
+    """`CALL scintela.procesa_provisiones` no puede aparecer como código en
+    ningún script, cron ni módulo — sólo en comentarios que cuentan la
+    historia. El cron ya no la llama (test de arriba); esto cubre cualquier
+    OTRO camino que alguien pueda armar."""
+    culpables = [
+        f"{f.relative_to(ROOT)}: {linea.strip()}"
+        for f in _archivos_ejecutables()
+        for linea in _lineas_de_codigo(f)
+        if "procesa_provisiones(" in linea and "def " not in linea
+    ]
+    assert not culpables, (
+        "La procedure vieja carga el MES COMPLETO de las 12 provisiones YY/RT "
+        "encima del motor único (persistir_acumulacion_yy). Doble cobro del "
+        "01/09/2026 otra vez:\n  " + "\n  ".join(culpables)
+    )
+
+
+def test_el_motor_python_viejo_se_niega_a_correr(fake_db):
+    """`correr_provisiones_diarias` salió del auto-run el 24/07 pero seguía
+    corriendo si un script lo llamaba con forzar=True — el tercer motor. Ahora
+    levanta, con el nombre del único motor en el mensaje."""
+    from modules.informes import queries as qi
+    with pytest.raises(RuntimeError, match="persistir_acumulacion_yy"):
+        qi.correr_provisiones_diarias()
+    with pytest.raises(RuntimeError):
+        qi.correr_provisiones_diarias(forzar=True)
+
+
+def test_ningun_modulo_ni_script_llama_al_motor_python_viejo():
+    culpables = [
+        f"{f.relative_to(ROOT)}: {linea.strip()}"
+        for f in _archivos_ejecutables()
+        if f.suffix == ".py"
+        for linea in _lineas_de_codigo(f)
+        if "correr_provisiones_diarias(" in linea and "def correr_provisiones_diarias" not in linea
+        # El smoke que verifica que LEVANTA es el único permitido.
+        and f.name != "smoke_test_extendido.py"
+    ]
+    assert not culpables, "\n".join(culpables)
+
+
+def test_el_unico_motor_de_devengo_es_persistir_acumulacion_yy():
+    """Las dos pantallas que devengan llaman a persistir y a nada más."""
+    for rel in ("modules/informes/views.py", "modules/posdat/views.py"):
+        src = (ROOT / rel).read_text(encoding="utf-8")
+        assert "persistir_acumulacion_yy()" in src, rel

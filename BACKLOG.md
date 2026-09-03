@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-09-02._
+_Última actualización: 2026-09-03._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -142,10 +142,14 @@ del mes, que es cuando toma el camino vivo (`se_puede_comparar_la_foto`). El
 freno está porque la pantalla decía *"el Δ es lo que se corrige al rehacer la
 foto"*, y con ese número rehacerla rompe un cierre que estaba bien.
 
-### [S] Primer cierre 100% PC (31/08/2026)
-El FoxPro ya no corre su devengo POSDAT ni su cuota de amortización ni la fila
-de INICIALE. PC tiene equivalentes (cron del EC2 día 1, procs SQL) — verificar
-UNO POR UNO en `/admin/health/simulacro-cierre` antes del 31/08.
+### [XS] Borrar la procedure vieja `scintela.procesa_provisiones` de la base
+Desde el 03/09/2026 ningún cron, ruta ni script la llama (hay tests que lo
+sostienen: `test_nadie_llama_a_la_procedure_vieja_en_todo_el_repo`) y el motor
+Python viejo `correr_provisiones_diarias` levanta siempre. Pero la procedure
+sigue VIVA en RDS: un `CALL` a mano desde una consola con escritura vuelve a
+cargar el mes completo encima del motor único (doble cobro del 01/09). Falta
+una migración `DROP PROCEDURE` — pendiente de que la dueña la apruebe (no se
+puede mirar el cuerpo desde el sandbox; la base está IP-locked).
 
 ---
 

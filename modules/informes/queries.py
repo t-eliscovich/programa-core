@@ -28,7 +28,6 @@ from datetime import date
 from decimal import Decimal
 
 import db
-import reparto_mensual as rm
 from filters import today_ec
 from modules._lib import busqueda
 from modules.cheques.queries import SQL_DIA_INGRESO as _SQL_DIA_INGRESO_CHEQUE  # noqa: E402
@@ -2128,239 +2127,25 @@ def _condicion_provision(prov_filter: str, matcher_kind: str, pattern: str) -> t
 
 
 def correr_provisiones_diarias(forzar: bool = False) -> dict:
-    """Aplica las provisiones diarias del PRG MENU.PRG L282-333.
+    """RETIRADO. El motor viejo de provisiones YY/RT (MENU.PRG L282-333).
 
-    **Catch-up automático**: aplica TODOS los días hábiles entre la última
-    corrida y hoy (inclusive). Si no abriste el sistema durante 3 días,
-    aplica los 3 días faltantes — el resultado no depende de cuándo entres.
+    Tamara 2026-09-03, después del doble cobro del 01/09/2026 (724.275 de
+    más: dos motores escribiendo sobre el mismo `posdat.importe`): **queda
+    UN solo motor de devengo**, `modules.posdat.queries.persistir_acumulacion_yy`,
+    baseline-aware por fila. Éste había salido del auto-run el 2026-07-24
+    pero seguía "disponible para scripts vía forzar=True" — o sea, un script
+    cualquiera podía volver a apilarle un día de cuota a las 12 provisiones
+    encima del motor único, sin que nada lo frenara. Ya no: levanta siempre.
 
-    Idempotente: lee `scintela.sistema_meta` clave='provisiones_diarias_ult_fecha'.
-    Si `ult_fecha >= hoy`, no hace nada. Si no, aplica un día por cada día
-    hábil pendiente y avanza el marker a hoy.
-
-    Desde el 01/09/2026 corre TODOS los días, sábados y domingos incluidos,
-    y cada día suma la cuota mensual dividida por los días de ese mes. Antes
-    de esa fecha sólo corría de lunes a viernes (ver reparto_mensual.py).
-
-    Cada día aplicado afecta UN solo posdat por categoría (primer match
-    por id_posdat). Si no hay match, se saltea (igual que dBase).
-
-    Si `forzar=True`, aplica UN día extra incluso si ya estaba al día.
-    Útil para emparejar valores cuando el sistema vino atrasado.
-
-    Devuelve:
-        {
-          "aplicado": bool,            # si se aplicó al menos 1 día,
-          "dias_aplicados": int,       # cantidad de días hábiles aplicados,
-          "monto_total": float,        # suma total agregada (todos los días),
-          "categorias_por_dia": int,   # cuántas categorías matchearon (~12),
-          "ult_fecha_anterior": str,
-          "ult_fecha_nueva": str,
-        }
+    Se conserva la firma para que los imports viejos fallen ACÁ, con este
+    mensaje, y no con un AttributeError sin contexto.
     """
-    from datetime import date as _date
-    from datetime import timedelta as _td
-
-    hoy = today_ec()
-    hoy_iso = hoy.isoformat()
-
-    # TMT 2026-05-14 (audit #36): toda la lógica de leer ult_fecha,
-    # calcular días pendientes, aplicar UPDATEs y avanzar marker DEBE
-    # correr dentro de UNA SOLA transacción con lock pessimista en la
-    # fila de sistema_meta. Antes el SELECT inicial estaba fuera de la
-    # tx → dos GETs concurrentes a /informes/balance leían ult_fecha=ayer
-    # y aplicaban las provisiones DOS veces. SELECT...FOR UPDATE serializa.
-
-    total = 0.0
-    cats_ultima = 0
-    dias_a_aplicar: list[_date] = []
-    ult_fecha_str: str | None = None
-
-    with db.tx() as conn:
-        # Lock pessimista — bloquea hasta que la tx concurrente commitee.
-        lock_row = db.fetch_one(
-            "SELECT valor FROM scintela.sistema_meta  WHERE clave = %s FOR UPDATE",
-            ("provisiones_diarias_ult_fecha",),
-            conn=conn,
-        )
-        ult_fecha_str = (lock_row or {}).get("valor")
-
-        # Si nunca corrió, inicializar a ayer (próxima corrida aplica hoy).
-        if not ult_fecha_str:
-            db.execute(
-                """INSERT INTO scintela.sistema_meta (clave, valor)
-                   VALUES ('provisiones_diarias_ult_fecha', %s)
-                   ON CONFLICT (clave) DO UPDATE
-                     SET valor = EXCLUDED.valor, actualizado = CURRENT_TIMESTAMP""",
-                ((hoy - _td(days=1)).isoformat(),),
-                conn=conn,
-            )
-            ult_fecha_str = (hoy - _td(days=1)).isoformat()
-
-        try:
-            ult_fecha = _date.fromisoformat(ult_fecha_str)
-        except (TypeError, ValueError):
-            ult_fecha = hoy - _td(days=1)
-
-        # Calcular días hábiles pendientes (entre ult_fecha+1 y hoy inclusive).
-        # Si forzar=True, agregamos un día extra al final como catch-up manual.
-        # TMT 2026-06-08: VERIFICADO contra POSDAT.DBF — el dBase real avanza
-        # L-V (no contó el sábado 06/06). MENU.PRG dice DOW>1 pero el sistema
-        # no se abre los sábados, así que en la práctica es L-V. Mantener L-V.
-        cursor_d = ult_fecha + _td(days=1)
-        while cursor_d <= hoy:
-            # Desde el 01/09/2026 corren todos los días, sábados y domingos
-            # incluidos (ver reparto_mensual.py). Antes, sólo L-V.
-            if rm.provision_corre(cursor_d):
-                dias_a_aplicar.append(cursor_d)
-            cursor_d += _td(days=1)
-
-        # TMT 2026-05-15 (re-audit C6): si `forzar=True` y ya estamos al
-        # día (ult_fecha >= hoy), NO permitimos otra corrida — antes,
-        # llamar forzar dos veces seguidas re-aplicaba el mismo día y
-        # duplicaba las provisiones. La idea de `forzar` es disparar un día
-        # cuando el sistema vino atrasado, no agregar duplicados.
-        if forzar and not dias_a_aplicar:
-            if ult_fecha >= hoy:
-                return {
-                    "aplicado": False,
-                    "dias_aplicados": 0,
-                    "monto_total": 0.0,
-                    "categorias_por_dia": 0,
-                    "ult_fecha_anterior": ult_fecha_str,
-                    "ult_fecha_nueva": ult_fecha_str,
-                    "motivo": (
-                        f"forzar rechazado: ya se aplicó hasta {ult_fecha_str} "
-                        f"≥ hoy {hoy_iso}. No permitimos doble-aplicar."
-                    ),
-                }
-            # Forzar: agregar el último día que corre; si hoy no corre
-            # (sábado o domingo antes del corte), retroceder hasta uno que sí.
-            _f = hoy
-            while not rm.provision_corre(_f):
-                _f -= _td(days=1)
-            dias_a_aplicar = [_f]
-
-        if not dias_a_aplicar:
-            # Lock liberado al salir del with. Sin cambios — devolver sin
-            # tocar el marker.
-            return {
-                "aplicado": False,
-                "dias_aplicados": 0,
-                "monto_total": 0.0,
-                "categorias_por_dia": 0,
-                "ult_fecha_anterior": ult_fecha_str,
-                "ult_fecha_nueva": ult_fecha_str,
-                "motivo": "ya al día (sin días hábiles pendientes)",
-            }
-
-        # TMT 2026-05-20 — pedido dueña: el cron diario ahora se DRIVEA
-        # de la tabla `scintela.provisiones` (no de la lista hardcoded
-        # PROVISIONES_DIARIAS). Para cada provisión:
-        #   1. Buscar la posdat YY que matchea por concepto (starts-with
-        #      bidireccional case-insensitive, longitud ≥ 3).
-        #   2. Si existe → importe += la cuota del día (el mensual de la
-        #      provisión repartido entre los días de ese mes).
-        #   3. Si no existe → se saltea (no toca ese día — la dueña puede
-        #      crear el posdat YY manualmente o dejar la provisión sola).
-        #
-        # TMT 2026-08-25 dueña: 'hagamos un total mensual de lo que se viene
-        # pasando, y luego dividimos por los días'. `provisiones.importe`
-        # volvió a guardar la cuota MENSUAL (migración 0223) y acá se divide
-        # por los días del mes. Desde el 01/09/2026 corre todos los días.
-        #
-        # La lista hardcoded queda como FALLBACK SOLO para provisiones
-        # legacy que todavía no están en `scintela.provisiones`. Una vez
-        # que la dueña migre todo, podés borrar el fallback.
-        provisiones_rows = (
-            db.fetch_all(
-                "SELECT id_provisiones, concepto, importe "
-                "FROM scintela.provisiones "
-                "WHERE COALESCE(importe, 0) > 0",
-                conn=conn,
-            )
-            or []
-        )
-        for _dia in dias_a_aplicar:
-            cats_dia = 0
-            # 1. Driver nuevo: cada provisión aplica su CUOTA DIARIA
-            # (valor de scintela.provisiones tal cual, sin dividir).
-            for pr in provisiones_rows:
-                concepto = (pr.get("concepto") or "").strip()
-                if len(concepto) < 3:
-                    continue
-                mensual = float(pr.get("importe") or 0)
-                if mensual <= 0:
-                    continue
-                # La cuota del día = el mensual repartido entre los días del
-                # mes de ESE día (migración 0223 + reparto_mensual.py).
-                diario = round(rm.cuota_del_dia(mensual, _dia), 2)
-                # Match aproximado contra el concepto del posdat YY.
-                # Mismo criterio que el LATERAL JOIN viejo: starts-with
-                # bidireccional, case-insensitive.
-                ret = db.fetch_one(
-                    """
-                    WITH first_match AS (
-                        SELECT id_posdat
-                          FROM scintela.posdat
-                         WHERE COALESCE(banc, 0) <> 9
-                           AND (anulada IS NOT TRUE OR anulada IS NULL)
-                           AND UPPER(COALESCE(prov, '')) = 'YY'
-                           -- TMT 2026-05-28 (migración 0061): las filas con
-                           -- baseline_date NOT NULL son manejadas
-                           -- display-time en posdat.queries — el cron
-                           -- ya no debe tocar su importe.
-                           AND baseline_date IS NULL
-                           AND LENGTH(TRIM(COALESCE(concepto, ''))) >= 3
-                           AND (
-                                UPPER(TRIM(COALESCE(concepto, '')))
-                                  LIKE UPPER(%(c)s) || '%%'
-                             OR UPPER(%(c)s)
-                                  LIKE UPPER(TRIM(COALESCE(concepto, ''))) || '%%'
-                           )
-                         ORDER BY id_posdat
-                         LIMIT 1
-                    )
-                    UPDATE scintela.posdat p
-                       SET importe = COALESCE(p.importe, 0) + %(diario)s,
-                           fecha_modifica = CURRENT_TIMESTAMP,
-                           usuario_modifica = 'provisiones_diarias'
-                      FROM first_match fm
-                     WHERE p.id_posdat = fm.id_posdat
-                    RETURNING p.id_posdat
-                    """,
-                    {"c": concepto, "diario": diario},
-                    conn=conn,
-                )
-                if ret:
-                    cats_dia += 1
-                    total += diario
-            # 2. Fallback legacy: la lista hardcoded PROVISIONES_DIARIAS.
-            # Sólo aplica a posdats que NO matchearon con la tabla nueva
-            # (chequeamos por id_posdat distinto). Útil mientras la dueña
-            # migra todas las categorías. TMT 2026-05-20: dejar comentado
-            # si después de un mes no se ve usado.
-            # for prov_filter, matcher_kind, pattern, monto in PROVISIONES_DIARIAS:
-            #     ... (código viejo)
-            cats_ultima = cats_dia
-
-        # Actualizar marker — siempre avanzar a hoy
-        db.execute(
-            """UPDATE scintela.sistema_meta
-                  SET valor = %s, actualizado = CURRENT_TIMESTAMP
-                WHERE clave = 'provisiones_diarias_ult_fecha'""",
-            (hoy_iso,),
-            conn=conn,
-        )
-
-    return {
-        "aplicado": True,
-        "dias_aplicados": len(dias_a_aplicar),
-        "monto_total": total,
-        "categorias_por_dia": cats_ultima,
-        "ult_fecha_anterior": ult_fecha_str,
-        "ult_fecha_nueva": hoy_iso,
-    }
+    raise RuntimeError(
+        "correr_provisiones_diarias está retirado: el ÚNICO motor de devengo "
+        "YY/RT es modules.posdat.queries.persistir_acumulacion_yy (corre solo "
+        "en cada /informes/balance y /posdat). Correr este también carga las "
+        "provisiones dos veces, como el 01/09/2026."
+    )
 
 
 def amortizaciones_mensuales(meses_atras: int = 0) -> dict:
