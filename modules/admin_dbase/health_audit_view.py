@@ -2437,9 +2437,13 @@ def op_cierra():
         return round(float((row or {}).get(k) or 0), 2)
 
     # 1. Crédito por compra OP (lo que suma el titular `saldo_op`).
-    cred_compra = -_n(db.fetch_one(
-        "SELECT COALESCE(SUM(importe), 0) AS s FROM scintela.compra "
-        "WHERE UPPER(TRIM(codigo_prov)) = 'OP' AND COALESCE(stat, '') <> 'Y'"))
+    fila_compra = db.fetch_one(
+        "SELECT COALESCE(SUM(importe), 0) AS s, MIN(fecha) AS d "
+        "FROM scintela.compra "
+        "WHERE UPPER(TRIM(codigo_prov)) = 'OP' AND COALESCE(stat, '') <> 'Y'"
+    ) or {}
+    cred_compra = -_n(fila_compra)
+    desde = fila_compra.get("d")
 
     # 2. Crédito por posdat OP — el que de verdad está en el balance (TOTP).
     cred_posdat = -_n(db.fetch_one(
@@ -2447,16 +2451,32 @@ def op_cierra():
         "WHERE UPPER(TRIM(prov)) = 'OP' AND COALESCE(banc, 0) = 0 "
         "  AND (anulada IS NOT TRUE OR anulada IS NULL)"))
 
-    # 3. Retiros OP.
-    retirado = _n(db.fetch_one(
+    # 3. Retiros OP. El scope que importa es el MISMO que usa `saldo_op`:
+    #    desde la primera compra OP todavía viva. scintela.compra espeja el
+    #    DBF, que purga las compras viejas; los retiros anteriores a esa fecha
+    #    cancelaban créditos que ya no están de ningún lado, así que sumarlos
+    #    contra el crédito de hoy da un agujero que no existe.
+    #    TMT 2026-09-03: la primera versión de este chequeo NO tenía el piso y
+    #    denunció 6,5M de retiro de más que eran retiros históricos legítimos.
+    retirado_total = _n(db.fetch_one(
         "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
         "WHERE UPPER(TRIM(de)) = 'OP'"))
+    if desde is not None:
+        retirado = _n(db.fetch_one(
+            "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+            "WHERE UPPER(TRIM(de)) = 'OP' AND fecha >= %s", (desde,)))
+    else:
+        retirado = 0.0
 
     stats["credito_compras"] = cred_compra
     stats["credito_posdat"] = cred_posdat
+    stats["desde"] = str(desde) if desde is not None else None
     stats["retirado"] = retirado
+    stats["retirado_historico"] = retirado_total
+    stats["disponible_segun_compras"] = round(cred_compra - retirado, 2)
     stats["disponible_segun_posdat"] = round(cred_posdat - retirado, 2)
-    # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes.
+    # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes sin deduplicar,
+    # así que las líneas que tienen compra Y espejo posdat entran dos veces.
     stats["credito_como_lo_suma_lineas_op"] = round(cred_compra + cred_posdat, 2)
     stats["delta_compras_vs_posdat"] = round(cred_compra - cred_posdat, 2)
 
@@ -2474,14 +2494,19 @@ def op_cierra():
             ),
         })
 
-    if retirado - cred_posdat >= _OP_TOL_US:
+    # El "retiró de más" se mide contra el crédito por COMPRAS y con el mismo
+    # piso de fecha — es exactamente el `disponible` que muestra el titular.
+    # Contra `cred_posdat` no se puede: los posdat de las líneas ya consumidas
+    # no existen (el espejo se escribe sólo mientras queda saldo), así que ese
+    # lado siempre está de menos y la comparación denuncia agujeros falsos.
+    if retirado - cred_compra >= _OP_TOL_US:
         alerts.append({
             "severity": "high",
             "category": "op_retirado_de_mas",
             "msg": (
                 f"Se retiró más crédito OP del que hay cargado: retirado "
-                f"{retirado:,.2f} contra un crédito de {cred_posdat:,.2f} "
-                f"({retirado - cred_posdat:+,.2f} de más)."
+                f"{retirado:,.2f} desde {desde} contra un crédito por compras "
+                f"de {cred_compra:,.2f} ({retirado - cred_compra:+,.2f} de más)."
             ),
         })
 
