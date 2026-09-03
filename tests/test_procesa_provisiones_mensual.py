@@ -602,3 +602,34 @@ def test_el_unico_motor_de_devengo_es_persistir_acumulacion_yy():
     for rel in ("modules/informes/views.py", "modules/posdat/views.py"):
         src = (ROOT / rel).read_text(encoding="utf-8")
         assert "persistir_acumulacion_yy()" in src, rel
+
+
+def test_nadie_borra_posdat_por_fecha_de_vencimiento_en_todo_el_repo():
+    """Regresión del 01/09/2026 (Tamara 2026-09-03): la procedure vieja hacía
+    `DELETE FROM scintela.posdat WHERE fechad < hoy AND num <> 0`, copiada de
+    MENU.PRG 280-281. En dBase `NUM` era el NÚMERO DE CHEQUE (NUM≠0 = cheque
+    posdatado ya emitido: borrarlo al vencer era correcto); en Programa Core
+    `num` es el NÚMERO DE COMPRA, así que el mismo DELETE se llevó 19 deudas
+    vivas de proveedores (28.233,27) y la utilidad quedó alta en ese monto.
+    Una deuda vencida NO se borra: se paga (banc≠0) o se anula (anulada). Ningún
+    código, migración ni script puede borrar posdat mirando `fechad`."""
+    import re
+    patron = re.compile(
+        # Dentro de la MISMA sentencia: sin cruzar un `;` ni el cierre del string.
+        r"DELETE\s+FROM\s+scintela\.posdat\b[^;\"']*?\bfechad\b", re.IGNORECASE | re.DOTALL
+    )
+    culpables = []
+    for f in _archivos_ejecutables():
+        # No se usa `_lineas_de_codigo`: el SQL de la app vive en strings
+        # triples, que esa función salta como si fueran docstrings. Acá sólo
+        # se sacan las líneas que son comentario entero.
+        codigo = "\n".join(
+            linea for linea in f.read_text(encoding="utf-8", errors="replace").splitlines()
+            if not linea.strip().startswith(("#", "--"))
+        )
+        for m in patron.finditer(codigo):
+            culpables.append(f"{f.relative_to(ROOT)}: {' '.join(m.group(0).split())[:120]}")
+    assert not culpables, (
+        "Borrar posdatados por fecha de vencimiento borra DEUDAS VIVAS (num es el "
+        "número de compra, no el del cheque). 01/09/2026 otra vez:\n  " + "\n  ".join(culpables)
+    )

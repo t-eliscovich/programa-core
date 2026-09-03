@@ -6,7 +6,7 @@ Tamara 2026-09-03: el 01/09/2026 a las 06:00 EC el cron del día 1 corrió por
 dBase, ya borrada por la migración 0240). Además de cargar el mes completo
 de provisiones, esa procedure hacía
 
-    DELETE FROM scintela.posdat WHERE fechad < hoy AND num <> 0
+    borrar de scintela.posdat todo lo que tuviera fechad < hoy AND num <> 0
 
 sin mirar `banc`: borró todas las posdat vencidas con número — las pagadas
 (historia) y 19 VIVAS (banc=0) por $28.233,27 de tejedores y químicos
