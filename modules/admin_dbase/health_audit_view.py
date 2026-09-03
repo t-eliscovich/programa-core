@@ -2468,45 +2468,77 @@ def op_cierra():
     else:
         retirado = 0.0
 
+    # 4. Crédito ya CONSUMIDO del lado posdat. `retiros.crear_op` imputa el
+    #    retiro haciendo `importe += monto` sobre la fila posdat de la línea
+    #    (modules/retiros/queries.py:243-250), así que el posdat encoge a
+    #    medida que se retira. La compra NO se toca nunca.
+    #    Ergo: `credito_compras` es "cuánto se cargó" y `credito_posdat` es
+    #    "cuánto queda". Son cantidades DISTINTAS y compararlas por igualdad
+    #    no mide nada. TMT 2026-09-03: la primera versión de este chequeo las
+    #    comparaba así y llamó "descuadre" a la plata legítimamente consumida.
+    consumido = 0.0
+    try:
+        consumido = _n(db.fetch_one(
+            "SELECT COALESCE(SUM(monto), 0) AS s "
+            "FROM scintela.op_retiro_linea "
+            "WHERE COALESCE(bajo_posdat, FALSE) IS TRUE"))
+    except Exception:  # noqa: BLE001
+        # Tabla PC-only (mig 0109) / columna de la 0111: si no están, el
+        # consumo nunca corrió y vale 0.
+        consumido = 0.0
+
+    # Con eso, lo que SÍ tiene que cerrar:
+    #     credito_posdat + consumido  ==  credito_compras + cargado_a_mano
+    # El residuo es el crédito que no se explica por ninguno de los dos lados.
+    # Negativo = hay más crédito en posdat del que las compras explican (las
+    # líneas cargadas a mano, que sólo viven ahí). Positivo = hay compras OP
+    # cuyo espejo posdat no está.
+    residuo = round(cred_compra - cred_posdat - consumido, 2)
+
     stats["credito_compras"] = cred_compra
     stats["credito_posdat"] = cred_posdat
+    stats["consumido_bajo_posdat"] = consumido
+    stats["residuo_compras_vs_posdat"] = residuo
     stats["desde"] = str(desde) if desde is not None else None
     stats["retirado"] = retirado
     stats["retirado_historico"] = retirado_total
-    stats["disponible_segun_compras"] = round(cred_compra - retirado, 2)
-    stats["disponible_segun_posdat"] = round(cred_posdat - retirado, 2)
+    stats["disponible_saldo_op"] = round(cred_compra - retirado, 2)
     # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes sin deduplicar,
     # así que las líneas que tienen compra Y espejo posdat entran dos veces.
     stats["credito_como_lo_suma_lineas_op"] = round(cred_compra + cred_posdat, 2)
-    stats["delta_compras_vs_posdat"] = round(cred_compra - cred_posdat, 2)
 
-    if abs(cred_compra - cred_posdat) >= _OP_TOL_US:
+    if abs(residuo) >= _OP_TOL_US:
+        _lado = ("hay más crédito en posdatados del que explican las compras "
+                 "(líneas cargadas a mano)" if residuo < 0 else
+                 "hay compras OP cuyo espejo en posdatados no está")
         alerts.append({
             "severity": "medium",
             "category": "op_credito_no_cuadra",
             "msg": (
-                f"El crédito OP por compras ({cred_compra:,.2f}) no coincide con "
-                f"el de posdatados ({cred_posdat:,.2f}); difieren "
-                f"{cred_compra - cred_posdat:+,.2f}. El titular 'Saldo OP' suma "
-                f"sólo las compras y no ve las líneas cargadas a mano; el "
-                f"listado por línea suma las dos fuentes y duplica las que sí "
-                f"tienen compra detrás. Revisar /posdat?tab=op y los retiros OP."
+                f"El crédito OP no cierra por {residuo:+,.2f}: cargado por "
+                f"compras {cred_compra:,.2f}, queda en posdatados "
+                f"{cred_posdat:,.2f} y se consumió {consumido:,.2f}. O sea, "
+                f"{_lado}. Revisar /posdat?tab=op."
             ),
         })
 
-    # El "retiró de más" se mide contra el crédito por COMPRAS y con el mismo
-    # piso de fecha — es exactamente el `disponible` que muestra el titular.
-    # Contra `cred_posdat` no se puede: los posdat de las líneas ya consumidas
-    # no existen (el espejo se escribe sólo mientras queda saldo), así que ese
-    # lado siempre está de menos y la comparación denuncia agujeros falsos.
+    # El disponible del titular 'Saldo OP', reproducido tal cual: crédito por
+    # compras menos los retiros desde la primera compra viva. En negativo
+    # significa que se pagó más de lo que la pantalla dice que hay cargado.
+    # Medium a propósito: el piso de fecha es una heurística (el DBF purga las
+    # compras viejas, y un retiro posterior al piso puede estar cancelando un
+    # crédito anterior ya purgado), así que un negativo NO es prueba de que
+    # falte plata — es que la pantalla no puede afirmar que cierra.
     if retirado - cred_compra >= _OP_TOL_US:
         alerts.append({
-            "severity": "high",
-            "category": "op_retirado_de_mas",
+            "severity": "medium",
+            "category": "op_disponible_negativo",
             "msg": (
-                f"Se retiró más crédito OP del que hay cargado: retirado "
+                f"El titular 'Saldo OP' da disponible negativo: retirado "
                 f"{retirado:,.2f} desde {desde} contra un crédito por compras "
-                f"de {cred_compra:,.2f} ({retirado - cred_compra:+,.2f} de más)."
+                f"de {cred_compra:,.2f} ({cred_compra - retirado:+,.2f}). "
+                f"Puede ser el piso de fecha (retiros que cancelan créditos "
+                f"que el DBF ya purgó) o crédito que falta cargar."
             ),
         })
 
