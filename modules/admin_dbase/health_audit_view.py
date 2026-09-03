@@ -21,6 +21,7 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date as _dt_date
+from datetime import timedelta as _dt_timedelta
 
 from flask import Blueprint, jsonify, request
 
@@ -1773,9 +1774,14 @@ def dia_captura_health():
         "manana": _dia._hora("DIA_HORA_MANANA", _dia.HORA_MANANA),
         "cierre": _dia._hora("DIA_HORA_CIERRE", _dia.HORA_CIERRE),
     }
-    hechas = {r["momento"]: r.get("creado_en") for r in (db.fetch_all(
-        "SELECT momento, creado_en FROM scintela.dia_captura "
-        "WHERE fecha_ec = %s AND momento IN ('manana', 'cierre')", (hoy,)) or [])}
+    ayer = hoy - _dt_timedelta(days=1)
+    filas = db.fetch_all(
+        "SELECT fecha_ec, momento, creado_en FROM scintela.dia_captura "
+        "WHERE fecha_ec IN (%s, %s) AND momento IN ('manana', 'cierre')",
+        (hoy, ayer)) or []
+    hechas = {r["momento"]: r.get("creado_en")
+              for r in filas if r.get("fecha_ec") == hoy}
+    hechas_ayer = {r["momento"] for r in filas if r.get("fecha_ec") == ayer}
 
     alerts: list[dict] = []
     detalle: dict = {}
@@ -1803,11 +1809,47 @@ def dia_captura_health():
             ),
         })
 
+    # 🚨 El día de AYER, que ya terminó y por lo tanto tiene que tener las dos.
+    # Sin esto el chequeo tiene un punto ciego que deja pasar justo el agujero
+    # PERMANENTE: `dia.correr_si_toca` sólo clava un ancla si la hora de HOY ya
+    # pasó (`h >= 19` para el cierre), así que si la app está caída de 19:00 a
+    # medianoche, ese cierre ya no se puede clavar nunca y la nota de ese día
+    # nunca sale. A la mañana siguiente el chequeo miraba sólo hoy, veía la
+    # captura de las 07:00 y daba VERDE sobre un día roto.
+    #
+    # No se rellena sola a propósito: clavar ahora el cierre de ayer guardaría
+    # el balance de HOY con la fecha de AYER, que es un dato inventado. Se
+    # avisa y se decide a mano.
+    #
+    # Medium y sólo por AYER (no por toda la historia): es un aviso que se
+    # apaga solo al día siguiente. Un rojo permanente por un agujero que no se
+    # puede tapar enseña a ignorar el panel.
+    faltan_ayer = sorted({"manana", "cierre"} - hechas_ayer)
+    if faltan_ayer:
+        alerts.append({
+            "severity": "medium",
+            "category": "dia_captura_faltante_ayer",
+            "msg": (
+                f"A {ayer} le falta"
+                f"{'n' if len(faltan_ayer) > 1 else ''} la"
+                f"{'s' if len(faltan_ayer) > 1 else ''} captura"
+                f"{'s' if len(faltan_ayer) > 1 else ''} "
+                f"{' y '.join(faltan_ayer)}, y el día ya cerró: ese hueco NO se "
+                f"rellena solo (clavarlo ahora guardaría el balance de hoy con "
+                f"la fecha de ayer). La ventana de ese día queda sin las dos "
+                f"puntas" + (" y la nota del cierre no salió."
+                            if "cierre" in faltan_ayer else ".")
+            ),
+        })
+
     return jsonify({"ok": not alerts, "alerts": alerts,
                     "stats": {"fecha_ec": str(hoy),
                               "ahora_ec": ahora.strftime("%Y-%m-%d %H:%M"),
                               "gracia_min": _DIA_CAPTURA_GRACIA_MIN,
-                              "momentos": detalle}})
+                              "momentos": detalle,
+                              "ayer": {"fecha_ec": str(ayer),
+                                       "hechas": sorted(hechas_ayer),
+                                       "faltan": faltan_ayer}}})
 
 
 @bp.route("/traza-fresca", methods=["GET"])
