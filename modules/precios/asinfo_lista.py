@@ -80,7 +80,9 @@ MAPA: dict[str, list[tuple[str, str]]] = {
         ("Fleece", "Fleece 96 Perchado"), ("Fleece", "Fleece 96 Sin Perchar"),
         ("Fleece", "Fleece 2.2"), ("Fleece", "Fleece 102"),
     ],
-    "lycra": [("Lycra", "Jersey Lycra"), ("Lycra", "Jersey Lycra 3.3")],
+    # LYCRA de la hoja es FLEECE LYCRA (Alex, 03/09/2026): Jersey Lycra vale
+    # un centavo menos en cada tono y era lo que seguía la columna hasta ese día.
+    "lycra": [("Lycra", "Fleece Lycra")],
     "alemania": [("Poliester", "Alemania"), ("Poliester", "Alemania 1.2")],
     "kiana": [
         ("Poliester", "Kiana"), ("Poliester", "Kiana 1.2"),
