@@ -19,20 +19,21 @@ import re
 from pathlib import Path
 
 from modules.informes import dia as _dia
-from modules.informes.foto import _CLAVE_BALANCE, COMPONENTES
+from modules.informes import traza as _traza
+from modules.informes.foto import _CLAVE_BALANCE, COMPONENTES, ETIQUETAS
 
 RAIZ = Path(__file__).resolve().parent.parent
 MIGRACIONES = RAIZ / "migrations"
 
 
-def _columnas_de_la_tabla() -> set[str]:
-    """Las columnas de scintela.dia_captura según las migraciones."""
+def _columnas_de_la_tabla(tabla: str = "dia_captura") -> set[str]:
+    """Las columnas de scintela.<tabla> según las migraciones."""
     cols: set[str] = set()
     for sql in sorted(MIGRACIONES.glob("*.sql")):
         txt = sql.read_text(encoding="utf-8")
-        # CREATE TABLE ... dia_captura ( ... );
+        # CREATE TABLE ... <tabla> ( ... );
         for cuerpo in re.findall(
-                r"CREATE TABLE[^;]*?dia_captura\s*\((.*?)\n\);",
+                rf"CREATE TABLE[^;]*?{tabla}\s*\((.*?)\n\);",
                 txt, re.S | re.I):
             for linea in cuerpo.splitlines():
                 linea = linea.strip()
@@ -43,7 +44,7 @@ def _columnas_de_la_tabla() -> set[str]:
                     cols.add(m.group(1))
         # ALTER TABLE ... dia_captura ADD COLUMN [IF NOT EXISTS] x TIPO
         for cuerpo in re.findall(
-                r"ALTER TABLE\s+scintela\.dia_captura(.*?);", txt, re.S | re.I):
+                rf"ALTER TABLE\s+scintela\.{tabla}(.*?);", txt, re.S | re.I):
             for m in re.finditer(
                     r"ADD COLUMN\s+(?:IF NOT EXISTS\s+)?([a-z_][a-z0-9_]*)",
                     cuerpo, re.I):
@@ -101,3 +102,49 @@ def test_el_insert_de_capturar_usa_estas_columnas():
     assert "if c in _CLAVE_BALANCE:" in src, "el filtro por mapa"
     for et in ("hilado", "tejido", "terminado"):
         assert et in src
+
+
+# ── El mismo riesgo, del lado de la GRABADORA ──────────────────────────────
+# `traza.registrar()` arma su INSERT igual de dinámicamente, con las claves de
+# `_fila_desde_balance`. Y la captura del día CUELGA de esa foto: si la traza
+# no puede grabar, `capturar()` devuelve ok=False y no hay ancla. O sea que un
+# agujero acá apaga las dos cosas.
+
+
+def _columnas_del_insert_traza() -> list[str]:
+    """Las claves que `_fila_desde_balance` devuelve, más las dos que
+    `registrar()` agrega a mano."""
+    src = (RAIZ / "modules" / "informes" / "traza.py").read_text(encoding="utf-8")
+    cuerpo = src.split("def _fila_desde_balance")[1].split("\ndef ")[0]
+    return re.findall(r'^\s+"([a-z_][a-z0-9_]*)":', cuerpo, re.M) + ["origen", "momento"]
+
+
+def test_las_columnas_de_la_traza_existen():
+    tabla = _columnas_de_la_tabla("traza_utilidad")
+    assert "id_traza" in tabla and "utilidad" in tabla
+    assert "terminado_ukg" in tabla, "mig 0186"
+    faltan = [c for c in _columnas_del_insert_traza() if c not in tabla]
+    assert not faltan, (
+        f"traza.registrar() insertaría columnas que no existen en "
+        f"scintela.traza_utilidad: {faltan}. Sin foto no hay ancla del día: "
+        f"capturar() cuelga de registrar()."
+    )
+
+
+# ── Los tres mapas que tienen que moverse juntos ───────────────────────────
+
+
+def test_foto_y_traza_declaran_los_mismos_componentes():
+    """El docstring de `foto.COMPONENTES` lo pide explícito: *"mismos y mismos
+    signos que `traza.COMPONENTES` — si uno cambia, cambian los dos"*. Si se
+    separan, la foto y el diff dejan de hablar del mismo balance."""
+    assert tuple(COMPONENTES) == tuple(_traza.COMPONENTES)
+
+
+def test_todo_componente_tiene_etiqueta():
+    """`dia.explicar` hace `ETIQUETAS[c]` SIN `.get` (dia.py, armado de
+    `out["componentes"]`). Un componente sin etiqueta revienta la pantalla del
+    día con KeyError apenas ese componente supere el umbral — y sólo entonces,
+    o sea el día menos oportuno."""
+    faltan = [c for c, _s in COMPONENTES if c not in ETIQUETAS]
+    assert not faltan, f"componentes sin ETIQUETAS: {faltan}"
