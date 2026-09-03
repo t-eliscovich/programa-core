@@ -466,6 +466,17 @@ def detalle(bal: dict, anterior: dict | None = None) -> list[dict]:
     # Cuando una fuente falla se arrastra lo que había y no se toca nada.
     ilegibles: set[str] = set()
     for c, _signo in COMPONENTES:
+        # 🚨 Sólo los componentes que TIENEN detalle. `patant` entró a
+        # COMPONENTES el 02/09 (fbcebc5) como componente DERIVADO —sale de
+        # patr_neto + uret − utilidad— y no tiene fuente: `fuentes[c]` tiraba
+        # KeyError, el except lo marcaba ILEGIBLE en cada foto y dejaba un
+        # warning permanente. Eso no corrompe nada (patant no tiene filas de
+        # detalle que arrastrar) pero ensucia justo el mecanismo que avisa
+        # cuando una fuente REAL se cae. Se filtra por el mapa, no por nombre,
+        # para que el próximo derivado no lo repita (mismo criterio que
+        # `dia.capturar`, 6dc12d6).
+        if c not in fuentes:
+            continue
         try:
             filas = fuentes[c]() or []
         except Exception as e:  # noqa: BLE001
