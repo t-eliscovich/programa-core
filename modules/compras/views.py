@@ -339,6 +339,35 @@ def convertir_anticipo(id_compra: int):
     return redirect(request.referrer or url_for("compras.lista"))
 
 
+@compras_bp.route("/compras/<int:id_compra>/al-precio-hilo", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def al_precio_hilo(id_compra: int):
+    """Prende/apaga "entra al precio del hilo" en una compra de hilo.
+
+    TMT 2026-09-03 (dueña): el anticipo MH del 2024 pasó a compra y la
+    utilidad bajó 21.253 porque esa compra no cruza con ninguna importación
+    recibida. Con la marca, el importe entra al promedio ponderado del $/kg
+    del hilado del mes de la compra. Ver `queries.marcar_al_precio_hilo`.
+    """
+    marcar = (request.form.get("marcar") or "").strip() == "1"
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.marcar_al_precio_hilo(id_compra, marcar=marcar, usuario=usuario)
+        if not r.get("cambio"):
+            flash("La compra ya estaba así.", "warn")
+        elif marcar:
+            flash(f"Compra #{r.get('numero')}: entra al precio del hilo. "
+                  "El $/kg del hilado se mueve en la próxima foto.", "ok")
+        else:
+            flash(f"Compra #{r.get('numero')}: ya no entra al precio del hilo.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude cambiar la marca", e)
+    return redirect(url_for("compras.detalle", id_compra=id_compra))
+
+
 @compras_bp.route("/compras/<int:id_compra>/editar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("compras.editar")

@@ -25,7 +25,7 @@ import db
 from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
-from filters import num_es, today_ec
+from filters import today_ec
 from modules._lib import pdf_motor
 from modules.informes import estado_cuenta_imagen, estado_cuenta_pdf
 
@@ -1966,51 +1966,6 @@ def deudas():
         total=total,
         error=error,
         subtotales=subtotales,
-    )
-
-
-@informes_bp.route("/cierre-anterior/ajuste", methods=["GET", "POST"])
-@requiere_login
-@requiere_permiso("informes.editar")
-def ajuste_cierre_anterior():
-    """Plata de otro ejercicio que cayó en la utilidad de este mes.
-
-    TMT 2026-09-03 (dueña, tras pasar a compra un anticipo de MH del 2024):
-    *"quiero que entre a plata que ya está en el hilo"*. Ver
-    `modules/informes/ajuste_cierre.py`.
-    """
-    from modules.informes import ajuste_cierre
-    from parsers import parse_monto
-
-    importe = (request.form.get("importe") or request.args.get("importe") or "").strip()
-    motivo = (request.form.get("motivo") or request.args.get("motivo") or "").strip()
-    mov = (request.form.get("mov") or request.args.get("mov") or "").strip()
-    if request.method == "POST":
-        try:
-            imp = parse_monto(importe)
-            if imp is None:
-                raise ValueError("Importe mal cargado.")
-            usuario = (getattr(g, "user", None) or {}).get("username", "web")
-            r = ajuste_cierre.aplicar(
-                importe=float(imp), motivo=motivo, usuario=usuario,
-                id_mov_doble_origen=int(mov) if mov.isdigit() else None,
-            )
-            flash(
-                f"Cierre del {r['fecha']:%d/%m/%Y}: patrimonio "
-                f"{num_es(r['antes'], 2)} → {num_es(r['despues'], 2)}. "
-                "La utilidad del mes ya no carga con esa plata.",
-                "ok",
-            )
-            return redirect(url_for("informes.ajuste_cierre_anterior"))
-        except ValueError as e:
-            flash(str(e), "warn")
-        except Exception as e:  # noqa: BLE001
-            flash_exc("No pude aplicar el ajuste", e)
-    cierre, _ = _safe(ajuste_cierre.cierre_anterior, None)
-    ajustes, _ = _safe(ajuste_cierre.listar, [])
-    return render_template(
-        "informes/ajuste_cierre.html", cierre=cierre, ajustes=ajustes,
-        importe=importe, motivo=motivo, mov=mov,
     )
 
 

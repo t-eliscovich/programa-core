@@ -641,6 +641,7 @@ def por_id(id_compra: int) -> dict | None:
                c.comprobante, c.numero, c.kg, c.importe, c.concepto,
                c.clave, c.no_banco, c.stat, c.observacion,
                c.fecha_crea, c.usuario_crea,
+               COALESCE(c.al_precio_hilo, false) AS al_precio_hilo,
                COALESCE(p.nombre, '') AS proveedor,
                COALESCE(b.nombre, '') AS banco
         FROM scintela.compra c
@@ -1452,3 +1453,70 @@ def total_por_mes(anio: int | None = None) -> list[dict]:
         """,
         (anio, anio),
     )
+
+
+# ---------------------------------------------------------------------------
+# Compras de hilo que entran al $/kg del hilado sin importación (mig 0241)
+# ---------------------------------------------------------------------------
+def hilo_al_precio_mes(yy: int, mm: int) -> dict:
+    """Importe y kg de las compras tipo H del mes marcadas `al_precio_hilo`.
+
+    TMT 2026-09-03 (dueña): el anticipo MH del 2024 pasó a compra y no entró a
+    ningún lado — el $/kg del hilado sólo lo mueven las importaciones RECIBIDAS
+    en Asinfo y las compras locales. *"pasalo como una compra sin cruzar y
+    cambia el precio del hilo"*. Lo consume `asinfo.service.mov_hilado_valuacion`.
+    """
+    row = db.fetch_one(
+        """
+        SELECT COALESCE(SUM(importe), 0) AS us, COALESCE(SUM(kg), 0) AS kg,
+               COUNT(*) AS n
+          FROM scintela.compra
+         WHERE al_precio_hilo
+           AND UPPER(TRIM(tipo)) = 'H'
+           AND COALESCE(stat, '') NOT IN ('X', 'Y')
+           AND fecha >= make_date(%s, %s, 1)
+           AND fecha <  make_date(%s, %s, 1) + INTERVAL '1 month'
+        """,
+        (int(yy), int(mm), int(yy), int(mm)),
+    ) or {}
+    return {"us": float(row.get("us") or 0), "kg": float(row.get("kg") or 0),
+            "n": int(row.get("n") or 0)}
+
+
+def marcar_al_precio_hilo(id_compra: int, *, marcar: bool, usuario: str = "web") -> dict:
+    """Prende o apaga `al_precio_hilo` en una compra de hilo viva. Deja mov_doble."""
+    with db.tx() as conn:
+        c = db.fetch_one(
+            "SELECT id_compra, numero, fecha, codigo_prov, tipo, stat, importe, kg, "
+            "       COALESCE(al_precio_hilo, false) AS al_precio_hilo "
+            "  FROM scintela.compra WHERE id_compra = %s FOR UPDATE",
+            (int(id_compra),), conn=conn,
+        )
+        if not c:
+            raise ValueError(f"No encontré la compra id={id_compra}.")
+        if (c.get("tipo") or "").strip().upper() != "H":
+            raise ValueError("Sólo una compra de hilo (tipo H) entra al precio del hilo.")
+        if (c.get("stat") or "").strip().upper() in ("X", "Y"):
+            raise ValueError("La compra está anulada.")
+        if bool(c.get("al_precio_hilo")) == bool(marcar):
+            return {"cambio": False, "marcada": bool(marcar), "numero": c.get("numero")}
+        db.execute(
+            "UPDATE scintela.compra SET al_precio_hilo = %s WHERE id_compra = %s",
+            (bool(marcar), int(id_compra)), conn=conn,
+        )
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="compra_al_precio_hilo" if marcar else "compra_al_precio_hilo_reverso",
+            origen_table="compra", origen_id=int(id_compra),
+            destino_table="compra", destino_id=int(id_compra),
+            importe=float(c.get("importe") or 0),
+            fecha=today_ec(),
+            concepto=(f"{c.get('codigo_prov') or ''} · compra #{c.get('numero')} "
+                      + ("entra al precio del hilo" if marcar
+                         else "ya no entra al precio del hilo"))[:200],
+            usuario=usuario,
+            metadata={"numero": c.get("numero"), "codigo_prov": c.get("codigo_prov"),
+                      "kg": float(c.get("kg") or 0), "mes": str(c.get("fecha"))[:7]},
+        )
+    return {"cambio": True, "marcada": bool(marcar), "numero": c.get("numero")}

@@ -1859,6 +1859,21 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         _motivo = ("Asinfo no contestó las compras de hilado del mes: vinieron "
                    "en cero y en el programa hay compras de hilo cargadas")
 
+    # + COMPRAS DE HILO "AL PRECIO DEL HILO" (dueña 2026-09-03, mig 0241): una
+    # compra de hilo que no cruza con ninguna importación recibida (el anticipo
+    # MH del 2024 que pasó a compra) no entraba a ningún lado: salía del
+    # anticipo y bajaba la utilidad sin tocar el $/kg. *"pasalo como una compra
+    # sin cruzar y cambia el precio del hilo"*. Va DESPUÉS del chequeo de
+    # asimetría: estas compras traen plata sin kilos a propósito, y eso no es
+    # "Asinfo contestó mal". Fail-soft.
+    try:
+        from modules.compras import queries as _cq
+        _alp = _cq.hilo_al_precio_mes(int(yy), int(mm)) or {}
+        compras += float(_alp.get("kg") or 0)
+        compras_us += float(_alp.get("us") or 0)
+    except Exception:  # noqa: BLE001
+        pass
+
     act_kg = hi1 + maq
     _congelada = _tarifa_hilado_previa(yy, mm) if _motivo else 0.0
     if _motivo:

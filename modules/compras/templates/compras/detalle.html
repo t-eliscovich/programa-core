@@ -29,6 +29,19 @@
         <a href="{{ url_for('compras.editar', id_compra=c.id_compra) }}"
            class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800">Editar</a>
       {% endif %}
+      {% if not anulada and (c.tipo or '')|upper|trim == 'H' and tiene_permiso('compras.editar') %}
+        {# TMT 2026-09-03 (dueña): una compra de hilo que no cruza con una
+           importación recibida no mueve el $/kg del hilado. Con esta marca
+           entra al promedio ponderado del mes. #}
+        <form method="post" action="{{ url_for('compras.al_precio_hilo', id_compra=c.id_compra) }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="marcar" value="{{ '0' if c.al_precio_hilo else '1' }}">
+          <button class="text-sm px-3 py-1.5 rounded border {% if c.al_precio_hilo %}border-emerald-500 text-emerald-700 dark:text-emerald-300{% else %}border-slate-300 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-800{% endif %}"
+                  title="{% if c.al_precio_hilo %}Esta compra entra al $/kg del hilado del mes. Tocá para sacarla.{% else %}Sumar el importe al $/kg del hilado del mes, aunque no cruce con una importación recibida en Asinfo.{% endif %}">
+            {% if c.al_precio_hilo %}✓ Entra al precio del hilo{% else %}Entrar al precio del hilo{% endif %}
+          </button>
+        </form>
+      {% endif %}
       {% if not anulada and tiene_permiso('compras.anular') %}
         <a href="{{ url_for('compras.confirmar_anulacion', id_compra=c.id_compra) }}"
            class="text-sm px-3 py-1.5 rounded border border-red-300 text-red-600 dark:text-red-400 dark:border-red-800 hover:bg-red-50 dark:hover:bg-red-900/20">Anular</a>
