@@ -11,133 +11,37 @@ USUARIO_RETIRO_OP = "pc-retiro-op"
 
 
 def saldo_op() -> dict:
-    """Saldo OP (over-price/aporte): crédito de las COMPRAS OP menos lo retirado.
+    """Crédito OP que TODAVÍA está en posdatados.
 
-    Mecánica verificada en el dBase real (COMPRAS/RETIROS, 2026-06-26): NO se
-    baja nada a mano (0 compras OP positivas, 0 ediciones). El saldo OP se
-    NETEA solo: el crédito entra como compra NEGATIVA a prov='OP' y el pago a
-    accionistas como RETIRO de='OP'; el saldo = Σ(compras OP) + Σ(retiros OP)
-    del MISMO período. Cada retiro sube el lado positivo → el saldo baja solo.
+    TMT 2026-09-04 (Tamara: "dale" a leerlo de posdat). Hasta hoy sumaba las
+    COMPRAS OP (`scintela.compra`, codigo_prov='OP') menos los retiros desde la
+    primera compra viva. Eso era del dBase: las 14 compras OP que quedan son de
+    may–jul/2026, once se consumieron por el dBase (sin `op_retiro_linea`) y
+    desde que el programa manda el crédito OP se carga A MANO en posdat
+    (serie 1003xx, sin compra atrás). Sumar compras daba un "disponible" de
+    −220.205 que no medía nada (health op_cierra del 03/09).
 
-    Scope correcto: las compras OP retenidas (scintela.compra mirrorea el DBF,
-    que purga las viejas) + los retiros OP DESDE la primera compra retenida
-    (los retiros anteriores cancelaban créditos ya purgados). Así el neto es
-    el crédito que TODAVÍA falta retirar. Es sólo un display: no toca el
-    balance (las compras ya están en TOTP y los retiros en URET).
+    El crédito que vale es el que entra al balance por TOTP: las filas
+    posdat prov='OP', banc=0, no anuladas. `crear_op` las ENCOGE con cada
+    retiro (`importe += monto`), así que su suma ES lo que falta retirar.
 
-    Devuelve POSITIVOS legibles:
-      credito    = |Σ compras OP|                         (crédito cargado)
-      retirado   = Σ retiros OP desde la 1ª compra OP      (lo ya pagado)
-      disponible = credito − retirado                      (lo que falta retirar; BAJA con cada retiro)
+    Devuelve POSITIVO legible:
+      credito  = |Σ posdat OP vivos|   (lo que falta retirar)
+      n_lineas = cuántas filas lo forman
     """
-    comp = db.fetch_one(
+    r = db.fetch_one(
         """
-        SELECT COALESCE(SUM(importe), 0) AS s, MIN(fecha) AS d
-          FROM scintela.compra
-         WHERE UPPER(TRIM(codigo_prov)) = 'OP'
-           AND COALESCE(stat, '') <> 'Y'
-        """
-    ) or {"s": 0, "d": None}
-    credito = -float(comp["s"] or 0)          # |crédito| en positivo
-    desde = comp.get("d")
-    if desde is not None:
-        ret = db.fetch_one(
-            "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
-            "WHERE UPPER(TRIM(de)) = 'OP' AND fecha >= %s",
-            (desde,),
-        ) or {"s": 0}
-    else:
-        ret = {"s": 0}
-    retirado = float(ret["s"] or 0)
-    return {
-        "credito": round(credito, 2),
-        "retirado": round(retirado, 2),
-        "disponible": round(credito - retirado, 2),
-        "desde": desde,
-    }
-
-
-def lineas_op() -> list[dict]:
-    """Lineas OP registradas (creditos) con su saldo restante por linea.
-
-    Une las DOS fuentes de credito OP:
-      - compras OP (scintela.compra, codigo_prov='OP', importe negativo): el
-        over-price de cada importacion (lo que forma el Saldo OP del panel).
-      - la(s) fila(s) OP de posdatados (scintela.posdat, prov='OP').
-    Por linea:
-      credito  = |importe|  (positivo)
-      retirado = Sum op_retiro_linea imputado a esa linea (SOLO display, no balance)
-      restante = credito - retirado   (BAJA al retirar desde esa linea)
-    line_key estable a traves del Sync dBase (numero/num + concepto del DBF).
-    """
-    rows = db.fetch_all(
-        """
-        SELECT 'C|' || COALESCE(numero, 0) || '|' || COALESCE(concepto, '') AS line_key,
-               'compra'                AS origen,
-               fecha,
-               COALESCE(concepto, '')  AS concepto,
-               -COALESCE(importe, 0)   AS credito
-          FROM scintela.compra
-         WHERE UPPER(TRIM(codigo_prov)) = 'OP'
-           AND COALESCE(stat, '') <> 'Y'
-        UNION ALL
-        SELECT 'P|' || COALESCE(num, 0) || '|' || COALESCE(concepto, '') AS line_key,
-               'posdat'                AS origen,
-               fecha,
-               COALESCE(concepto, '')  AS concepto,
-               -COALESCE(importe, 0)   AS credito
+        SELECT COALESCE(SUM(importe), 0) AS s, COUNT(*) AS n
           FROM scintela.posdat
          WHERE UPPER(TRIM(prov)) = 'OP'
-        ORDER BY fecha NULLS LAST, concepto
+           AND COALESCE(banc, 0) = 0
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
         """
-    ) or []
-
-    # Imputaciones por linea (cada retiro imputado a esa linea, con su id para
-    # poder DESHACER). Tabla PC-only: puede no existir hasta correr la migracion
-    # 0109 -> defensivo (sin imputaciones).
-    alloc_rows: dict[str, list[dict]] = {}
-    try:
-        try:
-            _alloc = db.fetch_all(
-                "SELECT id_op_retiro_linea, line_key, fecha, monto, bajo_posdat "
-                "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
-            ) or []
-        except Exception:  # noqa: BLE001
-            _alloc = db.fetch_all(
-                "SELECT id_op_retiro_linea, line_key, fecha, monto "
-                "FROM scintela.op_retiro_linea ORDER BY fecha, id_op_retiro_linea"
-            ) or []
-        for a in _alloc:
-            alloc_rows.setdefault(a["line_key"], []).append({
-                "id": a["id_op_retiro_linea"],
-                "fecha": a.get("fecha"),
-                "monto": round(float(a.get("monto") or 0), 2),
-                "bajo_posdat": bool(a.get("bajo_posdat")),
-            })
-    except Exception:  # noqa: BLE001
-        alloc_rows = {}
-
-    out: list[dict] = []
-    for r in rows:
-        credito = round(float(r.get("credito") or 0), 2)
-        imps = alloc_rows.get(r.get("line_key"), [])
-        retirado = round(sum(i["monto"] for i in imps), 2)
-        # TMT 2026-07-06 v6: las imputaciones nuevas (bajo_posdat) YA se
-        # consumieron del crédito (importe += monto) — restar solo las
-        # viejas display-only.
-        _ret_viejo = round(sum(i["monto"] for i in imps
-                               if not i.get("bajo_posdat")), 2)
-        out.append({
-            "line_key": r.get("line_key"),
-            "origen": r.get("origen"),
-            "fecha": r.get("fecha"),
-            "concepto": r.get("concepto") or "",
-            "credito": credito,
-            "retirado": retirado,
-            "restante": round(credito - _ret_viejo, 2),
-            "imputaciones": imps,
-        })
-    return out
+    ) or {"s": 0, "n": 0}
+    return {
+        "credito": round(-float(r.get("s") or 0), 2),
+        "n_lineas": int(r.get("n") or 0),
+    }
 
 
 def _posdat_de_line_key(line_key: str, conn=None):

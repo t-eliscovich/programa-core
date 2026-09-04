@@ -370,7 +370,7 @@ def retiro_op():
             credito = saldo.get("credito") or 0
             if monto > credito + 0.01:
                 flash(
-                    f"Ojo: el retiro (${monto:,.2f}) supera el crédito OP en "
+                    f"Ojo: el retiro (${monto:,.2f}) supera el crédito OP que queda en "
                     f"posdatados (${credito:,.2f}). Se registró igual.",
                     "warn",
                 )

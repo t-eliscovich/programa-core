@@ -2480,25 +2480,22 @@ def historia_balance_cierra():
 
 
 # ---------------------------------------------------------------------------
-# El crédito OP (aporte del accionista) contado dos veces, o de menos
+# El crédito OP en posdatados: que lo que se consumió apunte a una línea real
 # ---------------------------------------------------------------------------
 # Tamara 2026-09-02: "¿el saldo OP cierra contra los aportes y retiros?".
 #
-# El crédito OP vive en DOS lugares y `compras.queries.crear` los mantiene a los
-# dos: la compra NEGATIVA (`scintela.compra`, codigo_prov='OP') y su ESPEJO en
-# `scintela.posdat` (prov='OP', banc=0), que es el que entra al balance vía TOTP.
-# Una línea OP cargada a mano existe SÓLO en posdat (lleva `num` de la serie de
-# posdat, 1003xx, no un `numero` de compra).
-#
-# Las dos pantallas cuentan distinto:
-#   · `retiros.queries.saldo_op()`   — el titular "Saldo OP": suma SÓLO compra.
-#     No ve las líneas cargadas a mano → muestra MENOS crédito del que hay.
-#   · `retiros.queries.lineas_op()`  — el listado por línea: UNION ALL de compra
-#     Y posdat, sin deduplicar → cuenta DOS VECES cada crédito que sí tiene
-#     compra detrás.
-#
-# Las dos no pueden estar bien a la vez. Esto no arregla ninguna: las MIDE, que
-# es lo que faltaba para poder decidir cuál es la buena.
+# TMT 2026-09-04. La primera versión (02–03/09) comparaba las COMPRAS OP contra
+# el posdat OP y sonó con −95.178 y un "disponible" de −220.205. Ninguno medía
+# nada: las 14 compras OP vivas son de may–jul/2026 (dBase), once se
+# consumieron por el dBase sin dejar `op_retiro_linea`, y desde que el programa
+# manda el crédito OP se carga A MANO en posdat (serie 1003xx, sin compra).
+# Tamara: "dale" a que el Saldo OP sea Σ posdat OP vivos (lo que entra al
+# balance por TOTP) y que el health vigile sólo lo que SÍ tiene que cerrar:
+#   · ningún posdat OP vivo POSITIVO (un crédito dado vuelta = se retiró de más
+#     sobre esa línea, o se cargó con el signo al revés);
+#   · cada retiro imputado `bajo_posdat` apunta a una línea posdat OP que
+#     existe (viva o ya anulada en cero) — si no, ese consumo bajó un crédito
+#     que no está de ningún lado.
 _OP_TOL_US = 1.0
 
 
@@ -2506,116 +2503,85 @@ _OP_TOL_US = 1.0
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def op_cierra():
-    """El crédito OP visto por las tres fuentes, y si cuadran entre sí."""
+    """El crédito OP vivo en posdatados y sus consumos, y si cierran."""
     alerts: list[dict] = []
     stats: dict = {}
 
-    def _n(row, k="s"):
-        return round(float((row or {}).get(k) or 0), 2)
-
-    # 1. Crédito por compra OP (lo que suma el titular `saldo_op`).
-    fila_compra = db.fetch_one(
-        "SELECT COALESCE(SUM(importe), 0) AS s, MIN(fecha) AS d "
-        "FROM scintela.compra "
-        "WHERE UPPER(TRIM(codigo_prov)) = 'OP' AND COALESCE(stat, '') <> 'Y'"
-    ) or {}
-    cred_compra = -_n(fila_compra)
-    desde = fila_compra.get("d")
-
-    # 2. Crédito por posdat OP — el que de verdad está en el balance (TOTP).
-    cred_posdat = -_n(db.fetch_one(
-        "SELECT COALESCE(SUM(importe), 0) AS s FROM scintela.posdat "
+    vivos = db.fetch_all(
+        "SELECT COALESCE(num, 0) AS num, COALESCE(concepto, '') AS concepto, "
+        "       COALESCE(importe, 0) AS importe "
+        "FROM scintela.posdat "
         "WHERE UPPER(TRIM(prov)) = 'OP' AND COALESCE(banc, 0) = 0 "
-        "  AND (anulada IS NOT TRUE OR anulada IS NULL)"))
+        "  AND (anulada IS NOT TRUE OR anulada IS NULL)"
+    ) or []
+    credito = round(-sum(float(v["importe"]) for v in vivos), 2)
+    positivos = [v for v in vivos if float(v["importe"]) >= _OP_TOL_US]
 
-    # 3. Retiros OP. El scope que importa es el MISMO que usa `saldo_op`:
-    #    desde la primera compra OP todavía viva. scintela.compra espeja el
-    #    DBF, que purga las compras viejas; los retiros anteriores a esa fecha
-    #    cancelaban créditos que ya no están de ningún lado, así que sumarlos
-    #    contra el crédito de hoy da un agujero que no existe.
-    #    TMT 2026-09-03: la primera versión de este chequeo NO tenía el piso y
-    #    denunció 6,5M de retiro de más que eran retiros históricos legítimos.
-    retirado_total = _n(db.fetch_one(
-        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
-        "WHERE UPPER(TRIM(de)) = 'OP'"))
-    if desde is not None:
-        retirado = _n(db.fetch_one(
-            "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
-            "WHERE UPPER(TRIM(de)) = 'OP' AND fecha >= %s", (desde,)))
-    else:
-        retirado = 0.0
+    # Todas las líneas OP que existieron (vivas o anuladas en cero): a eso
+    # tiene que apuntar cada consumo.
+    todas = db.fetch_all(
+        "SELECT COALESCE(num, 0) AS num, COALESCE(concepto, '') AS concepto "
+        "FROM scintela.posdat WHERE UPPER(TRIM(prov)) = 'OP'"
+    ) or []
+    keys = {f"P|{int(t['num'])}|{t['concepto']}" for t in todas}
 
-    # 4. Crédito ya CONSUMIDO del lado posdat. `retiros.crear_op` imputa el
-    #    retiro haciendo `importe += monto` sobre la fila posdat de la línea
-    #    (modules/retiros/queries.py:243-250), así que el posdat encoge a
-    #    medida que se retira. La compra NO se toca nunca.
-    #    Ergo: `credito_compras` es "cuánto se cargó" y `credito_posdat` es
-    #    "cuánto queda". Son cantidades DISTINTAS y compararlas por igualdad
-    #    no mide nada. TMT 2026-09-03: la primera versión de este chequeo las
-    #    comparaba así y llamó "descuadre" a la plata legítimamente consumida.
     consumido = 0.0
+    huerfanos: list[dict] = []
     try:
-        consumido = _n(db.fetch_one(
-            "SELECT COALESCE(SUM(monto), 0) AS s "
+        lineas = db.fetch_all(
+            "SELECT line_key, ROUND(SUM(monto)::numeric, 2) AS s, COUNT(*) AS n "
             "FROM scintela.op_retiro_linea "
-            "WHERE COALESCE(bajo_posdat, FALSE) IS TRUE"))
+            "WHERE COALESCE(bajo_posdat, FALSE) IS TRUE GROUP BY line_key"
+        ) or []
     except Exception:  # noqa: BLE001
-        # Tabla PC-only (mig 0109) / columna de la 0111: si no están, el
-        # consumo nunca corrió y vale 0.
-        consumido = 0.0
+        # Tabla PC-only (mig 0109) / columna de la 0111: si no están, nada
+        # se consumió todavía.
+        lineas = []
+    for ln in lineas:
+        consumido += float(ln["s"] or 0)
+        if ln["line_key"] not in keys:
+            huerfanos.append({"line_key": ln["line_key"],
+                              "monto": round(float(ln["s"] or 0), 2),
+                              "n": int(ln["n"] or 0)})
 
-    # Con eso, lo que SÍ tiene que cerrar:
-    #     credito_posdat + consumido  ==  credito_compras + cargado_a_mano
-    # El residuo es el crédito que no se explica por ninguno de los dos lados.
-    # Negativo = hay más crédito en posdat del que las compras explican (las
-    # líneas cargadas a mano, que sólo viven ahí). Positivo = hay compras OP
-    # cuyo espejo posdat no está.
-    residuo = round(cred_compra - cred_posdat - consumido, 2)
+    retirado_total = round(float((db.fetch_one(
+        "SELECT COALESCE(SUM(ret), 0) AS s FROM scintela.retiros "
+        "WHERE UPPER(TRIM(de)) = 'OP'") or {}).get("s") or 0), 2)
 
-    stats["credito_compras"] = cred_compra
-    stats["credito_posdat"] = cred_posdat
-    stats["consumido_bajo_posdat"] = consumido
-    stats["residuo_compras_vs_posdat"] = residuo
-    stats["desde"] = str(desde) if desde is not None else None
-    stats["retirado"] = retirado
+    stats["credito_posdat"] = credito
+    stats["n_lineas_vivas"] = len(vivos)
+    stats["consumido_bajo_posdat"] = round(consumido, 2)
     stats["retirado_historico"] = retirado_total
-    stats["disponible_saldo_op"] = round(cred_compra - retirado, 2)
-    # Lo que `lineas_op()` totalizaría hoy: suma las dos fuentes sin deduplicar,
-    # así que las líneas que tienen compra Y espejo posdat entran dos veces.
-    stats["credito_como_lo_suma_lineas_op"] = round(cred_compra + cred_posdat, 2)
+    stats["lineas_positivas"] = [
+        {"num": int(v["num"]), "concepto": v["concepto"],
+         "importe": round(float(v["importe"]), 2)} for v in positivos]
+    stats["consumos_huerfanos"] = huerfanos
 
-    if abs(residuo) >= _OP_TOL_US:
-        _lado = ("hay más crédito en posdatados del que explican las compras "
-                 "(líneas cargadas a mano)" if residuo < 0 else
-                 "hay compras OP cuyo espejo en posdatados no está")
+    if positivos:
+        _det = "; ".join(
+            f"{v['num']} {v['concepto']} {float(v['importe']):+,.2f}"
+            for v in positivos)
         alerts.append({
             "severity": "medium",
-            "category": "op_credito_no_cuadra",
+            "category": "op_linea_positiva",
             "msg": (
-                f"El crédito OP no cierra por {residuo:+,.2f}: cargado por "
-                f"compras {cred_compra:,.2f}, queda en posdatados "
-                f"{cred_posdat:,.2f} y se consumió {consumido:,.2f}. O sea, "
-                f"{_lado}. Revisar /posdat?tab=op."
+                f"{len(positivos)} línea{'s' if len(positivos) != 1 else ''} OP "
+                f"en posdatados con importe POSITIVO (un crédito dado vuelta: "
+                f"se retiró de más sobre esa línea o se cargó con el signo al "
+                f"revés): {_det}. Revisar /posdat?tab=posdatados&prov=OP."
             ),
         })
-
-    # El disponible del titular 'Saldo OP', reproducido tal cual: crédito por
-    # compras menos los retiros desde la primera compra viva. En negativo
-    # significa que se pagó más de lo que la pantalla dice que hay cargado.
-    # Medium a propósito: el piso de fecha es una heurística (el DBF purga las
-    # compras viejas, y un retiro posterior al piso puede estar cancelando un
-    # crédito anterior ya purgado), así que un negativo NO es prueba de que
-    # falte plata — es que la pantalla no puede afirmar que cierra.
-    if retirado - cred_compra >= _OP_TOL_US:
+    if huerfanos:
+        _tot = sum(h["monto"] for h in huerfanos)
+        _det = "; ".join(f"{h['line_key']} {h['monto']:,.2f}" for h in huerfanos)
         alerts.append({
             "severity": "medium",
-            "category": "op_disponible_negativo",
+            "category": "op_consumo_sin_linea",
             "msg": (
-                f"El titular 'Saldo OP' da disponible negativo: retirado "
-                f"{retirado:,.2f} desde {desde} contra un crédito por compras "
-                f"de {cred_compra:,.2f} ({cred_compra - retirado:+,.2f}). "
-                f"Puede ser el piso de fecha (retiros que cancelan créditos "
-                f"que el DBF ya purgó) o crédito que falta cargar."
+                f"{len(huerfanos)} retiro{'s' if len(huerfanos) != 1 else ''} OP "
+                f"imputado{'s' if len(huerfanos) != 1 else ''} a una línea que no "
+                f"existe en posdatados ({_tot:,.2f}): {_det}. Ese crédito se "
+                f"consumió de una fila que ya no está."
             ),
         })
 
