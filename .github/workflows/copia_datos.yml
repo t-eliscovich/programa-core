@@ -111,16 +111,14 @@ jobs:
           aws s3api head-object --bucket "$BUCKET" --key "$KEY" --region us-east-2 \
             --query '{Bytes:ContentLength,Fecha:LastModified}' --output json \
             || { echo "el zip no está en S3"; exit 1; }
-          echo "=== copias en S3 ==="
-          # La rotación es fail-soft: si el rol no puede listar/borrar, la copia
-          # de hoy ya está a salvo igual y se ve en el log.
-          if aws s3 ls "s3://${BUCKET}/programa_core_deploy/copias-datos/" --region us-east-2; then
-            aws s3 ls "s3://${BUCKET}/programa_core_deploy/copias-datos/" --region us-east-2 \
-              | awk '{print $4}' | grep '^programa-core-datos-' | sort | head -n -30 \
-              | while read -r viejo; do
-                  echo "borro $viejo"
-                  aws s3 rm "s3://${BUCKET}/programa_core_deploy/copias-datos/${viejo}" --region us-east-2 || echo "AVISO: no pude borrar $viejo"
-                done
+          # Rotación SIN listar (el rol no tiene s3:ListBucket): se borra por
+          # nombre la copia de hace 31 días. Fail-soft: si tampoco puede
+          # borrar, la copia de hoy ya está a salvo y el aviso queda en el log.
+          VIEJA=$(TZ=America/Guayaquil date -d "31 days ago" +%Y-%m-%d)
+          KV="programa_core_deploy/copias-datos/programa-core-datos-${VIEJA}.zip"
+          if aws s3api head-object --bucket "$BUCKET" --key "$KV" --region us-east-2 >/dev/null 2>&1; then
+            aws s3 rm "s3://${BUCKET}/${KV}" --region us-east-2 && echo "borrada la copia del ${VIEJA}" \
+              || echo "AVISO: no pude borrar la copia del ${VIEJA} — el rol no tiene s3:DeleteObject"
           else
-            echo "AVISO: el rol no puede listar el bucket — sin rotación"
+            echo "sin copia del ${VIEJA} para borrar"
           fi
