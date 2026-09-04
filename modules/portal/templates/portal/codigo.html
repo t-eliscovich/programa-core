@@ -4,7 +4,12 @@
   <div class="titulo">Escriba el código</div>
   <p class="bajada">Se lo mandamos por correo. Vale por {{ minutos }} minutos.</p>
 
-  <form method="post">
+  {# 🚨 El `action` va EXPLÍCITO. Esta pantalla se muestra como respuesta
+     del POST a /ingresar o a /olvide-la-clave (sin redirect), y un form sin
+     action manda a la URL en la que está: el código volvía a /ingresar, que
+     lo tomaba como un ingreso nuevo, generaba OTRO código y mandaba OTRO
+     mail — el cliente nunca pasaba de esta pantalla (04/09/2026, con AJT). #}
+  <form method="post" action="{{ url_for('portal.codigo') }}">
     {{ csrf_token_input | safe }}
     {# Viaja lo que ESCRIBIÓ el cliente, no nuestro código de 3 letras: si
        viajara el nuestro, quien tipeara un RUC cualquiera lo leería acá. #}

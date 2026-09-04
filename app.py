@@ -516,6 +516,13 @@ def create_app() -> Flask:
 
     @app.errorhandler(CSRFError)
     def _csrf_vencido(_exc):
+        if modo.es_portal():
+            # El portal no tiene login de empleados: `auth.login` no existe
+            # ahí y el url_for de abajo tiraba un 500 (04/09/2026). Al
+            # cliente se lo devuelve a la puerta con un mensaje suyo.
+            flash("La página había quedado abierta un rato largo y se venció. "
+                  "Vuelva a intentarlo.", "error")
+            return redirect(request.referrer or url_for("portal.ingresar")), 302
         flash(
             "La página había quedado abierta un rato largo y se venció. "
             "Escribí tu usuario y contraseña de nuevo.",
