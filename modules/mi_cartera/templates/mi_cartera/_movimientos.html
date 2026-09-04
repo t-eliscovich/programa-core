@@ -121,7 +121,7 @@
                    solo, la ficha abría el primero que encontrara con ese
                    número, que podía ser una nota de entrega en vez de la
                    factura. `numf_completo` no se repite nunca. #}
-                <a href="{{ url_for(factura_endpoint, numf=f.numf, doc=f.numf_completo or None, **(factura_args|default({}))) }}"
+                <a href="{{ url_for(factura_endpoint, numf=f.numf, doc=f.numf_completo or None, id=f.id_factura or None, **(factura_args|default({}))) }}"
                    style="color:inherit;text-decoration:none;border-bottom:1px dotted currentColor"><b>{{ _n }}</b></a>
               {% else %}
                 <b>{{ _n }}</b>

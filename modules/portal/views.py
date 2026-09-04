@@ -332,6 +332,37 @@ def estado_cuenta():
                            factura_args={})
 
 
+
+def _elegir_factura(data: dict, numf: int) -> dict | None:
+    """La factura `numf` DENTRO de la cuenta del cliente, con el desempate.
+
+    ⭐ Primero por el NÚMERO COMPLETO (`?doc=`), que no se repite nunca; después
+    por la PK interna (`?id=`, 04/09/2026: los documentos sin número completo
+    pierden el `doc=` y el corto puede dar para dos en la misma cuenta); y al
+    final por el número corto, que en 288 documentos vale CERO. La ficha y el
+    papel eligen por la MISMA puerta: si no, el cliente imprime otro documento
+    que el que está mirando.
+    """
+    facturas = data.get("facturas") or []
+    doc = (request.args.get("doc") or "").strip()
+    if doc:
+        for f in facturas:
+            if (f.get("numf_completo") or "").strip() == doc:
+                return f
+    _id = (request.args.get("id") or "").strip()
+    if _id.isdigit():
+        for f in facturas:
+            if int(f.get("id_factura") or 0) == int(_id):
+                return f
+    for f in facturas:
+        try:
+            if int(f.get("numf") or 0) == int(numf):
+                return f
+        except (TypeError, ValueError):
+            continue
+    return None
+
+
 @portal_bp.route("/factura/<int:numf>", methods=["GET"])
 def factura(numf: int):
     """Qué se llevó el cliente en una de SUS facturas.
@@ -356,21 +387,7 @@ def factura(numf: int):
     # entrega). Buscando sólo por él, el cliente abría el PRIMER documento de
     # su cuenta con ese número — y podía ser otro. El vendedor mira la MISMA
     # factura por la misma puerta (26/08/2026).
-    doc = (request.args.get("doc") or "").strip()
-    elegida = None
-    if doc:
-        for f in (data.get("facturas") or []):
-            if (f.get("numf_completo") or "").strip() == doc:
-                elegida = f
-                break
-    if elegida is None:
-        for f in (data.get("facturas") or []):
-            try:
-                if int(f.get("numf") or 0) == int(numf):
-                    elegida = f
-                    break
-            except (TypeError, ValueError):
-                continue
+    elegida = _elegir_factura(data, numf)
     if elegida is None:
         abort(404)
     numero = (elegida.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
@@ -394,15 +411,12 @@ def factura_papel_cliente(numf: int):
     if not cod:
         return _pedir_entrar()
     data = _cargar_estado_cuenta(cod)
-    for f in (data.get("facturas") or []):
-        try:
-            if int(f.get("numf") or 0) == int(numf):
-                return render_template(
-                    "informes/factura_papel.html",
-                    **factura_papel.hoja(f.get("numf_completo")), numero=numf)
-        except (TypeError, ValueError):
-            continue
-    abort(404)
+    f = _elegir_factura(data, numf)
+    if f is None:
+        abort(404)
+    return render_template(
+        "informes/factura_papel.html",
+        **factura_papel.hoja(f.get("numf_completo")), numero=numf)
 
 
 @portal_bp.route("/mis-pagos", methods=["GET"])

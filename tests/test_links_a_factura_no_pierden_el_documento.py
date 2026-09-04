@@ -173,3 +173,51 @@ def test_recientes_guarda_la_pk_real_de_la_factura():
     i = fuente.index("rec.registrar(")
     assert '"factura", _id_real' in fuente[i:i + 80], (
         "Recientes tiene que guardar la PK (_id_real), no id_factura de la URL")
+
+
+def _cuenta_con_dos_10970():
+    return {"facturas": [
+        {"id_factura": 276021, "numf": 10970, "numf_completo": None, "tipo": "NC"},
+        {"id_factura": 317206, "numf": 10970, "numf_completo": "NTEN-10970"},
+    ]}
+
+
+def test_el_portal_del_cliente_elige_por_la_pk_cuando_no_hay_numero_completo(app):
+    """La NC 10970 (sin número completo) y la NTEN-10970 en la misma cuenta:
+    con `?id=` abre la NC; sin nada, cae al corto (la primera). 04/09/2026."""
+    from modules.portal import views as po
+    data = _cuenta_con_dos_10970()
+    with app.test_request_context("/factura/10970?id=276021"):
+        assert po._elegir_factura(data, 10970)["id_factura"] == 276021
+    with app.test_request_context("/factura/10970?doc=NTEN-10970"):
+        assert po._elegir_factura(data, 10970)["id_factura"] == 317206
+    with app.test_request_context("/factura/10970"):
+        assert po._elegir_factura(data, 10970)["id_factura"] == 276021
+    with app.test_request_context("/factura/10970?id=999"):
+        assert po._elegir_factura(data, 10970)["id_factura"] == 276021
+
+
+def test_el_vendedor_elige_por_la_pk_cuando_no_hay_numero_completo():
+    from modules.mi_cartera import views as mc
+    data = _cuenta_con_dos_10970()
+    assert mc._factura_de(data, 10970, "", 276021)["id_factura"] == 276021
+    assert mc._factura_de(data, 10970, "NTEN-10970", None)["id_factura"] == 317206
+
+
+def test_el_papel_del_portal_elige_por_la_misma_puerta_que_la_ficha():
+    """Si el papel buscara por el número corto solo, el cliente imprimiría
+    OTRO documento que el que está mirando."""
+    import inspect
+
+    from modules.portal import views as po
+    assert "_elegir_factura(" in inspect.getsource(po.factura_papel_cliente)
+    assert "_elegir_factura(" in inspect.getsource(po.factura)
+
+
+def test_la_hoja_el_pdf_y_la_imagen_del_vendedor_llevan_el_desempate():
+    t = (RAIZ / "modules" / "mi_cartera" / "templates" / "mi_cartera" /
+         "factura.html").read_text(encoding="utf-8")
+    for ep in ("factura_pdf", "factura_imagen", "factura_hoja"):
+        i = t.index(f"url_for('mi_cartera.{ep}'")
+        trozo = t[i:i + 200]
+        assert "doc=f.numf_completo" in trozo and "id=f.id_factura" in trozo, ep

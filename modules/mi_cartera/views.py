@@ -456,7 +456,7 @@ def pdf(codigo_cli: str):
     return informes_views.responder_pdf(data, (codigo_cli or "").upper())
 
 
-def _factura_de(data: dict, numf: int, doc: str = "") -> dict:
+def _factura_de(data: dict, numf: int, doc: str = "", id_factura: int | None = None) -> dict:
     """La factura `numf` DENTRO del estado de cuenta de este cliente.
 
     El scope no es un chequeo aparte: si la factura no está en la cuenta del
@@ -477,6 +477,13 @@ def _factura_de(data: dict, numf: int, doc: str = "") -> dict:
         for f in facturas:
             if (f.get("numf_completo") or "").strip() == doc:
                 return f
+    # ⭐ La PK interna (04/09/2026): para los documentos SIN número completo
+    # —las NC viejas, las notas de entrega sin N° del SRI— el `doc=` se
+    # evapora y el número corto puede dar para dos dentro del mismo cliente.
+    if id_factura:
+        for f in facturas:
+            if int(f.get("id_factura") or 0) == int(id_factura):
+                return f
     for f in facturas:
         try:
             if int(f.get("numf") or 0) == int(numf):
@@ -487,13 +494,19 @@ def _factura_de(data: dict, numf: int, doc: str = "") -> dict:
     return {}  # pragma: no cover - abort() corta
 
 
-def _factura_ctx(codigo_cli: str, numf: int, doc: str = ""):
+def _id_pedido() -> int | None:
+    """El `?id=` de la URL (la PK interna), si vino y es un número."""
+    v = (request.args.get("id") or "").strip()
+    return int(v) if v.isdigit() else None
+
+
+def _factura_ctx(codigo_cli: str, numf: int, doc: str = "", id_factura: int | None = None):
     """(vend, cliente, factura, detalle, número) — o 404 por el camino."""
     from modules.asinfo import factura_lineas
 
     vend = _vend_actual()
     data = _cargar_cliente(vend, codigo_cli)
-    f = _factura_de(data, numf, doc)
+    f = _factura_de(data, numf, doc, id_factura)
     numero = (f.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
     return vend, data.get("cliente") or {}, f, factura_lineas.que_se_llevo(
         f.get("numf_completo")), numero
@@ -510,7 +523,7 @@ def factura(codigo_cli: str, numf: int):
     qué mandaron en esa factura; hasta hoy eso sólo estaba en el papel.
     """
     vend, cliente, f, det, numero = _factura_ctx(
-        codigo_cli, numf, request.args.get("doc", ""))
+        codigo_cli, numf, request.args.get("doc", ""), _id_pedido())
     return render_template("mi_cartera/factura.html", cliente=cliente, f=f,
                            det=det, numero=numero, seccion="clientes",
                            **_ctx_base(vend))
@@ -532,7 +545,7 @@ def _hoja_html(codigo_cli: str, numf: int) -> tuple[str, dict, str]:
     from modules.asinfo import factura_papel
 
     _v, cliente, f, det, numero = _factura_ctx(
-        codigo_cli, numf, request.args.get("doc", ""))
+        codigo_cli, numf, request.args.get("doc", ""), _id_pedido())
     ctx = factura_papel.hoja(f.get("numf_completo"))
     if ctx["p"].get("estado") == "ok":
         return (render_template("informes/factura_papel.html", **ctx,

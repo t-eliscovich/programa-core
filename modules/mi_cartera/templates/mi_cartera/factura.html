@@ -44,10 +44,12 @@
    Acá no hace falta el aviso de "muchas facturas" que sí tiene el estado de
    cuenta: una factura tiene los renglones que tiene y no crece con el tiempo
    como una cartera. #}
-{% set _q = ('?vend=' ~ vend) if preview else '' %}
-{% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
-        img_url = url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
-        hoja_url = url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf) ~ _q,
+{# ⚠ La hoja, el PDF y la imagen tienen que llevar el MISMO desempate que la
+   ficha (doc= e id=): sin él, con un número repetido en la misma cuenta, se
+   imprimía OTRO documento que el que se estaba mirando. 04/09/2026. #}
+{% with pdf_url = url_for('mi_cartera.factura_pdf', codigo_cli=cliente.codigo_cli, numf=f.numf, doc=f.numf_completo or None, id=f.id_factura or None, vend=(vend if preview else None)),
+        img_url = url_for('mi_cartera.factura_imagen', codigo_cli=cliente.codigo_cli, numf=f.numf, doc=f.numf_completo or None, id=f.id_factura or None, vend=(vend if preview else None)),
+        hoja_url = url_for('mi_cartera.factura_hoja', codigo_cli=cliente.codigo_cli, numf=f.numf, doc=f.numf_completo or None, id=f.id_factura or None, vend=(vend if preview else None)),
         wa_nombre = cliente.nombre %}
   {% include "mi_cartera/_acciones_fila.html" %}
 {% endwith %}
