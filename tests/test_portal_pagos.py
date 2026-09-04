@@ -152,6 +152,19 @@ def test_lo_ultimo_va_primero(monkeypatch):
     assert html.index("0002222") < html.index("0001111")
 
 
+def test_el_orden_es_por_la_fecha_que_se_muestra(monkeypatch):
+    """🐞 04/09/2026, con AJT: la columna "Recibido" salía 01/09, 01/09,
+    21/07, 01/09… porque se daba vuelta el orden de la consulta (fecha del
+    cheque) y en pantalla se muestra OTRA fecha (la de ingreso)."""
+    from datetime import date
+    html = _pantalla(monkeypatch, [
+        _cheque(id_cheque=1, no_cheque="0001111", dia_ingreso=date(2026, 9, 1)),
+        _cheque(id_cheque=2, no_cheque="0002222", dia_ingreso=date(2026, 7, 21)),
+        _cheque(id_cheque=3, no_cheque="0003333", dia_ingreso=date(2026, 9, 1)),
+    ])
+    assert html.index("0003333") < html.index("0001111") < html.index("0002222")
+
+
 def test_el_deposito_no_se_llama_cheque(monkeypatch):
     """En la tabla de cheques viven las tres cosas. Decirle 'Cheque' a una
     transferencia hace que el cliente jure que él no dejó ningún cheque."""

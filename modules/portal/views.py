@@ -324,9 +324,13 @@ def estado_cuenta():
     if not cod:
         return _pedir_entrar()
     data = _cargar_estado_cuenta(cod)
+    # La pestaña. Sin esto el link "Cheques" de la tarjeta no hacía nada:
+    # el parcial compartido lee `tab` y el portal no se lo pasaba
+    # (04/09/2026, con AJT).
+    tab = request.args.get("tab") or "facturas"
     return render_template("portal/estado_cuenta.html",
                            data=data, t=data.get("totales") or {},
-                           codigo=cod,
+                           codigo=cod, tab=tab, qv="",
                            # A dónde lleva el número (ver _movimientos.html).
                            factura_endpoint="portal.factura",
                            factura_args={})
@@ -445,10 +449,26 @@ def mis_pagos():
     pagos = [{**c, "que_es": _que_es(c)}
              for c in (data.get("cheques") or [])
              if estados.se_le_muestra_al_cliente(c.get("stat"))]
-    pagos.reverse()                       # lo último primero
+    # Lo último primero, POR LA FECHA QUE SE MUESTRA. Antes era un
+    # `reverse()` del orden de la consulta (fecha del cheque / fecha de
+    # salida), y en pantalla la columna "Recibido" salía desordenada:
+    # 01/09, 01/09, 21/07, 01/09… (04/09/2026, con AJT).
+    pagos.sort(key=_dia_recibido, reverse=True)
 
     return render_template("portal/pagos.html", codigo=cod, pagos=pagos,
                            cliente=data.get("cliente") or {})
+
+
+def _dia_recibido(c: dict):
+    """La misma fecha que muestra la columna "Recibido" de `pagos.html`."""
+    from datetime import date, datetime
+    v = c.get("dia_ingreso") or c.get("fecha_recibido") or c.get("fecha")
+    if isinstance(v, datetime):
+        v = v.date()
+    if not isinstance(v, date):
+        v = date.min
+    # Mismo día: el cargado más tarde, primero.
+    return (v, c.get("id_cheque") or 0)
 
 
 #: Los "bancos" que no son bancos: 99 es efectivo y 90/91 son los depósitos

@@ -356,3 +356,32 @@ def test_las_acciones_son_una_fila_de_tres_y_ninguna_esta_repetida():
     base = (ROOT / "modules" / "portal" / "templates" / "portal"
             / "base.html").read_text(encoding="utf-8")
     assert "@media (min-width:900px)" in base
+
+
+def test_la_pestana_cheques_abre_los_cheques(monkeypatch):
+    """🐞 04/09/2026, con AJT: el link "Cheques" no hacía nada. El parcial
+    compartido decide por `tab`, y el portal no se lo pasaba: siempre
+    Facturas. Se prueba por la PANTALLA, con ?tab=cheques."""
+    import os
+    from unittest.mock import patch
+
+    from tests.test_routes_smoke import build_app
+    with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
+        app, deshacer = build_app()
+    try:
+        from modules.informes import queries as q
+        monkeypatch.setattr(q, "estado_cuenta_cliente", lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "ALMACENES TEXTILES", "ruc": "1791234567001"},
+            "facturas": [], "cheques": [], "anticipos": [],
+            "totales": q.totales_estado_cuenta_en_cero(),
+        })
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "ATE"
+        html = c.get("/estado-de-cuenta?tab=cheques").get_data(as_text=True)
+        assert '?tab=cheques" class="on"' in html
+        assert '?tab=facturas" class="on"' not in html
+        html = c.get("/estado-de-cuenta").get_data(as_text=True)
+        assert '?tab=facturas" class="on"' in html
+    finally:
+        deshacer()
