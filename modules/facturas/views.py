@@ -917,8 +917,11 @@ def detalle(id_factura: int):
     # Recientes — best-effort, no rompe el detalle si falla.
     try:
         from modules.recientes import queries as rec
+        # ⚠ Va la PK REAL, no el número de la URL: el menú "Recientes" arma
+        # el link con `?id=` (base.html), y con el numf ahí abría OTRA factura
+        # (el id 10970 es otra fila que la factura 10970). Cazado 04/09/2026.
         rec.registrar(
-            "factura", id_factura,
+            "factura", _id_real,
             etiqueta=f"Factura {fact.get('numf_completo') or fact.get('numf')} · {fact.get('cliente') or fact.get('codigo_cli','')}",
         )
     except Exception as _e:

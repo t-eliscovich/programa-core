@@ -160,3 +160,16 @@ def test_el_historial_manda_el_id():
     url, _ = hq.link_origen({"origen_table": "factura", "origen_id": 32132},
                             factura_numfs={32132: 10970})
     assert url == "/facturas/10970?id=32132"
+
+
+def test_recientes_guarda_la_pk_real_de_la_factura():
+    """El menú Recientes linkea con `?id=` (la PK interna), así que lo que se
+    guarda tiene que ser la PK — no el número de la URL, que es el numf. Con
+    el numf ahí, `por_id_interno(10970)` abría otra factura. 04/09/2026."""
+    import inspect
+
+    from modules.facturas import views
+    fuente = inspect.getsource(views.detalle)
+    i = fuente.index("rec.registrar(")
+    assert '"factura", _id_real' in fuente[i:i + 80], (
+        "Recientes tiene que guardar la PK (_id_real), no id_factura de la URL")
