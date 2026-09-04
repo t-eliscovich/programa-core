@@ -2,7 +2,7 @@
 #
 # Uso: `make <target>`. Compatible con macOS, Linux, y WSL.
 
-.PHONY: help setup migrate seed run test test-unit test-db restore-test-db test-coverage ci lint fmt test-uv sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
+.PHONY: help setup migrate seed run test test-unit test-db ci-sin-base restore-test-db test-coverage ci lint fmt test-uv sync-dbf sync-dbf-dry-run sync-dbf-list docker-up docker-down docker-logs docker-test clean
 
 PYTHON ?= python3
 VENV   ?= .venv
@@ -136,6 +136,19 @@ test-coverage:
 
 
 ci: test-coverage
+
+# El job `test` del CI (04/09/2026): los `not db` con el gate, SIN Postgres.
+# Los `db` corren aparte en `test-db` (job propio, en paralelo).
+ci-sin-base:
+	@date '+⏱ %H:%M:%S erase'
+	$(PY) -m coverage erase
+	@date '+⏱ %H:%M:%S pytest not-db'
+	$(PY) -m pytest -q -m "not db" $(PYTEST_PAR) --cov --cov-report= --cov-append
+	@date '+⏱ %H:%M:%S coverage report'
+	$(PY) -m coverage report --include=$(COVERAGE_CORE) --fail-under=$(COVERAGE_FAIL_UNDER)
+	$(PY) -m coverage report --include='modules/conciliacion/*' --fail-under=$(COVERAGE_CONCILIACION_MIN)
+	$(PY) -m coverage xml
+	@date '+⏱ %H:%M:%S fin'
 
 lint:
 	$(PY) -m ruff check .

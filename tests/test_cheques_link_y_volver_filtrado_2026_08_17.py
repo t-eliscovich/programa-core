@@ -46,11 +46,13 @@ CLI = "LKV"  # cliente propio de este archivo (no pisa al 'UIU' de los otros)
         ("  /cheques?cliente=BED  ", "/cheques?cliente=BED"),
     ],
 )
-def test_volver_conserva_el_filtro_del_listado(crudo, esperado):
-    from app import create_app
+def test_volver_conserva_el_filtro_del_listado(app, crudo, esperado):
+    # ⚠ `app` (la fixture con la base falsa), no `create_app()` a pelo: ése
+    # abre Postgres al arrancar, y este test no está marcado `db` — en el job
+    # sin base del CI se caía. 04/09/2026.
     from modules.cheques.views import _volver_a_lista
 
-    with create_app().test_request_context("/"):
+    with app.test_request_context("/"):
         assert _volver_a_lista(crudo) == esperado
 
 
@@ -67,17 +69,16 @@ def test_volver_conserva_el_filtro_del_listado(crudo, esperado):
         "javascript:alert(1)",
     ],
 )
-def test_volver_cae_al_listado_pelado_si_no_es_el_listado(crudo):
+def test_volver_cae_al_listado_pelado_si_no_es_el_listado(app, crudo):
     """Nunca mandamos a un destino que no sea ESTE listado.
 
     Es un `href` que se le pinta al usuario: si aceptáramos cualquier cosa,
     un link armado a mano convertiría el botón "Volver" en una redirección a
     un sitio ajeno.
     """
-    from app import create_app
     from modules.cheques.views import _volver_a_lista
 
-    with create_app().test_request_context("/"):
+    with app.test_request_context("/"):
         assert _volver_a_lista(crudo) == "/cheques"
 
 

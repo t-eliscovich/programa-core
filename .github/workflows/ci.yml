@@ -15,6 +15,16 @@ on:
 permissions:
   contents: read
 
+# ⭐ DOS JOBS EN PARALELO (04/09/2026, dueña: *"debería ser menos, se puede"*).
+# Medido con las marcas ⏱ del Makefile: tests sin base 44 s (4 workers), tests
+# con base 25 s (seriales, contra el Postgres del servicio), y 14 s sólo en
+# levantar ese contenedor. En un solo runner iban uno atrás del otro. Ahora:
+#   · `test`    — los `not db` + el GATE de cobertura. Sin Postgres, sin dump:
+#                 el 100% de los archivos gateados se sostiene sin los `db`
+#                 (medido: todos al 100%, conciliación 29,45% sobre el piso 29).
+#   · `test-db` — los `-m db` solos, con el contenedor. Sin cobertura.
+# El deploy (workflow_run) espera a que el workflow ENTERO dé verde, o sea a
+# los dos. Si uno se pone rojo, el otro no lo salva.
 jobs:
   test:
     # TMT 2026-08-13: los runners arm64 (Cobalt 100) son GRATIS en repos
@@ -30,6 +40,61 @@ jobs:
     # (#2426 en ARM, verde). Si vuelve a pasar: mirar si el x64 arranca ANTES
     # de mover nada — una cola de pocos minutos no distingue "está caído el
     # ARM" de "está caído todo".
+    runs-on: ${{ github.event.inputs.runner || 'ubuntu-24.04-arm' }}
+    timeout-minutes: 20
+
+    env:
+      ENV: development
+      SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
+      DISABLE_BOOT_SYNC: "1"
+      COVERAGE_FAIL_UNDER: "100"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ⭐ SIN `cache: pip`. Las dependencias se instalan con `uv` (abajo), así
+      # que `~/.cache/pip` NUNCA existe — y el paso *Post Set up Python*, que
+      # corre al final y quiere guardar ese cache, terminaba con
+      # "Cache folder path is retrieved for pip but doesn't exist on disk" y
+      # **daba el job por FALLADO con todos los tests en verde**. Rojo
+      # intermitente (aparece sólo cuando toca guardar el cache), y con el CI
+      # rojo el deploy se frena solo y queda "bloqueado": así se quedó afuera
+      # el arreglo del cuadre del 19/08. El cache que sí sirve es el de `uv`
+      # (`enable-cache: true` en el paso de abajo). TMT 2026-08-19.
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # TMT 2026-08-13: `uv` en vez de `pip`. Resuelve e instala lo mismo (lee
+      # el requirements.txt tal cual) pero tarda ~3 s en vez de ~10 s.
+      # `--system` = lo instala en el Python del setup-python de arriba, así
+      # `python -m pytest` / `python -m ruff` siguen encontrándolo igual.
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        run: uv pip install --system -r requirements.txt
+
+      - name: Run Ruff legacy check
+        continue-on-error: true
+        run: make PY=python lint
+
+      - name: Run coverage gate (tests sin base)
+        run: make PY=python ci-sin-base
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: coverage.xml
+          if-no-files-found: ignore
+
+  test-db:
     runs-on: ${{ github.event.inputs.runner || 'ubuntu-24.04-arm' }}
     timeout-minutes: 20
     services:
@@ -51,7 +116,6 @@ jobs:
       ENV: development
       SECRET_KEY: test-secret-key-must-be-at-least-32-chars-long-okay
       DISABLE_BOOT_SYNC: "1"
-      COVERAGE_FAIL_UNDER: "100"
       DB_HOST: 127.0.0.1
       DB_PORT: "5432"
       DB_NAME: programa_core_test
@@ -88,20 +152,8 @@ jobs:
       - name: Install dependencies
         run: uv pip install --system -r requirements.txt
 
-      - name: Run Ruff legacy check
-        continue-on-error: true
-        run: make PY=python lint
-
       - name: Restore sanitized legacy dump
         run: python scripts/restaurar_test_legacy_dump.py --allow-reset
 
-      - name: Run coverage gate
-        run: make PY=python ci
-
-      - name: Upload coverage reports
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: coverage-reports
-          path: coverage.xml
-          if-no-files-found: ignore
+      - name: Tests con base
+        run: make PY=python test-db
