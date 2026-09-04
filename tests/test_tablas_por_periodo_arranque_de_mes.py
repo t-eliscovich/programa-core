@@ -54,42 +54,57 @@ def _tablas_por_periodo() -> set[str]:
     return tablas
 
 
+#: (archivo, nombre, cuerpo) de cada función de `modules/`, parseado UNA vez.
+#: ⚠ Antes se hacía `ast.parse` + `ast.get_source_segment` por función y POR
+#: LLAMADA: `get_source_segment` vuelve a partir el archivo entero en líneas
+#: cada vez, así que sobre informes/queries.py (12k líneas) era cuadrático —
+#: 29 s local y ~3,5 min en el CI (04/09/2026: el CI pasó de 1m30 a 5m con
+#: este archivo). Con las líneas partidas una vez y `lineno..end_lineno` cada
+#: test tarda milisegundos.
+_FUNCIONES: list[tuple[str, str, str, str]] | None = None
+
+
+def _funciones() -> list[tuple[str, str, str, str]]:
+    """[(archivo, nombre_función, cuerpo_función, fuente_del_archivo)]."""
+    global _FUNCIONES
+    if _FUNCIONES is None:
+        out = []
+        for py in sorted((ROOT / "modules").rglob("*.py")):
+            src = py.read_text(encoding="utf-8")
+            lineas = src.splitlines()
+            rel = py.relative_to(ROOT).as_posix()
+            for nodo in ast.walk(ast.parse(src)):
+                if isinstance(nodo, ast.FunctionDef | ast.AsyncFunctionDef):
+                    cuerpo = "\n".join(lineas[nodo.lineno - 1:nodo.end_lineno])
+                    out.append((rel, nodo.name, cuerpo, src))
+        _FUNCIONES = out
+    return _FUNCIONES
+
+
 def _funciones_que_leen(tabla: str) -> set[tuple[str, str]]:
     """(archivo, función) de cada SELECT ... FROM scintela.<tabla> en modules/."""
     patron = re.compile(rf"\bFROM\s+scintela\.{tabla}\b", re.I)
     out: set[tuple[str, str]] = set()
-    for py in (ROOT / "modules").rglob("*.py"):
-        src = py.read_text(encoding="utf-8")
+    for rel, nombre, cuerpo, src in _funciones():
         if not patron.search(src):
             continue
-        tree = ast.parse(src)
-        for nodo in ast.walk(tree):
-            if not isinstance(nodo, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            cuerpo = ast.get_source_segment(src, nodo) or ""
-            # Una SELECT dentro de un INSERT ... ON CONFLICT no es una lectura.
-            if patron.search(cuerpo) and re.search(r"\bSELECT\b", cuerpo):
-                out.add((py.relative_to(ROOT).as_posix(), nodo.name))
+        # Una SELECT dentro de un INSERT ... ON CONFLICT no es una lectura.
+        if patron.search(cuerpo) and re.search(r"\bSELECT\b", cuerpo):
+            out.add((rel, nombre))
     return out
 
 
 def _llamadores(funcion: str) -> set[tuple[str, str]]:
     """(archivo, función) desde donde se llama a `funcion` en modules/."""
     out: set[tuple[str, str]] = set()
-    for py in (ROOT / "modules").rglob("*.py"):
-        src = py.read_text(encoding="utf-8")
-        if funcion not in src:
+    # Llamada directa `f(` o referencia pasada a otro (`_safe(f, ...)`),
+    # no la mención en un docstring (`f`).
+    patron = re.compile(rf"(?<![\w`]){funcion}\s*[(,)]")
+    for rel, nombre, cuerpo, src in _funciones():
+        if funcion not in src or nombre == funcion:
             continue
-        for nodo in ast.walk(ast.parse(src)):
-            if not isinstance(nodo, ast.FunctionDef | ast.AsyncFunctionDef):
-                continue
-            if nodo.name == funcion:
-                continue
-            cuerpo = ast.get_source_segment(src, nodo) or ""
-            # Llamada directa `f(` o referencia pasada a otro (`_safe(f, ...)`),
-            # no la mención en un docstring (`f`).
-            if re.search(rf"(?<![\w`]){funcion}\s*[(,)]", cuerpo):
-                out.add((py.relative_to(ROOT).as_posix(), nodo.name))
+        if patron.search(cuerpo):
+            out.add((rel, nombre))
     return out
 
 
