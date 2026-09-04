@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Copia de datos{% endblock %}
+{% block breadcrumb %}<strong>Admin · Copia de datos</strong>{% endblock %}
+{% block content %}
+<div class="max-w-3xl">
+  {{ page_hero('Copia de datos', 'Toda la base en un zip: un CSV por tabla, la lista de migraciones aplicadas y un LEEME con cómo volver a cargarla. Los respaldos de AWS quedan adentro de AWS; esta copia se guarda afuera.') }}
+
+  <div class="bg-white border rounded-lg p-5 mb-5 shadow-sm">
+    <div class="flex items-center justify-between mb-3">
+      <div>
+        <h2 class="text-lg font-semibold">Bajar la copia ahora</h2>
+        <p class="text-sm text-slate-600">{{ n_tablas }} tablas. Tarda alrededor de un minuto; el archivo pesa unas decenas de MB.</p>
+      </div>
+      <form method="post" action="{{ url_for('admin_copia_datos.bajar') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium">
+          Descargar copia
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <div class="bg-white border rounded-lg p-5 shadow-sm">
+    <h2 class="text-lg font-semibold mb-1">Copia automática de los lunes</h2>
+    <p class="text-sm text-slate-600 mb-3">
+      La máquina que guarda las copias baja el zip sin entrar al programa, con esta clave.
+      Va en un archivo <code>.clave_copia</code> en la carpeta del programa de esa máquina. No la mandes por mail ni por WhatsApp.
+    </p>
+    <dl class="text-sm">
+      <dt class="text-slate-500">Dirección</dt>
+      <dd class="mb-2"><code class="bg-slate-50 border rounded px-2 py-1 break-all">{{ url_descarga }}?clave=…</code></dd>
+      <dt class="text-slate-500">Clave de descarga</dt>
+      <dd>
+        <code id="clave" class="bg-slate-50 border rounded px-2 py-1 break-all select-all" hidden>{{ clave }}</code>
+        <button type="button" id="btn-ver" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-50">Mostrar la clave</button>
+      </dd>
+    </dl>
+  </div>
+</div>
+<script>
+  document.getElementById('btn-ver').addEventListener('click', function () {
+    document.getElementById('clave').hidden = false;
+    this.hidden = true;
+  });
+</script>
+{% endblock %}

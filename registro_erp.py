@@ -267,6 +267,11 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(admin_migraciones_bp)
 
+    # Copia completa de la base para guardar AFUERA de AWS — TMT 2026-09-03.
+    from modules.admin_dbase.copia_datos_view import bp as admin_copia_datos_bp
+
+    app.register_blueprint(admin_copia_datos_bp)
+
     # Deploy 1-click — TMT 2026-05-29. /admin/deploy hace `git pull origin
     # main` y Restart-ScheduledTask en 2 botones, reemplazando el dance
     # SSM/Run Command que la dueña hacía a mano cada push.
