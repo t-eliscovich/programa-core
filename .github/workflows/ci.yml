@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      runner:
+        # Para MEDIR otro runner sin tocar main: Actions → CI → Run workflow.
+        # El push sigue yendo al de abajo (default).
+        description: "runs-on (ubuntu-24.04-arm | ubuntu-latest)"
+        default: ubuntu-24.04-arm
 
 permissions:
   contents: read
@@ -24,7 +30,7 @@ jobs:
     # (#2426 en ARM, verde). Si vuelve a pasar: mirar si el x64 arranca ANTES
     # de mover nada — una cola de pocos minutos no distingue "está caído el
     # ARM" de "está caído todo".
-    runs-on: ubuntu-24.04-arm
+    runs-on: ${{ github.event.inputs.runner || 'ubuntu-24.04-arm' }}
     timeout-minutes: 20
     services:
       postgres:
