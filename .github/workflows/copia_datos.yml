@@ -3,7 +3,10 @@
 # Todas las noches (06:30 UTC = 01:30 Ecuador, la fábrica dormida) le pide al
 # EC2 por SSM que arme el zip de /admin/copia-de-datos (CSV por tabla, solo
 # lectura) y lo suba a s3://intela-deploy-<cuenta>/copias-datos/ con una URL
-# firmada que genera este runner. Se guardan los últimos 30 días.
+# firmada que genera este runner. Se guardan los últimos 30 días. Va abajo
+# de `programa_core_deploy/` porque es el ÚNICO prefijo donde el rol
+# `programa-core-deploy` puede escribir (la primera corrida, en
+# `copias-datos/` a secas, dio AccessDenied).
 #
 # Por qué acá y no en un Scheduled Task del EC2: el runner ya tiene las
 # credenciales de AWS por OIDC (las mismas del deploy); el EC2 no necesita
@@ -39,7 +42,7 @@ jobs:
         run: |
           ACCT=$(aws sts get-caller-identity --query Account --output text)
           FECHA=$(TZ=America/Guayaquil date +%Y-%m-%d)
-          KEY="copias-datos/programa-core-datos-${FECHA}.zip"
+          KEY="programa_core_deploy/copias-datos/programa-core-datos-${FECHA}.zip"
           echo "bucket=intela-deploy-${ACCT}" >> "$GITHUB_OUTPUT"
           echo "key=${KEY}" >> "$GITHUB_OUTPUT"
           pip install -q boto3
@@ -105,12 +108,19 @@ jobs:
           BUCKET: ${{ steps.url.outputs.bucket }}
           KEY: ${{ steps.url.outputs.key }}
         run: |
-          aws s3 ls "s3://${BUCKET}/${KEY}" --region us-east-2 | grep -q . || { echo "el zip no está en S3"; exit 1; }
+          aws s3api head-object --bucket "$BUCKET" --key "$KEY" --region us-east-2 \
+            --query '{Bytes:ContentLength,Fecha:LastModified}' --output json \
+            || { echo "el zip no está en S3"; exit 1; }
           echo "=== copias en S3 ==="
-          aws s3 ls "s3://${BUCKET}/copias-datos/" --region us-east-2
-          aws s3 ls "s3://${BUCKET}/copias-datos/" --region us-east-2 \
-            | awk '{print $4}' | grep '^programa-core-datos-' | sort | head -n -30 \
-            | while read -r viejo; do
-                echo "borro $viejo"
-                aws s3 rm "s3://${BUCKET}/copias-datos/${viejo}" --region us-east-2
-              done
+          # La rotación es fail-soft: si el rol no puede listar/borrar, la copia
+          # de hoy ya está a salvo igual y se ve en el log.
+          if aws s3 ls "s3://${BUCKET}/programa_core_deploy/copias-datos/" --region us-east-2; then
+            aws s3 ls "s3://${BUCKET}/programa_core_deploy/copias-datos/" --region us-east-2 \
+              | awk '{print $4}' | grep '^programa-core-datos-' | sort | head -n -30 \
+              | while read -r viejo; do
+                  echo "borro $viejo"
+                  aws s3 rm "s3://${BUCKET}/programa_core_deploy/copias-datos/${viejo}" --region us-east-2 || echo "AVISO: no pude borrar $viejo"
+                done
+          else
+            echo "AVISO: el rol no puede listar el bucket — sin rotación"
+          fi
