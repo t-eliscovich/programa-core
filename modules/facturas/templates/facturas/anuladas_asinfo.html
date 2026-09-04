@@ -11,7 +11,7 @@
   <tr class="border-t border-slate-200 dark:border-slate-800">
     <td class="px-2 py-1.5 font-mono">
       <a class="text-sky-700 dark:text-sky-400 hover:underline"
-         href="{{ url_for('facturas.detalle', id_factura=f.numf or f.id_factura, doc=f.numf_completo or None) }}">{{ f.numf_completo }}</a>
+         href="{{ url_for('facturas.detalle', id_factura=f.numf or f.id_factura, doc=f.numf_completo or None, id=f.id_factura) }}">{{ f.numf_completo }}</a>
     </td>
     <td class="px-2 py-1.5">{{ f.fecha.strftime('%d/%m/%Y') if f.fecha else '' }}</td>
     <td class="px-2 py-1.5">{{ f.codigo_cli }}</td>

@@ -444,7 +444,7 @@
                TMT 2026-05-28: editar N° inline — botón ✎ swap a input → fetch
                POST /facturas/<id>/numf → actualiza in-place. #}
             <span class="numf-view">
-              <a href="{{ url_for('facturas.detalle', id_factura=(f.numf or f.id_factura), doc=f.numf_completo or None) }}"
+              <a href="{{ url_for('facturas.detalle', id_factura=(f.numf or f.id_factura), doc=f.numf_completo or None, id=f.id_factura) }}"
                  class="hover:text-blue-600 numf-link"
                  {% if f.numf_completo %}title="{{ f.numf_completo }}"{% endif %}>{% if f.numf and f.numf != 0 %}{{ f.numf }}{% elif f.numf_completo %}{{ f.numf_completo.split('-')|last|int }}{% else %}<span class="text-slate-400">(sin N°)</span>{% endif %}</a>
               <button type="button" class="numf-edit-btn lapiz lapiz-oscuro"

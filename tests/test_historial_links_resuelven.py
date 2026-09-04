@@ -96,7 +96,10 @@ def test_links_del_historial_resuelven_contra_el_url_map(app):
 
 @pytest.mark.parametrize("tabla,esperado", [
     ("compra", "/compras/473"),
-    ("factura", "/facturas/473"),
+    # TMT 2026-09-04: el numf se REPITE (la factura N de BED y una NC de AJ2
+    # comparten el 10970), y la ficha, cuando el número da para dos, manda a la
+    # lista. El historial SABE el id interno: viaja como `?id=` y desempata.
+    ("factura", "/facturas/473?id=473"),
     ("cheque", "/cheques/473"),
     # TMT 2026-08-07 (dueña: "esos links deberían venir filtrados por lo que
     # quiero ver"). Todos caen en LA FILA, no en la pantalla entera.
@@ -253,8 +256,8 @@ def test_factura_sin_numero_usable_cae_al_id(app, numf):
 
     url, _ = hq.link_origen(
         {"origen_table": "factura", "origen_id": 473}, factura_numfs={473: numf})
-    assert url == "/facturas/473", f"numf {numf!r} armó {url!r}"
-    app.url_map.bind("localhost").match(url, method="GET")  # no levanta NotFound
+    assert url == "/facturas/473?id=473", f"numf {numf!r} armó {url!r}"
+    app.url_map.bind("localhost").match(url.split("?")[0], method="GET")  # no levanta NotFound
 
 
 @pytest.mark.parametrize("no_cheque", NUMEROS_QUE_NO_VAN_EN_LA_URL)
@@ -268,10 +271,10 @@ def test_cheque_sin_numero_usable_cae_al_id(app, no_cheque):
 
 
 @pytest.mark.parametrize("numero,esperado", [
-    ("10894", "/facturas/10894"),
-    (10894, "/facturas/10894"),
-    ("  10894  ", "/facturas/10894"),
-    ("A-12", "/facturas/A-12"),
+    ("10894", "/facturas/10894?id=473"),
+    (10894, "/facturas/10894?id=473"),
+    ("  10894  ", "/facturas/10894?id=473"),
+    ("A-12", "/facturas/A-12?id=473"),
 ])
 def test_el_numero_bueno_sigue_yendo_en_la_url(numero, esperado):
     from modules.historial import queries as hq
@@ -279,4 +282,4 @@ def test_el_numero_bueno_sigue_yendo_en_la_url(numero, esperado):
     url, etiqueta = hq.link_origen(
         {"origen_table": "factura", "origen_id": 473}, factura_numfs={473: numero})
     assert url == esperado
-    assert etiqueta == "Factura " + esperado.rsplit("/", 1)[1]
+    assert etiqueta == "Factura " + esperado.rsplit("/", 1)[1].split("?")[0]

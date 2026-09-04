@@ -148,13 +148,13 @@ def generar(id_factura: int):
     # Una factura anulada no se debe emitir electrónicamente.
     if (fact.get("stat") or "").upper() == "Y":
         flash("No se puede generar XML SRI: la factura está anulada.", "warn")
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=id_factura, id=id_factura))
 
     try:
         info = _construir_info_factura(fact)
     except Exception as e:
         flash_exc("No pude armar el XML", e)
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=id_factura, id=id_factura))
 
     ambiente = get_ambiente_default()
     estab = get_estab()
@@ -179,7 +179,7 @@ def generar(id_factura: int):
         )
     except ValueError as e:
         flash_exc("No pude generar la clave de acceso", e)
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=id_factura, id=id_factura))
 
     xml_str = construir_xml_factura(
         clave_acceso=clave,
@@ -219,10 +219,10 @@ def generar(id_factura: int):
         )
     except ValueError as e:
         flash(str(e), "warn")
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=id_factura, id=id_factura))
     except Exception as e:
         flash_exc("No pude guardar el comprobante SRI", e)
-        return redirect(url_for("facturas.detalle", id_factura=id_factura))
+        return redirect(url_for("facturas.detalle", id_factura=id_factura, id=id_factura))
 
     flash(
         f"XML SRI generado (clave {clave[:8]}…{clave[-4:]}). "

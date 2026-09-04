@@ -115,3 +115,48 @@ def test_el_parcial_compartido_manda_el_numero_completo():
     assert "doc=f.numf_completo" in t[i:i + 200], (
         "el parcial que usan el vendedor y el cliente no manda el número "
         "completo")
+
+
+def test_si_el_numero_completo_puede_faltar_va_el_id_tambien():
+    """`doc=f.numf_completo or None` no alcanza solo.
+
+    Dueña 04/09/2026, sobre la NC 10970 de AJ2 en /facturas: *"la de abajo ni
+    abre"*. Esa NC no tiene `numf_completo`, así que el `doc=` se evaporaba y el
+    link quedaba `/facturas/10970` pelado — que da para dos (la factura de BED
+    de ese día) — y la ficha la mandaba de vuelta a la MISMA lista. Un loop.
+    Cuando el número completo puede faltar, el `id=` tiene que ir igual.
+    """
+    sin_id = []
+    for f in _plantillas():
+        for link in _links(f.read_text(encoding="utf-8")):
+            puede_faltar = re.search(r"doc=[^,)]*\bor None", link)
+            if puede_faltar and "id=" not in link.replace("id_factura=", ""):
+                sin_id.append(f"{f.relative_to(RAIZ)}: {link[:110]}")
+    assert not sin_id, (
+        "estos links pierden el `doc=` cuando la factura no tiene número "
+        "completo y quedan ambiguos — falta el `id=`:\n  " + "\n  ".join(sin_id))
+
+
+def test_los_redirects_del_codigo_tambien_desempatan():
+    """Los `url_for("facturas.detalle", …)` de las vistas Python (después de
+    editar, anular, generar el XML del SRI) también tienen que llevar `id=` o
+    `doc=`: el 04/09/2026 los del SRI mandaban la PK interna PELADA, y la ficha
+    prefiere el numf — o sea que podían abrir OTRA factura."""
+    sin = []
+    for f in (RAIZ / "modules").rglob("*.py"):
+        texto = f.read_text(encoding="utf-8")
+        for link in _links(texto):
+            if "**_extra" in link:
+                continue  # el redirect canónico de la ficha: ya lleva doc o id
+            if "doc=" not in link and "id=" not in link.replace("id_factura=", ""):
+                sin.append(f"{f.relative_to(RAIZ)}: {link[:110]}")
+    assert not sin, "\n  ".join(sin)
+
+
+def test_el_historial_manda_el_id():
+    """El Historial SABE el id interno del movimiento; la URL lo lleva."""
+    from modules.historial import queries as hq
+
+    url, _ = hq.link_origen({"origen_table": "factura", "origen_id": 32132},
+                            factura_numfs={32132: 10970})
+    assert url == "/facturas/10970?id=32132"

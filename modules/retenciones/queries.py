@@ -1322,6 +1322,7 @@ def preview_retencion_en_abono(desde, hasta) -> dict:
             "codigo_cli": f["codigo_cli"],
             "cliente": nombres.get(f["codigo_cli"], ""),
             "numf": f["numf"], "fecha": f.get("fecha"),
+            "id_factura": f.get("id_factura"),
             "importe": importe, "abono_actual": abono, "saldo": saldo,
         })
         if retencion > 0.005 or f"{f['codigo_cli']}|{f['numf']}" in ya_set:

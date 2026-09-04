@@ -395,6 +395,7 @@ def nueva():
         return redirect(url_for(
             "facturas.detalle",
             id_factura=(creada.get("numf") or creada["id_factura"]),
+            id=creada["id_factura"],
         ))
     except Exception as e:
         # TMT 2026-05-14 (#37): humanizar antes de mostrar.
@@ -422,7 +423,7 @@ def editar(id_factura: int):
     _numf_url = fact.get("numf") or id_factura
     if (fact.get("stat") or "").upper() in queries.STATS_ANULADAS:
         flash("La factura está anulada/eliminada — no se puede editar.", "warn")
-        return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+        return redirect(url_for("facturas.detalle", id_factura=_numf_url, id=fact["id_factura"]))
 
     errores: list[str] = []
     form: dict = {
@@ -466,7 +467,7 @@ def editar(id_factura: int):
                 f"Factura editada — saldo nuevo: $ {res['saldo']:,.2f} (stat: {res['stat_nuevo']}).",
                 "ok",
             )
-            return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+            return redirect(url_for("facturas.detalle", id_factura=_numf_url, id=fact["id_factura"]))
         except ValueError as e:
             errores.append(str(e))
             return render_template(
@@ -722,7 +723,7 @@ def confirmar_anulacion(id_factura: int):
     _numf_url = fact.get("numf") or id_factura
     if fact.get("stat") == "Y":
         flash("La factura ya está anulada.", "warn")
-        return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+        return redirect(url_for("facturas.detalle", id_factura=_numf_url, id=fact["id_factura"]))
     detalle = {
         "N° factura": fact.get("numf_completo") or fact.get("numf"),
         "Fecha": (fact.get("fecha").strftime("%d/%m/%Y") if fact.get("fecha") else "—"),
@@ -739,7 +740,7 @@ def confirmar_anulacion(id_factura: int):
         ),
         detalle_registro=detalle,
         accion_url=url_for("facturas.anular", id_factura=id_factura),
-        volver_url=url_for("facturas.detalle", id_factura=_numf_url),
+        volver_url=url_for("facturas.detalle", id_factura=_numf_url, id=fact["id_factura"]),
         motivo_requerido=True,
         confirm_label="Confirmar anulación",
     )
@@ -766,7 +767,7 @@ def reversar_carga(id_factura: int):
         flash_exc("No pude reversar la carga", e)
     _f = queries.por_id_interno(id_factura)
     _numf_url = (_f or {}).get("numf") or id_factura
-    return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+    return redirect(url_for("facturas.detalle", id_factura=_numf_url, id=id_factura))
 
 
 @facturas_bp.route("/facturas/<int:id_factura>/anular", methods=["POST"])
@@ -787,7 +788,7 @@ def anular(id_factura: int):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude anular", e)
-    return redirect(url_for("facturas.detalle", id_factura=_numf_url))
+    return redirect(url_for("facturas.detalle", id_factura=_numf_url, id=id_factura))
 
 
 # ---------------------------------------------------------------------------

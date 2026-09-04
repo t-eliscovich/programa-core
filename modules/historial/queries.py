@@ -768,8 +768,8 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         nfact = (factura_numfs or {}).get(int(rid)) if rid else None
         if va_en_el_path(nfact):
             nfact = str(nfact).strip()
-            return f"/facturas/{nfact}", f"Factura {nfact}"
-        return f"/facturas/{rid}", f"Factura #{rid}"
+            return f"/facturas/{nfact}?id={rid}", f"Factura {nfact}"
+        return f"/facturas/{rid}?id={rid}", f"Factura #{rid}"
     # `capital` NO tiene rama a propósito (TMT 2026-08-07). Medido contra
     # producción: **0 movimientos** de mov_doble apuntan a esa tabla. Y mandarla
     # a /retiros era peor que inútil — /retiros lee SÓLO `scintela.retiros`,
