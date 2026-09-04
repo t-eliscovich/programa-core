@@ -1361,18 +1361,22 @@ function buildChart(q) {
         ctx.moveTo(chartArea.left, y0);
         ctx.lineTo(chartArea.right, y0);
         ctx.stroke();
-        // Separadores de mes (punteados suaves)
+        // Separadores de mes (punteados)
+        // TMT 2026-09-04 (Federico): la punteada casi no se veia -> guion mas
+        // largo, mas opaca y un poco mas gruesa.
         monthLines.forEach(m => {
           const x = scales.x.getPixelForValue(m.index)
                   - (scales.x.getPixelForValue(1) - scales.x.getPixelForValue(0)) / 2;
-          ctx.setLineDash([3, 5]);
-          ctx.strokeStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.10);
+          ctx.setLineDash([6, 4]);
+          ctx.lineWidth = 1.5;
+          ctx.strokeStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.32);
           ctx.beginPath();
           ctx.moveTo(x, chartArea.top);
           ctx.lineTo(x, chartArea.bottom);
           ctx.stroke();
           ctx.setLineDash([]);
-          ctx.fillStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.55);
+          ctx.lineWidth = 1.2;
+          ctx.fillStyle = toRgba(textCol.startsWith('#') ? textCol : '#0f172a', 0.65);
           ctx.font = '600 11px -apple-system, BlinkMacSystemFont, sans-serif';
           ctx.fillText(m.label.toUpperCase(), x + 6, chartArea.top + 14);
         });
