@@ -416,7 +416,11 @@
                (scope_vendedor.py la 404ea) — el número va en texto plano en
                vez de un link muerto. Para todos los demás, igual que siempre. #}
             {% set _num_ch %}{% if no_ch_str %}{{ no_ch_str }}{% endif %}{% endset %}
-            {% if es_vendedor(g.get('user')) %}
+            {# Y para el CLIENTE en su portal tampoco: ahí no hay usuario y
+               la ruta `cheques.detalle` no existe en ese proceso — el
+               `url_for` reventaba la hoja y el PDF con un 500 para todo
+               cliente que tuviera un cheque (04/09/2026, con AJT). #}
+            {% if es_vendedor(g.get('user')) or not g.get('user') %}
               {{ _num_ch }}
             {% else %}
               <a href="{{ url_for('cheques.detalle', id_cheque=c.id_cheque) }}"

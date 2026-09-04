@@ -385,3 +385,42 @@ def test_la_pestana_cheques_abre_los_cheques(monkeypatch):
         assert '?tab=facturas" class="on"' in html
     finally:
         deshacer()
+
+
+def test_la_hoja_para_imprimir_sale_aunque_el_cliente_tenga_cheques(monkeypatch):
+    """🐞 04/09/2026, con AJT (54 cheques): la hoja y el PDF daban 500. El
+    parcial compartido linkea cada cheque a `cheques.detalle` salvo para un
+    vendedor; en el portal no hay usuario y esa ruta no existe → BuildError.
+    Se prueba por la PANTALLA, con un cheque de verdad en la data."""
+    import datetime as dt
+    import os
+    from unittest.mock import patch
+
+    from tests.test_routes_smoke import build_app
+    with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
+        app, deshacer = build_app()
+    try:
+        from modules.informes import queries as q
+        hoy = dt.date(2026, 9, 4)
+        cheque = {"id_cheque": 7, "no_cheque": "0001840", "fecha": hoy, "fechad": hoy,
+                  "fechaing": hoy, "fecha_recibido": hoy, "fecha_crea": hoy,
+                  "fechaout": None, "dia_ingreso": hoy, "fechad_original": None,
+                  "fecha_postergacion": None, "importe": 3488.89, "stat": "Z",
+                  "banco": "PICHINCHA", "nombre_banco": "PICHINCHA", "no_banco": 10,
+                  "por_cobrar": True}
+        monkeypatch.setattr(q, "estado_cuenta_cliente", lambda cod: {
+            "cliente": {"codigo_cli": cod, "nombre": "TOTOY", "ruc": "1724354004001"},
+            "facturas": [], "cheques": [cheque], "anticipos": [],
+            "totales": q.totales_estado_cuenta_en_cero(),
+        })
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+        with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
+            r = c.get("/estado-de-cuenta/imprimir")
+        assert r.status_code == 200, r.status_code
+        html = r.get_data(as_text=True)
+        assert "0001840" in html
+        assert "/cheques/" not in html
+    finally:
+        deshacer()
