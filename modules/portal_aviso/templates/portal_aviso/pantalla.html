@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero %}
+{% block title %}Aviso del portal a los clientes{% endblock %}
+{% block breadcrumb %}<strong>Aviso del portal</strong>{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+  {{ page_hero('Aviso del portal a los clientes',
+               descripcion='El mail que les dice que su estado de cuenta está en el portal. A todos los que tienen saldo.') }}
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  <div class="grid gap-4 md:grid-cols-2 mb-6">
+    {# --- Cómo sale el mail, y la prueba --- #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Así sale el mail</h2>
+      <pre class="text-xs whitespace-pre-wrap bg-slate-50 dark:bg-slate-800 rounded p-3 text-slate-700 dark:text-slate-300 mb-3">{{ ejemplo }}</pre>
+      <p class="text-xs text-slate-500 mb-3">Sin el monto, a propósito. Si el cliente contesta, la respuesta le llega a su vendedor.</p>
+      <form method="post" action="{{ url_for('portal_aviso.prueba') }}" class="flex flex-wrap items-end gap-2">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Con los datos de</label>
+          <select name="codigo_cli" class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5">
+            {% for f in con_correo %}
+              <option value="{{ f.codigo_cli }}">{{ f.codigo_cli }} · {{ f.nombre }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-500 mb-1">Mandarla a</label>
+          <input type="email" name="a" value="{{ mail_prueba }}" required placeholder="tu correo"
+                 class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5 w-56">
+        </div>
+        <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Mandarme una prueba</button>
+      </form>
+    </div>
+
+    {# --- El interruptor --- #}
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Envío a los clientes</h2>
+      {% if encendido %}
+        <p class="text-sm mb-3"><span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-200 font-semibold">PRENDIDO</span>
+          El botón de abajo les manda el mail de verdad.</p>
+        <form method="post" action="{{ url_for('portal_aviso.interruptor') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="prender" value="0">
+          <button class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Apagar</button>
+        </form>
+      {% else %}
+        <p class="text-sm mb-3"><span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200 font-semibold">APAGADO</span>
+          Sólo salen pruebas a la casa. A los clientes no les llega nada hasta que lo prendas.</p>
+        <form method="post" action="{{ url_for('portal_aviso.interruptor') }}"
+              onsubmit="return confirm('¿Prender el envío a los clientes? Después de esto, el botón «Mandar» les manda el mail de verdad.')">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="prender" value="1">
+          <button class="text-sm px-3 py-1.5 rounded border border-amber-400 text-amber-800 dark:text-amber-200 hover:bg-amber-50 dark:hover:bg-amber-900/30">Prender el envío a clientes</button>
+        </form>
+      {% endif %}
+    </div>
+  </div>
+
+  {# --- A quién le va --- #}
+  <form method="post" action="{{ url_for('portal_aviso.mandar') }}"
+        onsubmit="return confirm('¿Mandar el aviso a los clientes marcados?')">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="flex flex-wrap items-center justify-between gap-2 mb-2">
+      <h2 class="text-lg font-semibold text-slate-900 dark:text-slate-100">
+        A quién le va
+        <span class="text-sm font-normal text-slate-500">{{ con_correo|length }} con correo · {{ sin_correo|length }} sin correo</span>
+      </h2>
+      <div class="flex items-center gap-2">
+        <label class="text-xs text-slate-500"><input type="checkbox" id="todos" checked onclick="document.querySelectorAll('input[name=codigos]').forEach(c=>c.checked=this.checked)"> marcar todos</label>
+        <button class="text-sm px-4 py-2 rounded text-white {% if encendido %}bg-red-600 hover:bg-red-700{% else %}bg-slate-400 cursor-not-allowed{% endif %}"
+                {% if not encendido %}disabled title="El envío a clientes está apagado"{% endif %}>
+          Mandar a los marcados
+        </button>
+      </div>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+      <table class="min-w-full text-sm">
+        <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-3 py-2"></th>
+            <th class="px-3 py-2">Cliente</th>
+            <th class="px-3 py-2">Vendedor</th>
+            <th class="px-3 py-2 text-right">Saldo</th>
+            <th class="px-3 py-2">Correo</th>
+            <th class="px-3 py-2">Portal</th>
+            <th class="px-3 py-2">Último aviso</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+          {% for f in filas %}
+          <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 {% if not f.correo %}opacity-60{% endif %}">
+            <td class="px-3 py-2">
+              {% if f.correo %}<input type="checkbox" name="codigos" value="{{ f.codigo_cli }}" checked>{% endif %}
+            </td>
+            <td class="px-3 py-2">
+              <a class="font-semibold text-slate-900 dark:text-slate-100 hover:underline"
+                 href="{{ url_for('informes.estado_cuenta', codigo_cli=f.codigo_cli) }}">{{ f.codigo_cli }}</a>
+              <div class="text-xs text-slate-500">{{ f.nombre }}</div>
+            </td>
+            <td class="px-3 py-2">{{ f.vend or '—' }}</td>
+            <td class="px-3 py-2 text-right tabular-nums">{{ f.saldo | money_es }}</td>
+            <td class="px-3 py-2">
+              {% if f.correo %}
+                {{ f.correo }}
+                <span class="text-xs text-slate-400">
+                  {% if f.de_donde == 'portal' %}lo confirmó él{% elif f.de_donde == 'ficha' %}de la ficha{% else %}de Asinfo{% endif %}
+                </span>
+              {% else %}
+                <span class="text-amber-600 dark:text-amber-400">sin correo</span>
+                <a class="text-xs text-sky-600 hover:underline" href="{{ url_for('clientes.editar', codigo_cli=f.codigo_cli) }}">cargarlo</a>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-slate-500">{% if f.entro %}ya entró{% else %}—{% endif %}</td>
+            <td class="px-3 py-2 text-slate-500">
+              {% if f.ultimo_aviso %}
+                {{ f.ultimo_aviso | fecha_hora_ec }}{% if not f.ultimo_aviso_ok %} <span class="text-red-600">no salió</span>{% endif %}
+              {% else %}—{% endif %}
+            </td>
+          </tr>
+          {% else %}
+            {{ empty_row(7, 'No hay clientes con saldo.') }}
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </form>
+
+  {# --- Lo que ya salió --- #}
+  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Lo que ya salió</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Cuándo</th>
+          <th class="px-3 py-2">Cliente</th>
+          <th class="px-3 py-2">A</th>
+          <th class="px-3 py-2">Qué</th>
+          <th class="px-3 py-2">Salió</th>
+          <th class="px-3 py-2">Lo mandó</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for h in historial %}
+        <tr>
+          <td class="px-3 py-2 text-slate-500">{{ h.enviado_en | fecha_hora_ec }}</td>
+          <td class="px-3 py-2"><span class="font-semibold">{{ h.codigo_cli }}</span> <span class="text-xs text-slate-500">{{ h.nombre }}</span></td>
+          <td class="px-3 py-2">{{ h.correo }}</td>
+          <td class="px-3 py-2">{% if h.tipo == 'prueba' %}prueba{% else %}al cliente{% endif %}</td>
+          <td class="px-3 py-2">{% if h.ok %}sí{% else %}<span class="text-red-600">no{% if h.motivo %} · {{ h.motivo }}{% endif %}</span>{% endif %}</td>
+          <td class="px-3 py-2 text-slate-500">{{ h.enviado_por }}</td>
+        </tr>
+        {% else %}
+          {{ empty_row(6, 'Todavía no salió ningún aviso.', 'Mandate una prueba para ver cómo llega.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

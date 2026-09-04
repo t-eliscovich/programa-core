@@ -14,13 +14,14 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md` (fases,
 tablas, frenos). Lo que falta de la v1:
 
-### [M] Fase 4 por MAIL: el aviso de los lunes
-Meta (WhatsApp) sigue sin alta; la dueña (04/09) decidió arrancar por mail.
-Pantalla en la oficina: armar la lista (todos con saldo y con correo), ver a
-quién le va, sacar a alguien, **mandarme una prueba**, y recién ahí mandar.
-Nace con el envío a clientes APAGADO: *"hasta no testear no mandamos nada a
-los clientes"*. El texto (sin monto) está en el plan. Reply-To: el correo del
-vendedor del cliente, si lo tiene; si no, el de la oficina.
+### [S] Fase 4 por MAIL: lo que queda después de la pantalla
+La pantalla /portal-aviso ya está (04/09): prueba a la casa, interruptor
+apagado, lista de a quién le va, bitácora. Falta: (1) que la dueña vea la
+prueba y ajuste el texto; (2) el "sale solo los lunes" —hoy se aprieta el
+botón—, que es un cron sobre `envio.mandar` con el interruptor prendido;
+(3) el correo de cada vendedor en `seguridad.usuario.email` para que el
+Reply-To le llegue a él (hoy varios no lo tienen: la respuesta vuelve al
+remitente).
 
 ### [S] Sus pagos y cheques en detalle
 Ya se muestran los cheques en cartera; falta el detalle del pago aplicado.

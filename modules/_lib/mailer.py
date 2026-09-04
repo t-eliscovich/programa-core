@@ -97,8 +97,13 @@ def motivo_no_disponible() -> str:
 
 
 def enviar(asunto: str, texto: str, destinatarios: list[str],
-           html: str = "") -> dict:
+           html: str = "", responder_a: str = "") -> dict:
     """Manda el mail: **UNO POR DESTINATARIO**. Nunca lanza.
+
+    `responder_a`: a qué dirección le llega la respuesta si el que lo recibe
+    contesta (Reply-To). Va aparte del remitente porque el remitente tiene que
+    estar verificado en SES y la respuesta puede ir a cualquiera —al vendedor
+    del cliente, por ejemplo—. Vacío = la respuesta vuelve al remitente.
 
     🚨 TMT 2026-08-12: antes mandaba UN SOLO mail con todos los destinatarios
     juntos en el `To`, y una dirección sin verificar en SES hacía rebotar el
@@ -161,6 +166,10 @@ def enviar(asunto: str, texto: str, destinatarios: list[str],
         res["motivo"] = str(e)[:200]
         return res
 
+    extra = {}
+    if (responder_a or "").strip():
+        extra["ReplyToAddresses"] = [responder_a.strip()]
+
     fallaron = []
     for correo in destinos:
         una = {"correo": correo, "ok": False, "motivo": "", "id": ""}
@@ -169,6 +178,7 @@ def enviar(asunto: str, texto: str, destinatarios: list[str],
                 Source=de,
                 Destination={"ToAddresses": [correo]},
                 Message=mensaje,
+                **extra,
             )
             una.update(ok=True, id=str(r.get("MessageId") or ""))
             res["enviados"] += 1

@@ -39,6 +39,7 @@ class _SESFalso:
     def send_email(self, **kw):
         destinos = kw["Destination"]["ToAddresses"]
         self.enviados.append(list(destinos))
+        self.ultimo = kw
         for d in destinos:
             if d in self.rebotan:
                 raise RuntimeError(
@@ -184,3 +185,18 @@ def test_nunca_lanza_aunque_ses_ni_se_pueda_abrir():
             patch.object(mailer, "remitente", side_effect=RuntimeError("boom")):
         r = mailer.enviar("a", "t", TRES)
     assert r["ok"] is False and "boom" in r["motivo"]
+
+
+def test_la_respuesta_puede_ir_a_otro_que_el_remitente():
+    """El aviso del portal sale de no-reply pero la respuesta le tiene que
+    llegar al vendedor del cliente: Reply-To, no Source."""
+    ses = _SESFalso()
+    _enviar(ses, ["a@x.com"], responder_a="edgar@intela.com.ec")
+    assert ses.ultimo["ReplyToAddresses"] == ["edgar@intela.com.ec"]
+    assert ses.ultimo["Source"] == "no-reply@intela.com.ec"
+
+
+def test_sin_responder_a_no_se_manda_reply_to():
+    ses = _SESFalso()
+    _enviar(ses, ["a@x.com"])
+    assert "ReplyToAddresses" not in ses.ultimo

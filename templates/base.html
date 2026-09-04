@@ -1548,6 +1548,10 @@
             {% if tiene_permiso('bitacora.ver') %}
               <a href="{{ url_for('uso.lista') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Uso de la app</a>
             {% endif %}
+            {# TMT 2026-09-04 (dueña): la fase 4 del portal, por mail. #}
+            {% if tiene_permiso('portal.avisar') %}
+              <a href="{{ url_for('portal_aviso.pantalla') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Aviso del portal a clientes</a>
+            {% endif %}
             {% endif %}
 
             {# --- Salir --- #}

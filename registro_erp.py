@@ -198,6 +198,12 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(uso_bp)
 
+    # El aviso del portal a los clientes, por mail (fase 4 del portal).
+    # TMT 2026-09-04 (dueña). Permiso propio `portal.avisar`.
+    from modules.portal_aviso.views import portal_aviso_bp
+
+    app.register_blueprint(portal_aviso_bp)
+
     from modules.periodos.views import periodos_bp
 
     app.register_blueprint(periodos_bp)
