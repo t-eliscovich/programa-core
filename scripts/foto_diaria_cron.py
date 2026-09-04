@@ -19,9 +19,12 @@ no coincidiera con una visita manual esa misma noche caía en la
 reconstrucción aproximada (`balance_components_as_of`) en vez de la foto
 real -- exactamente lo que le pasó a agosto. Este cron es el blindaje.
 
-Uso desde el Scheduled Task de Windows (ver skill intela-aws-deploy,
-sección "FormulasApp Scheduled Task" para el patrón de registro -- éste
-usa el mismo `C:\\programa-core\\.venv\\Scripts\\python.exe`):
+Uso desde el Scheduled Task de Windows `ProgramaCore_FotoDiaria`, que el
+deploy (.github/workflows/deploy.yml, paso 5.c) re-registra en cada corrida
+con `C:\\Python312\\python.exe` (sin .venv, como todo Programa Core) a las
+23:30 hora ECUADOR -- calculada desde la zona de Ecuador porque el reloj del
+server está en UTC (2026-09-03: registrada a mano "a las 23:30", corrió a las
+18:30 de Ecuador):
 
     python scripts/foto_diaria_cron.py
 

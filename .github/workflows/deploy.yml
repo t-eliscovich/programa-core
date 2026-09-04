@@ -313,6 +313,35 @@ jobs:
               Write-Output "Portal del cliente: la tarea PortalClienteApp no existe todavia — salteado"
           }
 
+          # 5.c La FOTO DIARIA del balance (ProgramaCore_FotoDiaria). TMT
+          #     2026-09-03: la tarea se registró a mano el 02/09 "a las 23:30"
+          #     — pero el reloj del server está en UTC, así que la foto salió
+          #     a las 18:30 de Ecuador (fila 552 de historia, fecha_crea
+          #     23:30 UTC). Acá se (re)registra en cada deploy con la hora
+          #     calculada DESDE la zona de Ecuador, así el día que alguien
+          #     cambie el reloj del server no vuelve a correrse. Fail-soft:
+          #     un problema acá no frena el programa de la oficina.
+          try {
+              \$ecTz = [TimeZoneInfo]::FindSystemTimeZoneById('SA Pacific Standard Time')
+              \$hoyEc = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, \$ecTz).Date
+              \$objetivoEc = \$hoyEc.AddHours(23).AddMinutes(30)
+              \$objetivoLocal = [TimeZoneInfo]::ConvertTime(\$objetivoEc, \$ecTz, [TimeZoneInfo]::Local)
+              \$vieja = Get-ScheduledTask -TaskName ProgramaCore_FotoDiaria -ErrorAction SilentlyContinue
+              if (\$vieja) {
+                  \$info = \$vieja | Get-ScheduledTaskInfo
+                  Write-Output "Foto diaria: ultima corrida \$(\$info.LastRunTime) resultado \$(\$info.LastTaskResult) proxima \$(\$info.NextRunTime)"
+              }
+              \$fAct = New-ScheduledTaskAction -Execute 'C:\Python312\python.exe' -Argument 'scripts\foto_diaria_cron.py' -WorkingDirectory 'C:\programa-core'
+              \$fTrg = New-ScheduledTaskTrigger -Daily -At \$objetivoLocal
+              \$fSet = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::FromMinutes(30))
+              \$fPr = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+              Register-ScheduledTask -TaskName ProgramaCore_FotoDiaria -Action \$fAct -Trigger \$fTrg -Settings \$fSet -Principal \$fPr -Force -Description 'Foto diaria del balance (scripts/foto_diaria_cron.py) a las 23:30 hora Ecuador.' | Out-Null
+              \$nueva = Get-ScheduledTask -TaskName ProgramaCore_FotoDiaria | Get-ScheduledTaskInfo
+              Write-Output "Foto diaria: registrada a las \$(\$objetivoLocal.ToString('HH:mm')) hora del server (zona \$([TimeZoneInfo]::Local.Id)) = 23:30 Ecuador; proxima \$(\$nueva.NextRunTime)"
+          } catch {
+              Write-Output "AVISO: no se pudo registrar la foto diaria: \$_"
+          }
+
           # 6. Health check. TMT 2026-08-13 (dueña: *"necesito todavía más
           #    corto"*): acá había un `Start-Sleep 15` fijo y RECIÉN DESPUÉS se
           #    preguntaba. Los 15 s salieron del 2026-06-07 porque con 6 s el
