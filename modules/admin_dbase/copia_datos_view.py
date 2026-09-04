@@ -27,12 +27,12 @@ import os
 import secrets
 import tempfile
 import zipfile
-from datetime import datetime
 
 from flask import Blueprint, abort, render_template, request, send_file
 
 import db
 from auth import requiere_login, requiere_permiso
+from modules.informes.foto import ahora_ec
 
 _LOG = logging.getLogger("programa_core.admin_dbase.copia_datos")
 
@@ -104,7 +104,7 @@ def tablas_a_copiar(conn) -> list[tuple[str, str]]:
 def armar_copia(destino) -> dict:
     """Escribe el zip en `destino` (archivo abierto en binario). Devuelve
     {"tablas": n, "migracion": última versión aplicada}."""
-    fecha = datetime.now().strftime("%Y-%m-%d %H:%M")
+    fecha = ahora_ec().strftime("%Y-%m-%d %H:%M")
     n = 0
     ultima = ""
     with db.get_conn() as conn:
@@ -140,7 +140,7 @@ def _mandar_zip():
     tmp.seek(0, os.SEEK_END)
     peso = tmp.tell()
     tmp.seek(0)
-    nombre = f"programa-core-datos-{datetime.now():%Y-%m-%d}.zip"
+    nombre = f"programa-core-datos-{ahora_ec():%Y-%m-%d}.zip"
     _LOG.info("copia de datos: %s tablas, %.1f MB, hasta %s",
               info["tablas"], peso / 1e6, info["migracion"])
     return send_file(tmp, mimetype="application/zip",

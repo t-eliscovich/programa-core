@@ -1,0 +1,116 @@
+# Copia de datos NOCTURNA a S3 — TMT 2026-09-03 (dueña: "quiero automatizar").
+#
+# Todas las noches (06:30 UTC = 01:30 Ecuador, la fábrica dormida) le pide al
+# EC2 por SSM que arme el zip de /admin/copia-de-datos (CSV por tabla, solo
+# lectura) y lo suba a s3://intela-deploy-<cuenta>/copias-datos/ con una URL
+# firmada que genera este runner. Se guardan los últimos 30 días.
+#
+# Por qué acá y no en un Scheduled Task del EC2: el runner ya tiene las
+# credenciales de AWS por OIDC (las mismas del deploy); el EC2 no necesita
+# permisos propios sobre S3 ni una clave guardada. Y RDS no se alcanza desde
+# el runner, por eso el zip lo arma el propio server.
+#
+# Esto es la copia DENTRO de AWS. La copia AFUERA (la laptop de Tamara) baja
+# el mismo zip por /admin/copia-de-datos/descargar con la clave de descarga.
+name: Copia de datos
+
+on:
+  schedule:
+    - cron: "30 6 * * *"
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  copia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-2
+
+      - name: URL firmada para subir
+        id: url
+        run: |
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          FECHA=$(TZ=America/Guayaquil date +%Y-%m-%d)
+          KEY="copias-datos/programa-core-datos-${FECHA}.zip"
+          echo "bucket=intela-deploy-${ACCT}" >> "$GITHUB_OUTPUT"
+          echo "key=${KEY}" >> "$GITHUB_OUTPUT"
+          pip install -q boto3
+          URL=$(python3 -c "
+          import boto3
+          print(boto3.client('s3', region_name='us-east-2').generate_presigned_url(
+              'put_object', Params={'Bucket': 'intela-deploy-${ACCT}', 'Key': '${KEY}'},
+              ExpiresIn=1800, HttpMethod='PUT'))")
+          echo "::add-mask::${URL}"
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+
+      - name: El server arma el zip y lo sube
+        env:
+          PUT_URL: ${{ steps.url.outputs.url }}
+        run: |
+          SCRIPT=$(cat <<PSEOF
+          \$ErrorActionPreference = 'Stop'
+          \$env:PYTHONIOENCODING = 'utf-8'
+          Set-Location C:\programa-core
+          if (Test-Path C:\tmp\copia_datos.zip) { Remove-Item C:\tmp\copia_datos.zip -Force }
+          & C:\Python312\python.exe scripts\copia_datos_cron.py C:\tmp\copia_datos.zip
+          if (\$LASTEXITCODE -ne 0) { throw "copia_datos_cron.py salio con \$LASTEXITCODE" }
+          \$peso = (Get-Item C:\tmp\copia_datos.zip).Length
+          Write-Output "zip: \$peso bytes"
+          Add-Type -AssemblyName System.Net.Http
+          \$cli = New-Object System.Net.Http.HttpClient
+          \$cli.Timeout = [TimeSpan]::FromMinutes(10)
+          \$fs = [System.IO.File]::OpenRead('C:\tmp\copia_datos.zip')
+          try {
+              \$contenido = New-Object System.Net.Http.StreamContent(\$fs)
+              \$resp = \$cli.PutAsync('${PUT_URL}', \$contenido).Result
+              Write-Output "S3: HTTP \$([int]\$resp.StatusCode)"
+              if (-not \$resp.IsSuccessStatusCode) { throw "la subida a S3 fallo: \$(\$resp.Content.ReadAsStringAsync().Result)" }
+          } finally { \$fs.Dispose() }
+          Remove-Item C:\tmp\copia_datos.zip -Force
+          Write-Output "=== Copia OK ==="
+          PSEOF
+          )
+          B64=$(printf '%s' "$SCRIPT" | base64 -w0)
+          cat > /tmp/p.json <<JSONEOF
+          {"commands":["[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${B64}')) | Invoke-Expression"]}
+          JSONEOF
+          CMD_ID=$(aws ssm send-command --region us-east-2 \
+            --instance-ids i-0fcca4d7029f08489 \
+            --document-name AWS-RunPowerShellScript \
+            --parameters file:///tmp/p.json \
+            --query Command.CommandId --output text)
+          for i in {1..300}; do
+            sleep 2
+            STATUS=$(aws ssm get-command-invocation --region us-east-2 \
+              --instance-id i-0fcca4d7029f08489 --command-id "$CMD_ID" \
+              --query Status --output text 2>/dev/null || echo "Pending")
+            if [ "$STATUS" = "Success" ] || [ "$STATUS" = "Failed" ] || [ "$STATUS" = "TimedOut" ]; then break; fi
+          done
+          aws ssm get-command-invocation --region us-east-2 \
+            --instance-id i-0fcca4d7029f08489 --command-id "$CMD_ID" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}' --output json \
+            | sed "s#${PUT_URL}#<url>#g"
+          [ "$STATUS" = "Success" ] || { echo "la copia fallo ($STATUS)"; exit 1; }
+
+      - name: Verificar en S3 y dejar los últimos 30
+        env:
+          BUCKET: ${{ steps.url.outputs.bucket }}
+          KEY: ${{ steps.url.outputs.key }}
+        run: |
+          aws s3 ls "s3://${BUCKET}/${KEY}" --region us-east-2 | grep -q . || { echo "el zip no está en S3"; exit 1; }
+          echo "=== copias en S3 ==="
+          aws s3 ls "s3://${BUCKET}/copias-datos/" --region us-east-2
+          aws s3 ls "s3://${BUCKET}/copias-datos/" --region us-east-2 \
+            | awk '{print $4}' | grep '^programa-core-datos-' | sort | head -n -30 \
+            | while read -r viejo; do
+                echo "borro $viejo"
+                aws s3 rm "s3://${BUCKET}/copias-datos/${viejo}" --region us-east-2
+              done
