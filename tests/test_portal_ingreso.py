@@ -49,7 +49,8 @@ CREATE TABLE scintela.cliente (
     codigo_cli text,
     nombre     text,
     ruc        text,
-    vend       text
+    vend       text,
+    correo     text
 );
 """
 
@@ -450,6 +451,28 @@ def test_el_codigo_de_seis_se_guarda_cifrado(base):
     guardado = c.fetchone()[0]
     assert guardado != seis, "el código está en claro en la base"
     assert acceso.coincide(seis, guardado)
+
+
+@sin_pg
+def test_el_correo_de_la_ficha_sirve_para_el_primer_ingreso(base):
+    """Es el camino para destrabar a los 37 sin correo en Asinfo, y para
+    probar el portal con un correo nuestro sin tocar nada del cliente."""
+    _alta()
+    base.cursor().execute(
+        "UPDATE scintela.cliente SET correo='oficina@intela.com.ec' "
+        " WHERE codigo_cli='ATE'")
+    seis, mail = acceso.pedir_codigo("ATE")
+    assert len(seis) == 6 and mail == "oficina@intela.com.ec"
+
+
+@sin_pg
+def test_el_correo_que_eligio_en_el_portal_gana_al_de_la_ficha(base):
+    _alta()
+    base.cursor().execute(
+        "UPDATE scintela.cliente SET correo='oficina@intela.com.ec' "
+        " WHERE codigo_cli='ATE'")
+    acceso.guardar_mail("ATE", "compras@ate.com.ec")
+    assert acceso.pedir_codigo("ATE")[1] == "compras@ate.com.ec"
 
 
 @sin_pg

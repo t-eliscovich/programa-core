@@ -420,9 +420,12 @@ def pedir_codigo(codigo: str) -> tuple[str, str]:
         return "", ""
     mail = (acc.get("mail") or "").strip()
     if not mail:
-        # Todavía no cargó ninguno en el portal: se cae al que ya teníamos de
-        # Asinfo, que es el que el 95% de la plata tiene.
-        mail = _mail_de_asinfo(cod)
+        # Todavía no cargó ninguno en el portal: primero el que la oficina o
+        # el vendedor le cargó en la ficha (es el camino para destrabar a los
+        # que Asinfo no tiene, y para probar el portal con un correo nuestro),
+        # y si no, el que ya teníamos de Asinfo, que es el que el 95% de la
+        # plata tiene.
+        mail = _mail_de_la_ficha(cod) or _mail_de_asinfo(cod)
     if not mail:
         return "", ""
 
@@ -433,6 +436,22 @@ def pedir_codigo(codigo: str) -> tuple[str, str]:
         "VALUES (%s, %s, %s, now() + (%s || ' minutes')::interval)",
         (cod, cifrar(seis), mail[:200], str(MINUTOS_CODIGO)))
     return seis, mail
+
+
+def _mail_de_la_ficha(cod: str) -> str:
+    """El correo cargado a mano en la ficha del cliente (`cliente.correo`).
+
+    El sync de Asinfo nunca lo toca, así que si está, alguien de la casa lo
+    puso a propósito: gana sobre el catálogo de Asinfo.
+    """
+    try:
+        fila = db.fetch_one(
+            "SELECT correo FROM scintela.cliente "
+            " WHERE UPPER(TRIM(codigo_cli)) = %s", (cod,))
+        return ((fila or {}).get("correo") or "").strip()
+    except Exception as e:  # noqa: BLE001 -- sin la columna, se sigue con Asinfo
+        _LOG.warning("portal: no pude leer el correo de la ficha (%s)", e)
+        return ""
 
 
 def _mail_de_asinfo(cod: str) -> str:
