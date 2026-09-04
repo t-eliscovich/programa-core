@@ -159,6 +159,20 @@ def _loop() -> None:
                               (pa.get("reporte") or {}).get("version"))
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("versión precios Asinfo (fondo): %s", e)
+            # 2026-09-04 (David, por audio): "Irene le modifica el pedido y a
+            # David no le refleja". Cada 3 min se miran los memos vivos contra
+            # `pedido_cliente.fecha_modificacion` de Asinfo; si el pedido
+            # cambió después de mandarlo, se pisa la foto en formulas_app y
+            # queda la alerta "modificado — revisar". MEMOS_SYNC_AUTO=0 lo apaga.
+            try:
+                from modules.pedidos import memos_sync as _memos_sync
+                ms = _memos_sync.correr_si_toca()
+                rep = ms.get("reporte") or {}
+                if rep.get("actualizados"):
+                    _LOG.info("sync memos (fondo): modificados en Asinfo: %s",
+                              ", ".join(rep["actualizados"]))
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("sync memos (fondo): %s", e)
             # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
             # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
             # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de

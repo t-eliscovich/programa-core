@@ -6,13 +6,15 @@ la excepción DELIBERADA y acotada (decisión Tamara 2026-08-27, ampliada
 formulas_app, y nada más. El cerco no es una promesa del código sino del ROL
 de la base: `programa_core_memos` tiene SELECT, INSERT y un UPDATE acotado
 por columna sobre `public.memos` (estado, cliente, vendedor, enviado_por,
-enviado_en, detalle, cancelado_por, cancelado_en) y ningún otro privilegio —
+enviado_en, detalle, cancelado_por, cancelado_en y, desde el 04/09,
+modificado_en, modificado_por, cambios) y ningún otro privilegio —
 `en_proceso_por/en_proceso_en/terminado_por/terminado_en/id/pedido_numero`
 siguen siendo exclusivos de la fábrica. Aunque alguien escriba acá un UPDATE
 a `ordenes`, o a una columna fuera de esa lista, Postgres lo rechaza.
 
 El memo es una FOTO del pedido al momento de enviar. Si el pedido cambia en
-Asinfo después, el memo no se entera — se manda de nuevo (y el UNIQUE de
+Asinfo después, el sync de fondo (`modules/pedidos/memos_sync.py`, 04/09)
+pisa la foto y deja la alerta en la fábrica; también se puede mandar de nuevo (y el UNIQUE de
 `pedido_numero` en formulas_app hace que el segundo envío avise "ya estaba"
 en vez de duplicar, salvo que el memo esté 'cancelado': ahí reactiva la
 MISMA fila con datos frescos). Un memo 'pendiente' también se puede
@@ -204,3 +206,84 @@ def estados(numeros: list[str]) -> dict[str, dict]:
     except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
         _log.warning("formulas_memos.estados falló: %s", e)
         return {}
+
+
+# ── Memos que cambiaron en Asinfo después de mandarlos (2026-09-04) ─────────
+# David (audio 04/09): "Irene le modifica el pedido y a David no le refleja".
+# Programa Core vigila `pedido_cliente.fecha_modificacion` y, si el pedido
+# cambió después del envío, pisa `detalle` con la foto nueva y deja en
+# `cambios` qué cambió, con `modificado_en/modificado_por` para la alerta de
+# la fábrica. Son las tres columnas nuevas del grant (formulas_app 04/09).
+
+def vivos() -> list[dict]:
+    """Los memos que la fábrica todavía tiene entre manos ('pendiente' o
+    'en_proceso'), con su foto — lo que hay que vigilar contra Asinfo.
+    [] sin bridge o con la base caída."""
+    if _pool is None:
+        return []
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT pedido_numero, estado, enviado_en, detalle
+                  FROM memos
+                 WHERE estado IN ('pendiente', 'en_proceso')
+                """
+            )
+            filas = cur.fetchall()
+        return [{"numero": r[0], "estado": r[1], "enviado_en": r[2],
+                 "detalle": r[3] if isinstance(r[3], dict) else (r[3] or {})}
+                for r in filas]
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_memos.vivos falló: %s", e)
+        return []
+
+
+def actualizar(numero: str, detalle: dict, cambio: dict | None,
+               modificado_por: str) -> tuple[bool, str]:
+    """Pisa la foto del memo con `detalle`. Si `cambio` viene (hubo
+    diferencias visibles), además sella `modificado_en/modificado_por` y
+    agrega `cambio` al final de `cambios` — eso es lo que prende la alerta
+    en la fábrica. Sin `cambio`, sólo se refresca la foto en silencio (el
+    pedido se tocó en Asinfo pero lo que ve la fábrica quedó igual).
+
+    Sólo toca memos vivos: si mientras tanto la fábrica lo terminó o
+    Programa Core lo canceló, no se pisa nada ("no_vivo").
+    """
+    if _pool is None:
+        return False, "sin_bridge"
+    try:
+        with _conn() as c:
+            with c.cursor() as cur:
+                if cambio:
+                    cur.execute(
+                        """
+                        UPDATE memos
+                           SET detalle = %s,
+                               modificado_en = NOW(),
+                               modificado_por = %s,
+                               cambios = COALESCE(cambios, '[]'::jsonb) || %s::jsonb
+                         WHERE pedido_numero = %s
+                           AND estado IN ('pendiente', 'en_proceso')
+                     RETURNING id
+                        """,
+                        (json.dumps(detalle, default=str), modificado_por or "",
+                         json.dumps([cambio], default=str), numero),
+                    )
+                else:
+                    cur.execute(
+                        """
+                        UPDATE memos
+                           SET detalle = %s
+                         WHERE pedido_numero = %s
+                           AND estado IN ('pendiente', 'en_proceso')
+                     RETURNING id
+                        """,
+                        (json.dumps(detalle, default=str), numero),
+                    )
+                fila = cur.fetchone()
+            c.commit()
+        return (True, "actualizado") if fila else (False, "no_vivo")
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_memos.actualizar falló: %s", e)
+        return False, "sin_bridge"
