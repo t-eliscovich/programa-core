@@ -342,16 +342,23 @@ def test_el_acumulado_apilado_es_el_MISMO_para_cliente_y_vendedor():
     assert "max-width: 560px" not in ficha
 
 
-def test_las_acciones_son_una_fila_de_tres_y_ninguna_esta_repetida():
+def test_el_menu_esta_en_todas_las_pantallas_y_los_botones_no_se_repiten():
     """🐞 04/09/2026, probando con AJT: "Ver mis despachos" estaba DOS veces,
     y el botón de descargar salía como texto pelado porque su clase
     (`.btn-pr`) ya no existía en los estilos compartidos. Dueña: *"que sea
     web, los botones hacen que la info quede muy mal"*."""
     t = (ROOT / "modules" / "portal" / "templates" / "portal"
          / "estado_cuenta.html").read_text(encoding="utf-8")
-    assert t.count('href="/despachos"') == 1
-    assert t.count('href="/mis-pagos"') == 1
+    # Pagos y despachos viven en el menú de abajo, no en botones sueltos.
+    assert 'href="/despachos"' not in t and 'href="/mis-pagos"' not in t
     assert 'class="acciones"' in t and ".acciones a{" in t
+    menu = (ROOT / "modules" / "portal" / "templates" / "portal"
+            / "_menu.html").read_text(encoding="utf-8")
+    assert 'href="/mis-pagos"' in menu and 'href="/despachos"' in menu
+    for pantalla in ("estado_cuenta", "pagos", "despachos", "despacho", "factura"):
+        cuerpo = (ROOT / "modules" / "portal" / "templates" / "portal"
+                  / f"{pantalla}.html").read_text(encoding="utf-8")
+        assert '{% include "portal/_menu.html" %}' in cuerpo, pantalla
     assert "btn-pr" not in t.split("<style>")[0].replace("`.btn-pr`", "")
     base = (ROOT / "modules" / "portal" / "templates" / "portal"
             / "base.html").read_text(encoding="utf-8")

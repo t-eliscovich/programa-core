@@ -1,0 +1,17 @@
+{# EL MENÚ DEL PORTAL DEL CLIENTE — abajo, en todas las pantallas de adentro.
+
+   Dueña, 04/09/2026: *"cuando voy a mis pagos no veo el resto del menú.
+   tiene que ser user friendly"*. Antes cada pantalla tenía su propio
+   "Ver mi cuenta" chiquito en el subtítulo y nada más: desde Mis pagos no
+   había cómo ir a Mis despachos sin volver.
+
+   Es la MISMA barra que usa el vendedor en Mi Cartera (`.tabbar`, estilos
+   compartidos): tres lugares. Salir sigue arriba, en el ícono de siempre.
+   Qué pestaña está prendida sale de la URL, así ninguna pantalla tiene que
+   acordarse de pasarlo. #}
+{% set _p = request.path %}
+<nav class="tabbar">
+  <a href="/" class="{% if _p in ('/', '/estado-de-cuenta') or _p.startswith('/factura/') %}on{% endif %}"><em>◉</em>Mi cuenta</a>
+  <a href="/mis-pagos" class="{% if _p == '/mis-pagos' %}on{% endif %}"><em>◆</em>Mis pagos</a>
+  <a href="/despachos" class="{% if _p.startswith('/despacho') %}on{% endif %}"><em>▤</em>Despachos</a>
+</nav>

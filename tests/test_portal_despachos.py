@@ -490,8 +490,12 @@ def test_la_guia_de_otro_da_404(monkeypatch):
 def test_el_estado_de_cuenta_linkea_los_despachos():
     """Si la pantalla existiera y nadie llegara a ella, sería lo mismo que no
     existir."""
+    # Desde el 04/09/2026 el link vive en el menú de abajo, que el estado
+    # de cuenta incluye (dueña: "tiene que ser user friendly").
     pantalla = (TPL / "estado_cuenta.html").read_text(encoding="utf-8")
-    sin_comentarios = re.sub(r"\{#.*?#\}", "", pantalla, flags=re.S)
+    assert '{% include "portal/_menu.html" %}' in pantalla
+    menu = (TPL / "_menu.html").read_text(encoding="utf-8")
+    sin_comentarios = re.sub(r"\{#.*?#\}", "", menu, flags=re.S)
     assert '"/despachos"' in sin_comentarios
 
 

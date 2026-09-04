@@ -57,15 +57,12 @@
     {% endif %}
   </div>
 
-  {# ⭐ UNA fila de tres botones, no tres botones apilados. Dueña, 04/09:
-     *"que sea web, los botones hacen que la info quede muy mal"* — apilados
-     y a todo el ancho se comían media pantalla y en la computadora quedaban
-     como tres barras vacías. Y "Ver mis despachos" estaba DOS veces.
-
-     El primero es el documento (dueña, 24/08: *"ver hoja para imprimir y
-     descargar archivo es lo mismo"*: queda el archivo, y si el servidor no
-     tiene con qué generarlo, la hoja en pantalla). Los otros dos abren otra
-     pantalla y no llevan ícono de impresora. #}
+  {# ⭐ UN botón: el documento. Dueña, 24/08: *"ver hoja para imprimir y
+     descargar archivo es lo mismo"* — queda el archivo, y si el servidor no
+     tiene con qué generarlo, la hoja en pantalla. Dueña, 04/09: *"los
+     botones hacen que la info quede muy mal"* — había tres apilados a todo
+     el ancho (y "Ver mis despachos" dos veces); Mis pagos y Mis despachos
+     viven ahora en el menú de abajo (`_menu.html`), en todas las pantallas. #}
   <div class="acciones">
     {% if pdf_disponible() %}
     <a class="principal" href="/estado-de-cuenta.pdf">Descargar PDF</a>
@@ -73,14 +70,13 @@
     <a class="principal" href="/estado-de-cuenta/imprimir"
        target="_blank" rel="noopener">Hoja para imprimir</a>
     {% endif %}
-    <a href="/mis-pagos">Mis pagos</a>
-    <a href="/despachos">Mis despachos</a>
   </div>
 
   {% include "mi_cartera/_movimientos.html" %}
 
   <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
 </main>
+{% include "portal/_menu.html" %}
 
 <style>
   /* El ícono de salir, como dibujo y no como carácter — ver el comentario de
@@ -91,15 +87,10 @@
     mask:center/contain no-repeat var(--ico-salir)}
   :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
 
-  .acciones{display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 14px}
-  .acciones a{flex:1 1 30%;display:flex;align-items:center;justify-content:center;
-    text-align:center;text-decoration:none;background:#fff;border:1px solid var(--line);
-    border-radius:12px;padding:10px 6px;font-size:13.5px;font-weight:600;
-    color:var(--ink);line-height:1.2}
-  .acciones a.principal{background:var(--accent);border-color:var(--accent);color:#fff}
-  /* Teléfono chico con la letra del sistema agrandada: que se apilen antes
-     de que se corten. */
-  @media (max-width:339px){.acciones a{flex-basis:100%}}
+  .acciones{display:flex;justify-content:flex-end;margin:10px 0 12px}
+  .acciones a{display:inline-flex;align-items:center;text-decoration:none;
+    background:var(--accent);border:1px solid var(--accent);border-radius:10px;
+    padding:8px 14px;font-size:13.5px;font-weight:600;color:#fff}
 
   /* La tabla ya no dibuja el acumulado como columna propia: desde el
      27/08/2026 corre chiquito bajo el saldo (parcial compartido) y entra

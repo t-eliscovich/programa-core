@@ -208,5 +208,9 @@ def test_el_portal_sigue_sin_escribir_consultas_de_plata():
 
 def test_se_llega_desde_el_estado_de_cuenta():
     """Una pantalla sin link es una pantalla que no existe."""
+    # Desde el 04/09/2026 el link vive en el menú de abajo, que el estado
+    # de cuenta incluye.
     ec = (TPL / "estado_cuenta.html").read_text(encoding="utf-8")
-    assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", ec, flags=re.S)
+    assert '{% include "portal/_menu.html" %}' in ec
+    menu = (TPL / "_menu.html").read_text(encoding="utf-8")
+    assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", menu, flags=re.S)

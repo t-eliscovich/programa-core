@@ -11,7 +11,7 @@
   <div class="row">
     <div>
       <h1>Mis despachos</h1>
-      <div class="sub">Cliente {{ codigo }} · <a href="/">Ver mi cuenta</a></div>
+      <div class="sub">Cliente {{ codigo }}</div>
     </div>
     <a class="iconbtn salir" href="/salir" title="Salir" aria-label="Salir"></a>
   </div>
@@ -24,6 +24,7 @@
 
   <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
 </main>
+{% include "portal/_menu.html" %}
 
 <style>
   .iconbtn.salir::before{
