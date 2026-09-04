@@ -283,3 +283,27 @@ def test_el_numero_bueno_sigue_yendo_en_la_url(numero, esperado):
         {"origen_table": "factura", "origen_id": 473}, factura_numfs={473: numero})
     assert url == esperado
     assert etiqueta == "Factura " + esperado.rsplit("/", 1)[1].split("?")[0]
+
+
+def test_el_link_del_cheque_va_por_la_pk_y_el_rotulo_por_el_numero():
+    """04/09/2026: once fichas `/cheques/<id>` abrían el encabezado de un
+    cheque de GUF (que numera 103373…103384) con las aplicaciones de otro. La
+    URL lleva la PK; el N°, que se repite, queda de rótulo."""
+    from modules.historial import queries as hq
+
+    url, etiqueta = hq.link_origen(
+        {"origen_table": "cheque", "origen_id": 103373}, cheque_nos={103373: "1153"})
+    assert url == "/cheques/103373"
+    assert etiqueta == "Cheque 1153"
+
+
+def test_la_ficha_del_cheque_prefiere_la_pk_y_cuelga_todo_de_ella():
+    import inspect
+
+    from modules.cheques import queries as cq
+    from modules.cheques import views as cv
+    sql = " ".join(inspect.getsource(cq.por_id).split())
+    assert "ORDER BY (c.id_cheque = %s) DESC" in sql, "la PK tiene que ganar al N°"
+    fuente = inspect.getsource(cv.detalle)
+    assert 'id_cheque = ch["id_cheque"]' in fuente, (
+        "aplicaciones/depósitos/hijos tienen que ir por la PK resuelta")

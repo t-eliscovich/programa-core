@@ -133,8 +133,11 @@ def test_un_cheque_de_verdad_muestra_su_numero(app, fake_db):
              destino_table="cheque", destino_id=55,
              concepto="Cheque #102345 de TNZ"))
     assert "Cheque 102345" in html
-    # El link sigue yendo por el número real.
-    assert "/cheques/102345" in html
+    # La URL va por la PK (04/09/2026): el N° de cheque se repite —150
+    # números entre 330 cheques— y por número abría el más viejo. El rótulo
+    # sigue siendo el número real.
+    assert "/cheques/55" in html
+    assert "/cheques/102345" not in html
 
 
 def test_sin_numero_y_sin_banco_con_nombre_queda_el_id(app, fake_db):

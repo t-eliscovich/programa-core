@@ -2712,6 +2712,11 @@ def detalle(id_cheque: int):
     ch = queries.por_id(id_cheque)
     if not ch:
         abort(404)
+    # ⭐ Todo lo que cuelga del cheque va por la PK RESUELTA, no por el número
+    # de la URL (04/09/2026): si entraron por el N° del cheque, con el param
+    # las aplicaciones y los depósitos eran los de OTRO cheque (el que tiene
+    # ese número como id). Mismo arreglo que la ficha de factura.
+    id_cheque = ch["id_cheque"]
     aplicaciones = queries.aplicaciones(id_cheque)
     depositos = queries.depositos(id_cheque)
     total_aplicado = sum(float(a["aplicado"] or 0) for a in aplicaciones)

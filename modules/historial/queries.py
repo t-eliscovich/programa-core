@@ -756,10 +756,11 @@ def link_origen(row: dict, factura_numfs: dict | None = None, cheque_nos: dict |
         return None, f"Banco mov #{rid}"
     if t == "cheque":
         # Si conocemos el no_cheque, lo usamos como path (más human-readable).
+        # ⭐ La URL va por la PK y la etiqueta por el N° (04/09/2026): el N°
+        # se repite (150 números entre 330 cheques) y abría el más viejo.
         nch = (cheque_nos or {}).get(int(rid)) if rid else None
         if va_en_el_path(nch):
-            nch = str(nch).strip()
-            return f"/cheques/{nch}", f"Cheque {nch}"
+            return f"/cheques/{rid}", f"Cheque {str(nch).strip()}"
         return f"/cheques/{rid}", f"Cheque #{rid}"
     if t == "compra":
         return f"/compras/{rid}", f"Compra #{rid}"

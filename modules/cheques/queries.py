@@ -3252,7 +3252,16 @@ def por_id(id_cheque: int) -> dict | None:
 
     Tamara 2026-05-23: los links del historial/cheques usan el no_cheque
     real en la URL (ej. 1234) en lugar del id_cheque interno. Esta función
-    acepta ambos — prioriza no_cheque si hay match y fallback a id_cheque.
+    acepta ambos.
+
+    ⭐ 04/09/2026: gana la PK. TODOS los links de la app (`url_for(
+    'cheques.detalle', id_cheque=…)`, 27 lugares) mandan el id interno; sólo
+    el Historial mandaba el N°. Priorizando el N°, once fichas (`/cheques/
+    103373`…`103384`, cheques de RIC, WWF, HFR, NAS, LAZ y SNC) abrían el
+    ENCABEZADO de un cheque de GUF —que numera sus cheques 103373…103384— con
+    las aplicaciones del cheque correcto debajo: dos cheques en una pantalla.
+    Y el N° se repite (150 números, 330 cheques): un link por N° abría el
+    más viejo. El N° queda como fallback para el que lo tipea en la barra.
     """
     # TMT 2026-08-06: `nota_usuario` es columna nueva y el deploy no corre
     # migraciones — bootstrap en caliente antes de SELECTearla.
@@ -3283,11 +3292,11 @@ def por_id(id_cheque: int) -> dict | None:
           FROM scintela.cheque c
           LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
           LEFT JOIN scintela.banco   bco ON bco.no_banco   = c.no_banco
-         WHERE c.no_cheque::text = %s OR c.id_cheque = %s
-         ORDER BY (c.no_cheque::text = %s) DESC, c.id_cheque ASC
+         WHERE c.id_cheque = %s OR c.no_cheque::text = %s
+         ORDER BY (c.id_cheque = %s) DESC, c.id_cheque ASC
          LIMIT 1
         """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO),
-        (str(id_cheque), id_cheque, str(id_cheque)),
+        (id_cheque, str(id_cheque), id_cheque),
     )
 
 
