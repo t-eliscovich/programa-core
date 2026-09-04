@@ -38,6 +38,16 @@ def _ok(app):
     return app.response_class(status=200)
 
 
+def _app_portal():
+    """El app del OTRO proceso, el del portal. Devuelve (app, deshacer)."""
+    import os
+    from unittest.mock import patch
+
+    from tests.test_routes_smoke import build_app
+    with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
+        return build_app()
+
+
 # --------------------------------------------------------------------------
 # Los nombres de las pantallas
 # --------------------------------------------------------------------------
@@ -52,10 +62,25 @@ def test_nombre_de_pantalla():
 
 
 def test_los_endpoints_con_nombre_existen(app):
-    """Si alguien renombra una vista, este test lo agarra."""
+    """Si alguien renombra una vista, este test lo agarra.
+
+    Los del portal viven en el OTRO proceso: se comprueban contra el app en
+    modo portal, abajo."""
     reales = {r.endpoint for r in app.url_map.iter_rules()}
-    faltan = sorted(e for e in registro.NOMBRES if e not in reales)
+    faltan = sorted(e for e in registro.NOMBRES
+                    if e not in reales and not e.startswith("portal."))
     assert not faltan, f"endpoints que ya no existen: {faltan}"
+
+
+def test_los_endpoints_del_portal_con_nombre_existen():
+    portal, deshacer = _app_portal()
+    try:
+        reales = {r.endpoint for r in portal.url_map.iter_rules()}
+    finally:
+        deshacer()
+    faltan = sorted(e for e in registro.NOMBRES
+                    if e.startswith("portal.") and e not in reales)
+    assert not faltan, f"endpoints del portal que ya no existen: {faltan}"
 
 
 def test_los_papeles_tienen_nombre():
@@ -107,6 +132,78 @@ def test_se_registra_lo_que_mira_un_vendedor(app, monkeypatch):
     # El código va normalizado, como lo JOINea todo el sistema (mig 0155).
     assert codigo_cli == "TDV"
     assert aparato == "celular"
+
+
+def test_se_registra_lo_que_mira_un_cliente_en_el_portal():
+    """TMT 04/09/2026: "así vemos qué hacen una vez que lancemos". Misma
+    tabla, `usuario` con prefijo para que nunca se confunda con alguien de la
+    casa, y el cliente en `codigo_cli`."""
+    import os
+    from unittest.mock import patch
+
+    import db
+
+    portal, deshacer = _app_portal()
+    escrito = []
+    # A mano y no con monkeypatch: `deshacer()` también restaura `db`, y los
+    # dos restauradores se pisan entre sí (queda la FUGA del conftest).
+    execute_previo = db.execute
+    db.execute = lambda sql, params=None, conn=None: escrito.append((sql, params))
+    try:
+        with patch.dict(os.environ, {**os.environ, "MODO": "portal"}), \
+             portal.test_request_context("/estado-de-cuenta",
+                                         headers={"User-Agent": "Android Mobi"}):
+            from flask import session
+            session["portal_cliente"] = "ajt"
+            registro.registrar_uso_after_request(_ok(portal))
+    finally:
+        db.execute = execute_previo
+        deshacer()
+
+    assert len(escrito) == 1
+    sql, params = escrito[0]
+    assert "scintela.uso_pantalla" in sql
+    usuario, vend, ruta, pantalla, codigo_cli, aparato, _ip = params
+    assert usuario == "portal:AJT"
+    assert vend is None
+    assert (ruta, pantalla, codigo_cli) == ("/estado-de-cuenta", "portal.estado_cuenta", "AJT")
+    assert aparato == "celular"
+
+
+def test_en_el_portal_sin_cliente_logueado_no_se_registra():
+    """La pantalla de ingreso la abren los robots: no es uso de nadie."""
+    import os
+    from unittest.mock import patch
+
+    import db
+
+    portal, deshacer = _app_portal()
+    escrito = []
+    execute_previo = db.execute
+    db.execute = lambda sql, params=None, conn=None: escrito.append(params)
+    try:
+        with patch.dict(os.environ, {**os.environ, "MODO": "portal"}), \
+             portal.test_request_context("/ingresar"):
+            registro.registrar_uso_after_request(_ok(portal))
+    finally:
+        db.execute = execute_previo
+        deshacer()
+    assert escrito == []
+
+
+def test_en_la_oficina_la_llave_del_portal_no_cuenta(app, monkeypatch):
+    """Una sesión de la oficina con la llave del portal puesta (no debería
+    pasar, pero) no se anota como cliente: el modo manda."""
+    import db
+
+    escrito = []
+    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append(params))
+    with app.test_request_context("/mi-cartera"):
+        from flask import g, session
+        session["portal_cliente"] = "AJT"
+        g.user = OFICINA
+        registro.registrar_uso_after_request(_ok(app))
+    assert escrito == []
 
 
 @pytest.mark.parametrize(
@@ -198,6 +295,11 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
          "papeles": 3, "celular": 38, "movimientos": 1, "ultima": None},
     ])
     monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [
+        {"codigo_cli": "AJT", "nombre": "TEXTILES TOTOY", "vend": "EDG",
+         "visitas": 9, "dias": 2, "entradas": 3, "papeles": 1, "celular": 9,
+         "ultima": datetime(2026, 9, 4, 10, 30)},
+    ])
     r = app.test_client().get("/uso")
     assert r.status_code == 200
     cuerpo = r.get_data(as_text=True)
@@ -205,6 +307,31 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
     assert "Veces que entró" in cuerpo
     # Los clientes se leen contra la cartera: 12 solos no dicen nada.
     assert "12" in cuerpo and "de 43" in cuerpo
+    # Y la grilla de los clientes del portal, con el cliente por CÓDIGO.
+    assert "Clientes en el portal" in cuerpo
+    assert "AJT" in cuerpo and "TEXTILES TOTOY" in cuerpo
+    assert "04/09/2026 10:30" in cuerpo
+
+
+def test_sin_clientes_en_el_portal_la_grilla_lo_dice(app, monkeypatch):
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "resumen", lambda d, h: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [])
+    cuerpo = app.test_client().get("/uso").get_data(as_text=True)
+    assert "Ningún cliente entró al portal" in cuerpo
+
+
+def test_las_pantallas_mas_abiertas_no_mezclan_al_portal(monkeypatch):
+    """La tabla de abajo es de los vendedores: un cliente mirando su estado
+    de cuenta no es «una pantalla que abrió un vendedor»."""
+    import db
+
+    visto = {}
+    monkeypatch.setattr(db, "fetch_all", lambda sql, params=None, **k: visto.update(sql=sql, params=params) or [])
+    queries.pantallas(date(2026, 9, 1), date(2026, 9, 4))
+    assert "NOT LIKE %(prefijo)s" in visto["sql"]
+    assert visto["params"]["prefijo"] == "portal:%"
 
 
 def test_un_vendedor_no_ve_el_uso_de_nadie(app):

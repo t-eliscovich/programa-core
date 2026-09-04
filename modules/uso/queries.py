@@ -26,7 +26,7 @@ from datetime import date, datetime, time, timedelta
 
 import db
 
-from .registro import PAPELES
+from .registro import PAPELES, PORTAL
 
 #: Cuánto silencio separa dos usos. Más de esto y contamos que "volvió a
 #: entrar": el vendedor abre la app, mira tres pantallas y la cierra.
@@ -143,10 +143,57 @@ def resumen(desde: date, hasta: date) -> list[dict]:
     )
 
 
+def resumen_clientes(desde: date, hasta: date) -> list[dict]:
+    """Una fila por cliente que entró al portal: cuánto entró y qué miró.
+
+    Al revés que `resumen`, acá salen sólo los que ENTRARON: los que no, son
+    ~500 y ya se leen en la ficha de cada vendedor. Un cliente no cambia
+    nada, así que no hay columna de movimientos.
+    """
+    params = ventana(desde, hasta)
+    params["papeles"] = sorted(PAPELES)
+    params["prefijo"] = PORTAL + "%"
+    return db.fetch_all(
+        f"""
+        WITH visitas AS (
+            SELECT u.codigo_cli, u.ts, u.pantalla, u.dispositivo,
+                   lag(u.ts) OVER (PARTITION BY u.codigo_cli ORDER BY u.ts) AS anterior
+              FROM scintela.uso_pantalla u
+             WHERE u.usuario LIKE %(prefijo)s
+               AND u.ts >= (%(desde)s AT TIME ZONE 'UTC')
+               AND u.ts <  (%(hasta)s AT TIME ZONE 'UTC')
+        ),
+        uso AS (
+            SELECT codigo_cli,
+                   count(*)                                   AS visitas,
+                   count(DISTINCT {_TS_USO}::date)            AS dias,
+                   count(*) FILTER (
+                       WHERE anterior IS NULL
+                          OR ts - anterior > INTERVAL '{CORTE_ENTRADA}')  AS entradas,
+                   count(*) FILTER (WHERE pantalla = ANY(%(papeles)s))    AS papeles,
+                   count(*) FILTER (WHERE dispositivo = 'celular')        AS celular,
+                   max({_TS_USO})                             AS ultima
+              FROM visitas
+             GROUP BY codigo_cli
+        )
+        SELECT x.codigo_cli,
+               COALESCE(c.nombre, '')                AS nombre,
+               UPPER(TRIM(COALESCE(c.vend, '')))     AS vend,
+               x.visitas, x.dias, x.entradas, x.papeles, x.celular, x.ultima
+          FROM uso x
+          LEFT JOIN scintela.cliente c
+                 ON UPPER(TRIM(c.codigo_cli)) = x.codigo_cli
+         ORDER BY x.ultima DESC
+        """,
+        params,
+    )
+
+
 def pantallas(desde: date, hasta: date, usuario: str | None = None) -> list[dict]:
     """Qué pantallas se abrieron y cuántas veces, de la más usada a la menos."""
     params = ventana(desde, hasta)
     params["usuario"] = usuario or None
+    params["prefijo"] = PORTAL + "%"
     return db.fetch_all(
         """
         SELECT pantalla,
@@ -156,6 +203,7 @@ def pantallas(desde: date, hasta: date, usuario: str | None = None) -> list[dict
          WHERE ts >= (%(desde)s AT TIME ZONE 'UTC')
            AND ts <  (%(hasta)s AT TIME ZONE 'UTC')
            AND (%(usuario)s IS NULL OR usuario = %(usuario)s)
+           AND usuario NOT LIKE %(prefijo)s
          GROUP BY pantalla
          ORDER BY visitas DESC, pantalla
         """,

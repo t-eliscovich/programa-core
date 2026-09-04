@@ -8,7 +8,7 @@
    `fecha_hora_ec`: ese filtro les restaría cinco horas de nuevo. #}
 <div class="max-w-7xl">
   {{ page_hero('Uso de la app',
-               descripcion='Cuánto entra cada vendedor, qué mira y qué cambia. ' ~ dias ~ ' días.') }}
+               descripcion='Cuánto entra cada vendedor, qué mira y qué cambia; y qué clientes entran al portal. ' ~ dias ~ ' días.') }}
 
   {% if error %}
     <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -72,6 +72,49 @@
     media hora sin tocarla. <strong>Clientes</strong>: a cuántos les abrió la
     ficha, sobre los que tiene asignados. <strong>Cambios</strong>: lo que
     guardó, sale de la bitácora. Las visitas se anotan desde el 26/08/2026 — antes no hay nada.
+  </div>
+
+  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Clientes en el portal</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Cliente</th>
+          <th class="px-3 py-2">Vendedor</th>
+          <th class="px-3 py-2 text-right">Días</th>
+          <th class="px-3 py-2 text-right">Veces que entró</th>
+          <th class="px-3 py-2 text-right">Pantallas</th>
+          <th class="px-3 py-2 text-right">Impresiones</th>
+          <th class="px-3 py-2 text-right">Del teléfono</th>
+          <th class="px-3 py-2">Última vez</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for c in clientes %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-3 py-2">
+            <span class="font-semibold text-slate-900 dark:text-slate-100">{{ c.codigo_cli }}</span>
+            <div class="text-xs text-slate-500">{{ c.nombre }}</div>
+          </td>
+          <td class="px-3 py-2">{{ c.vend or '—' }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ c.dias }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ c.entradas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ c.visitas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ c.papeles }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-500">
+            {% if c.visitas %}{{ (100 * c.celular / c.visitas) | round | int }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500">{{ c.ultima | fecha_hora_es }}</td>
+        </tr>
+        {% else %}
+          {{ empty_row(8, 'Ningún cliente entró al portal en estos días.',
+                       'Acá salen sólo los que entraron; los que no, se ven en la ficha de cada vendedor.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-3 text-xs text-slate-500">
+    Las visitas de los clientes se anotan desde el 04/09/2026 — antes no hay nada.
   </div>
 
   {% if top %}

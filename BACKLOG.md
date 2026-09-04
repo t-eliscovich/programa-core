@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-09-03._
+_Última actualización: 2026-09-04._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -8,6 +8,26 @@ verdad. No hay más syncs ni compares.
 Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L >1 día).
 
 ---
+
+## Portal del cliente
+
+El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md` (fases,
+tablas, frenos). Lo que falta de la v1:
+
+### [M] Fase 4 por MAIL: el aviso de los lunes
+Meta (WhatsApp) sigue sin alta; la dueña (04/09) decidió arrancar por mail.
+Pantalla en la oficina: armar la lista (todos con saldo y con correo), ver a
+quién le va, sacar a alguien, **mandarme una prueba**, y recién ahí mandar.
+Nace con el envío a clientes APAGADO: *"hasta no testear no mandamos nada a
+los clientes"*. El texto (sin monto) está en el plan. Reply-To: el correo del
+vendedor del cliente, si lo tiene; si no, el de la oficina.
+
+### [S] Sus pagos y cheques en detalle
+Ya se muestran los cheques en cartera; falta el detalle del pago aplicado.
+
+### [XS] Cliente de prueba AJT: sacarle el correo de Tamara de la ficha
+Antes del lanzamiento real. Se le cargó `teliscovich@gmail.com` en
+`cliente.correo` (04/09) para probar el portal; la ficha no tenía correo.
 
 ## Poner red donde no hay
 

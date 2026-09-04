@@ -71,9 +71,10 @@ def lista():
     try:
         filas = queries.resumen(desde, hasta)
         top = queries.pantallas(desde, hasta)
+        clientes = queries.resumen_clientes(desde, hasta)
     except Exception as e:  # noqa: BLE001 — la tabla puede no existir todavía
         _LOG.exception("uso.resumen() falló: %s", e)
-        filas, top, error = [], [], str(e)
+        filas, top, clientes, error = [], [], [], str(e)
 
     if request.args.get("export") == "csv":
         return csv_response(
@@ -96,7 +97,7 @@ def lista():
 
     return render_template(
         "uso/lista.html",
-        filas=filas, top=top, error=error,
+        filas=filas, top=top, clientes=clientes, error=error,
         desde=desde, hasta=hasta,
         dias=(hasta - desde).days + 1,
         nombre_de=nombre_de,

@@ -15,7 +15,12 @@ Por eso las visitas van a una tabla propia (`scintela.uso_pantalla`, migración
 
 Qué se registra
 ---------------
-Sólo los usuarios con `vend` cargado, o sea los vendedores. Es lo que se
+Sólo los usuarios con `vend` cargado, o sea los vendedores. Y desde el
+04/09/2026 (TMT: *"así vemos qué hacen una vez que lancemos"*) también los
+CLIENTES en el portal: la misma tabla, con `usuario = 'portal:<código>'` para
+que no se mezclen jamás con un username de la oficina, `vend` vacío y
+`codigo_cli` con el cliente. Las consultas de los vendedores no los ven porque
+JOINean contra `seguridad.usuario`; las del portal filtran por el prefijo. Es lo que se
 preguntó, y acota el volumen a ~6 personas. Para incluir a la oficina alcanza
 con sacar el chequeo de `vendedor_de()` en `hay_que_registrar()` — pero
 pensarlo antes: son ~20 personas con pantallas mucho más pesadas.
@@ -62,17 +67,33 @@ NOMBRES: dict[str, str] = {
     "mi_cartera.imprimir_todos": "Todos los estados de cuenta",
     "mi_cartera.pdf": "Estado de cuenta en PDF",
     "mi_cartera.imagen": "Estado de cuenta en foto",
+    "mi_cartera.pedidos": "Pedidos de sus clientes",
     "mi_cartera.comision": "Su comisión",
     "mi_cartera.metas": "Metas de venta",
     "mi_cartera.prueba_envio": "Prueba de envío",
     "analisis.competencia": "Competencia",
     "analisis.mis_telas": "Telas paradas de sus clientes",
     "analisis.mis_telas_csv": "Telas paradas en Excel",
+    "analisis.mis_telas_xlsx": "Telas paradas en Excel",
     "analisis.mi_hoja": "Su hoja de la competencia",
     "analisis.mi_hoja_csv": "Su hoja en Excel",
     "analisis.saldos_imprimir": "Saldos para imprimir",
     "analisis.saldos_imprimir_pdf": "Saldos en PDF",
+    # El portal del cliente.
+    "portal.inicio": "Entrada",
+    "portal.estado_cuenta": "Su estado de cuenta",
+    "portal.factura": "Una factura",
+    "portal.factura_papel_cliente": "Factura para imprimir",
+    "portal.mis_pagos": "Sus pagos",
+    "portal.despachos": "Sus despachos",
+    "portal.despacho": "Un despacho",
+    "portal.estado_cuenta_imprimir": "Estado de cuenta para imprimir",
+    "portal.estado_cuenta_pdf_": "Estado de cuenta en PDF",
+    "portal.mis_cuentas": "Elegir la cuenta",
 }
+
+#: Así empieza `usuario` cuando el que miró es un cliente en el portal.
+PORTAL = "portal:"
 
 #: Las pantallas que terminan en un papel: se imprimen, se bajan o se mandan
 #: por WhatsApp. La dueña quiere el número aparte — es el trabajo de campo.
@@ -85,9 +106,13 @@ PAPELES: frozenset[str] = frozenset({
     "mi_cartera.factura_pdf",
     "mi_cartera.factura_imagen",
     "analisis.mis_telas_csv",
+    "analisis.mis_telas_xlsx",
     "analisis.mi_hoja_csv",
     "analisis.saldos_imprimir",
     "analisis.saldos_imprimir_pdf",
+    "portal.factura_papel_cliente",
+    "portal.estado_cuenta_imprimir",
+    "portal.estado_cuenta_pdf_",
 })
 
 
@@ -113,8 +138,18 @@ def dispositivo_de(user_agent: str | None) -> str:
     return "celular" if ("Mobi" in ua or "Android" in ua) else "computadora"
 
 
+def cliente_del_portal() -> str:
+    """El cliente logueado en el portal, o vacío. En la oficina siempre vacío."""
+    import modo
+    if not modo.es_portal():
+        return ""
+    from modules.portal.views import cliente_actual
+    return cliente_actual()
+
+
 def hay_que_registrar(response) -> bool:
-    """¿Esta respuesta es una pantalla que un vendedor abrió?"""
+    """¿Esta respuesta es una pantalla que un vendedor (o un cliente en el
+    portal) abrió?"""
     if request.method != "GET" or response.status_code != 200:
         return False
     if not request.endpoint:            # 404: no es una pantalla
@@ -122,7 +157,7 @@ def hay_que_registrar(response) -> bool:
     ruta = request.path or ""
     if any(ruta.startswith(p) for p in RUTAS_QUE_NO_CUENTAN):
         return False
-    return bool(vendedor_de(g.get("user")))
+    return bool(vendedor_de(g.get("user")) or cliente_del_portal())
 
 
 def registrar_uso_after_request(response):
@@ -130,9 +165,14 @@ def registrar_uso_after_request(response):
     try:
         if not hay_que_registrar(response):
             return response
-        usuario = (g.get("user") or {}).get("username") or "anon"
-        vistas = request.view_args or {}
-        codigo_cli = (vistas.get("codigo_cli") or "").strip().upper() or None
+        cliente = cliente_del_portal()
+        if cliente:
+            usuario, vend, codigo_cli = PORTAL + cliente, "", cliente
+        else:
+            usuario = (g.get("user") or {}).get("username") or "anon"
+            vend = vendedor_de(g.get("user"))
+            vistas = request.view_args or {}
+            codigo_cli = (vistas.get("codigo_cli") or "").strip().upper() or None
         db.execute(
             """
             INSERT INTO scintela.uso_pantalla
@@ -141,7 +181,7 @@ def registrar_uso_after_request(response):
             """,
             (
                 usuario[:40],
-                vendedor_de(g.get("user"))[:10],
+                vend[:10] or None,
                 (request.path or "")[:200],
                 (request.endpoint or "")[:60],
                 codigo_cli and codigo_cli[:20],
