@@ -30,6 +30,15 @@
 
 <style>
   /* Lo propio del portal del cliente. Usa las mismas variables de arriba. */
+
+  /* En la computadora (dueña, 04/09: "que sea web"): la columna se ensancha
+     y el encabezado se alinea con ella, en vez de una tira angosta de
+     celular en el medio y el nombre pegado al borde izquierdo. Los estilos
+     compartidos con Mi Cartera no se tocan: esto es sólo del portal. */
+  @media (min-width:900px){
+    main{max-width:820px}
+    .appbar .row{max-width:820px;margin:0 auto}
+  }
   .puerta{max-width:420px;margin:0 auto;padding:34px 16px 40px}
   .marca{text-align:center;margin-bottom:22px}
   .marca img{width:164px;max-width:60%;height:auto}

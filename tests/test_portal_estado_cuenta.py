@@ -340,3 +340,19 @@ def test_el_acumulado_apilado_es_el_MISMO_para_cliente_y_vendedor():
     ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
              / "cliente.html").read_text(encoding="utf-8")
     assert "max-width: 560px" not in ficha
+
+
+def test_las_acciones_son_una_fila_de_tres_y_ninguna_esta_repetida():
+    """🐞 04/09/2026, probando con AJT: "Ver mis despachos" estaba DOS veces,
+    y el botón de descargar salía como texto pelado porque su clase
+    (`.btn-pr`) ya no existía en los estilos compartidos. Dueña: *"que sea
+    web, los botones hacen que la info quede muy mal"*."""
+    t = (ROOT / "modules" / "portal" / "templates" / "portal"
+         / "estado_cuenta.html").read_text(encoding="utf-8")
+    assert t.count('href="/despachos"') == 1
+    assert t.count('href="/mis-pagos"') == 1
+    assert 'class="acciones"' in t and ".acciones a{" in t
+    assert "btn-pr" not in t.split("<style>")[0].replace("`.btn-pr`", "")
+    base = (ROOT / "modules" / "portal" / "templates" / "portal"
+            / "base.html").read_text(encoding="utf-8")
+    assert "@media (min-width:900px)" in base
