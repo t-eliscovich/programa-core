@@ -342,6 +342,39 @@ jobs:
               Write-Output "AVISO: no se pudo registrar la foto diaria: \$_"
           }
 
+          # 5.d METABASE: su script de arranque vive en el repo
+          #     (scripts/servidor/start-metabase.ps1) y acá se copia a
+          #     C:\metabase si cambió — sin reiniciarlo (eso lo hace la tarea
+          #     de la noche). Y se registra Metabase_ReinicioNocturno (02:30
+          #     Ecuador, calculado desde la zona como la foto diaria).
+          #     TMT 2026-09-05: segunda vez en cinco días que java se comió
+          #     la memoria del server y todo quedó lento. Fail-soft.
+          try {
+              \$src = 'C:\programa-core\scripts\servidor\start-metabase.ps1'
+              \$dst = 'C:\metabase\start-metabase.ps1'
+              if ((Test-Path \$src) -and (Test-Path 'C:\metabase')) {
+                  \$igual = (Test-Path \$dst) -and ((Get-FileHash \$src).Hash -eq (Get-FileHash \$dst).Hash)
+                  if (-not \$igual) {
+                      if (Test-Path \$dst) { Copy-Item \$dst "\$dst.bak-\$(Get-Date -Format yyyyMMdd-HHmm)" -Force }
+                      Copy-Item \$src \$dst -Force
+                      Write-Output "Metabase: start-metabase.ps1 actualizado (toma efecto en el proximo reinicio)"
+                  } else { Write-Output "Metabase: start-metabase.ps1 sin cambios" }
+              }
+              \$ecTz = [TimeZoneInfo]::FindSystemTimeZoneById('SA Pacific Standard Time')
+              \$hoyEc = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, \$ecTz).Date
+              \$mObjEc = \$hoyEc.AddHours(2).AddMinutes(30)
+              \$mLocal = [TimeZoneInfo]::ConvertTime(\$mObjEc, \$ecTz, [TimeZoneInfo]::Local)
+              \$mAct = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument '-ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -File C:\programa-core\scripts\servidor\reiniciar-metabase.ps1'
+              \$mTrg = New-ScheduledTaskTrigger -Daily -At \$mLocal
+              \$mSet = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::FromMinutes(10))
+              \$mPr = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+              Register-ScheduledTask -TaskName Metabase_ReinicioNocturno -Action \$mAct -Trigger \$mTrg -Settings \$mSet -Principal \$mPr -Force -Description 'Reinicio nocturno de Metabase a las 02:30 hora Ecuador (scripts/servidor/reiniciar-metabase.ps1) para que java no se coma la memoria del server.' | Out-Null
+              \$mInfo = Get-ScheduledTask -TaskName Metabase_ReinicioNocturno | Get-ScheduledTaskInfo
+              Write-Output "Metabase: reinicio nocturno a las \$(\$mLocal.ToString('HH:mm')) hora del server = 02:30 Ecuador; proxima \$(\$mInfo.NextRunTime)"
+          } catch {
+              Write-Output "AVISO: no se pudo dejar Metabase configurado: \$_"
+          }
+
           # 6. Health check. TMT 2026-08-13 (dueña: *"necesito todavía más
           #    corto"*): acá había un `Start-Sleep 15` fijo y RECIÉN DESPUÉS se
           #    preguntaba. Los 15 s salieron del 2026-06-07 porque con 6 s el
