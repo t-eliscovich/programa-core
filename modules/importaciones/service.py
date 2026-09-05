@@ -684,6 +684,82 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     }
 
 
+#: Desde qué fecha de compra cuentan los recargos tardíos. Tamara 05/09/2026:
+#: *"no toques nada de julio y agosto, solo septiembre"*. Julio y agosto ya
+#: cerraron con su $/kg; recalcularlos movería historia que nadie va a volver
+#: a mirar con los mismos ojos.
+RECARGOS_TARDIOS_DESDE = "2026-09-01"
+
+
+def recargos_tardios_mes(yy: int, mm: int, limite: int = 1000) -> dict:
+    """US$ de compras de hilo cargadas en el mes (yy, mm) cuya importación se
+    RECIBIÓ en un mes anterior — plata que no entra a ningún $/kg sola.
+
+    🚨 Tamara 05/09/2026. Cada importación tiene la compra grande el día que
+    Asinfo la recibe y, días después, sus recargos (flete, seguro, CAE:
+    ~2.600–3.600 + 124,20). `costo_hilado_recibido_mes` atribuye TODO el costo
+    de la importación al MES DE RECEPCIÓN — bien mientras el recargo cae en el
+    mismo mes. Cuando cae en el siguiente (AC 39 y MD 1 recibidas el 31/08,
+    recargos el 05/09: 6.849,51), el mes de recepción ya cerró y el recargo no
+    entra a ningún lado: salió del banco y el costo del hilo nunca lo ve. En
+    agosto fueron 26.252 y en julio 18.255, todos los meses. Hasta hoy la única
+    salida era apretar "Entrar al precio del hilo" en cada compra (mig 0241);
+    *"debería ser automático, no tener que apretar"*.
+
+    Acá se hace automático con la misma semántica que el botón: entra al $/kg
+    del mes en que se cargó, como plata sin kilos (los kilos ya entraron en el
+    mes de recepción). Las compras ya marcadas `al_precio_hilo` NO se cuentan
+    (ya las suma `hilo_al_precio_mes`); las anuladas tampoco. Sólo compras con
+    fecha ≥ `RECARGOS_TARDIOS_DESDE`.
+
+    Fail-soft: {"us": 0, "n": 0, "ids": []} si Asinfo no contesta — el $/kg se
+    queda como está, igual que el resto de la valuación.
+    """
+    _vacio = {"us": 0.0, "n": 0, "ids": []}
+    pref = f"{int(yy):04d}-{int(mm):02d}-"
+    if pref[:7] < RECARGOS_TARDIOS_DESDE[:7]:
+        return dict(_vacio)
+    try:
+        rows = importaciones_con_cruce(limite=limite)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return dict(_vacio)
+    candidatos: dict[int, float] = {}
+    for r in rows or []:
+        if not r.get("recibida"):
+            continue
+        rec = str(r.get("fecha_recepcion") or "")[:7]
+        if not rec or rec >= pref[:7]:
+            continue                      # recibida este mes o después: no es tardío
+        for it in ((r.get("compra") or {}).get("items") or []):
+            f = str(it.get("fecha") or "")[:10]
+            if not f.startswith(pref) or f < RECARGOS_TARDIOS_DESDE:
+                continue
+            try:
+                idc = int(it.get("id_compra"))
+            except (TypeError, ValueError):
+                continue
+            candidatos[idc] = float(it.get("importe") or 0)
+    if not candidatos:
+        return dict(_vacio)
+    # Las anuladas y las que ya entran por el botón salen de la lista, contra
+    # la base (los items del cruce no traen ni `stat` ni `al_precio_hilo`).
+    try:
+        vivas = db.fetch_all(
+            """
+            SELECT id_compra
+              FROM scintela.compra
+             WHERE id_compra = ANY(%s)
+               AND UPPER(TRIM(COALESCE(tipo, ''))) = 'H'
+               AND COALESCE(stat, '') NOT IN ('X', 'Y')
+               AND NOT COALESCE(al_precio_hilo, false)
+            """, (sorted(candidatos),)) or []
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("recargos_tardios_mes: no pude filtrar las compras (%s)", e)
+        return dict(_vacio)
+    ids = sorted(int(v["id_compra"]) for v in vivas)
+    return {"us": round(sum(candidatos[i] for i in ids), 2), "n": len(ids), "ids": ids}
+
+
 def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     """Tabla 'Compras hilado' del flujo, pero SOLO RECIBIDAS y por proveedor =
     IMPORTACIÓN + COMPRA LOCAL. MISMA fuente que la fila Ingresos del cuadro de

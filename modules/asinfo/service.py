@@ -1873,6 +1873,19 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         compras_us += float(_alp.get("us") or 0)
     except Exception:  # noqa: BLE001
         pass
+    # + RECARGOS TARDÍOS (Tamara 2026-09-05): el recargo de una importación
+    # recibida en un mes ANTERIOR, cargado este mes, no entraba a ningún $/kg
+    # (el mes de recepción ya cerró). Misma semántica que el botón, pero solo:
+    # plata sin kilos al $/kg del mes en que se cargó. Sólo compras desde
+    # 09/2026. Fail-soft.
+    recargos_tardios_us = 0.0
+    try:
+        from modules.importaciones import service as _impsvc2
+        _rt = _impsvc2.recargos_tardios_mes(int(yy), int(mm)) or {}
+        recargos_tardios_us = float(_rt.get("us") or 0)
+        compras_us += recargos_tardios_us
+    except Exception:  # noqa: BLE001
+        recargos_tardios_us = 0.0
 
     act_kg = hi1 + maq
     _congelada = _tarifa_hilado_previa(yy, mm) if _motivo else 0.0
@@ -1907,6 +1920,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         # tarifa — y esos kilos NO están diluyendo el promedio.
         "compras_fisicas": compras_fisicas,
         "kg_sin_costo": kg_sin_costo,
+        "recargos_tardios_us": recargos_tardios_us,
         "asimetrico": _asimetrico,
         # Con qué cara sale este $/kg: si `tarifa_motivo` no está vacío, los
         # insumos no eran de fiar. `tarifa_congelada` dice si además hubo una
