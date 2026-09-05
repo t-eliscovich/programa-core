@@ -24,8 +24,9 @@ El plan entero, con el porqué de cada fase, está en
 
 ## Portal del cliente
 
-El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md` (fases,
-tablas, frenos). Lo que falta de la v1:
+El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md`. El
+04/09 se rediseñó entero (armazón `_app.html`, "Más" con pedidos, avisar un
+pago, cómo pagar, actividad, año en kilos, pagadas, mis datos). Lo que queda:
 
 ### [S] Fase 4 por MAIL: lo que queda después de la pantalla
 La pantalla /portal-aviso ya está (04/09): prueba a la casa, interruptor
@@ -33,15 +34,19 @@ apagado, lista de a quién le va, bitácora. Falta: (1) que la dueña vea la
 prueba y ajuste el texto; (2) el "sale solo los lunes" —hoy se aprieta el
 botón—, que es un cron sobre `envio.mandar` con el interruptor prendido;
 (3) el correo de cada vendedor en `seguridad.usuario.email` para que el
-Reply-To le llegue a él (hoy varios no lo tienen: la respuesta vuelve al
-remitente).
+Reply-To le llegue a él.
 
-### [S] Sus pagos y cheques en detalle
-Ya se muestran los cheques en cartera; falta el detalle del pago aplicado.
+### [XS] Cargar el texto de "Cómo pagar"
+Desde /portal-aviso (cuenta del Pichincha, a nombre de quién, RUC). Hasta
+que esté, el portal le dice al cliente que llame a la oficina.
 
 ### [XS] Cliente de prueba AJT: sacarle el correo de Tamara de la ficha
 Antes del lanzamiento real. Se le cargó `teliscovich@gmail.com` en
 `cliente.correo` (04/09) para probar el portal; la ficha no tenía correo.
+
+### [S] El teléfono del vendedor en su tarjeta del portal
+La tarjeta "Su vendedor" muestra nombre y correo; no hay columna de
+teléfono/WhatsApp en `seguridad.usuario`. Agregarla y un botón de WhatsApp.
 
 ## Poner red donde no hay
 

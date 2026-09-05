@@ -31,7 +31,7 @@
       <li class="tela">{{ tela }}</li>
       {% for l in items %}{% set le = et.lineas.get(l.producto) if et else none %}
       <li><span>{{ l.color }}{% if le == 'terminado' %} <span class="pill ok">listo</span>{% elif le == 'en_tintura' %} <span class="pill warn">en producción</span>{% endif %}</span>
-          <span style="white-space:nowrap">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span></li>
+          <span style="white-space:nowrap">{{ l.cantidad|num_es(0) }} {{ 'rollos' if l.unidad == 'roll' else ('unidades' if l.unidad == 'un' else l.unidad) }}</span></li>
       {% endfor %}{% endfor %}
     </ul>
   </div>
