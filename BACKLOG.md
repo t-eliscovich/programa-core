@@ -9,6 +9,19 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
+## Memoria del servidor (plan del 05/09/2026)
+
+El plan entero, con el porqué de cada fase, está en
+`docs/PLAN_MEMORIA_SERVIDOR_2026_09_05.md`. Acá sólo lo que falta:
+
+### [XS] Fase 1: el navegador no se apaga más por falta de uso; se recicla 1 vez por día (02:35)
+### [S] Fase 2: historia de la memoria (una lectura por hora, 7 días) y alerta de tendencia
+### [S] Fase 4: Windows por el deploy — exclusiones de Defender, apagar el updater de Chrome, OpenVPN si no se usa, pagefile fijo
+### [M] Fase 3: lanzadores sin PowerShell (`launch.py` en los 3 repos + Metabase directo) — ~390 MB
+### [M] Fase 5: un solo navegador para oficina y portal — ~210 MB
+### [S] Fase 6: medir el heap real de Metabase (gc.log una semana) y bajar -Xmx si da
+### [—] Fase 7: t3.large sólo si el vigía avisa dos veces en un mes
+
 ## Portal del cliente
 
 El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md` (fases,
