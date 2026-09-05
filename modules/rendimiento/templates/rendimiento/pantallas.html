@@ -65,6 +65,10 @@
       <tr><td class="px-3 font-mono text-xs">{{ p.nombre }}</td><td class="text-right px-3 text-slate-500">{% if p.cuantos > 1 %}×{{ p.cuantos }}{% endif %}</td><td class="text-right px-3">{{ p.memoria_mb }} MB</td><td class="text-right text-slate-500">{{ p.cpu_pct }}% CPU</td></tr>
       {% endfor %}
     </table>
+    <div class="text-xs mt-2 text-slate-500">
+      El vigía{% if vigia.prendido %} mira la memoria cada minuto{% if vigia.hace_s is not none %} (última vez hace {{ vigia.hace_s }} s){% endif %}{% else %} está apagado{% endif %}.
+      {% if vigia.episodio_hace_s is not none %}Última vez que faltó memoria: hace {{ (vigia.episodio_hace_s / 60)|round|int }} min{% if vigia.acciones %} — {{ vigia.acciones|join('; ') }}{% endif %}.{% endif %}
+    </div>
     <div class="text-xs mt-2 {% if servidor.navegadores > 40 %}text-rose-700 dark:text-rose-400 font-semibold{% else %}text-slate-500{% endif %}">
       Navegadores del programa (los que sacan PDFs e imágenes): {{ servidor.navegadores }} procesos{% if servidor.navegadores > 40 %} — son huérfanos, el programa los está barriendo{% endif %}
     </div>

@@ -199,6 +199,17 @@ def create_app() -> Flask:
         except Exception:  # noqa: BLE001 -- el warmup jamás frena el arranque
             pass
 
+        # El VIGÍA del servidor (Tamara 2026-09-05: *"una alarma que cuando
+        # esté así se corrija rápido"*): cada minuto mira la memoria libre y,
+        # si falta, barre los navegadores huérfanos, reinicia Metabase si se
+        # pasó de su tope, y avisa por campanita y mail. Ver
+        # `modules/_lib/vigia_servidor.py`. Apagable con VIGIA_SERVIDOR=0.
+        try:
+            from modules._lib import vigia_servidor
+            vigia_servidor.arrancar_en_segundo_plano()
+        except Exception:  # noqa: BLE001 -- jamás frena el arranque
+            pass
+
         # Auto-carga de facturas+retenciones del DÍA en segundo plano (dueña
         # 2026-07-23: "no quiero tener que ir a ninguna página"). Corre la misma
         # carga que ya dispara /operaciones y /facturas, pero sola en el servidor
