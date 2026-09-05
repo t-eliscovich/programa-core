@@ -204,7 +204,37 @@ conversación.
 Cada fase se cierra con la misma foto de `/admin/pantallas` (memoria libre y
 la tabla por nombre) anotada acá abajo.
 
+## 5. Cómo se pushea esto (rama `claude/memoria-servidor`, 05/09 a la noche)
+
+Todo el código de las fases 1, 2, 3 (PC), 4, 5 y la medición de la 6 está en
+la rama, con la suite en verde (7.033 sin base + 141 con base). Un solo push
+a `main` lo deploya todo. Qué mirar después del deploy, en este orden:
+
+1. El log del deploy en Actions: `Lanzador: ProgramaCoreApp -> python ...`,
+   `PC_INTERNO_SECRET: creado`, `Metabase: start-metabase.ps1 actualizado`,
+   y el bloque `=== Windows ===` con "agregada"/"apagada"/"puesto".
+2. `/admin/pantallas`: `powershell.exe` tiene que bajar de ×5 a ×3 (quedan
+   formulas, máquinas y Metabase); `chrome.exe` a ~×9 (un solo navegador);
+   el vigía "mira la memoria cada minuto".
+3. El portal con AJT: Descargar PDF tiene que seguir saliendo (ahora lo saca
+   la oficina; si el log del portal dice "No se pudo pedir la hoja a la
+   oficina" es que el secreto no llegó a los dos procesos: reiniciar las dos
+   tareas).
+4. A la mañana siguiente: la curva de memoria tiene sus primeras lecturas y
+   `C:\metabase\gc.log` existe (fase 6: una semana y se decide).
+5. Rollback del lanzador si algo raro: `$lanzadorPython = '0'` en deploy.yml
+   y volver a deployar — la tarea queda con python directo igual (el
+   `.ps1` viejo ya no se re-registra solo); para volver al `.ps1` hay que
+   registrar la tarea a mano con `launch_core.ps1`, que sigue en el server.
+
+Lo que NO está en la rama (queda para después): los lanzadores de formulas y
+máquinas (sus repos), Metabase arrancado por java directo (fase 3, parte 3),
+OpenVPN (esperando la decisión: `windows.ps1 -ApagarOpenVpn`), y la baja
+de `-Xmx` de Metabase (fase 6, después de leer el gc.log).
+
 ## 5. Bitácora
 
+- 05/09 noche — fases 1, 2, 3 (PC), 4, 5 y la medición de la 6 escritas y
+  probadas en la rama `claude/memoria-servidor`; se pushean el 06/09.
 - 05/09 13:13 — fase 0 hecha. Libres 1.880 MB. java 947 · chrome ×18 418 ·
   MsMpEng 365 · powershell ×5 339 · python ×4 297 · svchost ×54 274.
