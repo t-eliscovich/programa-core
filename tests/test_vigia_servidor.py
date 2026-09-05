@@ -20,6 +20,9 @@ def _limpio(monkeypatch):
     monkeypatch.setattr(v, "_ultimo_metabase", 0.0)
     monkeypatch.setattr(v, "_en_episodio", False)
     monkeypatch.setattr(v.time, "sleep", lambda s: None)
+    monkeypatch.setattr(v, "_metabase_caidas", 0)
+    monkeypatch.setattr(v, "_metabase_avisado", False)
+    monkeypatch.setattr(v, "metabase_contesta", lambda: True)
 
 
 def _servidor(monkeypatch, libres, java_mb=600, despues=None):
@@ -231,3 +234,67 @@ def test_la_pantalla_dibuja_la_curva(app, fake_db, monkeypatch):
     html = c.get("/admin/pantallas").get_data(as_text=True)
     assert "<polyline" in html and "6 lecturas" in html
     assert "01/09 04:00 300 MB" in html
+
+
+# ---------------------------------------------------------------------------
+# Metabase (Tamara 05/09: "¿pusiste alarma para verificar?")
+# ---------------------------------------------------------------------------
+
+
+def test_metabase_caido_cinco_minutos_avisa_una_vez(monkeypatch):
+    hecho = _espias(monkeypatch)
+    monkeypatch.setattr(v, "metabase_contesta", lambda: False)
+    for _ in range(4):
+        assert v.vigilar_metabase() is None
+    assert hecho["avisos"] == []
+    v.vigilar_metabase()
+    assert hecho["avisos"][0][0] == "Metabase no contesta"
+    assert "5 min" in hecho["avisos"][0][1]
+    for _ in range(10):
+        v.vigilar_metabase()
+    assert len(hecho["avisos"]) == 1
+
+
+def test_metabase_que_vuelve_avisa_y_resetea(monkeypatch):
+    hecho = _espias(monkeypatch)
+    monkeypatch.setattr(v, "metabase_contesta", lambda: False)
+    for _ in range(6):
+        v.vigilar_metabase()
+    monkeypatch.setattr(v, "metabase_contesta", lambda: True)
+    v.vigilar_metabase()
+    assert hecho["avisos"][-1][0] == "Metabase volvió" and hecho["avisos"][-1][2] == "ok"
+    v.vigilar_metabase()
+    assert len(hecho["avisos"]) == 2
+
+
+def test_un_reinicio_normal_de_dos_minutos_no_avisa(monkeypatch):
+    hecho = _espias(monkeypatch)
+    monkeypatch.setattr(v, "metabase_contesta", lambda: False)
+    v.vigilar_metabase()
+    v.vigilar_metabase()
+    monkeypatch.setattr(v, "metabase_contesta", lambda: True)
+    v.vigilar_metabase()
+    assert hecho["avisos"] == []
+
+
+def test_la_vuelta_del_vigia_mira_metabase(monkeypatch):
+    _servidor(monkeypatch, 1900)
+    _espias(monkeypatch)
+    llamado = []
+    monkeypatch.setattr(v, "vigilar_metabase", lambda: llamado.append(1))
+    v.revisar(ahora=T)
+    assert llamado == [1]
+
+
+def test_metabase_contesta_es_fail_soft_sin_red(monkeypatch):
+    import importlib
+
+    import requests
+
+    def _get(*a, **k):
+        raise requests.ConnectionError("3000 abajo")
+
+    monkeypatch.setattr(requests, "get", _get)
+    # La fixture pisa `metabase_contesta`; acá se prueba la de verdad.
+    real = importlib.reload(v).metabase_contesta
+    assert real() is False

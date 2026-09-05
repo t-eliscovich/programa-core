@@ -220,6 +220,52 @@ def tendencia(filas: list[dict] | None = None) -> dict:
             "antes_mb": int(antes), "ahora_mb": int(ahora), "lecturas": len(filas)}
 
 
+# --- Metabase ------------------------------------------------------------
+#: Dónde contesta Metabase en el mismo server.
+METABASE_SALUD_URL = "http://127.0.0.1:3000/api/health"
+#: Cuántas vueltas seguidas sin contestar antes de avisar (a un minuto por
+#: vuelta). Un reinicio normal tarda ~2 min; cinco es "no volvió".
+METABASE_VUELTAS_SIN_CONTESTAR = 5
+_metabase_caidas = 0
+_metabase_avisado = False
+
+
+def metabase_contesta() -> bool:
+    try:
+        import requests
+
+        return requests.get(METABASE_SALUD_URL, timeout=5).status_code == 200
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def vigilar_metabase() -> dict | None:
+    """Cuenta las vueltas seguidas sin respuesta; avisa a la quinta y cuando
+    vuelve. Tamara 05/09 (*"¿pusiste alarma para verificar?"*): Metabase
+    pasa a arrancar por java directo en el reinicio de las 02:30 y nadie
+    está mirando a esa hora."""
+    global _metabase_caidas, _metabase_avisado
+    if metabase_contesta():
+        caidas, _metabase_caidas = _metabase_caidas, 0
+        if _metabase_avisado:
+            _metabase_avisado = False
+            return _avisar("Metabase volvió",
+                           f"Metabase contesta otra vez después de {caidas} min sin responder.",
+                           nivel="ok", clave=f"metabase-volvio-{int(time.time() // 3600)}")
+        return None
+    _metabase_caidas += 1
+    if _metabase_caidas >= METABASE_VUELTAS_SIN_CONTESTAR and not _metabase_avisado:
+        _metabase_avisado = True
+        return _avisar(
+            "Metabase no contesta",
+            f"Metabase ({METABASE_SALUD_URL}) lleva {_metabase_caidas} min sin responder. "
+            f"Sin él no entran los datos de Asinfo (stock, producción, facturas del día). "
+            f"Mirar la tarea 'Metabase' en el servidor y C:\\metabase\\logs\\metabase.log; "
+            f"si no levanta, C:\\metabase\\reinicios.log dice qué pasó a las 02:30.",
+            clave=f"metabase-caido-{int(time.time() // 3600)}")
+    return None
+
+
 def revisar(ahora: float | None = None) -> dict:
     """Una vuelta. Devuelve qué vio y qué hizo (para tests y para la pantalla)."""
     global _ultimo_aviso, _ultimo_metabase, _en_episodio
@@ -228,6 +274,7 @@ def revisar(ahora: float | None = None) -> dict:
     vuelta: dict = {"cuando": ahora, "libres_mb": est.get("disponible_mb"),
                     "acciones": [], "aviso": None}
     _estado["ultima_revision"] = ahora
+    vuelta["metabase"] = vigilar_metabase()
     if not est.get("total_mb"):
         return vuelta
     global _ultima_guardada
@@ -283,6 +330,7 @@ def estado() -> dict:
     ahora = time.time()
     return {
         "prendido": _started and not apagado(),
+        "metabase_caidas": _metabase_caidas,
         "hace_s": (round(ahora - _estado["ultima_revision"]) if _estado["ultima_revision"] else None),
         "episodio_hace_s": (round(ahora - _estado["episodio"]) if _estado["episodio"] else None),
         "acciones": list(_estado["acciones"]),
