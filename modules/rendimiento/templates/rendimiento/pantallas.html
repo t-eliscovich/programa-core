@@ -39,6 +39,35 @@
     </form>
   </div>
 
+
+  {# El SERVIDOR va arriba de todo: si a la máquina le falta memoria, TODA la
+     tabla de abajo está lenta y no es culpa de ninguna pantalla (31/08 y 05/09). #}
+  {% if servidor.total_mb %}
+  <div class="bg-white dark:bg-slate-900 border rounded-lg p-4 mb-5 shadow-sm text-sm
+              {% if servidor.falta_memoria %}border-rose-500{% else %}dark:border-slate-700{% endif %}">
+    <div class="flex flex-wrap gap-x-6 gap-y-2 mb-2">
+      <span class="font-semibold">El servidor</span>
+      <span>memoria libre
+        <strong class="{% if servidor.falta_memoria %}text-rose-700 dark:text-rose-400{% endif %}">{{ servidor.disponible_mb }} MB</strong>
+        de {{ servidor.total_mb }}</span>
+      <span>CPU <strong>{{ servidor.cpu_pct }}%</strong>{% if servidor.nucleos %} ({{ servidor.nucleos }} núcleos){% endif %}</span>
+      {% if servidor.programa %}<span>este programa usa <strong>{{ servidor.programa.memoria_mb }} MB</strong></span>{% endif %}
+    </div>
+    {% if servidor.falta_memoria %}
+    <p class="text-rose-700 dark:text-rose-400 font-semibold mb-2">
+      Quedan menos de {{ servidor.memoria_minima_mb }} MB: la máquina está paginando a disco y
+      todo se pone lento a la vez. El que más tiene es el de arriba de la lista.
+    </p>
+    {% endif %}
+    <div class="text-xs text-slate-500 mb-1">Los procesos que más memoria tienen (privada, no working set)</div>
+    <table class="text-sm">
+      {% for p in servidor.procesos %}
+      <tr><td class="px-3 font-mono text-xs">{{ p.nombre }}</td><td class="text-right px-3">{{ p.memoria_mb }} MB</td><td class="text-right text-slate-500">{{ p.cpu_pct }}% CPU</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
+
   {% if not filas %}
     <p class="text-slate-600 dark:text-slate-300">
       Todavía no hay nada medido. Los números arrancan de cero en cada deploy y

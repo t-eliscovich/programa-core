@@ -20,7 +20,7 @@ from __future__ import annotations
 from flask import Blueprint, redirect, render_template, url_for
 
 from auth import requiere_login, requiere_permiso
-from modules._lib import medidor
+from modules._lib import medidor, servidor
 
 bp = Blueprint("rendimiento", __name__, url_prefix="/admin/pantallas",
                template_folder="templates")
@@ -38,6 +38,7 @@ def pantallas():
         lentas=medidor.lentas(),
         estado=medidor.estado(),
         calentador=medidor.calentador(),
+        servidor=servidor.estado(),
         lenta_ms=int(medidor.LENTA_MS),
         seccion="admin",
     )

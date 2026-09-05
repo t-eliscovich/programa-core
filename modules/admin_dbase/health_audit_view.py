@@ -2679,6 +2679,10 @@ def health_all():
     resp24 = arranque_de_mes()
     # Tamara 2026-09-03: deudas que se borraron de posdat sin pagarse.
     resp25 = deudas_desaparecidas()
+    # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
+    # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
+    from modules._lib import servidor as _srv
+    data26 = _srv.health()
     data1 = json.loads(resp1.get_data(as_text=True))
     data2 = json.loads(resp2.get_data(as_text=True))
     data3 = json.loads(resp3.get_data(as_text=True))
@@ -2728,7 +2732,8 @@ def health_all():
                and data14["ok"] and data15["ok"]
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
-               and data23["ok"] and data24["ok"] and data25["ok"]),
+               and data23["ok"] and data24["ok"] and data25["ok"]
+               and data26["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2754,6 +2759,7 @@ def health_all():
         "dia_captura": data23,
         "arranque_de_mes": data24,
         "deudas_desaparecidas": data25,
+        "servidor": data26,
     })
 
 

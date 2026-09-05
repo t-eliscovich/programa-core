@@ -35,4 +35,7 @@ pytest-postgresql>=6.1
 psycopg[binary]>=3.2.10
 dbfread>=2.0   # importador DBF → Postgres (proceso de transición; ver docs/RUNBOOK_sync_dbf.md)
 boto3>=1.34
+# Memoria y CPU del servidor en /admin/pantallas y el health `servidor`
+# (modules/_lib/servidor.py). TMT 2026-09-05: 'está super lento el sistema'.
+psutil>=5.9
 pypdf>=4.2  # merge de PDFs -- paquete de cierre de mes (modules/informes/cierres_paquete.py). TMT 2026-08-31.
