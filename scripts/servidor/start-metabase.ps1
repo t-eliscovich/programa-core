@@ -31,5 +31,8 @@ $env:MB_DB_SSL_MODE = "require"
 $env:MB_JETTY_MAXTHREADS = "16"
 $java = "C:\Program Files\Eclipse Adoptium\jdk-21.0.5.11-hotspot\bin\java.exe"
 Set-Location C:\metabase
-$jargs = @("-Xmx768m","-XX:MaxMetaspaceSize=256m","-XX:ReservedCodeCacheSize=96m","-XX:MaxDirectMemorySize=64m","-Xss512k","-XX:+UseSerialGC","-XX:+ExitOnOutOfMemoryError","-jar","C:\metabase\metabase.jar")
+# Fase 6 del plan: medir cuánto heap usa DE VERDAD antes de bajarlo más.
+# gc.log dice el heap después de cada recolección (el "live set"); con una
+# semana de eso se decide si -Xmx512m alcanza. Rota solo: 3 × 5 MB.
+$jargs = @("-Xmx768m","-Xlog:gc*:file=C:\metabase\gc.log:time:filecount=3,filesize=5m","-XX:MaxMetaspaceSize=256m","-XX:ReservedCodeCacheSize=96m","-XX:MaxDirectMemorySize=64m","-Xss512k","-XX:+UseSerialGC","-XX:+ExitOnOutOfMemoryError","-jar","C:\metabase\metabase.jar")
 & $java $jargs *>> C:\metabase\metabase.log

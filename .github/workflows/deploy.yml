@@ -282,6 +282,36 @@ jobs:
           # nuevo no bindea y volvemos al no-op → fallar el deploy para que se vea.
           \$still = Get-NetTCPConnection -LocalPort 5002 -State Listen -ErrorAction SilentlyContinue
           if (\$still) { Write-Output "ERROR: puerto 5002 sigue tomado por PID(s) \$(\$still.OwningProcess -join ',') — no se pudo liberar"; exit 1 }
+          # 5.a LANZADORES SIN POWERSHELL (fase 3 del plan de memoria,
+          #     docs/PLAN_MEMORIA_SERVIDOR_2026_09_05.md). Hasta el 05/09 la
+          #     tarea arrancaba `powershell.exe -File launch_core.ps1` (un
+          #     archivo que vive sólo en el server) y ese powershell de 70 MB
+          #     se quedaba esperando toda la vida del programa. Ahora la
+          #     tarea arranca python DIRECTO con scripts/launch.py, que hace
+          #     lo mismo (variables de máquina, logs, waitress) en el proceso
+          #     que sirve. Se (re)registra en cada deploy, idempotente; el
+          #     .ps1 viejo NO se borra: es el rollback (poner
+          #     LANZADOR_PYTHON en '0' abajo y volver a deployar lo deja como
+          #     estaba... si el .ps1 sigue ahí). Fail-soft: si esto falla,
+          #     la tarea queda como estaba y el deploy sigue.
+          \$lanzadorPython = '1'
+          if (\$lanzadorPython -eq '1') {
+              try {
+                  \$py = 'C:\Python312\python.exe'
+                  \$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+                  \$pr = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+                  \$trg = New-ScheduledTaskTrigger -AtStartup
+                  foreach (\$par in @(@('ProgramaCoreApp','oficina'), @('PortalClienteApp','portal'))) {
+                      \$tarea, \$nombre = \$par
+                      if (\$tarea -eq 'PortalClienteApp' -and -not (Get-ScheduledTask -TaskName \$tarea -ErrorAction SilentlyContinue)) { continue }
+                      \$act = New-ScheduledTaskAction -Execute \$py -Argument "scripts\launch.py \$nombre" -WorkingDirectory 'C:\programa-core'
+                      Register-ScheduledTask -TaskName \$tarea -Action \$act -Trigger \$trg -Settings \$set -Principal \$pr -Force -Description "Programa Core (\$nombre) — python directo, scripts/launch.py" | Out-Null
+                      Write-Output "Lanzador: \$tarea -> python scripts\launch.py \$nombre"
+                  }
+              } catch {
+                  Write-Output "AVISO: no se pudo cambiar el lanzador, queda el de antes: \$_"
+              }
+          }
           Start-ScheduledTask -TaskName ProgramaCoreApp
 
           # 5.b El PORTAL DEL CLIENTE — el mismo código en otro proceso y otro
