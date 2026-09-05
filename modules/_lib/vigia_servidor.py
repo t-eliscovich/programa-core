@@ -73,7 +73,7 @@ def _java_mb(est: dict) -> int:
 def _barrer() -> int:
     from modules._lib import navegador
 
-    mi_dir = str(navegador._NAV.dir) if navegador._NAV.dir else None  # noqa: SLF001
+    mi_dir = str(navegador._NAV.perfil) if navegador._NAV.perfil else None  # noqa: SLF001
     return navegador.barrer_procesos_huerfanos(mi_dir=mi_dir)
 
 

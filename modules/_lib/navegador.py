@@ -328,8 +328,26 @@ def _es_huerfano(ruta: str, edad_s: float, mi_dir: str | None) -> bool:
             return True
         if dueno == os.getpid():
             return not (mi_dir and mi_dir.replace("\\", "/") in ruta.replace("\\", "/"))
-        return not _proceso_vivo(dueno)
+        return not _es_proceso_de_la_app(dueno)
     return edad_s > pdf_motor.TIMEOUT_S + 30
+
+
+def _es_proceso_de_la_app(pid: int) -> bool:
+    """¿Ese pid está vivo Y es un python (uno de los procesos de la app)?
+
+    Windows reusa los pids enseguida: el dueño "vivo" de una carpeta vieja
+    puede ser hoy un svchost cualquiera, y con `_proceso_vivo` a secas esos
+    huérfanos quedaban protegidos para siempre (05/09: 106 chrome que el
+    barrido no tocaba).
+    """
+    if not _proceso_vivo(pid):
+        return False
+    try:
+        import psutil
+
+        return psutil.Process(pid).name().lower().startswith("python")
+    except Exception:  # noqa: BLE001 -- sin psutil, vale lo de antes
+        return True
 
 
 def barrer_procesos_huerfanos(mi_dir: str | None) -> int:
@@ -400,7 +418,7 @@ def _barrer_huerfanos() -> None:
         shutil.rmtree(carpeta, ignore_errors=True)
     # Y los que no dejaron apunte (los hijos que sobrevivieron a un kill del
     # padre, los del camino de subprocess): se reconocen por la carpeta.
-    barrer_procesos_huerfanos(mi_dir=str(_NAV.dir) if _NAV.dir else None)
+    barrer_procesos_huerfanos(mi_dir=str(_NAV.perfil) if _NAV.perfil else None)
 
 
 def _matar_lo_anotado(carpeta: Path) -> None:
@@ -442,6 +460,10 @@ class _Navegador:
         self.ultimo_uso = 0.0
         self.proximo_intento = 0.0
         self._id = 0
+        self._arranques = 0
+        #: La carpeta del perfil del navegador prendido AHORA (lo que llevan
+        #: sus hijos en `--user-data-dir`); es lo que el barrido no toca.
+        self.perfil: Path | None = None
         #: Hasta cuándo puede durar la hoja que se está dibujando ahora. Lo
         #: pone `hoja()` y lo respetan TODOS los comandos: si no, cada uno
         #: podría esperar su propio techo y la suma no la mira nadie.
@@ -488,7 +510,13 @@ class _Navegador:
         _matar_lo_anotado(self.dir)
         shutil.rmtree(self.dir, ignore_errors=True)
         self.dir.mkdir(parents=True, exist_ok=True)
-        perfil = self.dir / "perfil"
+        # El perfil lleva un número de ARRANQUE: los hijos que sobrevivan a
+        # un apagado llevan el perfil viejo en su línea de comando, y así el
+        # barrido los distingue del navegador que está prendido ahora (con
+        # una sola carpeta `perfil` eran iguales y no se podían tocar).
+        self._arranques += 1
+        perfil = self.dir / f"perfil-{self._arranques}"
+        self.perfil = perfil
         cmd = [
             exe,
             "--headless=new",
@@ -545,7 +573,7 @@ class _Navegador:
                     pass
             self.proc = None
         if self.dir:
-            carpeta, self.dir = self.dir, None
+            carpeta, self.dir, self.perfil = self.dir, None, None
             # Lo que haya quedado con ESA carpeta en la línea de comando
             # (self.dir ya es None: para el barrido, ninguna es "la mía").
             try:
@@ -765,7 +793,7 @@ def _latido() -> None:
             # Cada latido barre lo que sobra: es barato (una pasada por la
             # lista de procesos) y es lo que hubiera evitado los 1.525 chrome
             # del 05/09.
-            barrer_procesos_huerfanos(mi_dir=str(_NAV.dir) if _NAV.dir else None)
+            barrer_procesos_huerfanos(mi_dir=str(_NAV.perfil) if _NAV.perfil else None)
             if _NAV.vivo():
                 if time.monotonic() - _NAV.ultimo_uso > IDLE_S:
                     with _NAV.lock:

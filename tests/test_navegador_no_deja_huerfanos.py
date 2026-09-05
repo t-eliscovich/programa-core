@@ -99,16 +99,16 @@ def test_reconoce_la_carpeta_nuestra_en_la_linea_de_comando():
 
 def test_cual_sobra(monkeypatch):
     yo = os.getpid()
-    monkeypatch.setattr(navegador, "_proceso_vivo", lambda pid: pid == 777)
+    monkeypatch.setattr(navegador, "_es_proceso_de_la_app", lambda pid: pid == 777)
     es = navegador._es_huerfano
     # De un proceso de la app que ya no existe: sobra.
     assert es(r"C:\Temp\pc-nav-999\perfil", 5, None) is True
     # Del hermano VIVO (portal/oficina): no se toca.
     assert es(r"C:\Temp\pc-nav-777\perfil", 5, None) is False
     # Mío, y es el prendido: no se toca.
-    assert es(f"/tmp/pc-nav-{yo}/perfil", 5, f"/tmp/pc-nav-{yo}") is False
-    # Mío, pero de una vida anterior (otra carpeta): sobra.
-    assert es(f"/tmp/pc-nav-{yo}/perfil", 5, "/tmp/pc-nav-otro") is True
+    assert es(f"/tmp/pc-nav-{yo}/perfil-3", 5, f"/tmp/pc-nav-{yo}/perfil-3") is False
+    # Mío, pero de un ARRANQUE anterior (otro perfil): sobra.
+    assert es(f"/tmp/pc-nav-{yo}/perfil-2", 5, f"/tmp/pc-nav-{yo}/perfil-3") is True
     # De un solo uso: sobra sólo pasado el timeout.
     assert es("/tmp/pc-pdf-abc/perfil", 3, None) is False
     assert es("/tmp/pc-img-abc/perfil", pdf_motor.TIMEOUT_S + 31, None) is True
@@ -133,7 +133,7 @@ def _con_procesos(monkeypatch, procs):
 
 
 def test_el_barrido_mata_lo_que_sobra_y_solo_eso(monkeypatch):
-    monkeypatch.setattr(navegador, "_proceso_vivo", lambda pid: pid == 777)
+    monkeypatch.setattr(navegador, "_es_proceso_de_la_app", lambda pid: pid == 777)
     procs = [
         # Hijos de un navegador de un proceso de la app ya muerto: sobran.
         _FakeProc(1, "chrome.exe", r"chrome.exe --type=renderer --user-data-dir=C:\T\pc-nav-999\perfil", 5),
@@ -171,3 +171,50 @@ def test_el_latido_barre_aunque_el_navegador_este_vivo():
 
     src = inspect.getsource(navegador._latido)
     assert "barrer_procesos_huerfanos" in src
+
+
+def test_el_dueno_de_una_carpeta_tiene_que_ser_un_python(monkeypatch):
+    """Windows reusa los pids: un svchost con el pid viejo no es el hermano."""
+    import types
+
+    monkeypatch.setattr(navegador, "_proceso_vivo", lambda pid: True)
+
+    class _P:
+        def __init__(self, pid):
+            self._n = {1: "python.exe", 2: "svchost.exe"}[pid]
+
+        def name(self):
+            return self._n
+
+    monkeypatch.setitem(sys.modules, "psutil", types.SimpleNamespace(Process=_P))
+    assert navegador._es_proceso_de_la_app(1) is True
+    assert navegador._es_proceso_de_la_app(2) is False
+    monkeypatch.setattr(navegador, "_proceso_vivo", lambda pid: False)
+    assert navegador._es_proceso_de_la_app(1) is False
+
+
+def test_cada_arranque_usa_un_perfil_distinto(monkeypatch, tmp_path):
+    """Los hijos del navegador anterior llevan el perfil viejo: por eso se
+    los puede barrer sin tocar al que está prendido."""
+    monkeypatch.setattr(navegador, "_carpeta_de", lambda pid: tmp_path / "pc-nav-1")
+    monkeypatch.setattr(navegador, "_matar_lo_anotado", lambda d: None)
+    vistos = []
+
+    class _Proc:
+        pid = 99
+
+        def poll(self):
+            return None
+
+    def _popen(cmd, **kw):
+        vistos.append([c for c in cmd if c.startswith("--user-data-dir=")][0])
+        (tmp_path / "pc-nav-1" / vistos[-1].split("=", 1)[1].rsplit("/", 1)[-1]).mkdir(parents=True, exist_ok=True)
+        raise OSError("hasta acá llega el test")
+
+    monkeypatch.setattr(navegador.subprocess, "Popen", _popen)
+    nav = navegador._Navegador()
+    for _ in range(2):
+        with pytest.raises(OSError):
+            nav._levantar("/bin/falso")
+    assert vistos[0].endswith("perfil-1") and vistos[1].endswith("perfil-2")
+    assert nav.perfil is not None and str(nav.perfil).endswith("perfil-2")
