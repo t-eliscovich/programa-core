@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Cómo loguea Metabase en el EC2 desde que arranca por java directo (05/09/2026,
+  plan de memoria de Programa Core, fase 3 — el último powershell.exe del server
+  era el que envolvía a Metabase sólo para hacer `*>> metabase.log`).
+
+  Metabase escribe a stdout; sin el powershell nadie lo captura, así que se le
+  da esta configuración de log4j2 (-Dlog4j.configurationFile=...) para que
+  escriba él mismo a C:\metabase\logs\metabase.log, rotando a 10 MB × 5.
+  El deploy de Programa Core copia este archivo a C:\metabase\log4j2.xml.
+-->
+<Configuration status="WARN" monitorInterval="60">
+  <Appenders>
+    <RollingFile name="Archivo"
+                 fileName="C:/metabase/logs/metabase.log"
+                 filePattern="C:/metabase/logs/metabase-%i.log">
+      <PatternLayout pattern="%d{yyyy-MM-dd HH:mm:ss} %-5p %c{2} :: %m%n"/>
+      <Policies>
+        <SizeBasedTriggeringPolicy size="10 MB"/>
+      </Policies>
+      <DefaultRolloverStrategy max="5"/>
+    </RollingFile>
+  </Appenders>
+  <Loggers>
+    <Logger name="metabase" level="INFO"/>
+    <Logger name="metabase-enterprise" level="INFO"/>
+    <Root level="WARN">
+      <AppenderRef ref="Archivo"/>
+    </Root>
+  </Loggers>
+</Configuration>

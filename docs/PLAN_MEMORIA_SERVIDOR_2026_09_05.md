@@ -206,9 +206,7 @@ la tabla por nombre) anotada acá abajo.
 
 ## 5. Cómo se pushea esto (rama `claude/memoria-servidor`, 05/09 a la noche)
 
-Todo el código de las fases 1, 2, 3 (PC), 4, 5 y la medición de la 6 está en
-la rama, con la suite en verde (7.033 sin base + 141 con base). Un solo push
-a `main` lo deploya todo. Qué mirar después del deploy, en este orden:
+Todo esto YA está en main y deployado (ver bitácora). Qué mirar después del deploy, en este orden:
 
 1. El log del deploy en Actions: `Lanzador: ProgramaCoreApp -> python ...`,
    `PC_INTERNO_SECRET: creado`, `Metabase: start-metabase.ps1 actualizado`,
@@ -233,6 +231,13 @@ OpenVPN (esperando la decisión: `windows.ps1 -ApagarOpenVpn`), y la baja
 de `-Xmx` de Metabase (fase 6, después de leer el gc.log).
 
 ## 5. Bitácora
+- 05/09 19:40 UTC — fase 3 COMPLETA: formulas (e3b4151, run #294) y máquinas
+  (b4d6f6b, el updater cambia la tarea solo) con `launch.py`; Metabase por
+  java directo con log4j2 a `C:\metabase\logs` (toma efecto a las 02:30).
+  En vivo antes de Metabase: powershell ×5 → ×1, 1.834 MB libres.
+- 05/09 19:00 UTC — fases 1, 2, 3 (PC), 4, 5 y gc.log deployadas (#3096):
+  mig 0243, secreto interno, lanzadores python, Defender/Google Update/pagefile.
+  powershell ×5 → ×3, chrome ×18 → ×9, 2.167 MB libres, PDF del portal 2,4 s.
 
 - 05/09 noche — fases 1, 2, 3 (PC), 4, 5 y la medición de la 6 escritas y
   probadas en la rama `claude/memoria-servidor`; se pushean el 06/09.

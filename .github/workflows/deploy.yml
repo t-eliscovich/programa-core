@@ -294,7 +294,7 @@ jobs:
           if (\$still) { Write-Output "ERROR: puerto 5002 sigue tomado por PID(s) \$(\$still.OwningProcess -join ',') — no se pudo liberar"; exit 1 }
           # 5.a LANZADORES SIN POWERSHELL (fase 3 del plan de memoria,
           #     docs/PLAN_MEMORIA_SERVIDOR_2026_09_05.md). Hasta el 05/09 la
-          #     tarea arrancaba `powershell.exe -File launch_core.ps1` (un
+          #     tarea arrancaba powershell.exe -File launch_core.ps1 (un
           #     archivo que vive sólo en el server) y ese powershell de 70 MB
           #     se quedaba esperando toda la vida del programa. Ahora la
           #     tarea arranca python DIRECTO con scripts/launch.py, que hace
@@ -382,24 +382,42 @@ jobs:
               Write-Output "AVISO: no se pudo registrar la foto diaria: \$_"
           }
 
-          # 5.d METABASE: su script de arranque vive en el repo
-          #     (scripts/servidor/start-metabase.ps1) y acá se copia a
-          #     C:\metabase si cambió — sin reiniciarlo (eso lo hace la tarea
-          #     de la noche). Y se registra Metabase_ReinicioNocturno (02:30
-          #     Ecuador, calculado desde la zona como la foto diaria).
-          #     TMT 2026-09-05: segunda vez en cinco días que java se comió
-          #     la memoria del server y todo quedó lento. Fail-soft.
+          # 5.d METABASE POR JAVA DIRECTO (05/09/2026, plan de memoria de PC,
+          #     fase 3 — el último powershell.exe del server era el que lo
+          #     envolvía sólo para redirigir el log). La tarea `Metabase` pasa
+          #     a arrancar java.exe con los topes de memoria (heap 768m +
+          #     metaspace/código/buffers/stack, 16 hilos, sale si se queda
+          #     sin memoria, gc.log para medir) y loguea él mismo con log4j2
+          #     a C:\metabase\logs (scripts/servidor/metabase-log4j2.xml).
+          #     gc.log va RELATIVO (WorkingDirectory C:\metabase): un ":" de
+          #     unidad adentro de -Xlog es un separador para la JVM.
+          #     Las dos variables que ponía el .ps1 (SSL) pasan a Máquina.
+          #     NO se reinicia acá: toma efecto en el reinicio nocturno de
+          #     las 02:30 (Metabase_ReinicioNocturno). Fail-soft.
           try {
-              \$src = 'C:\programa-core\scripts\servidor\start-metabase.ps1'
-              \$dst = 'C:\metabase\start-metabase.ps1'
-              if ((Test-Path \$src) -and (Test-Path 'C:\metabase')) {
-                  \$igual = (Test-Path \$dst) -and ((Get-FileHash \$src).Hash -eq (Get-FileHash \$dst).Hash)
-                  if (-not \$igual) {
-                      if (Test-Path \$dst) { Copy-Item \$dst "\$dst.bak-\$(Get-Date -Format yyyyMMdd-HHmm)" -Force }
-                      Copy-Item \$src \$dst -Force
-                      Write-Output "Metabase: start-metabase.ps1 actualizado (toma efecto en el proximo reinicio)"
-                  } else { Write-Output "Metabase: start-metabase.ps1 sin cambios" }
+              foreach (\$par in @(@('MB_DB_SSL','true'), @('MB_DB_SSL_MODE','require'), @('MB_JETTY_MAXTHREADS','16'))) {
+                  \$n, \$v = \$par
+                  if ([System.Environment]::GetEnvironmentVariable(\$n, 'Machine') -ne \$v) {
+                      [Environment]::SetEnvironmentVariable(\$n, \$v, 'Machine'); Write-Output "Metabase: variable \$n puesta"
+                  }
               }
+              if (-not (Test-Path 'C:\metabase\logs')) { New-Item -ItemType Directory -Path 'C:\metabase\logs' -Force | Out-Null }
+              \$lsrc = 'C:\programa-core\scripts\servidor\metabase-log4j2.xml'
+              \$ldst = 'C:\metabase\log4j2.xml'
+              if (-not (Test-Path \$ldst) -or ((Get-FileHash \$lsrc).Hash -ne (Get-FileHash \$ldst).Hash)) {
+                  Copy-Item \$lsrc \$ldst -Force; Write-Output "Metabase: log4j2.xml actualizado"
+              }
+              \$java = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.5.11-hotspot\bin\java.exe'
+              \$jargs = '-Xmx768m -Xlog:gc*:file=gc.log:time:filecount=3,filesize=5m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=64m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dlog4j.configurationFile=file:///C:/metabase/log4j2.xml -jar C:\metabase\metabase.jar'
+              \$tm = Get-ScheduledTask -TaskName Metabase -ErrorAction SilentlyContinue
+              if (\$tm -and (Test-Path \$java)) {
+                  \$a0 = \$tm.Actions[0]
+                  if (\$a0.Execute -ne \$java -or \$a0.Arguments -ne \$jargs) {
+                      \$act = New-ScheduledTaskAction -Execute \$java -Argument \$jargs -WorkingDirectory 'C:\metabase'
+                      Set-ScheduledTask -TaskName Metabase -Action \$act | Out-Null
+                      Write-Output "Metabase: la tarea arranca java directo (toma efecto en el reinicio de las 02:30)"
+                  } else { Write-Output "Metabase: la tarea ya arranca java directo" }
+              } else { Write-Output "Metabase: sin tarea o sin java en la ruta esperada — no se toca" }
               \$ecTz = [TimeZoneInfo]::FindSystemTimeZoneById('SA Pacific Standard Time')
               \$hoyEc = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, \$ecTz).Date
               \$mObjEc = \$hoyEc.AddHours(2).AddMinutes(30)

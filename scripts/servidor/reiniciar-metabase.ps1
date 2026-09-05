@@ -3,7 +3,7 @@
 #
 # TMT 2026-09-05. Java toma memoria hasta su tope y no la devuelve: en cinco
 # días de uso Metabase llegó dos veces a dejar el server sin memoria y con
-# todo lento. Con los topes de start-metabase.ps1 no debería pasar; esto es
+# todo lento. Con los topes de la JVM (deploy.yml, paso 5.d) no debería pasar; esto es
 # el cinturón además de los tiradores: un arranque limpio cada noche, cuando
 # no lo usa nadie. Mata SÓLO java por PID (nunca por nombre de otro proceso:
 # los python.exe son los programas y los powershell.exe sus lanzadores).
