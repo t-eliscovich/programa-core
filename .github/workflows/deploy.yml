@@ -388,6 +388,9 @@ jobs:
           #     a arrancar java.exe con los topes de memoria (heap 768m +
           #     metaspace/código/buffers/stack, 16 hilos, sale si se queda
           #     sin memoria, gc.log para medir) y loguea él mismo con log4j2
+          #     ⚠ Metaspace 512m, no 256m: con 256m Metabase murió el 05/09 a las
+          #     21:42 UTC ("Terminating due to OutOfMemoryError: Metaspace") —
+          #     carga cientos de MB de clases Clojure; el tope chico lo mata.
           #     a C:\metabase\logs (scripts/servidor/metabase-log4j2.xml).
           #     gc.log va RELATIVO (WorkingDirectory C:\metabase): un ":" de
           #     unidad adentro de -Xlog es un separador para la JVM.
@@ -408,7 +411,7 @@ jobs:
                   Copy-Item \$lsrc \$ldst -Force; Write-Output "Metabase: log4j2.xml actualizado"
               }
               \$java = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.5.11-hotspot\bin\java.exe'
-              \$jargs = '-Xmx768m -Xlog:gc*:file=gc.log:time:filecount=3,filesize=5m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=64m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dlog4j.configurationFile=file:///C:/metabase/log4j2.xml -jar C:\metabase\metabase.jar'
+              \$jargs = '-Xmx768m -Xlog:gc*:file=gc.log:time:filecount=3,filesize=5m -XX:MaxMetaspaceSize=512m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=64m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dlog4j.configurationFile=file:///C:/metabase/log4j2.xml -jar C:\metabase\metabase.jar'
               \$tm = Get-ScheduledTask -TaskName Metabase -ErrorAction SilentlyContinue
               # Cómo está y cómo le fue la última vez: lo que uno miraría por SSM
               # después de una caída (05/09 21:42). Sale en cada deploy, corto.
