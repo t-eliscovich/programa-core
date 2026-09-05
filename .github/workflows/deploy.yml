@@ -417,6 +417,15 @@ jobs:
                       Set-ScheduledTask -TaskName Metabase -Action \$act | Out-Null
                       Write-Output "Metabase: la tarea arranca java directo (toma efecto en el reinicio de las 02:30)"
                   } else { Write-Output "Metabase: la tarea ya arranca java directo" }
+                  # 05/09 21:42 UTC: java SALIO (ExitOnOutOfMemoryError con 768m) y la
+                  # tarea Metabase no tenia reinicio: quedo muerto hasta que el vigia
+                  # avizo. Mismo RestartCount que las apps: si sale, vuelve solo al minuto.
+                  \$st = \$tm.Settings
+                  if (\$st.RestartCount -lt 3 -or \$st.ExecutionTimeLimit -ne 'PT0S') {
+                      \$set = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -ExecutionTimeLimit ([TimeSpan]::Zero) -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+                      Set-ScheduledTask -TaskName Metabase -Settings \$set | Out-Null
+                      Write-Output "Metabase: la tarea se reinicia sola si java sale (RestartCount 3)"
+                  } else { Write-Output "Metabase: reinicio automatico ya estaba" }
               } else { Write-Output "Metabase: sin tarea o sin java en la ruta esperada — no se toca" }
               \$ecTz = [TimeZoneInfo]::FindSystemTimeZoneById('SA Pacific Standard Time')
               \$hoyEc = [TimeZoneInfo]::ConvertTime([DateTime]::UtcNow, \$ecTz).Date

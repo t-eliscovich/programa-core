@@ -244,19 +244,24 @@ def test_la_pantalla_dibuja_la_curva(app, fake_db, monkeypatch):
 def test_metabase_caido_cinco_minutos_avisa_una_vez(monkeypatch):
     hecho = _espias(monkeypatch)
     monkeypatch.setattr(v, "metabase_contesta", lambda: False)
+    arranques = []
+    monkeypatch.setattr(v, "_arrancar_tarea_metabase", lambda: arranques.append(1) or "arranqué la tarea Metabase")
     for _ in range(4):
         assert v.vigilar_metabase() is None
     assert hecho["avisos"] == []
     v.vigilar_metabase()
     assert hecho["avisos"][0][0] == "Metabase no contesta"
     assert "5 min" in hecho["avisos"][0][1]
+    assert "arranqué la tarea Metabase" in hecho["avisos"][0][1]
+    assert arranques == [1]
     for _ in range(10):
         v.vigilar_metabase()
-    assert len(hecho["avisos"]) == 1
+    assert len(hecho["avisos"]) == 1 and arranques == [1]
 
 
 def test_metabase_que_vuelve_avisa_y_resetea(monkeypatch):
     hecho = _espias(monkeypatch)
+    monkeypatch.setattr(v, "_arrancar_tarea_metabase", lambda: "arranqué la tarea Metabase")
     monkeypatch.setattr(v, "metabase_contesta", lambda: False)
     for _ in range(6):
         v.vigilar_metabase()
@@ -298,3 +303,8 @@ def test_metabase_contesta_es_fail_soft_sin_red(monkeypatch):
     # La fixture pisa `metabase_contesta`; acá se prueba la de verdad.
     real = importlib.reload(v).metabase_contesta
     assert real() is False
+
+
+def test_arrancar_la_tarea_solo_en_windows(monkeypatch):
+    monkeypatch.setattr(v.sys, "platform", "linux")
+    assert "no es Windows" in v._arrancar_tarea_metabase()

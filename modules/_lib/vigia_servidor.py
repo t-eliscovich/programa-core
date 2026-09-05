@@ -256,14 +256,32 @@ def vigilar_metabase() -> dict | None:
     _metabase_caidas += 1
     if _metabase_caidas >= METABASE_VUELTAS_SIN_CONTESTAR and not _metabase_avisado:
         _metabase_avisado = True
+        # 05/09 21:42 UTC: java salió (tope de memoria) y la tarea quedó
+        # muerta hasta que alguien miró el mail. Ahora se la arranca de acá:
+        # es lo que hubiera hecho cualquiera al leerlo.
+        hecho = _arrancar_tarea_metabase()
         return _avisar(
             "Metabase no contesta",
             f"Metabase ({METABASE_SALUD_URL}) lleva {_metabase_caidas} min sin responder. "
             f"Sin él no entran los datos de Asinfo (stock, producción, facturas del día). "
-            f"Mirar la tarea 'Metabase' en el servidor y C:\\metabase\\logs\\metabase.log; "
-            f"si no levanta, C:\\metabase\\reinicios.log dice qué pasó a las 02:30.",
+            f"Lo que hice: {hecho}. Si en 5 min no llega el mail de 'Metabase volvió', "
+            f"mirar C:\\metabase\\logs\\metabase.log y la tarea 'Metabase' en el servidor.",
             clave=f"metabase-caido-{int(time.time() // 3600)}")
     return None
+
+
+def _arrancar_tarea_metabase() -> str:
+    """`schtasks /Run /TN Metabase` — sin PowerShell. Devuelve qué pasó."""
+    if not sys.platform.startswith("win"):
+        return "no es Windows: no se arranca la tarea"
+    try:
+        r = subprocess.run(["schtasks", "/Run", "/TN", "Metabase"],
+                           capture_output=True, text=True, timeout=30)
+        if r.returncode == 0:
+            return "arranqué la tarea Metabase"
+        return f"schtasks salió {r.returncode}: {(r.stderr or r.stdout).strip()[:120]}"
+    except Exception as e:  # noqa: BLE001
+        return f"no pude arrancar la tarea: {e}"
 
 
 def revisar(ahora: float | None = None) -> dict:
