@@ -246,15 +246,13 @@ def test_como_pagar_sin_texto_dice_que_llame(monkeypatch):
         deshacer()
 
 
-def test_el_inicio_dice_el_cupo_solo_si_lo_tiene(monkeypatch):
-    from modules.portal import views
-    monkeypatch.setattr(views.acceso, "ficha", lambda cod: {"cupo": 20000})
-    c = views._cupo_de("AJT", {"saldo": 5000, "saldo_neto": 5000, "cheques_por_cobrar": 3000})
-    assert c == {"cupo": 20000.0, "usado": 8000.0, "libre": 12000.0, "pct": 40}
-    monkeypatch.setattr(views.acceso, "ficha", lambda cod: {"cupo": None})
-    assert views._cupo_de("AJT", {"saldo": 5000}) is None
-    monkeypatch.setattr(views.acceso, "ficha", lambda cod: {"cupo": 0})
-    assert views._cupo_de("AJT", {"saldo": 5000}) is None
+def test_el_inicio_NO_muestra_el_cupo():
+    """Dueña 04/09/2026: *"no mostremos cupo porque muchos clientes están
+    pasados"*. Que nadie lo vuelva a poner sin hablar con ella."""
+    inicio = (TPL / "inicio.html").read_text(encoding="utf-8")
+    assert "cupo" not in inicio.lower()
+    vistas = (ROOT / "modules" / "portal" / "views.py").read_text(encoding="utf-8")
+    assert "cupo=" not in vistas
 
 
 # ---------------------------------------------------------------------------

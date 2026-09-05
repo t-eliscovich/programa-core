@@ -357,22 +357,9 @@ def _despachos_recientes(cod: str, ruc: str) -> list | None:
     return presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
 
 
-def _cupo_de(cod: str, t: dict) -> dict | None:
-    """Cuánto más puede comprar. Misma cuenta que la ficha de la oficina y
-    la del vendedor (skill cupos-clientes): saldo neto + cheques por cobrar,
-    sobre el cupo. Sin cupo cargado (NULL o 0) no se dice nada: un cero se
-    leería como "no puede comprar"."""
-    try:
-        fic = acceso.ficha(cod) or {}
-        cupo = presentacion.numero(fic.get("cupo"))
-    except Exception:  # noqa: BLE001 -- sin ficha, sin cupo
-        return None
-    if cupo <= 0:
-        return None
-    saldo = t.get("saldo_neto") if t.get("saldo_neto") is not None else t.get("saldo")
-    usado = presentacion.numero(saldo) + presentacion.numero(t.get("cheques_por_cobrar"))
-    return {"cupo": cupo, "usado": usado, "libre": max(0.0, cupo - usado),
-            "pct": min(999, round(100 * usado / cupo))}
+# El CUPO no se muestra. Dueña 04/09/2026: *"no mostremos cupo porque muchos
+# clientes están pasados"*. Un "puede comprar hasta $ 0 más" en el celular del
+# cliente es una conversación que tiene que tener el vendedor, no la pantalla.
 
 
 def _pagos_de(data: dict) -> list[dict]:
@@ -405,7 +392,6 @@ def estado_cuenta():
     return render_template(
         "portal/inicio.html",
         data=data, t=t, codigo=cod, cli=fic,
-        cupo=_cupo_de(cod, t),
         facturas=facturas,
         n_vencidas=len(vencidas),
         saldo_vencido=sum(presentacion.numero(f.get("saldo")) for f in vencidas),
