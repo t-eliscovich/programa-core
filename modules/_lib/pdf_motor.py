@@ -246,8 +246,11 @@ def desde_html(html: str, static_dir: str | os.PathLike | None = None, *,
             entrada.resolve().as_uri(),
         ]
         try:
-            subprocess.run(cmd, check=False, timeout=TIMEOUT_S,
-                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Con timeout que mata el ÁRBOL: `subprocess.run(timeout=)` deja
+            # vivos a los hijos del navegador en Windows (la fuga del 05/09,
+            # ver navegador.correr_y_matar_el_arbol).
+            from modules._lib import navegador as _nav
+            _nav.correr_y_matar_el_arbol(cmd, TIMEOUT_S)
         except subprocess.TimeoutExpired as e:
             raise SinMotor("El navegador tardó demasiado en imprimir.") from e
 

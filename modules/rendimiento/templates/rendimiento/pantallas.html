@@ -59,12 +59,15 @@
       todo se pone lento a la vez. El que más tiene es el de arriba de la lista.
     </p>
     {% endif %}
-    <div class="text-xs text-slate-500 mb-1">Los procesos que más memoria tienen (privada, no working set)</div>
+    <div class="text-xs text-slate-500 mb-1">Quién tiene la memoria, sumando todos los procesos del mismo nombre (privada, no working set)</div>
     <table class="text-sm">
       {% for p in servidor.procesos %}
-      <tr><td class="px-3 font-mono text-xs">{{ p.nombre }}</td><td class="text-right px-3">{{ p.memoria_mb }} MB</td><td class="text-right text-slate-500">{{ p.cpu_pct }}% CPU</td></tr>
+      <tr><td class="px-3 font-mono text-xs">{{ p.nombre }}</td><td class="text-right px-3 text-slate-500">{% if p.cuantos > 1 %}×{{ p.cuantos }}{% endif %}</td><td class="text-right px-3">{{ p.memoria_mb }} MB</td><td class="text-right text-slate-500">{{ p.cpu_pct }}% CPU</td></tr>
       {% endfor %}
     </table>
+    <div class="text-xs mt-2 {% if servidor.navegadores > 40 %}text-rose-700 dark:text-rose-400 font-semibold{% else %}text-slate-500{% endif %}">
+      Navegadores del programa (los que sacan PDFs e imágenes): {{ servidor.navegadores }} procesos{% if servidor.navegadores > 40 %} — son huérfanos, el programa los está barriendo{% endif %}
+    </div>
   </div>
   {% endif %}
 

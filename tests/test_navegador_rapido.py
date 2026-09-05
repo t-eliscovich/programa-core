@@ -541,7 +541,7 @@ def test_el_pdf_sale_del_navegador_prendido_si_lo_hay(monkeypatch):
     monkeypatch.setattr(pdf_motor, "binario", lambda: "/bin/falso")
     monkeypatch.setattr("modules._lib.navegador.pdf",
                         lambda html, static, fondo=False: b"%PDF-1.4 prendido")
-    monkeypatch.setattr(pdf_motor.subprocess, "run", _prohibido)
+    monkeypatch.setattr("modules._lib.navegador.correr_y_matar_el_arbol", _prohibido)
     assert pdf_motor.desde_html("<html>a</html>") == b"%PDF-1.4 prendido"
 
 
@@ -562,13 +562,15 @@ def test_si_no_hay_navegador_prendido_el_pdf_sale_por_el_camino_viejo(monkeypatc
     monkeypatch.setattr("modules._lib.navegador.pdf", lambda html, static, fondo=False: None)
     corridas = []
 
-    def _correr(cmd, **kw):
+    def _correr(cmd, timeout=None, **kw):
         corridas.append(cmd)
         salida = [c for c in cmd if str(c).startswith("--print-to-pdf=")][0]
         from pathlib import Path
         Path(salida.split("=", 1)[1]).write_bytes(b"%PDF-1.4 viejo")
 
-    monkeypatch.setattr(pdf_motor.subprocess, "run", _correr)
+    # Desde el 05/09 el camino viejo pasa por `correr_y_matar_el_arbol`
+    # (mata el árbol si se pasa del timeout); es lo que se intercepta.
+    monkeypatch.setattr("modules._lib.navegador.correr_y_matar_el_arbol", _correr)
     assert pdf_motor.desde_html("<html>b</html>") == b"%PDF-1.4 viejo"
     assert corridas, "no cayó al camino de siempre"
 
@@ -583,7 +585,7 @@ def test_la_foto_sale_del_navegador_prendido_si_lo_hay(monkeypatch):
     monkeypatch.setattr(pdf_motor, "binario", lambda: "/bin/falso")
     monkeypatch.setattr("modules._lib.navegador.png",
                         lambda html, static, ancho, alto: buf.getvalue())
-    monkeypatch.setattr(imagen_motor.subprocess, "run", _prohibido)
+    monkeypatch.setattr("modules._lib.navegador.correr_y_matar_el_arbol", _prohibido)
     assert imagen_motor.desde_html("<html>c</html>", filas=2)
 
 

@@ -56,24 +56,48 @@ def _privada(p) -> int:
 
 
 def procesos(n: int = TOP_PROCESOS) -> list[dict]:
-    """Los `n` procesos que más memoria PRIVADA tienen, con su CPU."""
+    """Los `n` NOMBRES de proceso que más memoria PRIVADA suman, con cuántos son.
+
+    ⭐ POR NOMBRE y no por proceso, y es la lección del 05/09/2026: en la
+    lista por proceso el que más tenía era java (1.614 MB) y se le echó la
+    culpa; agrupando por nombre apareció **chrome × 1.525 = 8.903 MB** —
+    cada uno chiquito, entre todos el servidor entero (ver
+    navegador.correr_y_matar_el_arbol).
+    """
     try:
         import psutil
     except Exception:  # noqa: BLE001
         return []
-    filas: list[dict] = []
+    grupos: dict[str, dict] = {}
     for p in psutil.process_iter(["pid", "name"]):
         try:
-            filas.append({
-                "pid": p.info["pid"],
-                "nombre": p.info["name"] or "",
-                "memoria_mb": _mb(_privada(p)),
-                "cpu_pct": round(float(p.cpu_percent(interval=None) or 0), 1),
-            })
+            nombre = p.info["name"] or ""
+            mb = _mb(_privada(p))
+            cpu = float(p.cpu_percent(interval=None) or 0)
         except Exception:  # noqa: BLE001 -- procesos del sistema sin permiso
             continue
-    filas.sort(key=lambda f: f["memoria_mb"], reverse=True)
+        g = grupos.setdefault(nombre, {"nombre": nombre, "cuantos": 0,
+                                       "memoria_mb": 0, "cpu_pct": 0.0})
+        g["cuantos"] += 1
+        g["memoria_mb"] += mb
+        g["cpu_pct"] = round(g["cpu_pct"] + cpu, 1)
+    filas = sorted(grupos.values(), key=lambda f: f["memoria_mb"], reverse=True)
     return filas[:n]
+
+
+#: Más navegadores nuestros que esto es una fuga (el prendido son ~8
+#: procesos; dos apps × un PDF en curso, ~30).
+NAVEGADORES_MAXIMO = 40
+
+
+def navegadores() -> int:
+    """Cuántos procesos de navegadores NUESTROS hay (headless de PDF/imagen)."""
+    try:
+        from modules._lib import navegador
+
+        return navegador.contar_procesos_nuestros()
+    except Exception:  # noqa: BLE001
+        return 0
 
 
 def cpu() -> dict:
@@ -106,6 +130,7 @@ def estado() -> dict:
         **mem,
         **cpu(),
         "procesos": procesos(),
+        "navegadores": navegadores(),
         "programa": este_proceso(),
         "memoria_minima_mb": MEMORIA_MINIMA_MB,
         "falta_memoria": bool(mem) and mem["disponible_mb"] < MEMORIA_MINIMA_MB,
@@ -122,8 +147,20 @@ def health() -> dict:
     alerts: list[dict] = []
     if not est.get("total_mb"):
         return {"ok": True, "alerts": [], "stats": {"nota": "sin lectura del servidor"}}
+    if est.get("navegadores", 0) > NAVEGADORES_MAXIMO:
+        alerts.append({
+            "tipo": "navegadores_huerfanos",
+            "navegadores": est["navegadores"],
+            "detalle": (
+                f"Hay {est['navegadores']} procesos de navegadores del programa "
+                f"(máximo {NAVEGADORES_MAXIMO}): quedaron huérfanos de sacar PDFs "
+                f"e imágenes y se comen la memoria. El latido del navegador los "
+                f"barre solo; si el número no baja, reiniciar el programa."
+            ),
+        })
     if est["falta_memoria"]:
-        top = ", ".join(f"{p['nombre']} {p['memoria_mb']} MB" for p in est["procesos"][:3])
+        top = ", ".join(f"{p['nombre']} ×{p['cuantos']} {p['memoria_mb']} MB"
+                        for p in est["procesos"][:3])
         alerts.append({
             "tipo": "servidor_sin_memoria",
             "disponible_mb": est["disponible_mb"],
@@ -136,6 +173,7 @@ def health() -> dict:
         })
     stats = {k: est.get(k) for k in ("total_mb", "disponible_mb", "usado_pct", "cpu_pct")}
     stats["programa_mb"] = est.get("programa", {}).get("memoria_mb")
-    stats["top"] = [{"nombre": p["nombre"], "memoria_mb": p["memoria_mb"]}
-                    for p in est["procesos"][:3]]
+    stats["navegadores"] = est.get("navegadores")
+    stats["top"] = [{"nombre": p["nombre"], "cuantos": p["cuantos"],
+                     "memoria_mb": p["memoria_mb"]} for p in est["procesos"][:3]]
     return {"ok": not alerts, "alerts": alerts, "stats": stats}

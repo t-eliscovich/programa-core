@@ -59,6 +59,7 @@ import base64
 import json
 import logging
 import os
+import re
 import shutil
 import signal
 import socket
@@ -251,6 +252,130 @@ def _es_ese_navegador(pid: int, exe: str) -> bool:
     return nombre in cmd
 
 
+#: Los prefijos de las carpetas temporales de NUESTROS navegadores. Todo
+#: proceso del navegador lleva el `--user-data-dir` en su línea de comando
+#: (Chromium se lo pasa a cada hijo), así que por acá se reconoce a los
+#: nuestros sin tocar el Chrome que alguien dejó abierto en el servidor.
+PREFIJOS_NUESTROS = ("pc-nav-", "pc-pdf-", "pc-img-")
+
+
+def correr_y_matar_el_arbol(cmd: list[str], timeout: float) -> None:
+    """`subprocess.run(cmd, timeout=...)` pero, si se pasa, mata el ÁRBOL.
+
+    🚨 LA FUGA DEL 05/09/2026 (Andrés: *"está super lento el sistema"*).
+    Windows no mata a los hijos cuando muere el padre. `subprocess.run` con
+    `timeout` —y `Popen.terminate()`/`kill()`— matan SÓLO al proceso del
+    navegador; sus hijos (renderer, GPU, utility, crashpad) quedan vivos
+    para siempre, ~6 MB cada uno. Este módulo apagaba el navegador cada 15
+    min sin uso y lo volvía a prender, y cada apagado dejaba media docena
+    de huérfanos: en diez días fueron **1.525 procesos `chrome` con 8,9 GB
+    privados** en un servidor de 4 GB, paginando a disco, con TODO lento —
+    y culpamos a Metabase porque en la lista por proceso cada chrome era
+    chiquito. Por eso `matar()` y los dos `subprocess` de pdf_motor e
+    imagen_motor pasan por acá: `taskkill /T` en Windows, y en Linux el
+    kill de siempre (ahí los huérfanos los adopta init y salen solos).
+    """
+    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL)
+    try:
+        proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        _matar_pid(proc.pid)
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:  # pragma: no cover -- ya se intentó todo
+            pass
+        raise
+
+
+_RE_DIR = re.compile(r"--user-data-dir=(\S+)")
+
+#: Cómo se llama el ejecutable de un navegador. Un proceso que no se llama
+#: así NO se toca aunque lleve `pc-pdf-` en la línea de comando (el shell
+#: que lanzó un test, por ejemplo — pasó, y se llevó puesto al pytest).
+_NOMBRES_NAVEGADOR = ("chrome", "msedge", "chromium", "google-chrome")
+
+
+def _es_navegador(nombre: str | None) -> bool:
+    return (nombre or "").lower().startswith(_NOMBRES_NAVEGADOR)
+
+
+def _carpeta_en(cmdline: str, nombre: str | None = "chrome") -> str | None:
+    """La carpeta temporal nuestra que lleva esa línea de comando, o None."""
+    if not _es_navegador(nombre):
+        return None
+    m = _RE_DIR.search(cmdline)
+    if not m:
+        return None
+    ruta = m.group(1).strip('"')
+    return ruta if any(pref in ruta for pref in PREFIJOS_NUESTROS) else None
+
+
+def _es_huerfano(ruta: str, edad_s: float, mi_dir: str | None) -> bool:
+    """Decide si un proceso nuestro con esa carpeta sobra.
+
+    · `pc-nav-<pid>`: sobra si el proceso dueño ya no existe, o si el dueño
+      soy yo y la carpeta no es la del navegador que tengo prendido. La del
+      HERMANO vivo (oficina/portal) no se toca: su latido barre la suya.
+    · `pc-pdf-*` / `pc-img-*`: son de un navegador de un solo uso; si sigue
+      vivo pasado el timeout, es un hijo que sobrevivió al kill del padre.
+    """
+    nombre = ruta.replace("\\", "/").split("pc-", 1)[1]  # nav-123/perfil
+    if nombre.startswith("nav-"):
+        try:
+            dueno = int(nombre.split("-", 1)[1].split("/", 1)[0])
+        except ValueError:
+            return True
+        if dueno == os.getpid():
+            return not (mi_dir and mi_dir.replace("\\", "/") in ruta.replace("\\", "/"))
+        return not _proceso_vivo(dueno)
+    return edad_s > pdf_motor.TIMEOUT_S + 30
+
+
+def barrer_procesos_huerfanos(mi_dir: str | None) -> int:
+    """Mata los procesos de navegadores nuestros que sobran (ver `_es_huerfano`).
+
+    Reconoce a los nuestros por el `--user-data-dir` con uno de los prefijos
+    de `PREFIJOS_NUESTROS`; un Chrome abierto a mano en el servidor no lo
+    tiene y no se toca. Devuelve cuántos mató. Fail-soft: sin psutil, cero.
+    """
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001
+        return 0
+    ahora = time.time()
+    muertos = 0
+    for p in psutil.process_iter(["pid", "name", "cmdline", "create_time"]):
+        try:
+            ruta = _carpeta_en(" ".join(p.info.get("cmdline") or []), p.info.get("name"))
+            if not ruta:
+                continue
+            if _es_huerfano(ruta, ahora - float(p.info.get("create_time") or ahora), mi_dir):
+                p.kill()
+                muertos += 1
+        except Exception:  # noqa: BLE001 -- ya murió, o no es nuestro de matar
+            continue
+    if muertos:
+        _LOG.warning("Se mataron %s procesos huérfanos de navegadores nuestros", muertos)
+    return muertos
+
+
+def contar_procesos_nuestros() -> int:
+    """Cuántos procesos de navegadores nuestros hay vivos (para el health)."""
+    try:
+        import psutil
+    except Exception:  # noqa: BLE001
+        return 0
+    n = 0
+    for p in psutil.process_iter(["name", "cmdline"]):
+        try:
+            if _carpeta_en(" ".join(p.info.get("cmdline") or []), p.info.get("name")):
+                n += 1
+        except Exception:  # noqa: BLE001
+            continue
+    return n
+
+
 def _barrer_huerfanos() -> None:
     """Mata los navegadores que quedaron de procesos de la app que ya no están.
 
@@ -273,6 +398,9 @@ def _barrer_huerfanos() -> None:
             continue
         _matar_lo_anotado(carpeta)
         shutil.rmtree(carpeta, ignore_errors=True)
+    # Y los que no dejaron apunte (los hijos que sobrevivieron a un kill del
+    # padre, los del camino de subprocess): se reconocen por la carpeta.
+    barrer_procesos_huerfanos(mi_dir=str(_NAV.dir) if _NAV.dir else None)
 
 
 def _matar_lo_anotado(carpeta: Path) -> None:
@@ -295,6 +423,7 @@ def _matar_lo_anotado(carpeta: Path) -> None:
 
 
 def _matar_pid(pid: int) -> None:
+    """Mata el proceso Y SUS HIJOS (`/T`). Ver `correr_y_matar_el_arbol`."""
     if sys.platform.startswith("win"):
         subprocess.run(["taskkill", "/PID", str(pid), "/F", "/T"],
                        capture_output=True, timeout=15)
@@ -405,9 +534,10 @@ class _Navegador:
             self.ws.cerrar()
             self.ws = None
         if self.proc:
+            # El ÁRBOL, no sólo el padre: ver `correr_y_matar_el_arbol`.
             try:
-                self.proc.terminate()
-                self.proc.wait(timeout=5)
+                _matar_pid(self.proc.pid)
+                self.proc.wait(timeout=10)
             except Exception:  # noqa: BLE001 -- si no se deja, se lo mata
                 try:
                     self.proc.kill()
@@ -415,8 +545,14 @@ class _Navegador:
                     pass
             self.proc = None
         if self.dir:
-            shutil.rmtree(self.dir, ignore_errors=True)
-            self.dir = None
+            carpeta, self.dir = self.dir, None
+            # Lo que haya quedado con ESA carpeta en la línea de comando
+            # (self.dir ya es None: para el barrido, ninguna es "la mía").
+            try:
+                barrer_procesos_huerfanos(mi_dir=None)
+            except Exception:  # noqa: BLE001
+                pass
+            shutil.rmtree(carpeta, ignore_errors=True)
 
     # -- CDP ----------------------------------------------------------------
 
@@ -626,6 +762,10 @@ def _latido() -> None:
     """Lo levanta si hace falta y lo apaga si nadie lo usa."""
     while True:
         try:
+            # Cada latido barre lo que sobra: es barato (una pasada por la
+            # lista de procesos) y es lo que hubiera evitado los 1.525 chrome
+            # del 05/09.
+            barrer_procesos_huerfanos(mi_dir=str(_NAV.dir) if _NAV.dir else None)
             if _NAV.vivo():
                 if time.monotonic() - _NAV.ultimo_uso > IDLE_S:
                     with _NAV.lock:
