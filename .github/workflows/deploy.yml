@@ -410,6 +410,19 @@ jobs:
               \$java = 'C:\Program Files\Eclipse Adoptium\jdk-21.0.5.11-hotspot\bin\java.exe'
               \$jargs = '-Xmx768m -Xlog:gc*:file=gc.log:time:filecount=3,filesize=5m -XX:MaxMetaspaceSize=256m -XX:ReservedCodeCacheSize=96m -XX:MaxDirectMemorySize=64m -Xss512k -XX:+UseSerialGC -XX:+ExitOnOutOfMemoryError -Dlog4j.configurationFile=file:///C:/metabase/log4j2.xml -jar C:\metabase\metabase.jar'
               \$tm = Get-ScheduledTask -TaskName Metabase -ErrorAction SilentlyContinue
+              # Cómo está y cómo le fue la última vez: lo que uno miraría por SSM
+              # después de una caída (05/09 21:42). Sale en cada deploy, corto.
+              if (\$tm) {
+                  \$ti = \$tm | Get-ScheduledTaskInfo
+                  Write-Output "Metabase: estado \$(\$tm.State), ultima corrida \$(\$ti.LastRunTime) resultado \$(\$ti.LastTaskResult)"
+                  Get-ChildItem C:\metabase -Filter 'hs_err*' -ErrorAction SilentlyContinue | ForEach-Object { Write-Output "Metabase: volcado de la JVM \$(\$_.Name) \$(\$_.LastWriteTime)" }
+                  foreach (\$lf in @('C:\metabase\logs\metabase.log', 'C:\metabase\metabase.log')) {
+                      if (Test-Path \$lf) {
+                          Write-Output "--- \$lf (ultimas 12) ---"
+                          Get-Content \$lf -Tail 12 -ErrorAction SilentlyContinue | ForEach-Object { Write-Output ("  " + \$_.Substring(0, [Math]::Min(160, \$_.Length))) }
+                      }
+                  }
+              }
               if (\$tm -and (Test-Path \$java)) {
                   \$a0 = \$tm.Actions[0]
                   if (\$a0.Execute -ne \$java -or \$a0.Arguments -ne \$jargs) {
