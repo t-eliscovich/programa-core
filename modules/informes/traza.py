@@ -73,7 +73,7 @@ def _fila_desde_balance(bal: dict) -> dict:
     term = etapas.get("terminado") or {}
     kg = bal.get("kg") or {}
     hil = bal.get("hilado_valuacion") or {}
-    return {
+    fila = {
         "utilidad": _f(comp, "utilidad"),
         "patr_neto": (
             (_f(comp, "patr") or 0) - (_f(comp, "uret") or 0)
@@ -106,6 +106,16 @@ def _fila_desde_balance(bal: dict) -> dict:
         "venta_kg": _f(kg, "kvent"),
         "venta_us": _f(kg, "uvent"),
     }
+    # ⭐ La foto se fecha cuando se LEYÓ el saldo, no cuando se grabó. La
+    # ventana de nombres de bancos (`eventos.transacciones`) se corta por
+    # `creado_en`; si el borde es la grabación, todo lo cargado mientras el
+    # balance se calculaba (más de un minuto el 05/09 con el server lento) se
+    # nombra en una foto y su plata aparece en la siguiente: "sin explicar
+    # +4.355" y a los diez minutos "−4.355". Sin `leido_en` (balance viejo,
+    # tests) queda el DEFAULT de la tabla.
+    if bal.get("leido_en") is not None:
+        fila["creado_en"] = bal["leido_en"]
+    return fila
 
 
 def foto_stock_buena() -> dict | None:

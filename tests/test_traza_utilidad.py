@@ -311,3 +311,24 @@ def test_la_foto_repetida_no_llega_a_escribirse():
     assert res["ok"] is False
     assert "menos de un intervalo" in res["motivo"]
     ins.assert_not_called()
+
+
+# ── La foto se fecha cuando se LEYÓ el saldo, no cuando se grabó ─────────────
+
+def test_la_foto_lleva_la_hora_en_que_se_leyo_el_banco():
+    """05/09/2026: con el server lento, entre leer el saldo del banco y grabar
+    la foto pasó más de un minuto. Las notas de débito cargadas en ese hueco
+    (4.354,66) se NOMBRARON en la foto de las 09:58 —cuyo saldo no las tenía—
+    y su plata apareció en la de las 10:09: "Bancos: sin explicar +4.355" y
+    después "−4.355". El borde de la ventana tiene que ser la lectura."""
+    from datetime import UTC, datetime
+    leido = datetime(2026, 9, 5, 14, 57, 0, tzinfo=UTC)
+    f = t._fila_desde_balance({**BALANCE, "leido_en": leido})
+    assert f["creado_en"] == leido
+
+
+def test_sin_leido_en_la_foto_deja_que_la_tabla_ponga_la_hora():
+    """Un balance viejo (o un test) sin `leido_en`: queda el DEFAULT."""
+    f = t._fila_desde_balance(BALANCE)
+    assert "creado_en" not in f
+

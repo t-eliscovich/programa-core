@@ -4445,6 +4445,18 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     except Exception:  # noqa: BLE001 -- nunca romper el balance por esto
         pass
 
+    # ⭐ La hora en que se LEE el banco viaja con el balance (`leido_en`): es
+    # la que la traza usa como `creado_en` de la foto, y por lo tanto como
+    # borde de la ventana con la que nombra los movimientos de bancos.
+    # 🚨 05/09/2026: con el server lento (1.525 chromes huérfanos) la foto
+    # tardaba más de un minuto entre leer el saldo y grabarse con
+    # DEFAULT CURRENT_TIMESTAMP; las notas de débito cargadas en ese hueco
+    # (CC SISA, GS PROHIGIENE y 3 × 1.247,40 = 4.354,66) caían en la ventana
+    # de una foto cuyo saldo todavía no las tenía: "Bancos: sin explicar
+    # +4.355" a las 09:58 y "−4.355" a las 10:09. Es el reloj, no plata.
+    from datetime import UTC as _UTC
+    from datetime import datetime as _dt
+    _leido_en = _dt.now(_UTC)
     _totf = totf()
     _totc = totc()
     bancos = saldo_bancos()
@@ -5890,6 +5902,7 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
         # Insumos de la tarifa del hilado (compras del mes con y sin su plata).
         # Los usa la grabadora de la traza. {} si la fuente es el dBase.
         "hilado_valuacion": _hval,
+        "leido_en": _leido_en,                  # cuándo se leyó el saldo (traza)
         "vsto_dbase": vsto_dbase,               # base de la utilidad
         "stock_revaluacion": vsto - vsto_dbase,  # +$ que suma el patrimonio por usar Asinfo
         # CHECK de coherencia across el cuadro (dueña 2026-07-13). Verifica que los

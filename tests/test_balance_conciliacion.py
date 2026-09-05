@@ -535,3 +535,19 @@ def test_informe_balance_incluye_conciliacion(fake_balance_db):
         f"informe_balance().conciliacion tiene {len(b['conciliacion'])} filas "
         f"pero BALANCE_CONCEPTS tiene {len(BALANCE_CONCEPTS)}."
     )
+
+
+def test_el_balance_dice_cuando_leyo_el_banco(fake_balance_db):
+    """05/09/2026: la traza fecha la foto con `leido_en` (cuándo se leyó el
+    saldo del banco), no con la hora de grabarla. Con el server lento pasaba
+    más de un minuto entre las dos y los movimientos de ese hueco salían como
+    "Bancos: sin explicar" en una foto y con el signo dado vuelta en la otra."""
+    from datetime import UTC, datetime
+
+    from modules.informes.queries import informe_balance
+
+    antes = datetime.now(UTC)
+    b = informe_balance()
+    assert isinstance(b["leido_en"], datetime)
+    assert b["leido_en"].tzinfo is not None
+    assert antes <= b["leido_en"] <= datetime.now(UTC)
