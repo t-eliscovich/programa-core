@@ -697,7 +697,7 @@ def test_dos_hechos_del_mismo_tipo_se_juntan_sin_estar_en_ninguna_lista():
     g = t.resumir(movs, 560.0, idx)[0]
     # Sin clientes: en caja el último segmento es el CONCEPTO, no un código —
     # `_quien` los descarta a propósito ("4 gastos de caja · LUZ, AGUA, TAXI").
-    assert g["texto"] == "2 CH → CJ"
+    assert g["texto"] == "2 CH → caja"
     assert g["aporte"] == 560.0
 
 

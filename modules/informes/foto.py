@@ -35,6 +35,7 @@ Dos cosas que parecen detalles y no lo son:
 from __future__ import annotations
 
 import logging
+import re
 from datetime import UTC, datetime, timedelta
 
 import db
@@ -305,7 +306,7 @@ def _det_totp() -> list[dict]:
     """Deuda viva — `POSDAT_DEUDA_VIVA_WHERE` (banc=0, no anulada)."""
     return [
         {"doc_id": f"p{r['id_posdat']}",
-         "etiqueta": f"Deuda {(r.get('prov') or '').strip()} {r.get('num') or ''} · {(r.get('concepto') or '').strip()[:50]}",
+         "etiqueta": f"Deuda {(r.get('prov') or '').strip()} {r.get('num') or ''} · {_concepto_deuda(r.get('concepto'))}",
          "importe": _f(r.get("importe"))}
         for r in _rows(
             """
@@ -527,6 +528,24 @@ def hay_desfase(filas: list[dict]) -> bool:
     return any((f.get("doc_id") or "").startswith("#ajuste:") for f in filas)
 
 
+def _es_provision(etiqueta: str | None) -> bool:
+    """¿Esta fila de posdat es una provisión (proveedor YY o RT)?"""
+    e = (etiqueta or "").strip().upper()
+    return e.startswith("DEUDA YY ") or e.startswith("DEUDA RT ")
+
+
+def _concepto_deuda(concepto: str | None) -> str:
+    """El concepto de una deuda, sin el día que el dBase le pegaba al final.
+
+    ALTAS.PRG escribía `CONCEPTO = LEFT(factura,13) + STR(DAY(FECHA),2)`: la
+    factura 22458 cargada un día 6 quedó como "22458          6", y la traza
+    decía "Deuda SY 10020 · 22458 6". Tamara 05/09/2026: es "factura 22458".
+    """
+    c = (concepto or "").strip()
+    m = re.fullmatch(r"(\d+)\s+(\d{1,2})", c)
+    return f"factura {m.group(1)}" if m else c[:50]
+
+
 def _es_op(etiqueta: str | None) -> bool:
     """¿Esta fila de posdat es una línea OP (aporte del accionista)?
 
@@ -600,6 +619,12 @@ def regla(componente: str, tipo: str, doc_id: str, delta: float,
             if tipo == "baja":
                 return "Aporte del accionista (OP) consumido", "traspaso"
             return "Aporte del accionista (OP) corregido", "utilidad"
+        # ⭐ Las provisiones (YY = décimos/utilidades, RT = reserva) se devengan
+        # TODOS los días: su posdat cambia de importe sin que nadie toque
+        # nada. Salían como "12 deudas corregidas · YY ×11, RT", que suena a
+        # error de carga. Tamara 05/09/2026: es el devengo, y se llama así.
+        if _es_provision(etiqueta):
+            return "Provisión del día", "utilidad"
         if tipo == "alta":
             return "Deuda nueva cargada", "utilidad"
         if tipo == "baja":

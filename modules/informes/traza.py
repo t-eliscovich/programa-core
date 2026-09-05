@@ -839,6 +839,7 @@ PLURALES = {
     "Deuda nueva cargada": "deudas nuevas",
     "Deuda pagada o dada de baja": "deudas pagadas",
     "Deuda corregida": "deudas corregidas",
+    "Provisión del día": "provisiones del día",
     "Anticipo entregado": "anticipos entregados",
     "Anticipo aplicado": "anticipos aplicados",
     "Retiro de dividendos": "retiros",
@@ -1584,6 +1585,12 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                 # manera; SIN la contraparte, que acá son varias.
                 rotulo, unidad = ROTULO_JUNTADO.get(
                     ev["tipo"], (_corto(ev["tipo"], "", _imp), ""))
+                # ⭐ Una nota de débito contra un posdat es una DEUDA PAGADA
+                # desde el banco; "2 BC nota de débito · AP, SY" no lo decía.
+                # Tamara 05/09/2026.
+                if (ev["tipo"] == "nota_debito"
+                        and (ev.get("destino_table") or "").strip() == "posdat"):
+                    rotulo, unidad = "deudas pagadas por banco", ""
                 if unidad:
                     g["texto"] = f"{rotulo} · {len(g['hechos'])} {unidad}"
                 else:
