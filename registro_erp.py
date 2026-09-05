@@ -25,6 +25,12 @@ def registrar(app: Flask) -> None:
 
     app.register_blueprint(dashboard_bp)
 
+    # La oficina le saca los PDFs al portal (fase 5 del plan de memoria,
+    # 05/09/2026): sólo 127.0.0.1 con secreto. Ver modules/interno/views.py.
+    from modules.interno.views import bp as interno_bp
+
+    app.register_blueprint(interno_bp)
+
     from modules.informes.views import informes_bp
 
     app.register_blueprint(informes_bp, url_prefix="/informes")

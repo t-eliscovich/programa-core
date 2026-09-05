@@ -748,14 +748,52 @@ def apagado() -> bool:
     return (os.environ.get(VAR_APAGAR, "1") or "").strip() == "0"
 
 
+#: A dónde le pide el portal la hoja a la oficina (fase 5 del plan de memoria).
+OFICINA_HOJA_URL = "http://127.0.0.1:5002/_interno/hoja"
+OFICINA_TIMEOUT_S = 30.0
+
+
+def _pedir_a_la_oficina(html: str, *, medidas: tuple[int, int] | None,
+                        formato: str, fondo: bool) -> bytes | None:
+    """El portal no prende navegador: le pide la hoja a la oficina por
+    127.0.0.1 con el secreto de máquina. `None` = "por acá no salió"."""
+    try:
+        from modules.interno.views import CABECERA, secreto
+    except Exception:  # noqa: BLE001  # pragma: no cover
+        return None
+    s = secreto()
+    if not s:
+        return None
+    try:
+        import requests
+
+        cuerpo = {"html": html, "formato": formato, "fondo": bool(fondo)}
+        if medidas:
+            cuerpo["ancho"], cuerpo["alto"] = medidas
+        r = requests.post(OFICINA_HOJA_URL, json=cuerpo, headers={CABECERA: s},
+                          timeout=OFICINA_TIMEOUT_S)
+        if r.status_code == 200 and r.content:
+            return r.content
+        _LOG.info("La oficina no sacó la hoja (%s); sale por el camino de siempre.",
+                  r.status_code)
+    except Exception as e:  # noqa: BLE001 -- la oficina caída no frena al portal
+        _LOG.warning("No se pudo pedir la hoja a la oficina (%s).", e)
+    return None
+
+
 def _usar(html: str, static: Path, *, medidas: tuple[int, int] | None,
           formato: str, fondo: bool = False) -> bytes | None:
     """La hoja por el navegador que YA está prendido, o `None` sin drama.
 
     `None` quiere decir "por acá no salió": el que llamó sigue por el camino
     de `subprocess`. Nunca levanta un navegador ni espera a que levante — eso
-    es del hilo de fondo.
+    es del hilo de fondo. En el PORTAL no hay navegador propio: la hoja se
+    le pide a la oficina (fase 5 del plan de memoria).
     """
+    import modo
+
+    if modo.es_portal():
+        return _pedir_a_la_oficina(html, medidas=medidas, formato=formato, fondo=fondo)
     if apagado() or not _NAV.vivo():
         return None
     with _NAV.lock:
@@ -840,7 +878,10 @@ def arrancar_en_segundo_plano() -> bool:
     """Deja el navegador prendido desde que arranca la app. Devuelve si arrancó
     el hilo (no si el navegador levantó: eso pasa después y no frena a nadie)."""
     global _HILO
-    if _HILO is not None or apagado():
+    import modo
+
+    # El portal no prende navegador: le pide la hoja a la oficina (fase 5).
+    if _HILO is not None or apagado() or modo.es_portal():
         return False
     if os.environ.get("PYTEST_CURRENT_TEST"):
         return False

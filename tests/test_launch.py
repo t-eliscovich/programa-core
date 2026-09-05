@@ -81,8 +81,11 @@ def test_el_portal_prende_el_modo_y_su_puerto(launch, tmp_path, monkeypatch):
     monkeypatch.setattr(launch, "LOGS", tmp_path)
     monkeypatch.setattr(launch, "variables_de_maquina", lambda: {})
     monkeypatch.setattr(launch, "archivo_de_log", lambda nombre, carpeta=tmp_path, hoy=None: tmp_path / f"{nombre}.log")
-    monkeypatch.delenv("MODO", raising=False)
-    monkeypatch.delenv("PUERTO_APP", raising=False)
+    # setenv y no delenv: delenv de una variable que NO está no anota nada y
+    # el MODO=portal se filtraba a los tests que venían después (la app entera
+    # quedaba en modo portal y contestaba "No encontrado").
+    monkeypatch.setenv("MODO", "")
+    monkeypatch.setenv("PUERTO_APP", "")
     try:
         assert launch.preparar("portal") == 5004
     finally:

@@ -241,6 +241,16 @@ jobs:
             exit 1
           }
 
+          # 4.b El SECRETO con el que el portal le pide los PDFs a la
+          #     oficina (fase 5 del plan de memoria). Nace y queda EN el
+          #     server (variable de máquina); acá sólo se dice si se creó.
+          try {
+              if (-not [System.Environment]::GetEnvironmentVariable('PC_INTERNO_SECRET', 'Machine')) {
+                  [Environment]::SetEnvironmentVariable('PC_INTERNO_SECRET', ([guid]::NewGuid().ToString('N') + [guid]::NewGuid().ToString('N')), 'Machine')
+                  Write-Output "PC_INTERNO_SECRET: creado"
+              } else { Write-Output "PC_INTERNO_SECRET: ya existia" }
+          } catch { Write-Output "AVISO: PC_INTERNO_SECRET: \$_" }
+
           # 5. Restart task. TMT 2026-06-07: matar el python.exe HUÉRFANO que
           #    queda tomando el puerto 5002. Stop-ScheduledTask para la TAREA
           #    pero no siempre mata el proceso hijo; el python nuevo entonces
