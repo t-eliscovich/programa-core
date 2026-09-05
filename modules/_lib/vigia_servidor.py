@@ -50,6 +50,14 @@ _AVISO_CADA_S = 3 * 3600.0
 _ROOT = Path(__file__).resolve().parent.parent.parent
 REINICIAR_METABASE = _ROOT / "scripts" / "servidor" / "reiniciar-metabase.ps1"
 
+#: Cada cuánto se guarda una lectura en la base (fase 2 del plan).
+_GUARDAR_CADA_S = 3600.0
+#: Cuántos días de historia se conservan.
+HISTORIA_DIAS = 7
+#: Una baja de la memoria libre mayor que esto en 3 días es TENDENCIA.
+TENDENCIA_MB = 500
+_ultima_guardada = 0.0
+
 _started = False
 _lock = threading.Lock()
 #: Lo último que pasó, para /admin/pantallas.
@@ -135,6 +143,83 @@ def _avisar(titulo: str, detalle: str, nivel: str = "alerta", clave: str = "") -
     return res
 
 
+def _mb_de(est: dict, nombre: str) -> tuple[int, int]:
+    for p in est.get("procesos") or []:
+        if (p.get("nombre") or "").lower().startswith(nombre):
+            return int(p.get("memoria_mb") or 0), int(p.get("cuantos") or 0)
+    return 0, 0
+
+
+def guardar_lectura(est: dict) -> bool:
+    """Una fila por hora en scintela.servidor_memoria; borra las de > 7 días.
+
+    Fail-soft: la base caída no puede frenar al vigía.
+    """
+    try:
+        import db
+
+        java, _ = _mb_de(est, "java")
+        chrome_mb, chrome_n = _mb_de(est, "chrome")
+        python_mb, _ = _mb_de(est, "python")
+        db.execute(
+            """
+            INSERT INTO scintela.servidor_memoria
+                   (libres_mb, total_mb, java_mb, chrome_mb, chrome_n, python_mb,
+                    procesos, cpu_pct)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (int(est.get("disponible_mb") or 0), int(est.get("total_mb") or 0),
+             java, chrome_mb, chrome_n, python_mb,
+             sum(int(p.get("cuantos") or 0) for p in est.get("procesos") or []),
+             est.get("cpu_pct")))
+        db.execute(
+            "DELETE FROM scintela.servidor_memoria "
+            " WHERE leido_en < CURRENT_TIMESTAMP - make_interval(days => %s)",
+            (HISTORIA_DIAS,))
+        return True
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("vigia: no pude guardar la lectura (%s)", e)
+        return False
+
+
+def historia() -> list[dict]:
+    """Las lecturas de los últimos 7 días, de la más vieja a la más nueva."""
+    try:
+        import db
+
+        return db.fetch_all(
+            "SELECT leido_en, libres_mb, total_mb, java_mb, chrome_mb, chrome_n, "
+            "       python_mb, procesos, cpu_pct "
+            "  FROM scintela.servidor_memoria ORDER BY leido_en")
+    except Exception:  # noqa: BLE001
+        return []
+
+
+def tendencia(filas: list[dict] | None = None) -> dict:
+    """¿La memoria libre viene bajando? Compara las últimas 6 horas con las
+    de hace 3 días (mediana contra mediana). {baja_mb, alerta, desde, hasta}.
+
+    Es lo que hubiera mostrado la fuga de chrome al segundo día: no un
+    número bajo, una curva que baja y no vuelve.
+    """
+    import statistics
+    from datetime import timedelta
+
+    filas = historia() if filas is None else filas
+    if len(filas) < 12:
+        return {"alerta": False, "baja_mb": 0, "lecturas": len(filas)}
+    ultimo = filas[-1]["leido_en"]
+    recientes = [f["libres_mb"] for f in filas if ultimo - f["leido_en"] <= timedelta(hours=6)]
+    hace3 = [f["libres_mb"] for f in filas
+             if timedelta(hours=66) <= ultimo - f["leido_en"] <= timedelta(hours=78)]
+    if len(recientes) < 3 or len(hace3) < 3:
+        return {"alerta": False, "baja_mb": 0, "lecturas": len(filas)}
+    antes, ahora = statistics.median(hace3), statistics.median(recientes)
+    baja = int(antes - ahora)
+    return {"alerta": baja > TENDENCIA_MB, "baja_mb": baja,
+            "antes_mb": int(antes), "ahora_mb": int(ahora), "lecturas": len(filas)}
+
+
 def revisar(ahora: float | None = None) -> dict:
     """Una vuelta. Devuelve qué vio y qué hizo (para tests y para la pantalla)."""
     global _ultimo_aviso, _ultimo_metabase, _en_episodio
@@ -145,6 +230,10 @@ def revisar(ahora: float | None = None) -> dict:
     _estado["ultima_revision"] = ahora
     if not est.get("total_mb"):
         return vuelta
+    global _ultima_guardada
+    if ahora - _ultima_guardada >= _GUARDAR_CADA_S:
+        _ultima_guardada = ahora
+        vuelta["guardada"] = guardar_lectura(est)
     if not est["falta_memoria"]:
         if _en_episodio:
             _en_episodio = False

@@ -158,6 +158,23 @@ def health() -> dict:
                 f"barre solo; si el número no baja, reiniciar el programa."
             ),
         })
+    try:
+        from modules._lib import vigia_servidor as _vigia
+
+        t = _vigia.tendencia()
+        if t.get("alerta"):
+            alerts.append({
+                "tipo": "servidor_memoria_en_baja",
+                "baja_mb": t["baja_mb"],
+                "detalle": (
+                    f"La memoria libre del servidor viene bajando: hace 3 días "
+                    f"había {t['antes_mb']} MB y ahora {t['ahora_mb']} "
+                    f"(−{t['baja_mb']}). Así se vio la fuga de chrome del 05/09: "
+                    f"mirar en /admin/pantallas quién crece."
+                ),
+            })
+    except Exception:  # noqa: BLE001 -- sin base, sin tendencia
+        pass
     if est["falta_memoria"]:
         top = ", ".join(f"{p['nombre']} ×{p['cuantos']} {p['memoria_mb']} MB"
                         for p in est["procesos"][:3])

@@ -152,3 +152,82 @@ def test_la_pantalla_muestra_al_vigia(app, fake_db, monkeypatch):
     assert "mira la memoria cada minuto" in html
     assert "hace 60 min" in html
     assert "maté 1200 navegadores huérfanos" in html
+
+
+# ---------------------------------------------------------------------------
+# Fase 2: la historia de la memoria y la tendencia
+# ---------------------------------------------------------------------------
+
+
+def _filas(libres_por_hora):
+    from datetime import datetime, timedelta
+
+    t0 = datetime(2026, 9, 1, 0, 0)
+    return [{"leido_en": t0 + timedelta(hours=i), "libres_mb": mb, "total_mb": 4036,
+             "java_mb": 900, "chrome_mb": 400, "chrome_n": 16, "python_mb": 300,
+             "procesos": 200, "cpu_pct": 5.0}
+            for i, mb in enumerate(libres_por_hora)]
+
+
+def test_la_tendencia_ve_la_fuga_lenta_antes_del_minimo():
+    # 4 días bajando 10 MB por hora: del día 0 al 3 son 720 MB menos.
+    filas = _filas([1900 - 10 * i for i in range(96)])
+    t = v.tendencia(filas)
+    assert t["alerta"] is True and t["baja_mb"] > v.TENDENCIA_MB
+
+
+def test_una_memoria_estable_no_es_tendencia():
+    filas = _filas([1800 + (50 if i % 2 else -50) for i in range(96)])
+    assert v.tendencia(filas)["alerta"] is False
+
+
+def test_con_pocas_lecturas_no_opina():
+    assert v.tendencia(_filas([1800] * 5))["alerta"] is False
+
+
+def test_guarda_una_lectura_por_hora_y_no_mas(monkeypatch):
+    import db
+
+    escritas = []
+    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escritas.append(sql) or 1)
+    monkeypatch.setattr(v, "_ultima_guardada", 0.0)
+    _espias(monkeypatch)
+    for t in (T, T + 60, T + 3601):
+        _servidor(monkeypatch, 1900)
+        v.revisar(ahora=t)
+    inserts = [s for s in escritas if "INSERT INTO scintela.servidor_memoria" in s]
+    borrados = [s for s in escritas if "DELETE FROM scintela.servidor_memoria" in s]
+    assert len(inserts) == 2 and len(borrados) == 2
+
+
+def test_el_health_avisa_de_la_tendencia(monkeypatch):
+    from modules._lib import servidor
+
+    monkeypatch.setattr(servidor, "memoria", lambda: {"total_mb": 4036, "disponible_mb": 1200, "usado_pct": 70.0})
+    monkeypatch.setattr(servidor, "procesos", lambda n=8: [])
+    monkeypatch.setattr(servidor, "cpu", lambda: {"cpu_pct": 1.0, "nucleos": 2})
+    monkeypatch.setattr(servidor, "este_proceso", lambda: {"pid": 1, "memoria_mb": 100})
+    monkeypatch.setattr(servidor, "navegadores", lambda: 8)
+    monkeypatch.setattr(v, "historia", lambda: _filas([1900 - 10 * i for i in range(96)]))
+    h = servidor.health()
+    assert h["ok"] is False
+    assert h["alerts"][0]["tipo"] == "servidor_memoria_en_baja"
+    assert "viene bajando" in h["alerts"][0]["detalle"]
+
+
+def test_la_pantalla_dibuja_la_curva(app, fake_db, monkeypatch):
+    from modules._lib import servidor
+
+    monkeypatch.setattr(servidor, "estado", lambda: {
+        "total_mb": 4036, "disponible_mb": 1900, "usado_pct": 50.0, "cpu_pct": 3.0,
+        "nucleos": 2, "falta_memoria": False, "procesos": [], "navegadores": 8,
+        "programa": {"pid": 1, "memoria_mb": 90}, "memoria_minima_mb": 400})
+    monkeypatch.setattr(v, "historia", lambda: _filas([1900, 1850, 1700, 1650, 300, 1600]))
+    rid = fake_db.add_role("Tester", ["admin_dbase.ver"])
+    uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
+    c = app.test_client()
+    with c.session_transaction() as s:
+        s["user_id"] = uid
+    html = c.get("/admin/pantallas").get_data(as_text=True)
+    assert "<polyline" in html and "6 lecturas" in html
+    assert "01/09 04:00 300 MB" in html

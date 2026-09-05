@@ -40,9 +40,39 @@ def pantallas():
         calentador=medidor.calentador(),
         servidor=servidor.estado(),
         vigia=vigia_servidor.estado(),
+        curva=_curva_memoria(),
         lenta_ms=int(medidor.LENTA_MS),
         seccion="admin",
     )
+
+
+def _curva_memoria() -> dict:
+    """Los puntos de la curva de memoria libre de los últimos 7 días, ya en
+    coordenadas del SVG (600 × 80), y las tres lecturas más bajas.
+
+    Fase 2 del plan de memoria (05/09/2026): una fuga lenta se ve en la
+    curva, no en el número de hoy.
+    """
+    filas = vigia_servidor.historia()
+    if not filas:
+        return {"puntos": "", "filas": 0, "minimas": [], "tendencia": {}}
+    total = max(int(f["total_mb"] or 0) for f in filas) or 1
+    t0, t1 = filas[0]["leido_en"], filas[-1]["leido_en"]
+    ancho = max((t1 - t0).total_seconds(), 1.0)
+    pts = []
+    for f in filas:
+        x = 600.0 * (f["leido_en"] - t0).total_seconds() / ancho
+        y = 80.0 - 80.0 * int(f["libres_mb"] or 0) / total
+        pts.append(f"{x:.1f},{y:.1f}")
+    minimas = sorted(filas, key=lambda f: int(f["libres_mb"] or 0))[:3]
+    return {
+        "puntos": " ".join(pts), "filas": len(filas),
+        "y_minimo": 80.0 - 80.0 * 400 / total,
+        "minimas": [{"cuando": f["leido_en"].strftime("%d/%m %H:%M"),
+                     "libres_mb": f["libres_mb"]} for f in minimas],
+        "desde": t0.strftime("%d/%m"), "hasta": t1.strftime("%d/%m %H:%M"),
+        "tendencia": vigia_servidor.tendencia(filas),
+    }
 
 
 @bp.route("/reiniciar", methods=["POST"])
