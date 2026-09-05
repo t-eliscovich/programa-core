@@ -939,3 +939,22 @@ def test_mas_de_tres_clientes_se_cortan_con_el_mas():
     g = {"quienes": {"A": -50.0, "B": -40.0, "C": -30.0, "D": -20.0},
          "cuantos": {"A": 1, "B": 1, "C": 1, "D": 1}}
     assert t._nombres(g) == "A, B, C +1"
+
+
+# ── 05/09/2026: los repetidos se cuentan y el prefijo respeta la palabra ─────
+
+def test_los_conceptos_repetidos_se_cuentan_en_vez_de_desaparecer():
+    """Tamara 05/09: "BC · 2 × ANTICIPO, ANTICIPO AC 36" — tres anticipos
+    iguales salían como uno, y el MD se perdía."""
+    from modules.informes import eventos as ev
+    texto = ev._varios(["ANTICIPO MD", "ANTICIPO MD DEL SALTO",
+                        "ANTICIPO AC 36", "ANTICIPO AC 36", "ANTICIPO AC 36"], 5)
+    assert texto == "BC · 3 × ANTICIPO AC 36, 2 × ANTICIPO MD"
+
+
+def test_el_prefijo_comun_no_corta_la_palabra_entera():
+    from modules.informes import eventos as ev
+    assert ev._prefijo_comun(["ANTICIPO MD", "ANTICIPO MD DEL SALTO"]) == "ANTICIPO MD"
+    # Cortó una palabra al medio ("ANTICIPO MDX" vs "ANTICIPO MD"): saca esa palabra.
+    assert ev._prefijo_comun(["ANTICIPO MDX 1", "ANTICIPO MD 2"]) == "ANTICIPO"
+    assert ev._prefijo_comun(["Anticipo USD AI 1", "Anticipo USD AI 2"]) == "Anticipo USD AI"

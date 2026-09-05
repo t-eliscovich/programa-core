@@ -191,7 +191,15 @@ def _varios(conceptos: list[str], n: int) -> str:
     en la ventana real había ocho anticipos y tres gastos de CC: no compartían
     nada y no resumía nada.
     """
-    vistos = [c for c in dict.fromkeys(conceptos) if c]
+    # 🚨 Tamara 05/09: tres anticipos iguales ("ANTICIPO AC 36" ×3) salían
+    # como UNO, y "ANTICIPO MD" + "ANTICIPO MD DEL SALTO" como "2 × ANTICIPO"
+    # (sin el MD). Los repetidos se CUENTAN, no se deduplican; y el prefijo
+    # común respeta la palabra entera (ver `_prefijo_comun`).
+    cuenta: dict[str, int] = {}
+    for c in conceptos:
+        if c:
+            cuenta[c] = cuenta.get(c, 0) + 1
+    vistos = list(cuenta)
     if not vistos:
         return f"BC · {n} movimientos"
     grupos: dict[str, list[str]] = {}
@@ -199,9 +207,12 @@ def _varios(conceptos: list[str], n: int) -> str:
         grupos.setdefault(" ".join(c.split()[:2]).upper(), []).append(c)
     partes = []
     for miembros in grupos.values():
+        total = sum(cuenta[c] for c in miembros)
         if len(miembros) > 1:
             rot = _prefijo_comun(miembros) or " ".join(miembros[0].split()[:2])
-            partes.append((len(miembros), f"{len(miembros)} × {rot}"))
+            partes.append((total, f"{total} × {rot}"))
+        elif total > 1:
+            partes.append((total, f"{total} × {miembros[0]}"))
         else:
             partes.append((1, miembros[0]))
     # El grupo más grande primero — es la regla de toda la pantalla — y a
@@ -239,7 +250,12 @@ def _prefijo_comun(textos: list[str]) -> str:
         comun = comun[:i]
         if len(comun) < MIN_PREFIJO:
             return ""
-    comun = comun.rsplit(" ", 1)[0] if " " in comun else comun
+    # Si el prefijo termina justo donde termina una palabra en TODOS los
+    # textos ("ANTICIPO MD" vs "ANTICIPO MD DEL SALTO"), es una palabra
+    # entera y se queda; si cortó una palabra al medio, se saca esa palabra.
+    entera = all(len(t) == len(comun) or t[len(comun)] == " " for t in textos)
+    if not entera:
+        comun = comun.rsplit(" ", 1)[0] if " " in comun else comun
     comun = comun.strip(" ,·-$(")
     return comun if len(comun) >= MIN_PREFIJO else ""
 

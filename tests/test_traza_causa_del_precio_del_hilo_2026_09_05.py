@@ -38,21 +38,22 @@ HOY = {"compras_import_us": 63180.60, "compras_local_us": 0.0,
 
 def test_los_recargos_tardios_se_nombran_por_su_importacion():
     assert t.causa_tarifa(HOY, ANT) == (
-        "entraron al precio del hilo los recargos de MD 1 y AC 39 (+6.849,51)")
+        "recargos de MD 1 y AC 39 al precio del hilo (+6.849,51)")
 
 
 def test_el_boton_y_la_importacion_tambien_tienen_nombre():
     hoy = dict(ANT, al_precio_us=42506.0, compras_import_us=65787.48)
     assert t.causa_tarifa(hoy, ANT) == (
-        "una compra de hilo entró al precio a mano (+21.253,00) y "
-        "entró plata de una importación recibida (+2.606,88)")
+        "compra al precio del hilo, a mano (+21.253,00) y "
+        "importación recibida (+2.606,88)")
     loc = dict(ANT, compras_local_us=1500.0)
-    assert t.causa_tarifa(loc, ANT) == "entró una compra local de hilo (+1.500,00)"
+    assert t.causa_tarifa(loc, ANT) == "compra local de hilo (+1.500,00)"
 
 
 def test_sin_movimiento_o_sin_desglose_no_dice_nada():
-    assert t.causa_tarifa(ANT, ANT) == ""
-    assert t.causa_tarifa(dict(ANT, recargos_tardios_us=0.4), ANT) == ""
+    mezcla = "sin compras nuevas · kilos entre bodega y máquinas"
+    assert t.causa_tarifa(ANT, ANT) == mezcla
+    assert t.causa_tarifa(dict(ANT, recargos_tardios_us=0.4), ANT) == mezcla
     assert t.causa_tarifa(HOY, None) == ""
     assert t.causa_tarifa(HOY, {"compras_us": 1.0}) == ""     # foto vieja
     # hilado_insumos ya deserializado (jsonb → dict) también sirve
@@ -68,7 +69,7 @@ def test_el_renglon_de_la_revaluacion_dice_la_causa_antes_de_las_cifras():
     with patch.object(t.db, "fetch_all", return_value=[]):
         out = t.resumir(movs, 8604.0, {}, causa_tarifa=t.causa_tarifa(HOY, ANT))
     assert out[0]["texto"] == (
-        "entraron al precio del hilo los recargos de MD 1 y AC 39 (+6.849,51) "
+        "recargos de MD 1 y AC 39 al precio del hilo (+6.849,51) "
         "· cambió el $/kg de 3 etapas")
     # Sin causa, el renglón queda como siempre.
     with patch.object(t.db, "fetch_all", return_value=[]):
@@ -92,7 +93,7 @@ def test_si_la_revaluacion_se_fundio_con_la_importacion_no_se_repite():
     ]
     with patch.object(t.db, "fetch_all", return_value=[]):
         out = t.resumir(movs, 1041.68, {}, hasta="2026-08-10T11:26:40",
-                        causa_tarifa="entró plata de una importación recibida (+73.983,89)")
+                        causa_tarifa="importación recibida (+73.983,89)")
     assert len(out) == 1
     assert out[0]["texto"] == "entró la mercadería de los anticipos"
 
@@ -127,3 +128,10 @@ def test_la_nota_del_dia_lee_la_causa_de_las_dos_fotos():
     assert dia._causa_tarifa_del_dia({}, {"id_traza": 20}) == ""
     with patch.object(dia, "_rows", side_effect=RuntimeError("sin base")):
         assert dia._causa_tarifa_del_dia({"id_traza": 10}, {"id_traza": 20}) == ""
+
+
+def test_si_no_entro_plata_lo_dice():
+    """El $/kg también se corre sin compras: cambia la mezcla bodega/máquinas."""
+    assert t.causa_tarifa(dict(ANT), ANT) == "sin compras nuevas · kilos entre bodega y máquinas"
+    # Fotos viejas (sin desglose) no dicen nada.
+    assert t.causa_tarifa({"compras_us": 1.0}, {"compras_us": 1.0}) == ""

@@ -1419,17 +1419,22 @@ def causa_tarifa(fila: dict | None, anterior: dict | None) -> str:
     if d is not None and d >= _UMBRAL_INSUMO:
         nombres = _nombres_recargos(fila, anterior)
         quien = (" de " + _lista_y(nombres)) if nombres else ""
-        partes.append(f"entraron al precio del hilo los recargos{quien} "
-                      f"(+{_num(d, 2)})")
+        partes.append(f"recargos{quien} al precio del hilo (+{_num(d, 2)})")
     d = _d("al_precio_us")
     if d is not None and d >= _UMBRAL_INSUMO:
-        partes.append(f"una compra de hilo entró al precio a mano (+{_num(d, 2)})")
+        partes.append(f"compra al precio del hilo, a mano (+{_num(d, 2)})")
     d = _d("compras_local_us")
     if d is not None and d >= _UMBRAL_INSUMO:
-        partes.append(f"entró una compra local de hilo (+{_num(d, 2)})")
+        partes.append(f"compra local de hilo (+{_num(d, 2)})")
     d = _d("compras_import_us")
     if d is not None and d >= _UMBRAL_INSUMO:
-        partes.append(f"entró plata de una importación recibida (+{_num(d, 2)})")
+        partes.append(f"importación recibida (+{_num(d, 2)})")
+    if not partes and fila.get("recargos_tardios_us") is not None \
+            and anterior.get("recargos_tardios_us") is not None:
+        # Las dos fotos tienen desglose y ningún insumo se movió: el $/kg se
+        # corrió porque cambió la mezcla de kilos (los de bodega van al
+        # promedio, los que están en máquina a la apertura). No entró plata.
+        return "sin compras nuevas · kilos entre bodega y máquinas"
     return " y ".join(partes)
 
 
@@ -1690,9 +1695,9 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = g["texto_unido"]
         # ⭐ El $/kg del hilado no cambia solo: cambia porque entró plata a las
         # compras del mes. Si la foto sabe por dónde entró (mig 0244), el
-        # renglón lo dice ANTES de las dos cifras — "entraron al precio del
-        # hilo los recargos de AC 39 y MD 1 (+6.849,51) · $/kg 3,0556 → 3,0591"
-        # en vez de "cambió el $/kg de 3 etapas". Cuando la revaluación ya se
+        # renglón lo dice ANTES de las dos cifras — "recargos de AC 39 y MD 1
+        # al precio del hilo (+6.849,51) · $/kg 3,0556 → 3,0591" en vez de
+        # "cambió el $/kg de 3 etapas". Tamara: corto. Cuando la revaluación ya se
         # fundió con la llegada de la importación, la causa es esa llegada y
         # no hace falta otra. Tamara 05/09/2026.
         if (causa_tarifa and g.get("regla") == "Revaluación de stock"
