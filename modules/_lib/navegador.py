@@ -92,10 +92,15 @@ DOC_S = 20.0
 #: cuenta y devolver la hoja por el camino de siempre.
 LECTURA_S = 10.0
 
-#: Si nadie lo usa en 15 minutos se apaga solo. Un headless prendido cuesta
-#: ~150 MB y el servidor es el mismo que atiende la app; de noche no hay motivo
-#: para tenerlo. El hilo de fondo lo vuelve a levantar cuando haga falta.
-IDLE_S = 900.0
+#: ⚠ YA NO SE APAGA POR FALTA DE USO. Hasta el 05/09/2026 se apagaba a los
+#: 15 min sin uso (IDLE_S = 900) y el latido lo volvía a prender 30 s después
+#: — un ciclo apagar/prender cuatro veces por hora que no ahorraba nada y
+#: que, como el apagado mataba sólo al padre, fabricó los 1.525 huérfanos
+#: que dejaron el servidor sin memoria. Ahora queda prendido y se RECICLA una
+#: vez por día, a `RECICLAR_A` hora Ecuador (después del reinicio nocturno
+#: de Metabase), por si Chromium crece. Ver
+#: docs/PLAN_MEMORIA_SERVIDOR_2026_09_05.md, fase 1.
+RECICLAR_A = (2, 35)
 
 #: Después de un fallo no se vuelve a intentar por un rato: si en este servidor
 #: el modo CDP no anda, que no se note en nada más que un renglón del log.
@@ -786,8 +791,31 @@ def png(html: str, static: Path, ancho: int, alto: int) -> bytes | None:
     return _usar(html, static, medidas=(ancho, alto), formato="png")
 
 
+#: El día (EC) en que ya se recicló, para hacerlo una sola vez por día.
+_reciclado_el = None
+
+
+def toca_reciclar(ahora=None) -> bool:
+    """¿Es la hora del reciclado diario y todavía no se hizo hoy?
+
+    Vale desde `RECICLAR_A` hasta el fin de ese mismo día: si a esa hora el
+    proceso estaba abajo (un deploy), se recicla en el primer latido de
+    después. Hoy = el día de Ecuador, no el del reloj del server (UTC).
+    """
+    global _reciclado_el
+    from datetime import UTC, datetime, timedelta
+
+    ahora = ahora or (datetime.now(UTC) - timedelta(hours=5))
+    if (ahora.hour, ahora.minute) < RECICLAR_A:
+        return False
+    if _reciclado_el == ahora.date():
+        return False
+    _reciclado_el = ahora.date()
+    return True
+
+
 def _latido() -> None:
-    """Lo levanta si hace falta y lo apaga si nadie lo usa."""
+    """Lo levanta si hace falta y lo recicla una vez por día."""
     while True:
         try:
             # Cada latido barre lo que sobra: es barato (una pasada por la
@@ -795,11 +823,11 @@ def _latido() -> None:
             # del 05/09.
             barrer_procesos_huerfanos(mi_dir=str(_NAV.perfil) if _NAV.perfil else None)
             if _NAV.vivo():
-                if time.monotonic() - _NAV.ultimo_uso > IDLE_S:
+                if toca_reciclar():
                     with _NAV.lock:
-                        if time.monotonic() - _NAV.ultimo_uso > IDLE_S:
-                            _LOG.info("Navegador apagado por falta de uso.")
-                            _NAV.matar()
+                        _LOG.info("Navegador reciclado (una vez por día).")
+                        _NAV.matar()
+                        _NAV.arrancar()
             else:
                 with _NAV.lock:
                     _NAV.arrancar()

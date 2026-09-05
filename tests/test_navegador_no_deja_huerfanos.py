@@ -218,3 +218,51 @@ def test_cada_arranque_usa_un_perfil_distinto(monkeypatch, tmp_path):
             nav._levantar("/bin/falso")
     assert vistos[0].endswith("perfil-1") and vistos[1].endswith("perfil-2")
     assert nav.perfil is not None and str(nav.perfil).endswith("perfil-2")
+
+
+# ---------------------------------------------------------------------------
+# Fase 1 del plan (05/09): no se apaga más por falta de uso; se recicla 1 vez
+# por día a las 02:35 de Ecuador.
+# ---------------------------------------------------------------------------
+
+
+def test_ya_no_hay_apagado_por_falta_de_uso():
+    import inspect
+
+    assert not hasattr(navegador, "IDLE_S")
+    src = inspect.getsource(navegador._latido)
+    assert "falta de uso" not in src
+    assert "toca_reciclar" in src
+
+
+def test_el_reciclado_es_una_vez_por_dia_desde_las_0235(monkeypatch):
+    from datetime import datetime
+
+    monkeypatch.setattr(navegador, "_reciclado_el", None)
+    t = navegador.toca_reciclar
+    assert t(datetime(2026, 9, 6, 2, 34)) is False
+    assert t(datetime(2026, 9, 6, 2, 35)) is True
+    assert t(datetime(2026, 9, 6, 2, 36)) is False       # ya se hizo hoy
+    assert t(datetime(2026, 9, 6, 18, 0)) is False       # sigue hecho
+    assert t(datetime(2026, 9, 7, 1, 0)) is False        # mañana, antes de la hora
+    assert t(datetime(2026, 9, 7, 9, 0)) is True         # mañana, después (estaba abajo a las 02:35)
+
+
+def test_el_latido_recicla_matando_y_volviendo_a_prender(monkeypatch):
+    hecho = []
+    monkeypatch.setattr(navegador, "barrer_procesos_huerfanos", lambda mi_dir=None: 0)
+    monkeypatch.setattr(navegador, "toca_reciclar", lambda ahora=None: True)
+    monkeypatch.setattr(navegador._NAV, "vivo", lambda: True)
+    monkeypatch.setattr(navegador._NAV, "matar", lambda: hecho.append("matar"))
+    monkeypatch.setattr(navegador._NAV, "arrancar", lambda: hecho.append("arrancar") or True)
+
+    class _Para(Exception):
+        pass
+
+    def _sleep(s):
+        raise _Para
+
+    monkeypatch.setattr(navegador.time, "sleep", _sleep)
+    with pytest.raises(_Para):
+        navegador._latido()
+    assert hecho == ["matar", "arrancar"]
