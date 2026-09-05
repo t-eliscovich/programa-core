@@ -12297,3 +12297,49 @@ def compras_resumen_cliente(codigo_cli: str) -> dict:
         "anios": [a for a in anios
                   if float(a["kg"] or 0) or float(a["importe"] or 0)],
     }
+
+
+def compras_por_mes_cliente(codigo_cli: str, meses: int = 12) -> list[dict]:
+    """Kilos e importe facturados por mes, los últimos `meses`, para el
+    "su año en kilos" del portal del cliente (04/09/2026).
+
+    Mismo criterio que `compras_resumen_cliente`: todo menos las anuladas
+    (stat X); las notas de crédito y devoluciones netean.
+    """
+    cod = (codigo_cli or "").strip().upper()
+    return db.fetch_all(
+        """
+        SELECT date_trunc('month', fecha)::date  AS mes,
+               COALESCE(SUM(kg), 0)               AS kg,
+               COALESCE(SUM(importe), 0)          AS importe,
+               COUNT(*)                           AS facturas
+          FROM scintela.factura
+         WHERE UPPER(codigo_cli) = %s
+           AND (stat IS NULL OR stat <> 'X')
+           AND fecha >= date_trunc('month', CURRENT_DATE) - (%s || ' months')::interval
+         GROUP BY 1
+         ORDER BY 1
+        """,
+        (cod, str(int(meses) - 1)),
+    ) or []
+
+
+def facturas_pagadas_cliente(codigo_cli: str, meses: int = 12) -> list[dict]:
+    """Las facturas YA PAGADAS del cliente (stat T) de los últimos `meses`,
+    para la pestaña "Pagadas" del portal (04/09/2026). Mismo criterio de
+    cartera que la lista viva (sin el backfill de Asinfo)."""
+    cod = (codigo_cli or "").strip().upper()
+    return db.fetch_all(
+        """
+        SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion,
+               saldo, stat, kg
+          FROM scintela.factura
+         WHERE UPPER(codigo_cli) = %s
+           AND COALESCE(stat, '') = 'T'
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+           AND fecha >= CURRENT_DATE - (%s || ' months')::interval
+         ORDER BY fecha DESC, numf DESC
+         LIMIT 400
+        """,
+        (cod, str(int(meses))),
+    ) or []

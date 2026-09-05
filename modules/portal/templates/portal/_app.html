@@ -28,6 +28,14 @@
 <meta name="theme-color" content="#ffffff">
 <title>{% block titulo %}Intela{% endblock %}</title>
 <link rel="icon" href="/static/intela-logo.png">
+{# PWA: "Agregar a la pantalla de inicio" con el ícono de Intela, como Mi
+   Cartera. Sin service worker a propósito: nada se cachea, siempre el dato
+   de hoy. #}
+<link rel="manifest" href="/static/portal/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/portal/icon-180.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Intela">
 <style>
 :root{--ink:#0F172A;--ink2:#475569;--ink3:#8A94A6;--line:#E6E9EF;--bg:#F4F5F8;--card:#fff;
  --rojo:#E30613;--rojo-soft:#FDECEE;--verde:#15803D;--verde-soft:#E9F7EE;

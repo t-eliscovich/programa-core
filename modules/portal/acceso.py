@@ -211,6 +211,33 @@ def cliente(codigo: str) -> dict | None:
     return dict(fila) if fila else None
 
 
+def ficha(codigo: str) -> dict | None:
+    """La ficha del cliente para la pantalla "Mis datos": lo que él puede
+    querer corregir. Sólo lectura: el portal no escribe en la ficha."""
+    cod = normalizar_codigo(codigo)
+    if not cod:
+        return None
+    fila = db.fetch_one(
+        """
+        SELECT UPPER(TRIM(codigo_cli))                     AS codigo_cli,
+               COALESCE(NULLIF(TRIM(nombre), ''), '')      AS nombre,
+               COALESCE(TRIM(ruc), '')                     AS ruc,
+               COALESCE(TRIM(vend), '')                    AS vend,
+               COALESCE(TRIM(correo), '')                  AS correo,
+               COALESCE(TRIM(telefono), '')                AS telefono,
+               COALESCE(TRIM(direccion1), '')              AS direccion1,
+               COALESCE(TRIM(direccion2), '')              AS direccion2,
+               COALESCE(TRIM(provincia), '')               AS provincia,
+               COALESCE(TRIM(canton), '')                  AS canton,
+               cupo
+          FROM scintela.cliente
+         WHERE UPPER(TRIM(codigo_cli)) = %s
+        """,
+        (cod,),
+    )
+    return dict(fila) if fila else None
+
+
 def acceso(codigo: str) -> dict | None:
     cod = normalizar_codigo(codigo)
     if not cod:
