@@ -80,7 +80,8 @@ def test_la_pantalla_muestra_el_servidor_arriba(app, fake_db, monkeypatch):
     assert "63 MB" in html
     assert "java.exe" in html
     assert "paginando a disco" in html
-    assert html.index("El servidor") < html.index("Todavía no hay nada medido")
+    # Arriba de la tabla de pantallas (o del aviso de "nada medido").
+    assert html.index("El servidor") < html.index("El calentador")
 
 
 def test_la_pantalla_con_memoria_no_alarma(app, fake_db, monkeypatch):
