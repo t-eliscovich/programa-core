@@ -19,6 +19,7 @@ el login de empleados ni siquiera existe.
 """
 from __future__ import annotations
 
+import logging
 import re
 
 from flask import (
@@ -36,6 +37,9 @@ import db
 from extensions import limiter
 from filters import today_ec
 from modules.portal import acceso, presentacion
+from modules.portal import mas as mas_
+
+_LOG = logging.getLogger("programa_core.portal")
 
 portal_bp = Blueprint("portal", __name__, url_prefix="",
                       template_folder="templates")
@@ -353,6 +357,24 @@ def _despachos_recientes(cod: str, ruc: str) -> list | None:
     return presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
 
 
+def _cupo_de(cod: str, t: dict) -> dict | None:
+    """Cuánto más puede comprar. Misma cuenta que la ficha de la oficina y
+    la del vendedor (skill cupos-clientes): saldo neto + cheques por cobrar,
+    sobre el cupo. Sin cupo cargado (NULL o 0) no se dice nada: un cero se
+    leería como "no puede comprar"."""
+    try:
+        fic = acceso.ficha(cod) or {}
+        cupo = presentacion.numero(fic.get("cupo"))
+    except Exception:  # noqa: BLE001 -- sin ficha, sin cupo
+        return None
+    if cupo <= 0:
+        return None
+    saldo = t.get("saldo_neto") if t.get("saldo_neto") is not None else t.get("saldo")
+    usado = presentacion.numero(saldo) + presentacion.numero(t.get("cheques_por_cobrar"))
+    return {"cupo": cupo, "usado": usado, "libre": max(0.0, cupo - usado),
+            "pct": min(999, round(100 * usado / cupo))}
+
+
 def _pagos_de(data: dict) -> list[dict]:
     """Los pagos que se le muestran, del más nuevo al más viejo (por la fecha
     que se muestra, "Recibido")."""
@@ -383,6 +405,7 @@ def estado_cuenta():
     return render_template(
         "portal/inicio.html",
         data=data, t=t, codigo=cod, cli=fic,
+        cupo=_cupo_de(cod, t),
         facturas=facturas,
         n_vencidas=len(vencidas),
         saldo_vencido=sum(presentacion.numero(f.get("saldo")) for f in vencidas),
@@ -404,16 +427,22 @@ def facturas():
     todas = presentacion.ordenar_por_fecha(
         presentacion.con_estado(data.get("facturas") or [], hoy), "fecha", "id_factura")
     q = re.sub(r"\D", "", request.args.get("q") or "")[:12]
-    filtro = "vencidas" if (request.args.get("ver") or "") == "vencidas" else ""
-    lista = todas
-    if filtro == "vencidas":
-        lista = presentacion.vencidas(lista)
+    ver = (request.args.get("ver") or "")
+    filtro = ver if ver in ("vencidas", "pagadas") else ""
+    if filtro == "pagadas":
+        from modules.informes import queries as _q
+        lista = [{**f, "estado_cliente": {"clase": "ok", "texto": "pagada", "dias": None}}
+                 for f in _q.facturas_pagadas_cliente(cod, 12)]
+        importe = "importe"
+    else:
+        lista = presentacion.vencidas(todas) if filtro == "vencidas" else todas
+        importe = "saldo"
     if q:
         lista = [f for f in lista
                  if q in str(f.get("numf") or "") or q in (f.get("numf_completo") or "")]
     return render_template(
         "portal/facturas.html", codigo=cod, cli=data.get("cliente") or {},
-        grupos=presentacion.por_mes(lista, "fecha", "saldo"),
+        grupos=presentacion.por_mes(lista, "fecha", importe),
         q=q, filtro=filtro, n_todas=len(todas),
         n_vencidas=len(presentacion.vencidas(todas)))
 
@@ -709,6 +738,113 @@ def estado_cuenta_pdf_():
         "Content-Disposition": f'inline; filename="{nombre}"',
         "Cache-Control": "no-store",
     })
+
+
+
+# ---------------------------------------------------------------------------
+# "Más": lo que no entra en la barra (04/09/2026)
+# ---------------------------------------------------------------------------
+
+def _ctx(cod: str) -> dict:
+    return {"codigo": cod, "cli": acceso.ficha(cod) or acceso.cliente(cod) or {}}
+
+
+@portal_bp.route("/mas", methods=["GET"])
+def mas():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    return render_template("portal/mas.html", **_ctx(cod),
+                           varias_cuentas=len(session.get(CUENTAS) or []) > 1)
+
+
+@portal_bp.route("/como-pagar", methods=["GET"])
+def como_pagar():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    return render_template("portal/como_pagar.html", **_ctx(cod), texto=mas_.como_pagar())
+
+
+@portal_bp.route("/mis-datos", methods=["GET", "POST"])
+def mis_datos():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    fic = acceso.ficha(cod) or {}
+    if request.method == "POST":
+        texto = (request.form.get("texto") or "").strip()
+        if mas_.pedir_correccion(cod, fic.get("nombre") or "", fic.get("vend") or "", texto):
+            flash("Le pasamos su pedido a la oficina. Lo corrigen y le avisan.", "ok")
+        else:
+            flash("Escriba qué hay que corregir.", "error")
+        return redirect(url_for("portal.mis_datos"))
+    acc = acceso.acceso(cod) or {}
+    return render_template("portal/mis_datos.html", codigo=cod, cli=fic,
+                           correo_portal=(acc.get("mail") or "").strip())
+
+
+@portal_bp.route("/mi-anio", methods=["GET"])
+def mi_anio():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    return render_template("portal/mi_anio.html", **_ctx(cod), a=mas_.anio_en_kilos(cod))
+
+
+@portal_bp.route("/pedidos", methods=["GET"])
+def pedidos():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    return render_template("portal/pedidos.html", **_ctx(cod), p=mas_.pedidos_de(cod))
+
+
+@portal_bp.route("/avisar-pago", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
+def avisar_pago():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    if request.method == "POST":
+        ok, msg = mas_.guardar_aviso_pago(
+            cod, request.form.get("tipo"), request.form.get("importe"),
+            request.form.get("fecha") or None, request.form.get("referencia") or "",
+            request.form.get("nota") or "", request.files.get("comprobante"))
+        flash(msg, "ok" if ok else "error")
+        if ok:
+            try:
+                from modules.avisos import queries as avisos
+                fic = acceso.ficha(cod) or {}
+                avisos.avisar(fuente="portal", nivel="ok",
+                              titulo=f"{cod} avisa un pago desde el portal",
+                              detalle=f"{presentacion.nombre_lindo(fic.get('nombre') or cod)}: "
+                                      f"{mas_.TIPOS_DE_PAGO.get(request.form.get('tipo'), '')} "
+                                      f"{request.form.get('importe') or ''}",
+                              url="/clientes/avisos-de-pago")
+            except Exception:  # noqa: BLE001 -- la campanita no frena el aviso
+                _LOG.exception("portal: no pude avisar a la oficina del pago de %s", cod)
+            return redirect(url_for("portal.avisar_pago"))
+    return render_template("portal/avisar_pago.html", **_ctx(cod),
+                           tipos=mas_.TIPOS_DE_PAGO, hoy=today_ec(),
+                           anteriores=mas_.avisos_de_pago_de(cod))
+
+
+@portal_bp.route("/actividad", methods=["GET"])
+def actividad():
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    hoy = today_ec()
+    fic = data.get("cliente") or {}
+    facturas = presentacion.con_estado(data.get("facturas") or [], hoy)
+    ped = mas_.pedidos_de(cod)
+    items = mas_.actividad(facturas, _pagos_de(data),
+                           _despachos_recientes(cod, fic.get("ruc") or ""),
+                           ped.get("pedidos") or [])
+    return render_template("portal/actividad.html", codigo=cod, cli=fic,
+                           grupos=presentacion.por_mes(items, "fecha", "importe"))
 
 
 @portal_bp.route("/", methods=["GET"])

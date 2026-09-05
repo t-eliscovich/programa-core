@@ -162,9 +162,13 @@ def test_el_portal_usa_las_variables_de_la_casa_y_no_colores_sueltos():
     import re
     for pantalla in (BASE_PORTAL, PANTALLA):
         estilos = "\n".join(re.findall(r"<style>(.*?)</style>", pantalla, re.S))
+        # Las variables se definen UNA vez, en :root; afuera de ahí, nada.
+        estilos = re.sub(r":root\{[^}]*\}", "", estilos)
         sueltos = [c for c in re.findall(r"#[0-9a-fA-F]{6}\b", estilos)]
         assert not sueltos, f"colores escritos a mano: {sueltos}"
     assert "var(--accent)" in BASE_PORTAL
+    # La puerta y el adentro comparten la cara: mismo rojo, escrito una vez.
+    assert BASE_PORTAL.count("#E30613") == 1 and "--accent:var(--rojo)" in BASE_PORTAL
     # El armazón nuevo define las variables UNA vez (en :root) y el resto va
     # por var(--…): el rojo de la marca está escrito una sola vez.
     estilos = "\n".join(re.findall(r"<style>(.*?)</style>", APP, re.S))

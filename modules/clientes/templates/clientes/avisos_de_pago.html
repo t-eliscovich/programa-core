@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero %}
+{% block title %}Avisos de pago del portal{% endblock %}
+{% block breadcrumb %}<strong>Avisos de pago del portal</strong>{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+  {{ page_hero('Avisos de pago del portal',
+               descripcion='Lo que los clientes avisan que pagaron, con su comprobante. Se carga por Cobranza como siempre y acá se marca como atendido.') }}
+
+  <div class="mb-3 text-sm">
+    <a href="{{ url_for('clientes.avisos_de_pago') }}" class="px-3 py-1.5 rounded border {% if ver != 'todos' %}bg-slate-900 text-white border-slate-900{% else %}border-slate-300 dark:border-slate-700{% endif %}">Pendientes</a>
+    <a href="{{ url_for('clientes.avisos_de_pago', ver='todos') }}" class="px-3 py-1.5 rounded border {% if ver == 'todos' %}bg-slate-900 text-white border-slate-900{% else %}border-slate-300 dark:border-slate-700{% endif %}">Todos</a>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Avisado</th>
+          <th class="px-3 py-2">Cliente</th>
+          <th class="px-3 py-2">Qué</th>
+          <th class="px-3 py-2 text-right">Importe</th>
+          <th class="px-3 py-2">Fecha del pago</th>
+          <th class="px-3 py-2">Referencia / nota</th>
+          <th class="px-3 py-2">Comprobante</th>
+          <th class="px-3 py-2">Estado</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for a in filas %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 {% if a.atendido_en %}opacity-60{% endif %}">
+          <td class="px-3 py-2 text-slate-500 whitespace-nowrap">{{ a.creado_en | fecha_hora_ec }}</td>
+          <td class="px-3 py-2">
+            <a class="font-semibold hover:underline" href="{{ url_for('informes.estado_cuenta', codigo_cli=a.codigo_cli) }}">{{ a.codigo_cli }}</a>
+            <div class="text-xs text-slate-500">{{ a.nombre }}{% if a.vend %} · {{ a.vend }}{% endif %}</div>
+          </td>
+          <td class="px-3 py-2">{{ a.tipo | capitalize }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{% if a.importe %}{{ a.importe | money_es }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-2">{% if a.fecha %}{{ a.fecha | fecha_es }}{% else %}—{% endif %}</td>
+          <td class="px-3 py-2">{{ a.referencia or '' }}{% if a.nota %}<div class="text-xs text-slate-500">{{ a.nota }}</div>{% endif %}</td>
+          <td class="px-3 py-2">
+            {% if a.archivo_nombre %}<a class="text-sky-600 hover:underline" target="_blank" rel="noopener" href="{{ url_for('clientes.aviso_de_pago_comprobante', id_aviso=a.id_aviso_pago) }}">Ver</a>{% else %}<span class="text-slate-400">sin comprobante</span>{% endif %}
+          </td>
+          <td class="px-3 py-2">
+            {% if a.atendido_en %}
+              <div class="text-xs text-slate-500">Atendido {{ a.atendido_en | fecha_hora_ec }} · {{ a.atendido_por }}{% if a.atendido_nota %} · {{ a.atendido_nota }}{% endif %}</div>
+              <form method="post" action="{{ url_for('clientes.aviso_de_pago_atender', id_aviso=a.id_aviso_pago, ver=ver or None) }}" class="mt-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="deshacer" value="1">
+                <button class="text-xs text-slate-500 hover:underline">Volver a pendiente</button>
+              </form>
+            {% else %}
+              <form method="post" action="{{ url_for('clientes.aviso_de_pago_atender', id_aviso=a.id_aviso_pago, ver=ver or None) }}" class="flex gap-1">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input name="nota" placeholder="cheque N°…" class="text-xs rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1 w-28">
+                <button class="text-xs px-2 py-1 rounded bg-sky-600 hover:bg-sky-500 text-white">Atendido</button>
+              </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+          {{ empty_row(8, 'No hay avisos de pago pendientes.', 'Cuando un cliente avise un pago desde su portal, aparece acá y en la campanita.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

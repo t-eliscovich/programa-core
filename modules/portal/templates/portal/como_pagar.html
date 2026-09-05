@@ -1,0 +1,9 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Cómo pagar — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Cómo pagar</h1>
+<div class="card" style="white-space:pre-line;line-height:1.6;font-size:15px">{% if texto %}{{ texto }}{% else %}Llámenos a la oficina o escríbale a su vendedor y le pasamos los datos para pagar.{% endif %}</div>
+<a class="btn ancho" style="margin-top:12px" href="/avisar-pago">Ya pagué: avisar un pago</a>
+{% endblock %}

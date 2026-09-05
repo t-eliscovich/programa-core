@@ -62,6 +62,19 @@
     </div>
   </div>
 
+  {# --- Cómo pagar: lo que ve el cliente en su portal --- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm mb-6">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">«Cómo pagar», lo que ve el cliente en su portal</h2>
+    <form method="post" action="{{ url_for('portal_aviso.como_pagar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="texto" rows="5" maxlength="2000" class="w-full text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-3 py-2" placeholder="Banco Pichincha · cuenta corriente N° … · a nombre de Industria Textil Latinoamericana C. Ltda. · RUC … · Mande el comprobante desde «Avisar un pago».">{{ como_pagar_texto }}</textarea>
+      <div class="mt-2 flex items-center gap-3">
+        <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Guardar</button>
+        <span class="text-xs text-slate-500">Vacío: el portal le dice que llame a la oficina.</span>
+      </div>
+    </form>
+  </div>
+
   {# --- A quién le va --- #}
   <form method="post" action="{{ url_for('portal_aviso.mandar') }}"
         onsubmit="return confirm('¿Mandar el aviso a los clientes marcados?')">

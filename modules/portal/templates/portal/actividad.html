@@ -1,0 +1,21 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Actividad — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Actividad</h1>
+{% for g in grupos %}
+  <div class="mes"><span>{{ g.mes }}</span></div>
+  <div class="lista">
+    {% for x in g["items"] %}
+    <a class="fila act" href="{{ x.url }}">
+      <span class="ic {{ x.tipo }}">{{ {'factura':'F','pago':'$','despacho':'D','pedido':'P','credito':'NC'}[x.tipo] }}</span>
+      <span><span class="t" style="display:block">{{ x.titulo }}</span><span class="s" style="display:block">{{ x.fecha|fecha_es }}{% if x.detalle %} · {{ x.detalle }}{% endif %}</span></span>
+      <span class="m">{% if x.importe is not none %}{{ x.importe|money_es }}{% endif %}</span>
+    </a>
+    {% endfor %}
+  </div>
+{% else %}
+  <div class="card vacio"><b>Todavía no hay movimientos</b>Cuando le facturemos, recibamos un pago o le mandemos mercadería, aparece acá.</div>
+{% endfor %}
+{% endblock %}

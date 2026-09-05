@@ -1,0 +1,40 @@
+{# AVISAR UN PAGO. El cliente no escribe plata: deja un aviso con el
+   comprobante y la oficina lo carga por Cobranza. #}
+{% extends "portal/_app.html" %}
+{% block titulo %}Avisar un pago — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Avisar un pago</h1>
+<div class="card">
+  <p style="margin:0 0 4px;font-size:13.5px;color:var(--ink2)">Cuéntenos qué pagó y adjunte el comprobante. La oficina lo revisa y lo aplica a su cuenta; lo va a ver en "Mis pagos".</p>
+  <form method="post" enctype="multipart/form-data">
+    {{ csrf_token_input | safe }}
+    <div class="campo"><label for="tipo">Qué pagó</label>
+      <select id="tipo" name="tipo" required>{% for k, v in tipos.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></div>
+    <div class="campo"><label for="importe">Importe</label>
+      <input id="importe" name="importe" inputmode="decimal" placeholder="1.234,56"></div>
+    <div class="campo"><label for="fecha">Fecha del pago</label>
+      <input id="fecha" name="fecha" type="date" value="{{ hoy.isoformat() }}" max="{{ hoy.isoformat() }}"></div>
+    <div class="campo"><label for="referencia">Número de cheque o de transferencia</label>
+      <input id="referencia" name="referencia" maxlength="60" placeholder="Si lo tiene a mano"></div>
+    <div class="campo"><label for="comprobante">Comprobante (foto o PDF)</label>
+      <input id="comprobante" name="comprobante" type="file" accept="image/*,application/pdf"></div>
+    <div class="campo"><label for="nota">Algo más que quiera decirnos</label>
+      <textarea id="nota" name="nota" rows="2" maxlength="400"></textarea></div>
+    <button class="btn ancho" style="margin-top:14px" type="submit">Mandar el aviso</button>
+  </form>
+</div>
+{% if anteriores %}
+<h2 style="margin-top:16px">Sus avisos anteriores</h2>
+<div class="lista">
+  {% for a in anteriores %}
+  <div class="fila">
+    <span class="t">{{ tipos.get(a.tipo, a.tipo) }}{% if a.referencia %} {{ a.referencia }}{% endif %}<span class="pill {{ 'ok' if a.atendido_en else 'warn' }}">{{ 'aplicado' if a.atendido_en else 'en revisión' }}</span></span>
+    <span class="m">{% if a.importe %}{{ a.importe|money_es }}{% endif %}<small>avisado {{ a.creado_en|fecha_hora_ec }}</small></span>
+    {% if a.nota %}<span class="s">{{ a.nota }}</span>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

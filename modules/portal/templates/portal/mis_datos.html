@@ -1,0 +1,24 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Mis datos — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Mis datos</h1>
+<div class="card datos">
+  <div><span class="lbl">Razón social</span><b>{{ cli.nombre|title }}</b></div>
+  <div><span class="lbl">RUC</span><b>{{ cli.ruc or '—' }}</b></div>
+  <div><span class="lbl">Correo para el portal</span><b>{{ correo_portal or cli.correo or '—' }}</b></div>
+  <div><span class="lbl">Teléfono</span><b>{{ cli.telefono or '—' }}</b></div>
+  <div><span class="lbl">Dirección</span><b>{{ cli.direccion1 or '—' }}{% if cli.direccion2 %}<br>{{ cli.direccion2 }}{% endif %}</b>
+    {% if cli.canton or cli.provincia %}<small style="color:var(--ink3)">{{ cli.canton }}{% if cli.canton and cli.provincia %} · {% endif %}{{ cli.provincia }}</small>{% endif %}</div>
+</div>
+<div class="card" style="margin-top:12px">
+  <h2 style="margin:0 0 4px">¿Algo está mal?</h2>
+  <p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)">Cuéntenos qué hay que corregir y la oficina lo cambia.</p>
+  <form method="post">
+    {{ csrf_token_input | safe }}
+    <div class="campo"><textarea name="texto" rows="3" required placeholder="Por ejemplo: la dirección de entrega ahora es…"></textarea></div>
+    <button class="btn ancho" style="margin-top:12px" type="submit">Pedir que lo corrijan</button>
+  </form>
+</div>
+{% endblock %}

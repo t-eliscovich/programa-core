@@ -21,6 +21,9 @@
     {% if proximo %}
       <p class="prox {{ 'warn' if proximo.dias <= 15 }}">Próximo vencimiento: <b>{{ proximo.fecha|fecha_es }}</b> · factura {{ proximo.factura.numf }} · {{ proximo.factura.saldo|money_es }}</p>
     {% endif %}
+    {% if cupo %}
+      <p class="prox {{ 'warn' if cupo.pct >= 80 }}">Cupo de crédito: puede comprar hasta <b>{{ cupo.libre|money_es }}</b> más{% if cupo.pct >= 100 %} — ya lo usó entero{% endif %}.</p>
+    {% endif %}
     {% if t.cheques_por_cobrar %}
     <div class="dos">
       <div><div class="lbl">Cheques entregados por cobrar</div><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>

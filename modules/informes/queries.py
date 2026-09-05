@@ -12314,6 +12314,8 @@ def compras_por_mes_cliente(codigo_cli: str, meses: int = 12) -> list[dict]:
                COALESCE(SUM(importe), 0)          AS importe,
                COUNT(*)                           AS facturas
           FROM scintela.factura
+         -- kg-fisico-incluye-todo: es lo que el cliente compró, no el balance;
+         -- las tres fuentes se complementan por mes (ver compras_resumen_cliente).
          WHERE UPPER(codigo_cli) = %s
            AND (stat IS NULL OR stat <> 'X')
            AND fecha >= date_trunc('month', CURRENT_DATE) - (%s || ' months')::interval

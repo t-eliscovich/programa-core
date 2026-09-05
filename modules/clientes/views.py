@@ -1121,3 +1121,68 @@ def grupos_carga_aplicar():
     for msg in fallados[:20]:
         flash(msg, "error")
     return redirect(url_for("clientes.lista"))
+
+
+# ---------------------------------------------------------------------------
+# Los avisos de pago que dejan los clientes desde su portal (04/09/2026)
+# ---------------------------------------------------------------------------
+
+@clientes_bp.route("/clientes/avisos-de-pago", methods=["GET"])
+@requiere_login
+@requiere_permiso("cheques.ver")
+def avisos_de_pago():
+    """El buzón: cada aviso con su comprobante. Nadie carga plata desde acá:
+    se mira el comprobante, se carga por Cobranza como siempre, y se marca
+    como atendido para que salga de la lista."""
+    ver = (request.args.get("ver") or "").strip()
+    filas = db.fetch_all(
+        """
+        SELECT a.id_aviso_pago, a.codigo_cli, COALESCE(c.nombre, '') AS nombre,
+               COALESCE(c.vend, '') AS vend, a.tipo, a.importe, a.fecha,
+               a.referencia, a.nota, a.archivo_nombre, a.archivo_tipo,
+               a.creado_en, a.atendido_en, a.atendido_por, a.atendido_nota
+          FROM scintela.portal_aviso_pago a
+          LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(a.codigo_cli))
+         WHERE (%s = 'todos' OR a.atendido_en IS NULL)
+         ORDER BY a.creado_en DESC
+         LIMIT 300
+        """,
+        (ver,)) or []
+    return render_template("clientes/avisos_de_pago.html", filas=filas, ver=ver)
+
+
+@clientes_bp.route("/clientes/avisos-de-pago/<int:id_aviso>/comprobante", methods=["GET"])
+@requiere_login
+@requiere_permiso("cheques.ver")
+def aviso_de_pago_comprobante(id_aviso: int):
+    from flask import Response
+
+    fila = db.fetch_one(
+        "SELECT archivo, archivo_nombre, archivo_tipo FROM scintela.portal_aviso_pago "
+        " WHERE id_aviso_pago = %s", (id_aviso,))
+    if not fila or not fila.get("archivo"):
+        abort(404)
+    datos = bytes(fila["archivo"])
+    return Response(datos, mimetype=fila.get("archivo_tipo") or "application/octet-stream",
+                    headers={"Content-Disposition":
+                             f'inline; filename="{fila.get("archivo_nombre") or "comprobante"}"'})
+
+
+@clientes_bp.route("/clientes/avisos-de-pago/<int:id_aviso>/atender", methods=["POST"])
+@requiere_login
+@requiere_permiso("cheques.ver")
+def aviso_de_pago_atender(id_aviso: int):
+    quien = (g.get("user") or {}).get("username") or "web"
+    nota = (request.form.get("nota") or "").strip()[:200]
+    deshacer = (request.form.get("deshacer") or "") == "1"
+    if deshacer:
+        db.execute("UPDATE scintela.portal_aviso_pago SET atendido_en = NULL, "
+                   " atendido_por = NULL, atendido_nota = NULL WHERE id_aviso_pago = %s",
+                   (id_aviso,))
+        flash("El aviso vuelve a estar pendiente.", "info")
+    else:
+        db.execute("UPDATE scintela.portal_aviso_pago SET atendido_en = now(), "
+                   " atendido_por = %s, atendido_nota = %s WHERE id_aviso_pago = %s",
+                   (quien, nota or None, id_aviso))
+        flash("Aviso marcado como atendido.", "success")
+    return redirect(url_for("clientes.avisos_de_pago", ver=request.args.get("ver") or None))

@@ -1,0 +1,19 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Más — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<h1 class="pag">Más</h1>
+<div class="menu">
+  <a href="/pedidos"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 7h16v13H4zM8 7V4h8v3M8 12h8"/></svg></span><span class="fl">Mis pedidos<small>Lo que pidió y todavía no salió, con su avance</small></span><span class="ch">›</span></a>
+  <a href="/avisar-pago"><span class="ic"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span><span class="fl">Avisar un pago<small>Hizo una transferencia o nos dejó un cheque: avísenos con el comprobante</small></span><span class="ch">›</span></a>
+  <a href="/como-pagar"><span class="ic"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/></svg></span><span class="fl">Cómo pagar<small>Cuenta bancaria y qué mandarnos</small></span><span class="ch">›</span></a>
+  <a href="/actividad"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 12h4l2-6 4 12 2-6h4"/></svg></span><span class="fl">Actividad<small>Todo lo que pasó en su cuenta, por fecha</small></span><span class="ch">›</span></a>
+  <a href="/mi-anio"><span class="ic"><svg viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-8M22 20H2"/></svg></span><span class="fl">Su año en kilos<small>Cuánto compró cada mes</small></span><span class="ch">›</span></a>
+  <a href="/facturas?ver=pagadas"><span class="ic"><svg viewBox="0 0 24 24"><path d="M5 12l4 4L19 6"/></svg></span><span class="fl">Facturas pagadas<small>Las de los últimos 12 meses, con su PDF</small></span><span class="ch">›</span></a>
+  <a href="/mis-datos"><span class="ic"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></span><span class="fl">Mis datos<small>Correo, teléfono y dirección que tenemos suyos</small></span><span class="ch">›</span></a>
+  {% if varias_cuentas %}
+  <a href="/mis-cuentas"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 7h14v10H7zM3 11h4M3 15h4"/></svg></span><span class="fl">Cambiar de cuenta<small>Su RUC tiene más de una cuenta con nosotros</small></span><span class="ch">›</span></a>
+  {% endif %}
+  <a href="/salir"><span class="ic"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l5 4-5 4M9 12h11"/></svg></span><span class="fl">Salir</span><span class="ch">›</span></a>
+</div>
+{% endblock %}

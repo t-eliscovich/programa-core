@@ -1,0 +1,41 @@
+{# SUS PEDIDOS: los mismos que ve su vendedor (modules/pedidos/service),
+   filtrados por su código, con la tira de avance por línea (27/08). #}
+{% extends "portal/_app.html" %}
+{% block titulo %}Mis pedidos — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Mis pedidos</h1>
+{% if not p.ok %}
+  <div class="card vacio"><b>No pudimos consultar sus pedidos</b>Pruebe de nuevo en un rato.</div>
+{% elif not p.pedidos %}
+  <div class="card vacio"><b>No tiene pedidos pendientes</b>Lo que pidió ya salió, o todavía no cargamos un pedido nuevo.</div>
+{% else %}
+<div class="lista">
+  {% for ped in p.pedidos %}
+  {% set et = p.etapas.get(ped.numero) %}
+  <div class="fila" style="display:block">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
+      <span class="t">Pedido {{ ped.numero }}</span>
+      <span class="s" style="grid-column:auto">{{ ped.fecha_es }}{% if ped.dias %} · hace {{ ped.dias }} día{{ 's' if ped.dias != 1 }}{% endif %}</span>
+    </div>
+    {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et.pedido if et else 'enviado', 0) %}
+    <div class="pasos">
+      {% for rot in ['Recibido', 'En producción', 'Listo'] %}{% set i = loop.index0 %}
+        {% if i > 0 %}<i class="{{ 'done' if _n >= i }}"></i>{% endif %}
+        <span class="{{ 'done' if i < _n else ('on' if i == _n) }}">{{ '✓ ' if i < _n or (_n == 2 and i == 2) }}{{ rot }}</span>
+      {% endfor %}
+    </div>
+    <ul class="lineas">
+      {% for tela, items in ped.lineas|groupby('tela') %}
+      <li class="tela">{{ tela }}</li>
+      {% for l in items %}{% set le = et.lineas.get(l.producto) if et else none %}
+      <li><span>{{ l.color }}{% if le == 'terminado' %} <span class="pill ok">listo</span>{% elif le == 'en_tintura' %} <span class="pill warn">en producción</span>{% endif %}</span>
+          <span style="white-space:nowrap">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span></li>
+      {% endfor %}{% endfor %}
+    </ul>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}

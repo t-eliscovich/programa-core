@@ -1,0 +1,29 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Su año en kilos — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/mas">‹ Más</a>
+<h1 class="pag">Su año en kilos</h1>
+<div class="card">
+  <div class="lbl">Últimos 12 meses</div>
+  <div class="big">{{ a.kg|kg_es }} kg</div>
+  <div class="chips"><span class="chip">{{ a.importe|money_es }} facturados</span></div>
+  {% if a.max_kg > 0 %}
+  <div class="barras">
+    {% for m in a.meses %}<div title="{{ m.etiqueta }}: {{ m.kg|kg_es }} kg"><i class="{{ 'cero' if not m.kg }}" style="height:{{ m.pct if m.kg else 1 }}%"></i><b>{{ m.etiqueta }}</b></div>{% endfor %}
+  </div>
+  {% else %}
+  <p class="vacio">Todavía no hay compras en estos 12 meses.</p>
+  {% endif %}
+</div>
+{% if a.max_kg > 0 %}
+<div class="card" style="margin-top:12px;padding:6px 8px">
+  <table class="tabla">
+    <thead><tr><th>Mes</th><th class="n">Kilos</th><th class="n">Importe</th></tr></thead>
+    <tbody>{% for m in a.meses|reverse if m.kg or m.importe %}
+      <tr><td>{{ m.etiqueta }} {{ m.mes.year }}</td><td class="n">{{ m.kg|kg_es }}</td><td class="n">{{ m.importe|money_es }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% endif %}
+{% endblock %}

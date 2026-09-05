@@ -10,6 +10,7 @@
 <div class="seg">
   <a href="/facturas{% if q %}?q={{ q }}{% endif %}" class="{{ 'on' if not filtro }}">Pendientes ({{ n_todas }})</a>
   <a href="/facturas?ver=vencidas{% if q %}&q={{ q }}{% endif %}" class="{{ 'on' if filtro == 'vencidas' }}">Vencidas ({{ n_vencidas }})</a>
+  <a href="/facturas?ver=pagadas{% if q %}&q={{ q }}{% endif %}" class="{{ 'on' if filtro == 'pagadas' }}">Pagadas</a>
 </div>
 {% for g in grupos %}
   <div class="mes"><span>{{ g.mes }}</span><span>{{ g.total|money_es }}</span></div>
@@ -18,6 +19,7 @@
   <div class="card vacio">
     {% if q %}<b>No encontramos la factura {{ q }}</b>Pruebe con otro número, o busque en el estado de cuenta en PDF.
     {% elif filtro == 'vencidas' %}<b>No tiene facturas vencidas</b>Está al día con Intela.
+    {% elif filtro == 'pagadas' %}<b>Sin facturas pagadas en los últimos 12 meses</b>
     {% else %}<b>No tiene facturas pendientes</b>Está al día con Intela.{% endif %}
   </div>
 {% endfor %}
