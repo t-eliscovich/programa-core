@@ -1,0 +1,77 @@
+{# EL INICIO DEL PORTAL: su saldo, si hay algo vencido, una acción, su
+   vendedor, y tres listas cortas con "ver todas". Rediseño 04/09/2026. #}
+{% extends "portal/_app.html" %}
+{% block titulo %}Mi cuenta — Intela{% endblock %}
+{% block seccion %}inicio{% endblock %}
+{% block contenido %}
+{% set _saldo = t.saldo_neto if t.saldo_neto is not none else (t.saldo or 0) %}
+<div class="grid inicio">
+ <div class="grid">
+  <div class="card">
+    <div class="lbl">{{ 'Saldo a favor suyo' if _saldo < 0 else 'Su saldo con Intela' }}</div>
+    <div class="big">$ {{ _saldo|abs|money_es }}</div>
+    <div class="chips">
+      {% if n_vencidas %}
+        <span class="chip bad">{{ n_vencidas }} factura{{ 's' if n_vencidas != 1 }} vencida{{ 's' if n_vencidas != 1 }} · {{ saldo_vencido|money_es }}</span>
+      {% elif facturas %}
+        <span class="chip ok">✓ Ninguna factura vencida</span>
+      {% endif %}
+      {% if facturas %}<span class="chip">{{ facturas|length }} factura{{ 's' if facturas|length != 1 }}</span>{% endif %}
+    </div>
+    {% if proximo %}
+      <p class="prox {{ 'warn' if proximo.dias <= 15 }}">Próximo vencimiento: <b>{{ proximo.fecha|fecha_es }}</b> · factura {{ proximo.factura.numf }} · {{ proximo.factura.saldo|money_es }}</p>
+    {% endif %}
+    {% if t.cheques_por_cobrar %}
+    <div class="dos">
+      <div><div class="lbl">Cheques entregados por cobrar</div><b>$ {{ t.cheques_por_cobrar|money_es }}</b></div>
+      <div><div class="lbl">Saldo + cheques entregados</div><b>$ {{ ((_saldo or 0) + (t.cheques_por_cobrar or 0))|money_es }}</b></div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if pdf_disponible() %}
+  <a class="btn ancho" href="/estado-de-cuenta.pdf"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar mi estado de cuenta (PDF)</a>
+  {% else %}
+  <a class="btn ancho" href="/estado-de-cuenta/imprimir" target="_blank" rel="noopener">Ver mi estado de cuenta para imprimir</a>
+  {% endif %}
+
+  {% if vendedor %}
+  <div class="card vend">
+    <div class="av">{{ vendedor.iniciales }}</div>
+    <div><b>{{ vendedor.nombre }}</b><small>Su vendedor en Intela{% if vendedor.correo %} · {{ vendedor.correo }}{% endif %}</small></div>
+  </div>
+  {% endif %}
+ </div>
+
+ <div class="grid">
+  <div>
+    <h2>Facturas pendientes <a href="/facturas">Ver todas{% if facturas %} ({{ facturas|length }}){% endif %} ›</a></h2>
+    <div class="lista">
+      {% for f in facturas[:5] %}{% include "portal/_fila_factura.html" %}{% else %}
+        <div class="card vacio"><b>No tiene facturas pendientes</b>Está al día con Intela.</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <h2>Últimos pagos recibidos <a href="/mis-pagos">Ver todos ›</a></h2>
+    <div class="lista">
+      {% for p in pagos[:3] %}{% include "portal/_fila_pago.html" %}{% else %}
+        <div class="card vacio">Todavía no registramos pagos suyos.</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div>
+    <h2>Últimos despachos <a href="/despachos">Ver todos ›</a></h2>
+    <div class="lista">
+      {% if despachos is none %}
+        <div class="card vacio">No pudimos traer sus despachos en este momento. <a href="/despachos" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
+      {% else %}
+      {% for g in despachos[:3] %}{% include "portal/_fila_despacho.html" %}{% else %}
+        <div class="card vacio">Sin despachos en los últimos 3 meses.</div>
+      {% endfor %}
+      {% endif %}
+    </div>
+  </div>
+ </div>
+</div>
+{% endblock %}

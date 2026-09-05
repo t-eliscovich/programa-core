@@ -1,0 +1,5 @@
+<a class="fila" href="/despacho/{{ g.numero }}">
+  <span class="t">Despacho {{ g.corto }}{% if g.devueltos %}<span class="pill">devolución</span>{% endif %}</span>
+  <span class="m">{% if g.rollos %}{{ g.rollos }} rollo{{ 's' if g.rollos != 1 }}{% endif %}{% if g.rollos and g.unidades %} · {% endif %}{% if g.unidades %}{{ g.unidades }} un.{% endif %}{% if g.factura_corta %}<small>factura {{ g.factura_corta }}</small>{% endif %}</span>
+  <span class="s">{{ g.dia|fecha_es }}</span>
+</a>

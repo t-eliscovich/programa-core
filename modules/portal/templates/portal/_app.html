@@ -1,0 +1,137 @@
+{# EL ARMAZÓN DEL PORTAL DEL CLIENTE, para las pantallas de adentro.
+
+   Rediseño del 04/09/2026. Dueña: *"pensemos todo lo que hace una aplicación
+   user friendly… hacelo lindo. aunque tardemos cambiemos el approach"*.
+   Lo que se aplicó (NN/g, heurísticas de Nielsen):
+
+   · lo que importa, primero y solo: el saldo, si hay algo vencido, UNA acción;
+   · navegación visible siempre: barra abajo en el celular (4 lugares), menú
+     arriba en la computadora — nunca un menú escondido;
+   · el idioma del cliente: "al día / vence en 12 días / vencida", "a su
+     favor", "recibido el"; nada de STAT, RETENC., ACUM.;
+   · listas de tarjetas, no tablas: una fila = número, estado, importe y
+     fecha; el detalle al tocar; agrupadas por mes;
+   · ayuda a mano: su vendedor en el inicio, estados vacíos que explican.
+
+   Es una hoja propia: el portal ya no comparte los estilos de Mi Cartera
+   (las pantallas del vendedor son de trabajo; ésta es de un cliente que entra
+   una vez por semana). Lo que sí sigue compartido es lo que dice números:
+   la hoja impresa, el "qué se llevó" de la factura y las consultas.
+
+   Bloques: `titulo`, `seccion` (inicio | facturas | pagos | despachos, para
+   prender la pestaña), `contenido`. #}
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>{% block titulo %}Intela{% endblock %}</title>
+<link rel="icon" href="/static/intela-logo.png">
+<style>
+:root{--ink:#0F172A;--ink2:#475569;--ink3:#8A94A6;--line:#E6E9EF;--bg:#F4F5F8;--card:#fff;
+ --rojo:#E30613;--rojo-soft:#FDECEE;--verde:#15803D;--verde-soft:#E9F7EE;
+ --ambar:#B45309;--ambar-soft:#FDF3E3;--azul:#1D4ED8;--azul-soft:#EAF0FF}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;background:var(--bg);
+ color:var(--ink);-webkit-font-smoothing:antialiased;-webkit-text-size-adjust:100%;display:flex;flex-direction:column;min-height:100vh}
+a{color:inherit;text-decoration:none}
+.top{background:#fff;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
+.top .in{max-width:960px;margin:0 auto;display:flex;align-items:center;gap:12px;padding:calc(10px + env(safe-area-inset-top)) 16px 10px}
+.top img{height:26px;width:auto;flex:0 0 auto}
+.quien{flex:1;min-width:0}.quien b{display:block;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.quien small{color:var(--ink3);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;display:block}
+.topnav{display:none;gap:4px}.topnav a{padding:8px 12px;border-radius:8px;font-size:14px;font-weight:600;color:var(--ink2)}
+.topnav a.on{background:var(--rojo-soft);color:var(--rojo)}
+.salir{width:36px;height:36px;flex:0 0 auto;border:1px solid var(--line);border-radius:10px;display:grid;place-items:center;color:var(--ink2)}
+.salir svg{width:18px;height:18px;fill:currentColor}
+main{flex:1;max-width:960px;width:100%;margin:0 auto;padding:14px 14px calc(84px + env(safe-area-inset-bottom))}
+.grid{display:grid;gap:14px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+.lbl{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--ink3);text-transform:uppercase}
+.big{font-size:34px;font-weight:700;letter-spacing:-.02em;margin:4px 0 2px;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.chip{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;background:var(--bg);color:var(--ink2)}
+.chip.ok{background:var(--verde-soft);color:var(--verde)}.chip.warn{background:var(--ambar-soft);color:var(--ambar)}.chip.bad{background:var(--rojo-soft);color:var(--rojo)}
+.prox{margin:10px 0 0;font-size:13px;color:var(--ink2);line-height:1.4}.prox.warn{color:var(--ambar)}
+.dos{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.dos b{display:block;font-size:17px;font-variant-numeric:tabular-nums}.dos .lbl{font-size:10px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;background:var(--rojo);color:#fff;border:1px solid var(--rojo);
+ border-radius:12px;padding:11px 16px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit}
+.btn.sec{background:#fff;color:var(--ink);border-color:var(--line)}
+.btn svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.btn.ancho{width:100%}
+h2{font-size:15px;margin:4px 0 8px;display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+h2 a{font-size:12.5px;color:var(--azul);font-weight:600;white-space:nowrap}
+h1.pag{font-size:21px;margin:2px 0 12px;letter-spacing:-.01em}
+.lista{display:flex;flex-direction:column;gap:8px}
+.fila{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:grid;grid-template-columns:1fr auto;gap:2px 12px;align-items:center}
+a.fila:active{background:var(--bg)}
+.fila .t{font-weight:700;font-size:15px}.fila .s{font-size:12.5px;color:var(--ink3);grid-column:1/-1}
+.fila .m{font-weight:700;font-size:16px;text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fila .m small{display:block;font-weight:500;font-size:11.5px;color:var(--ink3)}
+.fila.neg .m{color:var(--verde)}
+.pill{display:inline-block;font-size:11px;font-weight:700;padding:2px 8px;border-radius:999px;margin-left:6px;vertical-align:middle;background:var(--bg);color:var(--ink2)}
+.pill.ok{background:var(--verde-soft);color:var(--verde)}.pill.warn{background:var(--ambar-soft);color:var(--ambar)}.pill.bad{background:var(--rojo-soft);color:var(--rojo)}
+.vend{display:flex;align-items:center;gap:12px}.vend .av{width:42px;height:42px;flex:0 0 auto;border-radius:50%;background:var(--rojo-soft);color:var(--rojo);display:grid;place-items:center;font-weight:700}
+.vend b{display:block;font-size:14px}.vend small{color:var(--ink3);font-size:12px}
+.tabbar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:center;padding:6px 8px calc(8px + env(safe-area-inset-bottom))}
+.tabbar a{flex:1 1 0;max-width:110px;text-align:center;font-size:10.5px;font-weight:600;color:var(--ink3);white-space:nowrap}
+.tabbar a svg{display:block;margin:0 auto 2px;width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.tabbar a.on{color:var(--rojo)}
+.buscar{display:flex;gap:8px;margin-bottom:10px}
+.buscar input{flex:1;border:1px solid var(--line);border-radius:12px;padding:10px 12px;font-size:16px;background:#fff;font-family:inherit;color:var(--ink)}
+.buscar input:focus{outline:none;border-color:var(--rojo);box-shadow:0 0 0 3px var(--rojo-soft)}
+.seg{display:flex;background:#fff;border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:10px}
+.seg a{flex:1;text-align:center;padding:7px 4px;border-radius:9px;font-size:13px;font-weight:600;color:var(--ink2);white-space:nowrap}.seg a.on{background:var(--ink);color:#fff}
+.mes{font-size:12px;font-weight:700;color:var(--ink3);letter-spacing:.06em;text-transform:uppercase;margin:12px 4px 6px;display:flex;justify-content:space-between;font-variant-numeric:tabular-nums}
+.vacio{text-align:center;padding:26px 14px;color:var(--ink2);font-size:14px;line-height:1.5}
+.vacio b{display:block;font-size:15px;color:var(--ink);margin-bottom:4px}
+.aviso{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:12px;background:var(--ambar-soft);color:var(--ambar);font-size:13.5px;line-height:1.4;margin-bottom:12px}
+.aviso.bien{background:var(--verde-soft);color:var(--verde)}.aviso.mal{background:var(--rojo-soft);color:var(--rojo)}
+.volver{display:inline-flex;align-items:center;gap:4px;font-size:13.5px;font-weight:600;color:var(--azul);margin-bottom:10px}
+.firma{text-align:center;color:var(--ink3);font-size:12px;margin-top:22px}
+.tabla{width:100%;border-collapse:collapse;font-size:13.5px}
+.tabla th{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink3);text-align:left;padding:6px 8px;border-bottom:1px solid var(--line)}
+.tabla td{padding:9px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+.tabla .n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tabla tr:last-child td{border-bottom:0}
+@media (min-width:900px){
+ .topnav{display:flex}.tabbar{display:none}main{padding:24px 24px 40px}
+ .grid.inicio{grid-template-columns:380px 1fr;align-items:start}
+ .big{font-size:40px}.top img{height:30px}
+}
+</style>
+</head>
+<body>
+<header class="top"><div class="in">
+  <a href="/"><img src="/static/intela-logo.png" alt="Intela"></a>
+  <div class="quien"><b>{{ cli.nombre|title if cli and cli.nombre else codigo }}</b><small>Cliente {{ codigo }}{% if cli and cli.ruc %} · RUC {{ cli.ruc }}{% endif %}</small></div>
+  {% set _s = self.seccion() %}
+  <nav class="topnav">
+    <a href="/" class="{{ 'on' if _s == 'inicio' }}">Inicio</a>
+    <a href="/facturas" class="{{ 'on' if _s == 'facturas' }}">Facturas</a>
+    <a href="/mis-pagos" class="{{ 'on' if _s == 'pagos' }}">Pagos</a>
+    <a href="/despachos" class="{{ 'on' if _s == 'despachos' }}">Despachos</a>
+  </nav>
+  <a class="salir" href="/salir" title="Salir" aria-label="Salir"><svg viewBox="0 0 24 24"><path d="M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z"/><path d="M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z"/></svg></a>
+</div></header>
+
+{% with mensajes = get_flashed_messages(with_categories=true) %}
+  {% if mensajes %}<div style="max-width:960px;margin:12px auto 0;padding:0 14px">
+    {% for categoria, texto in mensajes %}<div class="aviso {{ 'mal' if categoria == 'error' else 'bien' }}">{{ texto }}</div>{% endfor %}
+  </div>{% endif %}
+{% endwith %}
+
+<main>{% block contenido %}{% endblock %}
+  <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
+</main>
+
+<nav class="tabbar">
+  <a href="/" class="{{ 'on' if _s == 'inicio' }}"><svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg>Inicio</a>
+  <a href="/facturas" class="{{ 'on' if _s == 'facturas' }}"><svg viewBox="0 0 24 24"><path d="M6 3h9l5 5v13H6z"/><path d="M14 3v6h6M9 13h7M9 17h7"/></svg>Facturas</a>
+  <a href="/mis-pagos" class="{{ 'on' if _s == 'pagos' }}"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h4"/></svg>Pagos</a>
+  <a href="/despachos" class="{{ 'on' if _s == 'despachos' }}"><svg viewBox="0 0 24 24"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7z"/><circle cx="7" cy="18" r="1.6"/><circle cx="17" cy="18" r="1.6"/></svg>Despachos</a>
+</nav>
+</body>
+</html>

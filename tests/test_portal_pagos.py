@@ -179,7 +179,7 @@ def test_el_efectivo_tampoco(monkeypatch):
 
 def test_sin_pagos_lo_dice_sin_asustar(monkeypatch):
     html = _pantalla(monkeypatch, [])
-    assert "Todavía no tenemos ningún pago suyo cargado" in html
+    assert "Todavía no registramos pagos suyos" in html
 
 
 def test_el_devuelto_se_ve_como_un_pago_mas(monkeypatch):
@@ -210,7 +210,8 @@ def test_se_llega_desde_el_estado_de_cuenta():
     """Una pantalla sin link es una pantalla que no existe."""
     # Desde el 04/09/2026 el link vive en el menú de abajo, que el estado
     # de cuenta incluye.
-    ec = (TPL / "estado_cuenta.html").read_text(encoding="utf-8")
-    assert '{% include "portal/_menu.html" %}' in ec
-    menu = (TPL / "_menu.html").read_text(encoding="utf-8")
-    assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", menu, flags=re.S)
+    # Desde el 04/09/2026 el link vive en el armazón (barra + menú) y en el
+    # "Ver todos" del inicio.
+    armazon = (TPL / "_app.html").read_text(encoding="utf-8")
+    assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", armazon, flags=re.S)
+    assert '"/mis-pagos"' in (TPL / "inicio.html").read_text(encoding="utf-8")

@@ -1,33 +1,42 @@
-{# La factura, vista por el CLIENTE en su portal.
-
+{# UNA FACTURA: qué se llevó, y la factura en papel.
    TMT 2026-08-25 (dueña): que el cliente pueda clickear el número en su
    estado de cuenta y ver qué se llevó. El cuerpo es el MISMO parcial que usa
    su vendedor (`mi_cartera/_que_se_llevo.html`) — mismos números y mismas
    columnas, que es lo que evita la discusión por teléfono. #}
-{% extends "portal/base.html" %}
+{% extends "portal/_app.html" %}
 {% block titulo %}Factura {{ numero }} — Intela{% endblock %}
-{% block cuerpo %}
-<header class="appbar">
-  <div class="row">
-    <div>
-      <h1>Factura {{ numero }}</h1>
-      <div class="sub">{{ f.fecha | fecha_es }} · {{ f.importe | money_es }}</div>
-    </div>
-    <a class="iconbtn" href="{{ url_for('portal.estado_cuenta') }}" title="Volver a mi cuenta" aria-label="Volver">‹</a>
+{% block seccion %}facturas{% endblock %}
+{% block contenido %}
+<a class="volver" href="/facturas">‹ Mis facturas</a>
+<h1 class="pag">Factura {{ numero }}</h1>
+{% set e = f.estado_cliente %}
+<div class="card" style="margin-bottom:12px">
+  <div class="lbl">{{ 'A su favor' if e.texto == 'a su favor' else 'Saldo de esta factura' }}</div>
+  <div class="big" style="font-size:28px">{{ f.saldo|abs|money_es }}</div>
+  <div class="chips">
+    <span class="chip">{{ f.fecha|fecha_es }}</span>
+    {% if e.texto != 'a su favor' %}<span class="chip {{ e.clase }}">{{ e.texto }}</span>{% endif %}
+    {% if f.vencimiento and e.texto != 'a su favor' %}<span class="chip">vence {{ f.vencimiento|fecha_es }}</span>{% endif %}
   </div>
-</header>
-
-<main>
-  <div class="card">
-    <h2 style="margin:0 0 8px;font-size:15px;">{{ det.titulo }}
-      {% if det.estado == 'ok' and det.totales.kg is not none %}
-        <span style="font-weight:400;color:#64748b;font-size:13px;">·
-          {{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }} ·
-          {{ det.totales.kg | kg_es }} kg</span>
-      {% endif %}
-    </h2>
-    {% include "mi_cartera/_que_se_llevo.html" %}
+  <div class="dos">
+    <div><div class="lbl">Importe</div><b>{{ f.importe|money_es }}</b></div>
+    <div><div class="lbl">Abonado{% if f.retencion %} + retención{% endif %}</div><b>{{ ((f.abono or 0) + (f.retencion or 0))|money_es }}</b></div>
   </div>
-</main>
-{% include "portal/_menu.html" %}
+</div>
+{% if f.numf_completo %}
+<div style="display:flex;gap:8px;margin-bottom:12px">
+  {% if pdf_disponible() %}
+  <a class="btn" style="flex:1" href="/factura/{{ f.numf }}.pdf?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar factura (PDF)</a>
+  {% endif %}
+  <a class="btn sec" style="flex:1" href="/factura/{{ f.numf }}/papel?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}" target="_blank" rel="noopener">Ver la factura</a>
+</div>
+{% endif %}
+<div class="card">
+  <h2 style="margin:0 0 8px">{{ det.titulo }}
+    {% if det.estado == 'ok' and det.totales.kg is not none %}
+      <span style="font-weight:400;color:var(--ink3);font-size:13px">{{ det.totales.rollos }} rollo{{ '' if det.totales.rollos == 1 else 's' }} · {{ det.totales.kg | kg_es }} kg</span>
+    {% endif %}
+  </h2>
+  {% include "mi_cartera/_que_se_llevo.html" %}
+</div>
 {% endblock %}

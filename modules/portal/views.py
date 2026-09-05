@@ -19,6 +19,8 @@ el login de empleados ni siquiera existe.
 """
 from __future__ import annotations
 
+import re
+
 from flask import (
     Blueprint,
     flash,
@@ -30,9 +32,10 @@ from flask import (
 )
 from markupsafe import Markup
 
+import db
 from extensions import limiter
 from filters import today_ec
-from modules.portal import acceso
+from modules.portal import acceso, presentacion
 
 portal_bp = Blueprint("portal", __name__, url_prefix="",
                       template_folder="templates")
@@ -318,23 +321,101 @@ def _cargar_estado_cuenta(cod: str) -> dict:
     return _q.estado_cuenta_cliente(cod)
 
 
+def _vendedor_de(fic: dict) -> dict | None:
+    """Nombre e iniciales del vendedor del cliente, para la tarjeta del inicio.
+    Fail-soft: sin vendedor, sin tarjeta."""
+    vend = (fic.get("vend") or "").strip().upper()
+    if not vend:
+        return None
+    try:
+        r = db.fetch_one("SELECT nombre FROM scintela.vendedor WHERE UPPER(TRIM(codigo)) = %s",
+                         (vend,))
+        u = db.fetch_one("SELECT email FROM seguridad.usuario "
+                         " WHERE UPPER(TRIM(vend)) = %s AND activo ORDER BY id_usuario LIMIT 1",
+                         (vend,))
+    except Exception:  # noqa: BLE001 -- la tarjeta no puede tumbar el inicio
+        return None
+    nombre = presentacion.nombre_lindo((r or {}).get("nombre") or vend)
+    return {"codigo": vend, "nombre": nombre,
+            "iniciales": presentacion.iniciales(nombre),
+            "correo": ((u or {}).get("email") or "").strip()}
+
+
+def _despachos_recientes(cod: str, ruc: str) -> list | None:
+    """Los últimos despachos para el inicio. None si Asinfo no contestó."""
+    from modules.asinfo import despachos_cliente
+    try:
+        d = despachos_cliente.de_cliente(cod, ruc, 3)
+    except Exception:  # noqa: BLE001 -- el puente no puede tumbar el inicio
+        return None
+    if not d.get("ok"):
+        return None
+    return presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
+
+
+def _pagos_de(data: dict) -> list[dict]:
+    """Los pagos que se le muestran, del más nuevo al más viejo (por la fecha
+    que se muestra, "Recibido")."""
+    from modules.cheques import estados
+    pagos = [{**c, "que_es": _que_es(c)}
+             for c in (data.get("cheques") or [])
+             if estados.se_le_muestra_al_cliente(c.get("stat"))]
+    return sorted(pagos, key=_dia_recibido, reverse=True)
+
+
 @portal_bp.route("/estado-de-cuenta", methods=["GET"])
 def estado_cuenta():
+    """El inicio: su saldo, si hay algo vencido, una acción, su vendedor y
+    tres listas cortas. Rediseño del 04/09/2026 (ver `_app.html`).
+
+    La ruta se llama así desde el 24/08 y la usan los links de afuera (el
+    mail del aviso, la ficha del vendedor): se queda."""
     cod = cliente_actual()
     if not cod:
         return _pedir_entrar()
     data = _cargar_estado_cuenta(cod)
-    # La pestaña. Sin esto el link "Cheques" de la tarjeta no hacía nada:
-    # el parcial compartido lee `tab` y el portal no se lo pasaba
-    # (04/09/2026, con AJT).
-    tab = request.args.get("tab") or "facturas"
-    return render_template("portal/estado_cuenta.html",
-                           data=data, t=data.get("totales") or {},
-                           codigo=cod, tab=tab, qv="",
-                           # A dónde lleva el número (ver _movimientos.html).
-                           factura_endpoint="portal.factura",
-                           factura_args={})
+    hoy = today_ec()
+    facturas = presentacion.con_estado(data.get("facturas") or [], hoy)
+    facturas = presentacion.ordenar_por_fecha(facturas, "fecha", "id_factura")
+    t = data.get("totales") or {}
+    fic = data.get("cliente") or acceso.cliente(cod) or {}
+    vencidas = presentacion.vencidas(facturas)
+    return render_template(
+        "portal/inicio.html",
+        data=data, t=t, codigo=cod, cli=fic,
+        facturas=facturas,
+        n_vencidas=len(vencidas),
+        saldo_vencido=sum(presentacion.numero(f.get("saldo")) for f in vencidas),
+        proximo=presentacion.proximo_vencimiento(facturas, hoy),
+        pagos=_pagos_de(data),
+        despachos=_despachos_recientes(cod, (fic.get("ruc") or "")),
+        vendedor=_vendedor_de(fic),
+    )
 
+
+@portal_bp.route("/facturas", methods=["GET"])
+def facturas():
+    """Sus facturas pendientes, por mes, con buscador y el filtro de vencidas."""
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    hoy = today_ec()
+    todas = presentacion.ordenar_por_fecha(
+        presentacion.con_estado(data.get("facturas") or [], hoy), "fecha", "id_factura")
+    q = re.sub(r"\D", "", request.args.get("q") or "")[:12]
+    filtro = "vencidas" if (request.args.get("ver") or "") == "vencidas" else ""
+    lista = todas
+    if filtro == "vencidas":
+        lista = presentacion.vencidas(lista)
+    if q:
+        lista = [f for f in lista
+                 if q in str(f.get("numf") or "") or q in (f.get("numf_completo") or "")]
+    return render_template(
+        "portal/facturas.html", codigo=cod, cli=data.get("cliente") or {},
+        grupos=presentacion.por_mes(lista, "fecha", "saldo"),
+        q=q, filtro=filtro, n_todas=len(todas),
+        n_vencidas=len(presentacion.vencidas(todas)))
 
 
 def _elegir_factura(data: dict, numf: int) -> dict | None:
@@ -395,9 +476,40 @@ def factura(numf: int):
     if elegida is None:
         abort(404)
     numero = (elegida.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
+    elegida = {**elegida, "estado_cliente": presentacion.estado_de_factura(elegida, today_ec())}
     return render_template(
         "portal/factura.html", f=elegida, numero=numero, codigo=cod,
+        cli=data.get("cliente") or {},
         det=factura_lineas.que_se_llevo(elegida.get("numf_completo")))
+
+
+@portal_bp.route("/factura/<int:numf>.pdf", methods=["GET"])
+def factura_pdf_cliente(numf: int):
+    """La factura en papel, como archivo. Misma hoja que `/papel`."""
+    from flask import Response, abort
+
+    from modules._lib import pdf_motor
+    from modules.asinfo import factura_papel
+
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    data = _cargar_estado_cuenta(cod)
+    f = _elegir_factura(data, numf)
+    if f is None or not f.get("numf_completo"):
+        abort(404)
+    html = render_template("informes/factura_papel.html",
+                           **factura_papel.hoja(f.get("numf_completo")), numero=numf)
+    try:
+        blob = pdf_motor.desde_html(html)
+    except pdf_motor.SinMotor:
+        return Response("No se puede generar el archivo en este momento.",
+                        status=503, mimetype="text/plain; charset=utf-8")
+    numero = (f.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(numf)
+    return Response(blob, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Factura {numero} Intela.pdf"',
+        "Cache-Control": "no-store",
+    })
 
 
 @portal_bp.route("/factura/<int:numf>/papel", methods=["GET"])
@@ -429,34 +541,18 @@ def mis_pagos():
 
     ⭐ TMT 26/08: *"no mostremos tanto detalle, sólo fecha y recibido"*. El
     recorrido del cheque —postergado, depositado, endosado, devuelto— es
-    trabajo nuestro; contarlo abre preguntas que él no hizo. Lo que le importa
-    de la plata está en su estado de cuenta, que es donde se discute el saldo.
-
-    En el estado de cuenta los pagos aparecen sólo mientras siguen EN CARTERA:
-    una vez depositados desaparecen de la pestaña. Acá están todos, que es lo
-    que contesta *"¿les llegó lo que les dejé?"*.
-
-    No hay una consulta nueva: sale de `estado_cuenta_cliente`, la misma
-    función que usa la oficina.
+    trabajo nuestro. Acá están todos los que se le muestran, agrupados por
+    mes, del más nuevo al más viejo. No hay una consulta nueva: sale de
+    `estado_cuenta_cliente`, la misma función que usa la oficina.
     """
-    from modules.cheques import estados
-
     cod = cliente_actual()
     if not cod:
         return _pedir_entrar()
-
     data = _cargar_estado_cuenta(cod)
-    pagos = [{**c, "que_es": _que_es(c)}
-             for c in (data.get("cheques") or [])
-             if estados.se_le_muestra_al_cliente(c.get("stat"))]
-    # Lo último primero, POR LA FECHA QUE SE MUESTRA. Antes era un
-    # `reverse()` del orden de la consulta (fecha del cheque / fecha de
-    # salida), y en pantalla la columna "Recibido" salía desordenada:
-    # 01/09, 01/09, 21/07, 01/09… (04/09/2026, con AJT).
-    pagos.sort(key=_dia_recibido, reverse=True)
-
+    pagos = _pagos_de(data)
     return render_template("portal/pagos.html", codigo=cod, pagos=pagos,
-                           cliente=data.get("cliente") or {})
+                           cli=data.get("cliente") or {},
+                           grupos=presentacion.por_mes(pagos, "dia_ingreso"))
 
 
 def _dia_recibido(c: dict):
@@ -512,9 +608,11 @@ def despachos():
     # ⭐ El RUC va con el código: hay `nombre_comercial` repetidos en dos
     # empresas que son contribuyentes DISTINTOS (PRE, MCS). Ver la auditoría
     # del 26/08 en `despachos_cliente`.
-    ruc = (acceso.cliente(cod) or {}).get("ruc") or ""
-    return render_template("portal/despachos.html", codigo=cod,
-                           d=despachos_cliente.de_cliente(cod, ruc, meses))
+    fic = acceso.cliente(cod) or {}
+    d = despachos_cliente.de_cliente(cod, fic.get("ruc") or "", meses)
+    guias = presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
+    return render_template("portal/despachos.html", codigo=cod, cli=fic, d=d,
+                           grupos=presentacion.por_mes(guias, "dia"))
 
 
 @portal_bp.route("/despacho/<numero>", methods=["GET"])
@@ -537,7 +635,8 @@ def despacho(numero: str):
     g = despachos_cliente.guia(cod, ruc, numero)
     if g["ok"] and not g["existe"]:
         abort(404)
-    return render_template("portal/despacho.html", g=g, codigo=cod)
+    return render_template("portal/despacho.html", g=g, codigo=cod,
+                           cli=acceso.cliente(cod) or {})
 
 
 @portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])

@@ -492,11 +492,12 @@ def test_el_estado_de_cuenta_linkea_los_despachos():
     existir."""
     # Desde el 04/09/2026 el link vive en el menú de abajo, que el estado
     # de cuenta incluye (dueña: "tiene que ser user friendly").
-    pantalla = (TPL / "estado_cuenta.html").read_text(encoding="utf-8")
-    assert '{% include "portal/_menu.html" %}' in pantalla
-    menu = (TPL / "_menu.html").read_text(encoding="utf-8")
-    sin_comentarios = re.sub(r"\{#.*?#\}", "", menu, flags=re.S)
-    assert '"/despachos"' in sin_comentarios
+    # Desde el 04/09/2026 el link vive en el armazón (barra de abajo y menú
+    # de arriba) y en el "Ver todos" del inicio.
+    armazon = (TPL / "_app.html").read_text(encoding="utf-8")
+    assert 'href="/despachos"' in re.sub(r"\{#.*?#\}", "", armazon, flags=re.S)
+    inicio = (TPL / "inicio.html").read_text(encoding="utf-8")
+    assert 'href="/despachos"' in inicio
 
 
 def test_la_pantalla_muestra_la_tela_los_rollos_y_la_factura():
@@ -525,22 +526,26 @@ def test_el_cliente_y_su_vendedor_miran_EL_MISMO_parcial():
     vendedores"*. Y no una copia: si el vendedor y el cliente vieran dos listas
     distintas, la discusión no se puede tener. Misma razón por la que
     `_movimientos.html` y `_que_se_llevo.html` viven en `mi_cartera`."""
-    pantallas = [(TPL / "despachos.html").read_text(encoding="utf-8"),
-                 (TPL / "despacho.html").read_text(encoding="utf-8"),
-                 (VEND_TPL / "despacho.html").read_text(encoding="utf-8"),
+    # El vendedor sigue con el parcial compartido. Desde el rediseño del
+    # 04/09 el portal dibuja sus tarjetas, pero los NÚMEROS salen de las
+    # mismas dos funciones (`de_cliente` y `guia`): lo que no puede divergir
+    # es el dato — ver abajo.
+    pantallas = [(VEND_TPL / "despacho.html").read_text(encoding="utf-8"),
                  # La lista del vendedor es la PESTAÑA de la ficha (26/08):
                  # el parcial se incluye desde `_movimientos.html`.
                  (VEND_TPL / "_movimientos.html").read_text(encoding="utf-8")]
     for pantalla in pantallas:
         assert "_despachos_lista.html" in pantalla or \
                "_despachos_guia.html" in pantalla
+    vistas = (ROOT / "modules" / "portal" / "views.py").read_text(encoding="utf-8")
+    assert "despachos_cliente.de_cliente(" in vistas
+    assert "despachos_cliente.guia(" in vistas
 
 
 def test_las_pantallas_del_vendedor_no_copian_la_tabla():
     """La tabla se escribe UNA vez. Si alguna se dibujara la suya, se separan a
     la primera corrección."""
-    for carpeta, archivo in ((TPL, "despachos.html"), (TPL, "despacho.html"),
-                             (VEND_TPL, "despacho.html")):
+    for carpeta, archivo in ((VEND_TPL, "despacho.html"),):
         texto = re.sub(r"\{#.*?#\}", "", (carpeta / archivo).read_text(encoding="utf-8"),
                        flags=re.S)
         assert "<table" not in texto, f"{carpeta.name}/{archivo} copió la tabla"

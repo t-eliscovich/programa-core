@@ -1,4 +1,6 @@
-"""El estado de cuenta que ve el cliente en el portal.
+"""El estado de cuenta que ve el cliente en el portal (desde el 04/09/2026,
+el INICIO: rediseño a pedido de la dueña, *"pensemos todo lo que hace una
+aplicación user friendly… hacelo lindo"*; ver `portal/_app.html`).
 
 TMT 2026-08-24. Dos reglas, y las dos son de las que se rompen en silencio:
 
@@ -23,9 +25,11 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 TPL = ROOT / "modules" / "portal" / "templates" / "portal"
-PANTALLA = (TPL / "estado_cuenta.html").read_text(encoding="utf-8")
+PANTALLA = (TPL / "inicio.html").read_text(encoding="utf-8")
+APP = (TPL / "_app.html").read_text(encoding="utf-8")
 HOJA = (TPL / "estado_cuenta_impreso.html").read_text(encoding="utf-8")
 VISTAS = (ROOT / "modules" / "portal" / "views.py").read_text(encoding="utf-8")
+HOJA_PORTAL = HOJA
 
 
 def _sin_comentarios(texto: str) -> str:
@@ -96,12 +100,6 @@ def test_el_envoltorio_del_portal_no_usa_el_chrome_del_erp():
     assert "url_for(" not in codigo
 
 
-def test_la_pantalla_avisa_lo_vencido():
-    """Es el único dato de la pantalla que le pide algo al cliente."""
-    assert "saldo_vencido" in PANTALLA
-    assert "n_vencidas" in PANTALLA
-
-
 def test_el_saldo_a_favor_se_muestra_como_a_favor():
     """Un saldo negativo con un signo menos adelante lo lee mal cualquiera: un
     cliente que ve '-$ 500' llama preguntando qué le debe.
@@ -147,25 +145,15 @@ def test_las_fechas_van_por_el_filtro_de_la_casa():
 
     Las fechas de las facturas viven en el parcial compartido, que ya las
     formatea así; acá se cuida que la pantalla del portal no meta las suyas."""
-    assert "strftime" not in PANTALLA
+    for pantalla in ("inicio", "facturas", "pagos", "despachos", "despacho", "factura",
+                     "_fila_factura", "_fila_pago", "_fila_despacho"):
+        t = (TPL / f"{pantalla}.html").read_text(encoding="utf-8")
+        assert "strftime" not in t, pantalla
+        assert "'%.2f'|format" not in t, pantalla
     assert "fecha_es" in MOVIMIENTOS
 
 
 BASE_PORTAL = (TPL / "base.html").read_text(encoding="utf-8")
-
-
-def test_el_portal_y_mi_cartera_comparten_los_estilos():
-    """⭐ Dueña: *"no hace falta que rediseñes, que sea consistente con lo que
-    ya hay en Programa Core"*.
-
-    El cliente y el vendedor miran el mismo producto desde el mismo teléfono.
-    Los estilos salen de UN archivo (`mi_cartera/_estilos.html`) que incluyen
-    los dos, no de dos hojas parecidas que se separan a la primera corrección.
-    """
-    assert '{% include "mi_cartera/_estilos.html" %}' in BASE_PORTAL
-    base_vend = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-                 / "base.html").read_text(encoding="utf-8")
-    assert '{% include "mi_cartera/_estilos.html" %}' in base_vend
 
 
 def test_el_portal_usa_las_variables_de_la_casa_y_no_colores_sueltos():
@@ -177,69 +165,11 @@ def test_el_portal_usa_las_variables_de_la_casa_y_no_colores_sueltos():
         sueltos = [c for c in re.findall(r"#[0-9a-fA-F]{6}\b", estilos)]
         assert not sueltos, f"colores escritos a mano: {sueltos}"
     assert "var(--accent)" in BASE_PORTAL
-
-
-def test_la_pantalla_de_la_cuenta_usa_el_hero_del_vendedor():
-    """El mismo bloque de arriba, con los mismos rótulos: si los dos están
-    mirando lo mismo, tienen que verlo igual."""
-    assert 'class="hero"' in PANTALLA
-    assert 'class="lbl"' in PANTALLA and 'class="val"' in PANTALLA
-    assert 'class="split"' in PANTALLA
-
-
-def test_el_cliente_ve_EL_MISMO_cuerpo_que_su_vendedor():
-    """⭐ Dueña, 24/08: *"que sea más parecido a como ve el cliente el
-    vendedor"*. No parecido: **el mismo**. Las pestañas, la tabla y los
-    rótulos salen del parcial compartido, que también incluye la ficha del
-    vendedor.
-
-    Esa tabla llevó varias vueltas de ajuste para entrar en 390 px —la columna
-    que no aporta no se dibuja, la fecha va dd/mm/AA, el acumulado corre de
-    arriba hacia abajo—. Nada de eso se rehace por segunda vez."""
-    assert '{% include "mi_cartera/_movimientos.html" %}' in PANTALLA
-    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-             / "cliente.html").read_text(encoding="utf-8")
-    assert '{% include "mi_cartera/_movimientos.html" %}' in ficha
-
-
-def test_el_parcial_tiene_lo_que_hace_falta_para_dibujarlo():
-    """Lo que el parcial espera en el contexto. Si mañana pide algo más y el
-    portal no se lo pasa, la pantalla del cliente se cae y la del vendedor no
-    — que es la forma más fácil de romper esto sin enterarse."""
-    for nombre in ("facturas", "cheques", "saldo_neto", "qv"):
-        assert f"{{% set {nombre} =" in PANTALLA or f"set {nombre} =" in PANTALLA, nombre
-
-
-def test_el_boton_de_salir_no_es_un_caracter():
-    """🚨 Regla ya pagada dos veces en este portal (el emoji de WhatsApp el
-    20/08, el ⎙ de imprimir el 24/08): en un botón no va un carácter especial,
-    va un SVG. En Android sale el cuadradito del glifo que falta."""
-    assert "--ico-salir" in PANTALLA
-    assert "svg+xml" in PANTALLA
-    import re
-    boton = re.search(r'<a class="iconbtn salir".*?</a>', PANTALLA, re.S).group(0)
-    assert not re.search(r">[^<\s]", boton), "el botón tiene texto adentro; va vacío con máscara"
-
-
-def test_en_pantalla_grande_se_ensancha():
-    """⭐ Dueña: *"también esto puede funcionar en web y en mobile"*. Los
-    estilos compartidos están afinados para 390 px —la tabla baja a 11 px para
-    que entren siete columnas— y en un monitor eso se lee diminuto.
-
-    Ensancha SÓLO el portal del cliente: la ficha del vendedor se mira siempre
-    desde el celular, y tocarle el ancho sería cambiarle la pantalla a alguien
-    que no lo pidió."""
-    assert "@media (min-width: 700px)" in PANTALLA
-    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-             / "cliente.html").read_text(encoding="utf-8")
-    assert "min-width: 700px" not in ficha
-
-
-# ---------------------------------------------------------------------------
-# El PDF
-# ---------------------------------------------------------------------------
-
-HOJA_PORTAL = (TPL / "estado_cuenta_impreso.html").read_text(encoding="utf-8")
+    # El armazón nuevo define las variables UNA vez (en :root) y el resto va
+    # por var(--…): el rojo de la marca está escrito una sola vez.
+    estilos = "\n".join(re.findall(r"<style>(.*?)</style>", APP, re.S))
+    assert estilos.count("#E30613") == 1
+    assert "var(--rojo)" in estilos
 
 
 def test_el_archivo_se_llama_igual_que_el_de_la_oficina():
@@ -299,101 +229,6 @@ def test_dentro_del_PDF_no_va_el_boton_de_imprimir():
     assert "para_pdf=True" in VISTAS
 
 
-def test_hay_UN_solo_boton_para_el_estado_de_cuenta():
-    """⭐ Dueña, 24/08: *"ver hoja para imprimir y descargar archivo es lo
-    mismo"*. Y tenía razón: los dos llevan al mismo documento, uno en pantalla
-    y el otro en archivo. Dos botones para lo mismo obligan a elegir entre dos
-    cosas que no se distinguen.
-
-    Queda el archivo, y la hoja en pantalla aparece EN SU LUGAR cuando el
-    servidor no puede generarlo: la acción no desaparece, cambia de forma."""
-    assert PANTALLA.count('href="/estado-de-cuenta.pdf"') == 1
-    assert PANTALLA.count('href="/estado-de-cuenta/imprimir"') == 1
-    assert "{% else %}" in PANTALLA[PANTALLA.index("pdf_disponible()"):
-                                    PANTALLA.index("/estado-de-cuenta/imprimir")]
-
-
-def test_ya_no_se_esconde_ninguna_columna_en_el_celular():
-    """🚨 Dueña 27/08/2026: *"todo tiene que entrar y no salirse así de feo"*.
-
-    El parche del 24/08 escondía la columna ACUM. en pantallas angostas porque
-    seis columnas no entraban. Desde el 27/08 el acumulado corre en un <small>
-    bajo el saldo (parcial compartido `_movimientos.html`) y la tabla entra
-    entera hasta en un celular de 360 px. Si el parche hubiera quedado, ahora
-    escondería la columna del SALDO — el dato.
-
-    La red de seguridad sí queda: si un caso extremo no entra, la tabla se
-    desliza adentro de su tarjeta en vez de salirse por la derecha."""
-    assert "last-child{display:none}" not in PANTALLA
-    assert ".card:has(> .ec)" in PANTALLA
-
-
-def test_el_acumulado_apilado_es_el_MISMO_para_cliente_y_vendedor():
-    """Dueña 24/08: *"que sea más parecido a como ve el cliente el vendedor"*
-    — no parecido: el mismo. El apilado vive en el parcial compartido, así que
-    las dos pantallas lo dibujan igual; este test impide que a una de las dos
-    le vuelva una columna propia."""
-    compartido = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-                  / "_movimientos.html").read_text(encoding="utf-8")
-    # El rótulo va apilado: "Saldo" y, en un <small> debajo, "· acum.".
-    assert "Saldo <small>· acum.</small>" in compartido
-    ficha = (ROOT / "modules" / "mi_cartera" / "templates" / "mi_cartera"
-             / "cliente.html").read_text(encoding="utf-8")
-    assert "max-width: 560px" not in ficha
-
-
-def test_el_menu_esta_en_todas_las_pantallas_y_los_botones_no_se_repiten():
-    """🐞 04/09/2026, probando con AJT: "Ver mis despachos" estaba DOS veces,
-    y el botón de descargar salía como texto pelado porque su clase
-    (`.btn-pr`) ya no existía en los estilos compartidos. Dueña: *"que sea
-    web, los botones hacen que la info quede muy mal"*."""
-    t = (ROOT / "modules" / "portal" / "templates" / "portal"
-         / "estado_cuenta.html").read_text(encoding="utf-8")
-    # Pagos y despachos viven en el menú de abajo, no en botones sueltos.
-    assert 'href="/despachos"' not in t and 'href="/mis-pagos"' not in t
-    assert 'class="acciones"' in t and ".acciones a{" in t
-    menu = (ROOT / "modules" / "portal" / "templates" / "portal"
-            / "_menu.html").read_text(encoding="utf-8")
-    assert 'href="/mis-pagos"' in menu and 'href="/despachos"' in menu
-    for pantalla in ("estado_cuenta", "pagos", "despachos", "despacho", "factura"):
-        cuerpo = (ROOT / "modules" / "portal" / "templates" / "portal"
-                  / f"{pantalla}.html").read_text(encoding="utf-8")
-        assert '{% include "portal/_menu.html" %}' in cuerpo, pantalla
-    assert "btn-pr" not in t.split("<style>")[0].replace("`.btn-pr`", "")
-    base = (ROOT / "modules" / "portal" / "templates" / "portal"
-            / "base.html").read_text(encoding="utf-8")
-    assert "@media (min-width:900px)" in base
-
-
-def test_la_pestana_cheques_abre_los_cheques(monkeypatch):
-    """🐞 04/09/2026, con AJT: el link "Cheques" no hacía nada. El parcial
-    compartido decide por `tab`, y el portal no se lo pasaba: siempre
-    Facturas. Se prueba por la PANTALLA, con ?tab=cheques."""
-    import os
-    from unittest.mock import patch
-
-    from tests.test_routes_smoke import build_app
-    with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
-        app, deshacer = build_app()
-    try:
-        from modules.informes import queries as q
-        monkeypatch.setattr(q, "estado_cuenta_cliente", lambda cod: {
-            "cliente": {"codigo_cli": cod, "nombre": "ALMACENES TEXTILES", "ruc": "1791234567001"},
-            "facturas": [], "cheques": [], "anticipos": [],
-            "totales": q.totales_estado_cuenta_en_cero(),
-        })
-        c = app.test_client()
-        with c.session_transaction() as s:
-            s["portal_cliente"] = "ATE"
-        html = c.get("/estado-de-cuenta?tab=cheques").get_data(as_text=True)
-        assert '?tab=cheques" class="on"' in html
-        assert '?tab=facturas" class="on"' not in html
-        html = c.get("/estado-de-cuenta").get_data(as_text=True)
-        assert '?tab=facturas" class="on"' in html
-    finally:
-        deshacer()
-
-
 def test_la_hoja_para_imprimir_sale_aunque_el_cliente_tenga_cheques(monkeypatch):
     """🐞 04/09/2026, con AJT (54 cheques): la hoja y el PDF daban 500. El
     parcial compartido linkea cada cheque a `cheques.detalle` salvo para un
@@ -429,5 +264,193 @@ def test_la_hoja_para_imprimir_sale_aunque_el_cliente_tenga_cheques(monkeypatch)
         html = r.get_data(as_text=True)
         assert "0001840" in html
         assert "/cheques/" not in html
+    finally:
+        deshacer()
+
+
+# ---------------------------------------------------------------------------
+# El rediseño del 04/09/2026
+# ---------------------------------------------------------------------------
+
+PANTALLAS_DE_ADENTRO = ("inicio", "facturas", "pagos", "despachos", "despacho", "factura")
+
+
+def test_todas_las_pantallas_de_adentro_usan_el_mismo_armazon():
+    """Una barra de navegación visible SIEMPRE (NN/g: los menús escondidos
+    bajan un 21% la tarea completada), la misma en las seis pantallas, y en
+    la computadora un menú arriba en vez de la barra."""
+    for pantalla in PANTALLAS_DE_ADENTRO:
+        t = (TPL / f"{pantalla}.html").read_text(encoding="utf-8")
+        assert '{% extends "portal/_app.html" %}' in t, pantalla
+        assert "{% block seccion %}" in t, pantalla
+    assert 'class="tabbar"' in APP and 'class="topnav"' in APP
+    for destino in ("/", "/facturas", "/mis-pagos", "/despachos"):
+        assert APP.count(f'href="{destino}"') >= 2, destino   # barra + menú
+
+
+def test_el_armazon_no_depende_de_los_estilos_del_vendedor():
+    """Dueña 04/09: *"aunque tardemos cambiemos el approach"*. El portal dejó
+    de compartir la hoja de Mi Cartera (pantallas de trabajo, tablas de siete
+    columnas); lo que sigue compartido es lo que dice números."""
+    assert "mi_cartera/_estilos.html" not in APP
+    assert "tailwind" not in APP
+
+
+def test_el_salir_del_armazon_es_un_svg_y_no_un_caracter():
+    """🚨 Regla ya pagada dos veces (el emoji de WhatsApp el 20/08, el ⎙ el
+    24/08): en un botón no va un carácter especial, va un SVG."""
+    boton = re.search(r'<a class="salir".*?</a>', APP, re.S).group(0)
+    assert "<svg" in boton
+    assert not re.search(r">[^<\s]", boton.replace("</svg>", "")), "texto suelto en el botón"
+    for a in re.findall(r'<a href="[^"]*" class="[^"]*">(.*?)</a>', APP[APP.index('class="tabbar"'):], re.S):
+        assert "<svg" in a
+
+
+def test_el_inicio_tiene_UN_boton_y_avisa_lo_vencido_y_lo_proximo():
+    """Lo que importa, primero y solo: el saldo, si hay algo vencido, el
+    próximo vencimiento en una frase, y UNA acción (el PDF; la hoja en su
+    lugar si no hay motor)."""
+    assert PANTALLA.count('href="/estado-de-cuenta.pdf"') == 1
+    assert PANTALLA.count('href="/estado-de-cuenta/imprimir"') == 1
+    assert "{% if pdf_disponible() %}" in PANTALLA
+    assert "n_vencidas" in PANTALLA and "proximo" in PANTALLA
+    assert "Ninguna factura vencida" in PANTALLA
+    # Pagos y despachos se llegan por el menú y por los "Ver todos" de las
+    # listas, no por botones sueltos.
+    assert "Ver todos" in PANTALLA
+
+
+def test_los_estados_hablan_el_idioma_del_cliente():
+    """Nielsen 2: ni STAT ni ACUM. ni RETENC. — "al día", "vence en 12 días",
+    "vencida hace 3 días", "a su favor"."""
+    from datetime import date
+
+    from modules.portal import presentacion as pr
+    hoy = date(2026, 9, 4)
+    assert pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 11, 1)}, hoy)["texto"] == "al día"
+    assert pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 9, 16)}, hoy)["texto"] == "vence en 12 días"
+    assert pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 9, 5)}, hoy)["texto"] == "vence en 1 día"
+    assert pr.estado_de_factura({"importe": 100, "vencimiento": hoy}, hoy)["texto"] == "vence hoy"
+    e = pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 9, 1)}, hoy)
+    assert e["texto"] == "vencida hace 3 días" and e["clase"] == "bad"
+    assert pr.estado_de_factura({"importe": -50, "vencimiento": date(2026, 9, 1)}, hoy)["texto"] == "a su favor"
+    assert pr.estado_de_factura({"importe": 100, "vencimiento": None}, hoy)["clase"] == "ok"
+    for pantalla in PANTALLAS_DE_ADENTRO + ("_fila_factura", "_fila_pago"):
+        t = (TPL / f"{pantalla}.html").read_text(encoding="utf-8")
+        for jerga in ("STAT", "ACUM", "RETENC."):
+            assert jerga not in t, (pantalla, jerga)
+
+
+def test_el_proximo_vencimiento_es_el_mas_cercano_con_saldo_y_no_vencido():
+    from datetime import date
+
+    from modules.portal import presentacion as pr
+    hoy = date(2026, 9, 4)
+    fs = [
+        {"numf": 1, "importe": 100, "saldo": 100, "vencimiento": date(2026, 9, 1)},   # vencida: no
+        {"numf": 2, "importe": 100, "saldo": 0, "vencimiento": date(2026, 9, 6)},     # sin saldo: no
+        {"numf": 3, "importe": -100, "saldo": -100, "vencimiento": date(2026, 9, 5)}, # a favor: no
+        {"numf": 4, "importe": 100, "saldo": 40, "vencimiento": date(2026, 9, 20)},
+        {"numf": 5, "importe": 100, "saldo": 40, "vencimiento": date(2026, 9, 10)},
+    ]
+    p = pr.proximo_vencimiento(fs, hoy)
+    assert p["factura"]["numf"] == 5 and p["dias"] == 6
+    assert pr.proximo_vencimiento(fs[:3], hoy) is None
+
+
+def test_las_listas_van_por_mes_del_mas_nuevo_al_mas_viejo():
+    from datetime import date
+
+    from modules.portal import presentacion as pr
+    items = [{"fecha": date(2026, 9, 2), "saldo": 10, "id": 1},
+             {"fecha": date(2026, 8, 30), "saldo": 5, "id": 2},
+             {"fecha": date(2026, 9, 2), "saldo": 1, "id": 3},
+             {"fecha": "2026-08-01", "saldo": 2, "id": 4}]   # Asinfo manda texto
+    orden = pr.ordenar_por_fecha(items, "fecha", "id")
+    assert [x["id"] for x in orden] == [3, 1, 2, 4]
+    grupos = pr.por_mes(orden, "fecha", "saldo")
+    assert [(g["mes"], len(g["items"]), g["total"]) for g in grupos] == [
+        ("Septiembre 2026", 2, 11.0), ("Agosto 2026", 2, 7.0)]
+
+
+def _app_portal():
+    import os
+    from unittest.mock import patch
+
+    from tests.test_routes_smoke import build_app
+    with patch.dict(os.environ, {**os.environ, "MODO": "portal"}):
+        return build_app()
+
+
+def _data(monkeypatch, facturas=(), cheques=()):
+    from modules.informes import queries as q
+    monkeypatch.setattr(q, "estado_cuenta_cliente", lambda cod: {
+        "cliente": {"codigo_cli": cod, "nombre": "TOTOY BUITRON ANDRES JULIO",
+                    "ruc": "1724354004001", "vend": "EDG"},
+        "facturas": list(facturas), "cheques": list(cheques), "anticipos": [],
+        "totales": {**q.totales_estado_cuenta_en_cero(), "saldo": 735.25, "saldo_neto": 735.25},
+    })
+    from modules.portal import views
+    monkeypatch.setattr(views, "_vendedor_de", lambda fic: {
+        "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER", "correo": ""})
+    monkeypatch.setattr(views, "_despachos_recientes", lambda cod, ruc: [])
+
+
+def _factura(**kw):
+    import datetime as dt
+    base = {"numf": 183341, "numf_completo": "001-099-000183341", "id_factura": 9,
+            "fecha": dt.date(2026, 9, 2), "vencimiento": dt.date(2026, 12, 1),
+            "importe": 735.25, "saldo": 735.25, "abono": 0, "retencion": 0, "stat": "Z"}
+    return {**base, **kw}
+
+
+def test_el_inicio_se_dibuja_con_datos_de_verdad(monkeypatch):
+    """Por la PANTALLA: saldo, chip, próximo vencimiento, la factura como
+    tarjeta con su estado, el vendedor y el menú."""
+    import datetime as dt
+    app, deshacer = _app_portal()
+    try:
+        _data(monkeypatch, facturas=[
+            _factura(),
+            _factura(numf=11852, numf_completo="001-099-000011852", id_factura=10,
+                     fecha=dt.date(2026, 8, 31), importe=-10741.46, saldo=-10741.46)])
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+        r = c.get("/estado-de-cuenta")
+        assert r.status_code == 200
+        html = r.get_data(as_text=True)
+        assert "735,25" in html and "Ninguna factura vencida" in html
+        assert "Próximo vencimiento: <b>01/12/2026</b>" in html
+        assert "183341" in html and "al día" in html and "a su favor" in html
+        assert "Edgar Ramirez" in html and "Su vendedor" in html
+        assert 'class="tabbar"' in html
+        # El nombre del cliente, como persona y no a los gritos.
+        assert "Totoy Buitron Andres Julio" in html
+    finally:
+        deshacer()
+
+
+def test_facturas_filtra_vencidas_y_busca_por_numero(monkeypatch):
+    import datetime as dt
+    app, deshacer = _app_portal()
+    try:
+        _data(monkeypatch, facturas=[
+            _factura(),
+            _factura(numf=170001, numf_completo="001-099-000170001", id_factura=2,
+                     fecha=dt.date(2026, 5, 2), vencimiento=dt.date(2026, 8, 1), saldo=50)])
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+        todo = c.get("/facturas").get_data(as_text=True)
+        assert "183341" in todo and "170001" in todo and "Pendientes (2)" in todo and "Vencidas (1)" in todo
+        assert "Septiembre 2026" in todo and "Mayo 2026" in todo
+        vencidas = c.get("/facturas?ver=vencidas").get_data(as_text=True)
+        assert "170001" in vencidas and "183341" not in vencidas
+        assert "vencida hace" in vencidas
+        buscada = c.get("/facturas?q=1833").get_data(as_text=True)
+        assert "183341" in buscada and "170001" not in buscada
+        nada = c.get("/facturas?q=999").get_data(as_text=True)
+        assert "No encontramos la factura 999" in nada
     finally:
         deshacer()

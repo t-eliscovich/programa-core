@@ -1,0 +1,5 @@
+<div class="fila">
+  <span class="t">{{ p.que_es }}{% if p.no_cheque and (p.no_cheque|cleanstr) %} {{ p.no_cheque|cleanstr }}{% endif %}{% if p.nombre_banco %} · {{ p.nombre_banco|title }}{% endif %}</span>
+  <span class="m">{{ p.importe|money_es }}<small>recibido {{ (p.dia_ingreso or p.fecha_recibido or p.fecha)|fecha_es }}</small></span>
+  {% if p.que_es == 'Cheque' and p.fechad %}<span class="s">Para depositar el {{ p.fechad|fecha_es }}</span>{% endif %}
+</div>

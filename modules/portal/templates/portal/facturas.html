@@ -1,0 +1,24 @@
+{% extends "portal/_app.html" %}
+{% block titulo %}Mis facturas — Intela{% endblock %}
+{% block seccion %}facturas{% endblock %}
+{% block contenido %}
+<h1 class="pag">Mis facturas</h1>
+<form class="buscar" method="get" action="/facturas">
+  <input type="search" name="q" value="{{ q }}" placeholder="Buscar por número…" inputmode="numeric" aria-label="Buscar por número">
+  {% if filtro %}<input type="hidden" name="ver" value="{{ filtro }}">{% endif %}
+</form>
+<div class="seg">
+  <a href="/facturas{% if q %}?q={{ q }}{% endif %}" class="{{ 'on' if not filtro }}">Pendientes ({{ n_todas }})</a>
+  <a href="/facturas?ver=vencidas{% if q %}&q={{ q }}{% endif %}" class="{{ 'on' if filtro == 'vencidas' }}">Vencidas ({{ n_vencidas }})</a>
+</div>
+{% for g in grupos %}
+  <div class="mes"><span>{{ g.mes }}</span><span>{{ g.total|money_es }}</span></div>
+  <div class="lista">{% for f in g["items"] %}{% include "portal/_fila_factura.html" %}{% endfor %}</div>
+{% else %}
+  <div class="card vacio">
+    {% if q %}<b>No encontramos la factura {{ q }}</b>Pruebe con otro número, o busque en el estado de cuenta en PDF.
+    {% elif filtro == 'vencidas' %}<b>No tiene facturas vencidas</b>Está al día con Intela.
+    {% else %}<b>No tiene facturas pendientes</b>Está al día con Intela.{% endif %}
+  </div>
+{% endfor %}
+{% endblock %}

@@ -1,0 +1,6 @@
+{% set e = f.estado_cliente %}
+<a class="fila{{ ' neg' if e.texto == 'a su favor' }}" href="/factura/{{ f.numf }}?doc={{ f.numf_completo or '' }}&id={{ f.id_factura or '' }}">
+  <span class="t">{{ f.numf }}<span class="pill {{ e.clase }}">{{ e.texto }}</span></span>
+  <span class="m">{{ f.saldo|abs|money_es }}{% if f.vencimiento and e.texto != 'a su favor' %}<small>vence {{ f.vencimiento|fecha_es }}</small>{% elif e.texto == 'a su favor' %}<small>a su favor</small>{% endif %}</span>
+  <span class="s">{{ f.fecha|fecha_es }}{% if f.abono %} · abonado {{ f.abono|money_es }}{% endif %}{% if f.retencion %} · retención {{ f.retencion|money_es }}{% endif %}{% if f.saldo != f.importe and not f.abono and not f.retencion %} · de {{ f.importe|money_es }}{% endif %}</span>
+</a>

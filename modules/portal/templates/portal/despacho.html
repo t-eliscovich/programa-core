@@ -1,45 +1,36 @@
-{# Los rollos de UNA guía. El cuerpo es el parcial compartido con el vendedor. #}
-{% extends "portal/base.html" %}
+{% extends "portal/_app.html" %}
 {% block titulo %}Despacho {{ g.corto }} — Intela{% endblock %}
-{% block cuerpo %}
-
-<header class="appbar">
-  <div class="row">
-    <div>
-      {# El rótulo corto arriba; el número entero, que es el que está impreso
-         en la guía, abajo — así se compara sin buscarlo en el tooltip. #}
-      <h1>Despacho {{ g.corto }}</h1>
-      <div class="sub">
-        {{ g.numero }}{% if g.dia %} · {{ g.dia|fecha_es }}{% endif %} ·
-        <a href="/despachos">Volver</a>
-      </div>
+{% block seccion %}despachos{% endblock %}
+{% block contenido %}
+<a class="volver" href="/despachos">‹ Mis despachos</a>
+<h1 class="pag">Despacho {{ g.corto }}</h1>
+{% if not g.ok %}
+  <div class="card vacio"><b>No pudimos traer este despacho en este momento</b>Pruebe de nuevo en un rato.</div>
+{% else %}
+  <div class="card" style="margin-bottom:12px">
+    <div class="chips" style="margin-top:0">
+      {% if g.dia %}<span class="chip">{{ g.dia|fecha_es }}</span>{% endif %}
+      {% if g.rollos %}<span class="chip">{{ g.rollos }} rollo{{ 's' if g.rollos != 1 }}</span>{% endif %}
+      {% if g.unidades %}<span class="chip">{{ g.unidades }} unidad{{ 'es' if g.unidades != 1 }}</span>{% endif %}
+      {% if g.factura %}<span class="chip">factura {{ g.factura_corta }}</span>{% else %}<span class="chip">todavía sin factura</span>{% endif %}
+      {% if g.devueltos %}<span class="chip warn">devolvió {{ g.devueltos }}</span>{% endif %}
     </div>
-    <a class="iconbtn salir" href="/salir" title="Salir" aria-label="Salir"></a>
+    <div class="lbl" style="margin-top:8px">Guía {{ g.numero }}</div>
   </div>
-</header>
-
-<main>
-  {% include "mi_cartera/_despachos_guia.html" %}
-
-  <div class="firma">Intela · Industria Textil Latinoamericana C. Ltda.</div>
-</main>
-{% include "portal/_menu.html" %}
-
-<style>
-  .iconbtn.salir::before{
-    content:'';width:18px;height:18px;display:block;background:var(--accent);
-    -webkit-mask:center/contain no-repeat var(--ico-salir);
-    mask:center/contain no-repeat var(--ico-salir)}
-  :root{--ico-salir:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24'><path d='M10 3H6a3 3 0 0 0-3 3v12a3 3 0 0 0 3 3h4v-2H6a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h4V3z'/><path d='M16.3 7.3 14.9 8.7 17.2 11H9v2h8.2l-2.3 2.3 1.4 1.4L21 12l-4.7-4.7z'/></svg>")}
-
-  @media (min-width: 700px){
-    main{max-width:860px;padding:22px 24px 34px}
-    .appbar{padding:16px 24px 14px}
-    .appbar h1{font-size:22px}
-    .hero{padding:20px 22px 18px}
-    .hero .val{font-size:34px}
-    .ec{font-size:14px}
-    .ec td,.ec th{padding-top:9px;padding-bottom:9px}
-  }
-</style>
+  <div class="card" style="padding:6px 8px">
+    <table class="tabla">
+      <thead><tr><th>Tela</th><th class="n">Rollos</th><th class="n">Unidades</th></tr></thead>
+      <tbody>
+        {% for t in g.telas %}
+        <tr>
+          <td><b>{{ t.producto }}</b>{% if t.devueltos %}<br><small style="color:var(--ambar)">Devolvió {{ t.devueltos }}</small>{% endif %}</td>
+          <td class="n">{{ '' if t.por_unidad else t.cuantos }}</td>
+          <td class="n">{{ t.cuantos if t.por_unidad else '' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot><tr><td><b>Total</b></td><td class="n"><b>{{ g.rollos or '' }}</b></td><td class="n"><b>{{ g.unidades or '' }}</b></td></tr></tfoot>
+    </table>
+  </div>
+{% endif %}
 {% endblock %}
