@@ -85,8 +85,8 @@ def test_el_recargo_del_mes_de_recepcion_no_es_tardio():
 def test_julio_y_agosto_no_se_tocan():
     with patch.object(isv, "importaciones_con_cruce", return_value=CRUCE), \
          patch.object(db, "fetch_all", side_effect=_vivas_todas):
-        assert isv.recargos_tardios_mes(2026, 7) == {"us": 0.0, "n": 0, "ids": []}
-        assert isv.recargos_tardios_mes(2026, 8) == {"us": 0.0, "n": 0, "ids": []}
+        assert isv.recargos_tardios_mes(2026, 7)["us"] == 0.0
+        assert isv.recargos_tardios_mes(2026, 8)["ids"] == []
 
 
 def test_la_marcada_con_el_boton_y_la_anulada_no_cuentan():

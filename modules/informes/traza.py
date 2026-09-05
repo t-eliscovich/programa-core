@@ -23,6 +23,7 @@ Reglas:
 """
 from __future__ import annotations
 
+import json as _json
 import logging
 import os
 import re
@@ -73,6 +74,7 @@ def _fila_desde_balance(bal: dict) -> dict:
     term = etapas.get("terminado") or {}
     kg = bal.get("kg") or {}
     hil = bal.get("hilado_valuacion") or {}
+    _ins = hil.get("insumos") or {}
     fila = {
         "utilidad": _f(comp, "utilidad"),
         "patr_neto": (
@@ -103,6 +105,14 @@ def _fila_desde_balance(bal: dict) -> dict:
         "compras_kg": _f(hil, "compras"),
         "compras_us": _f(hil, "compras_us"),
         "kg_sin_costo": _f(hil, "kg_sin_costo"),
+        # De qué está hecho `compras_us` (mig 0244): con el desglose, un salto
+        # del $/kg se puede nombrar por su causa. Tamara 05/09/2026.
+        "compras_import_us": _f(_ins, "import_us"),
+        "compras_local_us": _f(_ins, "local_us"),
+        "al_precio_us": _f(_ins, "al_precio_us"),
+        "recargos_tardios_us": _f(_ins, "recargos_tardios_us"),
+        "hilado_insumos": (_json.dumps(_ins, default=str, ensure_ascii=False)
+                           if _ins else None),
         "venta_kg": _f(kg, "kvent"),
         "venta_us": _f(kg, "uvent"),
     }
@@ -1362,9 +1372,78 @@ def _quimicos(texto: str, aporte: float) -> tuple[str, str]:
     return neto, causa
 
 
+#: Por debajo de esto un insumo "no se movió": son centavos de redondeo.
+_UMBRAL_INSUMO = 1.0
+
+
+def _nombres_recargos(fila: dict, anterior: dict | None) -> list[str]:
+    """Los códigos de importación ("AC 39") cuyos recargos entraron entre las
+    dos fotos: los que están en `hilado_insumos` de la nueva y no en la vieja."""
+    def _ids(f):
+        ins = (f or {}).get("hilado_insumos")
+        if isinstance(ins, str):
+            try:
+                ins = _json.loads(ins)
+            except ValueError:
+                ins = {}
+        return {int(r.get("id_compra")): (r.get("codigo") or "").strip()
+                for r in ((ins or {}).get("recargos_tardios") or [])
+                if r.get("id_compra") is not None}
+    nuevos, viejos = _ids(fila), _ids(anterior)
+    out: list[str] = []
+    for i in sorted(set(nuevos) - set(viejos)):
+        c = nuevos[i]
+        if c and c not in out:
+            out.append(c)
+    return out
+
+
+def causa_tarifa(fila: dict | None, anterior: dict | None) -> str:
+    """Por qué cambió el $/kg del hilado entre dos fotos, en una frase.
+
+    Compara los cuatro insumos que la foto guarda desde la mig 0244 (plata de
+    importaciones recibidas, de compras locales, del botón "Entrar al precio
+    del hilo" y de recargos tardíos). Lo que subió es la causa; puede haber
+    más de una en la misma ventana y se dicen todas. Sin desglose en alguna de
+    las dos fotos (fotos viejas) devuelve "" y el renglón queda como estaba.
+    """
+    if not fila or not anterior:
+        return ""
+    def _d(col):
+        a, b = anterior.get(col), fila.get(col)
+        if a is None or b is None:
+            return None
+        return round(float(b) - float(a), 2)
+    partes: list[str] = []
+    d = _d("recargos_tardios_us")
+    if d is not None and d >= _UMBRAL_INSUMO:
+        nombres = _nombres_recargos(fila, anterior)
+        quien = (" de " + _lista_y(nombres)) if nombres else ""
+        partes.append(f"entraron al precio del hilo los recargos{quien} "
+                      f"(+{_num(d, 2)})")
+    d = _d("al_precio_us")
+    if d is not None and d >= _UMBRAL_INSUMO:
+        partes.append(f"una compra de hilo entró al precio a mano (+{_num(d, 2)})")
+    d = _d("compras_local_us")
+    if d is not None and d >= _UMBRAL_INSUMO:
+        partes.append(f"entró una compra local de hilo (+{_num(d, 2)})")
+    d = _d("compras_import_us")
+    if d is not None and d >= _UMBRAL_INSUMO:
+        partes.append(f"entró plata de una importación recibida (+{_num(d, 2)})")
+    return " y ".join(partes)
+
+
+def _lista_y(items: list[str]) -> str:
+    """"AC 39", "AC 39 y MD 1", "AC 39, MD 1 y AI 30"."""
+    items = [i for i in items if i]
+    if len(items) <= 1:
+        return items[0] if items else ""
+    return ", ".join(items[:-1]) + " y " + items[-1]
+
+
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None, hasta=None,
-            venta: dict | None = None) -> list[dict]:
+            venta: dict | None = None, causa_tarifa: str = "") -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -1609,6 +1688,16 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
         if g.get("texto_unido"):
             g["texto"] = g["texto_unido"]
+        # ⭐ El $/kg del hilado no cambia solo: cambia porque entró plata a las
+        # compras del mes. Si la foto sabe por dónde entró (mig 0244), el
+        # renglón lo dice ANTES de las dos cifras — "entraron al precio del
+        # hilo los recargos de AC 39 y MD 1 (+6.849,51) · $/kg 3,0556 → 3,0591"
+        # en vez de "cambió el $/kg de 3 etapas". Cuando la revaluación ya se
+        # fundió con la llegada de la importación, la causa es esa llegada y
+        # no hace falta otra. Tamara 05/09/2026.
+        if (causa_tarifa and g.get("regla") == "Revaluación de stock"
+                and not g.get("texto_unido")):
+            g["texto"] = f"{causa_tarifa} · {g.get('texto') or ''}".strip(" ·")
         g["texto"], _causa = _quimicos(_abreviar_etapas(g.get("texto") or ""),
                                        g.get("aporte") or 0.0)
         # La nota que ya traía el grupo (el $/kg del anticipo, el margen de la
@@ -1707,7 +1796,7 @@ def una(id_traza: int) -> dict | None:
         _venta = None
     fila["resumen"] = resumir(
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
-        hasta=_hasta, venta=_venta)
+        hasta=_hasta, venta=_venta, causa_tarifa=causa_tarifa(fila, _ant))
     fila["d_kg"] = fila.get("d_kg") or {}
     if fila.get("d_ukg") is None:
         fila["d_ukg"] = _d_ukg(fila, _ant)

@@ -715,7 +715,7 @@ def recargos_tardios_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     Fail-soft: {"us": 0, "n": 0, "ids": []} si Asinfo no contesta — el $/kg se
     queda como está, igual que el resto de la valuación.
     """
-    _vacio = {"us": 0.0, "n": 0, "ids": []}
+    _vacio = {"us": 0.0, "n": 0, "ids": [], "detalle": []}
     pref = f"{int(yy):04d}-{int(mm):02d}-"
     if pref[:7] < RECARGOS_TARDIOS_DESDE[:7]:
         return dict(_vacio)
@@ -724,12 +724,15 @@ def recargos_tardios_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(_vacio)
     candidatos: dict[int, float] = {}
+    nombres: dict[int, str] = {}
     for r in rows or []:
         if not r.get("recibida"):
             continue
         rec = str(r.get("fecha_recepcion") or "")[:7]
         if not rec or rec >= pref[:7]:
             continue                      # recibida este mes o después: no es tardío
+        codigo = (str(r.get("codigo") or "").strip()
+                  or f"{str(r.get('prov') or '').strip()} {r.get('numero')}".strip())
         for it in ((r.get("compra") or {}).get("items") or []):
             f = str(it.get("fecha") or "")[:10]
             if not f.startswith(pref) or f < RECARGOS_TARDIOS_DESDE:
@@ -739,6 +742,7 @@ def recargos_tardios_mes(yy: int, mm: int, limite: int = 1000) -> dict:
             except (TypeError, ValueError):
                 continue
             candidatos[idc] = float(it.get("importe") or 0)
+            nombres[idc] = codigo
     if not candidatos:
         return dict(_vacio)
     # Las anuladas y las que ya entran por el botón salen de la lista, contra
@@ -757,7 +761,14 @@ def recargos_tardios_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         _LOG.warning("recargos_tardios_mes: no pude filtrar las compras (%s)", e)
         return dict(_vacio)
     ids = sorted(int(v["id_compra"]) for v in vivas)
-    return {"us": round(sum(candidatos[i] for i in ids), 2), "n": len(ids), "ids": ids}
+    # `detalle` es lo que la traza guarda en la foto (`hilado_insumos`) para
+    # poder decir después "entraron los recargos de AC 39 y MD 1", no sólo
+    # "cambió el $/kg". Tamara 05/09: *"asegurate de tener todas las variables
+    # del proceso trackeadas"*.
+    detalle = [{"id_compra": i, "codigo": nombres.get(i, ""),
+                "importe": round(candidatos[i], 2)} for i in ids]
+    return {"us": round(sum(candidatos[i] for i in ids), 2), "n": len(ids),
+            "ids": ids, "detalle": detalle}
 
 
 def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:

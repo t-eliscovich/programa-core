@@ -1815,12 +1815,20 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     compras = 0.0
     compras_us = 0.0
     kg_sin_costo = 0.0
+    # ⭐ Cada insumo del $/kg se guarda POR SEPARADO (`insumos`): la traza lo
+    # graba en cada foto y así un salto del $/kg se puede nombrar por su
+    # causa (llegó una importación / una compra local / el botón / un recargo
+    # tardío) en vez de "cambió el $/kg de 3 etapas". Tamara 05/09/2026.
+    insumos: dict = {"import_us": 0.0, "import_kg": 0.0, "local_us": 0.0,
+                     "local_kg": 0.0, "al_precio_us": 0.0, "al_precio_n": 0,
+                     "recargos_tardios_us": 0.0, "recargos_tardios": []}
     try:
         from modules.importaciones import service as _impsvc
         _rec = _impsvc.costo_hilado_recibido_mes(int(yy), int(mm)) or {}
         compras_us = float(_rec.get("us") or 0)
         compras = float(_rec.get("kg_con_costo") or 0)
         kg_sin_costo = max(0.0, float(_rec.get("kg") or 0) - compras)
+        insumos["import_us"], insumos["import_kg"] = compras_us, compras
     except Exception:  # noqa: BLE001
         compras = 0.0
         compras_us = 0.0
@@ -1835,6 +1843,8 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         _loc = _locsvc.hilado_local_recibido_mes(int(yy), int(mm)) or {}
         compras += float(_loc.get("kg") or 0)
         compras_us += float(_loc.get("us") or 0)
+        insumos["local_us"] = float(_loc.get("us") or 0)
+        insumos["local_kg"] = float(_loc.get("kg") or 0)
     except Exception:  # noqa: BLE001
         pass
     # ── GUARD de la ASIMETRÍA kg / dólares (TMT 2026-07-31) ────────────────
@@ -1871,6 +1881,8 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         _alp = _cq.hilo_al_precio_mes(int(yy), int(mm)) or {}
         compras += float(_alp.get("kg") or 0)
         compras_us += float(_alp.get("us") or 0)
+        insumos["al_precio_us"] = float(_alp.get("us") or 0)
+        insumos["al_precio_n"] = int(_alp.get("n") or 0)
     except Exception:  # noqa: BLE001
         pass
     # + RECARGOS TARDÍOS (Tamara 2026-09-05): el recargo de una importación
@@ -1884,6 +1896,8 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         _rt = _impsvc2.recargos_tardios_mes(int(yy), int(mm)) or {}
         recargos_tardios_us = float(_rt.get("us") or 0)
         compras_us += recargos_tardios_us
+        insumos["recargos_tardios_us"] = recargos_tardios_us
+        insumos["recargos_tardios"] = list(_rt.get("detalle") or [])
     except Exception:  # noqa: BLE001
         recargos_tardios_us = 0.0
 
@@ -1921,6 +1935,10 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "compras_fisicas": compras_fisicas,
         "kg_sin_costo": kg_sin_costo,
         "recargos_tardios_us": recargos_tardios_us,
+        # El desglose de `compras_us` + la apertura con la que se armó el
+        # promedio. Va a la foto de la traza (`hilado_insumos`).
+        "insumos": dict(insumos, open_ukg=_open, kg_con_costo=compras,
+                        kg_sin_costo=kg_sin_costo),
         "asimetrico": _asimetrico,
         # Con qué cara sale este $/kg: si `tarifa_motivo` no está vacío, los
         # insumos no eran de fiar. `tarifa_congelada` dice si además hubo una
