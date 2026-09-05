@@ -405,6 +405,20 @@ jobs:
               Write-Output "AVISO: no se pudo dejar Metabase configurado: \$_"
           }
 
+          # 5.e LO QUE WINDOWS TIENE QUE TENER (fase 4 del plan de memoria):
+          #     exclusiones de Defender, Google Update apagado, pagefile fijo.
+          #     Vive en scripts/servidor/windows.ps1, idempotente y fail-soft:
+          #     una vuelta sin cambios imprime "ya estaba".
+          try {
+              \$win = 'C:\programa-core\scripts\servidor\windows.ps1'
+              if (Test-Path \$win) {
+                  Write-Output "=== Windows (scripts/servidor/windows.ps1) ==="
+                  & powershell.exe -ExecutionPolicy Bypass -NoProfile -File \$win 2>&1 | Select -Last 30
+              }
+          } catch {
+              Write-Output "AVISO: windows.ps1: \$_"
+          }
+
           # 6. Health check. TMT 2026-08-13 (dueña: *"necesito todavía más
           #    corto"*): acá había un `Start-Sleep 15` fijo y RECIÉN DESPUÉS se
           #    preguntaba. Los 15 s salieron del 2026-06-07 porque con 6 s el
