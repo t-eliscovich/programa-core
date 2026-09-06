@@ -183,11 +183,11 @@ def test_sin_pagos_lo_dice_sin_asustar(monkeypatch):
 
 
 def test_el_devuelto_se_ve_como_un_pago_mas(monkeypatch):
-    """Se lo recibimos igual. Que el banco lo haya devuelto se ve donde se
-    discute la plata —su estado de cuenta—, no acá."""
+    """Se lo recibimos igual: se ve. Desde el 04/09 (dueña) va ROTULADO
+    "devuelto", porque sin el rótulo el cliente creía que ya había pagado."""
     html = _pantalla(monkeypatch, [_cheque(stat="1", no_cheque="0077777")])
     assert "0077777" in html
-    assert "devolvió" not in html
+    assert "devuelto" in html
 
 
 # ---------------------------------------------------------------------------
@@ -215,3 +215,11 @@ def test_se_llega_desde_el_estado_de_cuenta():
     armazon = (TPL / "_app.html").read_text(encoding="utf-8")
     assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", armazon, flags=re.S)
     assert '"/mis-pagos"' in (TPL / "inicio.html").read_text(encoding="utf-8")
+
+
+def test_el_cheque_devuelto_se_ve_pero_rotulado(monkeypatch):
+    """Dueña 04/09: un devuelto que se ve como un pago más hace creer al
+    cliente que ya pagó. Se ve, con "devuelto" y sin la fecha de depósito."""
+    html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0004444", stat="1")])
+    assert "devuelto" in html and "El banco lo devolvió" in html
+    assert "Para depositar" not in html

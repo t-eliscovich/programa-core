@@ -336,7 +336,7 @@ def test_los_estados_hablan_el_idioma_del_cliente():
     assert pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 9, 5)}, hoy)["texto"] == "vence en 1 día"
     assert pr.estado_de_factura({"importe": 100, "vencimiento": hoy}, hoy)["texto"] == "vence hoy"
     e = pr.estado_de_factura({"importe": 100, "vencimiento": date(2026, 9, 1)}, hoy)
-    assert e["texto"] == "vencida hace 3 días" and e["clase"] == "bad"
+    assert e["texto"] == "vencida" and e["clase"] == "bad"   # sin "hace N días" (dueña)
     assert pr.estado_de_factura({"importe": -50, "vencimiento": date(2026, 9, 1)}, hoy)["texto"] == "a su favor"
     assert pr.estado_de_factura({"importe": 100, "vencimiento": None}, hoy)["clase"] == "ok"
     for pantalla in PANTALLAS_DE_ADENTRO + ("_fila_factura", "_fila_pago"):
@@ -396,7 +396,7 @@ def _data(monkeypatch, facturas=(), cheques=()):
     })
     from modules.portal import views
     monkeypatch.setattr(views, "_vendedor_de", lambda fic: {
-        "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER", "correo": ""})
+        "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER"})
     monkeypatch.setattr(views, "_despachos_recientes", lambda cod, ruc: [])
 
 
@@ -451,10 +451,34 @@ def test_facturas_filtra_vencidas_y_busca_por_numero(monkeypatch):
         assert "Septiembre 2026" in todo and "Mayo 2026" in todo
         vencidas = c.get("/facturas?ver=vencidas").get_data(as_text=True)
         assert "170001" in vencidas and "183341" not in vencidas
-        assert "vencida hace" in vencidas
+        assert 'pill bad">vencida' in vencidas
         buscada = c.get("/facturas?q=1833").get_data(as_text=True)
         assert "183341" in buscada and "170001" not in buscada
         nada = c.get("/facturas?q=999").get_data(as_text=True)
         assert "No encontramos la factura 999" in nada
     finally:
         deshacer()
+
+
+def test_la_factura_que_una_devolucion_deja_en_cero_se_ve_compensada():
+    """Dueña 04/09, con AJT: la 181251 por 10.741,46 y la devolución 11852
+    por −10.741,46 se leían como "debo" y "me deben" en la misma pantalla."""
+    from datetime import date
+
+    from modules.portal import presentacion as pr
+    hoy = date(2026, 9, 4)
+    fs = pr.con_estado([
+        {"numf": 181251, "importe": 10741.46, "saldo": 10741.46, "vencimiento": date(2026, 11, 4)},
+        {"numf": 11852, "importe": -10741.46, "saldo": -10741.46, "vencimiento": None},
+        {"numf": 183341, "importe": 735.25, "saldo": 735.25, "vencimiento": date(2026, 12, 1)},
+    ], hoy)
+    assert fs[0]["estado_cliente"]["texto"] == "compensada"
+    assert fs[1]["estado_cliente"]["texto"] == "a su favor"
+    assert fs[2]["estado_cliente"]["texto"] == "al día"
+    # Y el próximo vencimiento salta la compensada.
+    assert pr.proximo_vencimiento(fs, hoy)["factura"]["numf"] == 183341
+
+
+def test_el_inicio_no_muestra_el_correo_del_vendedor():
+    assert "vendedor.correo" not in PANTALLA
+    assert "seguridad.usuario" not in VISTAS.split("def _vendedor_de")[1].split("def ")[0]

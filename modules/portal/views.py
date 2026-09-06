@@ -334,15 +334,12 @@ def _vendedor_de(fic: dict) -> dict | None:
     try:
         r = db.fetch_one("SELECT nombre FROM scintela.vendedor WHERE UPPER(TRIM(codigo)) = %s",
                          (vend,))
-        u = db.fetch_one("SELECT email FROM seguridad.usuario "
-                         " WHERE UPPER(TRIM(vend)) = %s AND activo ORDER BY id_usuario LIMIT 1",
-                         (vend,))
     except Exception:  # noqa: BLE001 -- la tarjeta no puede tumbar el inicio
         return None
     nombre = presentacion.nombre_lindo((r or {}).get("nombre") or vend)
+    # Sin el correo (dueña 04/09): es personal, y el canal es WhatsApp.
     return {"codigo": vend, "nombre": nombre,
-            "iniciales": presentacion.iniciales(nombre),
-            "correo": ((u or {}).get("email") or "").strip()}
+            "iniciales": presentacion.iniciales(nombre)}
 
 
 def _despachos_recientes(cod: str, ruc: str) -> list | None:
@@ -366,7 +363,11 @@ def _pagos_de(data: dict) -> list[dict]:
     """Los pagos que se le muestran, del más nuevo al más viejo (por la fecha
     que se muestra, "Recibido")."""
     from modules.cheques import estados
-    pagos = [{**c, "que_es": _que_es(c)}
+    pagos = [{**c, "que_es": _que_es(c),
+              # Un cheque que el banco devolvió NO es un pago hecho: se ve, pero
+              # rotulado (dueña 04/09). Los estados 1/2/3 son "devuelto" y el 9
+              # "sin fondos" (ver cheques/estados.py).
+              "devuelto": (c.get("stat") or "").strip().upper() in ("1", "2", "3", "9")}
              for c in (data.get("cheques") or [])
              if estados.se_le_muestra_al_cliente(c.get("stat"))]
     return sorted(pagos, key=_dia_recibido, reverse=True)

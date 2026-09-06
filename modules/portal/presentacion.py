@@ -56,8 +56,9 @@ def estado_de_factura(f: dict, hoy: date) -> dict:
         return {"clase": "ok", "texto": "al día", "dias": None}
     dias = (vence - hoy).days
     if dias < 0:
-        n = -dias
-        return {"clase": "bad", "texto": f"vencida hace {n} día{'s' if n != 1 else ''}", "dias": dias}
+        # Sin el "hace N días" (dueña 04/09): el plazo de la ficha no siempre
+        # es el acordado, y un número en rojo apura de más.
+        return {"clase": "bad", "texto": "vencida", "dias": dias}
     if dias == 0:
         return {"clase": "warn", "texto": "vence hoy", "dias": 0}
     if dias <= DIAS_DE_AVISO:
@@ -66,7 +67,25 @@ def estado_de_factura(f: dict, hoy: date) -> dict:
 
 
 def con_estado(facturas: list[dict], hoy: date) -> list[dict]:
-    return [{**f, "estado_cliente": estado_de_factura(f, hoy)} for f in facturas]
+    """Cada factura con su estado. Y las que una devolución o nota de crédito
+    del MISMO importe deja en cero, marcadas «compensada»: si no, el cliente
+    lee en la misma pantalla que debe 10.741 y que le deben 10.741 (dueña
+    04/09, con AJT)."""
+    salida = [{**f, "estado_cliente": estado_de_factura(f, hoy)} for f in facturas]
+    creditos = {}
+    for f in salida:
+        if es_negativa(f):
+            k = round(abs(numero(f.get("saldo"))), 2)
+            creditos[k] = creditos.get(k, 0) + 1
+    for f in salida:
+        if es_negativa(f):
+            continue
+        k = round(numero(f.get("saldo")), 2)
+        if k > 0 and creditos.get(k):
+            creditos[k] -= 1
+            f["estado_cliente"] = {"clase": "", "texto": "compensada", "dias": None}
+            f["compensada"] = True
+    return salida
 
 
 def proximo_vencimiento(facturas: list[dict], hoy: date) -> dict | None:
@@ -77,7 +96,7 @@ def proximo_vencimiento(facturas: list[dict], hoy: date) -> dict | None:
     """
     vivas = []
     for f in facturas:
-        if es_negativa(f):
+        if es_negativa(f) or f.get("compensada"):
             continue
         vence = _fecha(f.get("vencimiento"))
         saldo = numero(f.get("saldo"))
