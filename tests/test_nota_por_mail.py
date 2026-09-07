@@ -541,3 +541,102 @@ def test_un_dia_normal_no_festeja_nada():
     """Un festejo que sale todos los días deja de ser un festejo."""
     h = _html()                              # 15.809 kg
     assert "🎉" not in h and "🥳" not in h
+
+
+# ── Cobro rápido por semana (I1 · I2 · I3) ──────────────────────────────────
+# TMT 2026-09-07: *"medíamos la cobranza semanal … los ingresos de la semana
+# empezando cada lunes con la condición que se depositen con una diferencia
+# de fechas de hasta 3 días posteriores al ingreso (cobranza de efectivo o
+# cheques super cortos). Esto nos da idea de la mejora del flujo en el corto
+# plazo."* Réplica de MENU.PRG PROCEDURE EFECT.
+
+def _semanas(fecha, fila=None):
+    from datetime import date  # noqa: F401
+    with patch.object(dia, "_rows", return_value=[fila] if fila else []) as q:
+        out = dia.cobro_rapido_semanas(fecha)
+    return out, q
+
+
+def test_las_tres_semanas_arrancan_en_lunes_y_la_ultima_es_la_que_va():
+    """F1 = el lunes de hace dos semanas, F2 = F1+7, F3 = el lunes en curso —
+    igual que `F1=DATE()-14 … DOW(F1)>2` del dBase."""
+    from datetime import date
+    out, q = _semanas(date(2026, 9, 9))               # un miércoles
+    assert [s["lunes"] for s in out] == [date(2026, 8, 24), date(2026, 8, 31),
+                                          date(2026, 9, 7)]
+    params = q.call_args[0][1]
+    assert params[:5] == (date(2026, 8, 24), date(2026, 8, 31),
+                          date(2026, 8, 31), date(2026, 9, 7), date(2026, 9, 7))
+    # un lunes es él mismo
+    assert dia.lunes_de(date(2026, 9, 7)) == date(2026, 9, 7)
+
+
+def test_entra_solo_lo_que_se_deposita_a_menos_de_3_dias_de_ingresar():
+    """`FECHAD-FECHING<3`: el tramo lo decide `fechad`, el corte lo decide el
+    DÍA DE INGRESO de siempre (`SQL_DIA_INGRESO`), no `fechaing` a secas —
+    que en las filas de PC lo pisa el depósito."""
+    from datetime import date
+
+    from modules.cheques.queries import SQL_DIA_INGRESO
+    _, q = _semanas(date(2026, 9, 9))
+    sql, params = q.call_args[0]
+    assert SQL_DIA_INGRESO in sql
+    assert "c.fechad - (" in sql and params[-1] == dia.DIAS_COBRO_RAPIDO == 3
+    assert "NOT IN ('X', 'Y')" in sql and "<> 98" in sql   # como cobranza_entre
+
+
+def test_el_promedio_diario_es_sobre_5_habiles_o_los_que_van():
+    """`PROM.DIARIO`: I1/5, I2/5, I3/DIAS con DIAS = lun 1 … vie 5, finde 5."""
+    from datetime import date
+    fila = {"s1": 50000, "s2": 25000, "s3": 9000}
+    out, _ = _semanas(date(2026, 9, 9), fila)          # miércoles → 3 días
+    assert [s["dias"] for s in out] == [5, 5, 3]
+    assert [s["prom"] for s in out] == [10000.0, 5000.0, 3000.0]
+    out, _ = _semanas(date(2026, 9, 12), fila)         # sábado → 5
+    assert out[2]["dias"] == 5
+
+
+_CR = [{"lunes": __import__("datetime").date(2026, 7, 27), "us": 51234.6,
+        "dias": 5, "prom": 10246.9},
+       {"lunes": __import__("datetime").date(2026, 8, 3), "us": 60000.0,
+        "dias": 5, "prom": 12000.0},
+       {"lunes": __import__("datetime").date(2026, 8, 10), "us": 21000.0,
+        "dias": 3, "prom": 7000.0}]
+
+
+def test_el_mail_lleva_el_cobro_rapido_de_las_tres_semanas():
+    with patch.object(dia, "cobro_rapido_semanas", return_value=_CR):
+        h = _html()
+    assert "Cobro rápido" in h and "menos de 3 días" in h
+    for rot in ("Semana del 27/07", "Semana del 03/08", "Semana del 10/08"):
+        assert rot in h, rot
+    assert "51.235" in h and "10.247" in h            # $ y $/día
+    assert ">$/día<" in h
+    assert h.index("Cobranzas del mes") < h.index("Cobro rápido")   # debajo
+
+
+def test_sin_cobro_rapido_el_bloque_no_va():
+    """Tres ceros no dicen nada: la grilla chica no aparece."""
+    vacio = [{**s, "us": 0.0, "prom": 0.0} for s in _CR]
+    with patch.object(dia, "cobro_rapido_semanas", return_value=vacio):
+        h = _html()
+    assert "Cobro rápido" not in h
+
+
+def test_el_whatsapp_lleva_el_cobro_rapido_en_lineas_de_celular():
+    from datetime import date
+
+    from tests.test_dia_explicacion import _res_ok
+    with patch.object(dia, "resumen", return_value=_res_ok()), \
+         patch.object(dia, "motores_del_dia", return_value=[]), \
+         patch.object(dia, "ventas_del_mes",
+                      return_value={"n": 226, "kg": 31152.0, "us": 265343.0}), \
+         patch.object(dia, "ventanas_sin_cerrar",
+                      return_value={"n": 0, "monto": 0.0}), \
+         patch.object(dia, "cobro_rapido_semanas", return_value=_CR):
+        m = dia.mensaje_whatsapp(date(2026, 8, 12))
+    assert "*Cobro rápido (<3 días)*" in m
+    assert "Sem 27/07   $ 51.235 · 10.247/día" in m
+    for linea in m.split("\n"):
+        assert len(linea) <= 34, linea
+    assert len(m.split("\n")) <= 16

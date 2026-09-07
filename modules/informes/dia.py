@@ -735,6 +735,77 @@ def cobranza_del_mes(fecha) -> dict:
     return cobranza_entre(fecha.replace(day=1), fecha)
 
 
+#: Un cobro es "rápido" si se puede depositar a menos de estos días de haber
+#: entrado: efectivo y cheques al día o casi. Es el `FECHAD-FECHING<3` de
+#: MENU.PRG PROCEDURE EFECT.
+DIAS_COBRO_RAPIDO = 3
+
+
+def lunes_de(fecha):
+    """El lunes de la semana de `fecha` (un lunes es él mismo)."""
+    from datetime import timedelta
+
+    return fecha - timedelta(days=fecha.weekday())
+
+
+def cobro_rapido_semanas(fecha=None) -> list[dict]:
+    """La cobranza RÁPIDA de las últimas tres semanas, de lunes a domingo.
+
+    TMT 2026-09-07, pidiendo el agregado al mail de cada día: *"medíamos la
+    cobranza semanal … los ingresos de la semana empezando cada lunes con la
+    condición que se depositen con una diferencia de fechas de hasta 3 días
+    posteriores al ingreso (es decir cobranza de efectivo o cheques super
+    cortos). Esto nos da idea de la mejora del flujo en el corto plazo."*
+
+    Réplica de `MENU.PRG PROCEDURE EFECT` (I1 · I2 · I3):
+    · **F1** = el lunes de hace dos semanas; F2 = F1+7; F3 = F1+14 (el lunes
+      de la semana en curso). Tres tramos: [F1,F2) · [F2,F3) · [F3, ∞).
+    · Entra el cheque cuya disponibilidad (`fechad`) llega a **menos de
+      `DIAS_COBRO_RAPIDO`** días de su día de ingreso; el tramo lo decide
+      `fechad`, como en el dBase (`SUM … FOR FECHAD>=F1 .AND. FECHAD<F2`).
+    · El día de ingreso es `SQL_DIA_INGRESO` — el MISMO de
+      `/cheques/resumen-dia` y de *Cobranzas del día* — y no `fechaing` a
+      secas, que en las filas de PC lo pisa el depósito (ver cobranza-cheques).
+    · Afuera lo mismo que en `cobranza_entre()`: anuladas (`X`/`Y`) y el
+      espejo NB=98. El dBase sumaba CHEQUES + XCHEQUES (el archivo viejo):
+      acá viven en la misma tabla.
+    · El **promedio diario** es sobre 5 días hábiles en las semanas cerradas
+      y sobre los hábiles corridos en la que va (lun=1 … vie=5; el fin de
+      semana cuenta 5), igual que `PROM.DIARIO` del dBase.
+
+    Devuelve las tres semanas de la más vieja a la actual.
+    """
+    from datetime import timedelta
+
+    from modules.cheques.queries import SQL_DIA_INGRESO
+
+    fecha = fecha or hoy_ec()
+    f3 = lunes_de(fecha)
+    f2, f1 = f3 - timedelta(days=7), f3 - timedelta(days=14)
+    r = _rows(
+        f"""
+        SELECT COALESCE(SUM(c.importe) FILTER (
+                   WHERE c.fechad >= %s AND c.fechad < %s), 0) AS s1,
+               COALESCE(SUM(c.importe) FILTER (
+                   WHERE c.fechad >= %s AND c.fechad < %s), 0) AS s2,
+               COALESCE(SUM(c.importe) FILTER (
+                   WHERE c.fechad >= %s), 0) AS s3
+          FROM scintela.cheque c
+         WHERE c.fechad - ({SQL_DIA_INGRESO}) < %s
+           AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
+           AND COALESCE(c.no_banco, 0) <> 98
+        """, (f1, f2, f2, f3, f3, DIAS_COBRO_RAPIDO))
+    d = r[0] if r else {}
+    dias_actual = min(fecha.weekday() + 1, 5)
+    out = []
+    for lunes, us, dias in ((f1, d.get("s1"), 5), (f2, d.get("s2"), 5),
+                            (f3, d.get("s3"), dias_actual)):
+        us = _f(us)
+        out.append({"lunes": lunes, "us": us, "dias": dias,
+                    "prom": round(us / dias, 2) if dias else 0.0})
+    return out
+
+
 #: Los kilos facturados en un día que merecen festejo.
 #: TMT 2026-08-25: *"poné emojis de fiestita por haber vendido más de 20k
 #: kilos (y siempre que eso pase)"*. Es el mismo tope de 20.000 kg que tenía
@@ -1059,6 +1130,15 @@ def _mensaje(r: dict, fecha, rot: str, cuando: str, motores: list[dict],
     if r.get("cobrado"):
         L.append(f"Cobrado     $ {_n(r['cobrado'])}")
 
+    # La cobranza rápida por semana (I1·I2·I3 del dBase): sólo si hubo algo.
+    cr = cobro_rapido_semanas(fecha)
+    if any(s["us"] for s in cr):
+        L.append("")
+        L.append(f"*Cobro rápido (<{DIAS_COBRO_RAPIDO} días)*")
+        for s in cr:
+            L.append(f"Sem {s['lunes'].day:02d}/{s['lunes'].month:02d}   "
+                     f"$ {_n(s['us'])} · {_n(s['prom'])}/día")
+
     # La devolución va aparte y sólo si la hubo: netearla hacía que "Ventas"
     # no fuera lo que facturamos (TMT 17/08). Un renglón que aparece todos los
     # días entrena a no leerlo.
@@ -1137,6 +1217,27 @@ def _renglon_html(rot: str, kg: str = "", pkg: str = "", us: str = "",
     quedan vacías: la columna manda, no el dato."""
     return (f'<tr><td style="padding:6px 0;font-size:14px;color:{_TINTA}">{rot}</td>'
             f'{_celda_html(kg)}{_celda_html(pkg)}{_celda_html(us, color)}</tr>')
+
+
+def _cobro_rapido_html(semanas: list[dict]) -> str:
+    """La cobranza rápida por semana, como grilla chica debajo de la principal.
+
+    TMT 2026-09-07: I1 · I2 · I3 del dBase — efectivo y cheques que se
+    depositan a menos de 3 días de ingresar, semana por semana desde el lunes.
+    Va DEBAJO de la grilla de F.: es un dato del flujo corto, no del día.
+    """
+    cab = (f'<tr><td></td>{_celda_html("$", _GRIS, True)}'
+           f'{_celda_html("$/día", _GRIS, True)}</tr>')
+    filas = "".join(
+        f'<tr><td style="padding:5px 0;font-size:13px;color:{_TINTA}">'
+        f'Semana del {s["lunes"].day:02d}/{s["lunes"].month:02d}</td>'
+        f'{_celda_html(_n(s["us"]))}{_celda_html(_n(s["prom"]), _GRIS)}</tr>'
+        for s in semanas)
+    return (f'<div style="font-size:12px;color:{_GRIS};padding-top:16px">'
+            f'Cobro rápido: efectivo y cheques depositables a menos de '
+            f'{DIAS_COBRO_RAPIDO} días de ingresar, por semana.</div>'
+            f'<table style="border-collapse:collapse;border-top:1px solid {_LINEA};'
+            f'border-bottom:1px solid {_LINEA};margin-top:4px">{cab}{filas}</table>')
 
 
 def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
@@ -1225,6 +1326,10 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
     if pie:
         L.append(f'<div style="font-size:12px;color:{_GRIS};padding-top:10px">'
                  f'{" · ".join(pie)}</div>')
+
+    cr = cobro_rapido_semanas(fecha)
+    if any(s["us"] for s in cr):
+        L.append(_cobro_rapido_html(cr))
     L.append(f'<div style="font-size:11px;color:{_GRIS};padding-top:14px">'
              f'Mes de {mes}. Cobranzas: cheques, depósitos y efectivo ingresados.</div>')
     L.append("</div>")
