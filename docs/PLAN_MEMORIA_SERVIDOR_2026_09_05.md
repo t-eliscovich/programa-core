@@ -135,8 +135,8 @@ tarea con el `.ps1` (los `.ps1` no se borran en esta fase).
   ~21 MB, pero también son 8 procesos menos. (Alternativa mejor: usar Edge,
   que ya viene con Windows, y desinstalar Chrome — `pdf_motor` ya prefiere
   Edge si está; verificar cuál es el que corre hoy.)
-- OpenVPN (`openvpnserv2`, 19 MB): ¿se usa? Si es de la instalación
-  original y no conecta a nada, deshabilitar el servicio.
+- OpenVPN (`openvpnserv2`, 19 MB): SE USA (Tamara, 06/09). Se queda; 19 MB no
+  valen el riesgo.
 - AnyDesk (43 MB): se queda (es el acceso remoto de Tamara).
 - Pagefile: dejar fijo 4 GB (hoy lo maneja Windows y crece a saltos mientras
   pagina). No ahorra memoria; hace que un episodio no se convierta en
@@ -231,6 +231,11 @@ OpenVPN (esperando la decisión: `windows.ps1 -ApagarOpenVpn`), y la baja
 de `-Xmx` de Metabase (fase 6, después de leer el gc.log).
 
 ## 5. Bitácora
+- 06/09 12:15 EC — verificado tras la noche: reinicio de Metabase de las 02:30 sin
+  avisos, java 979 MB (metaspace 512), CERO powershell, chrome ×9, 2.203 MB libres,
+  curva plana. Anoche 21:42 Metabase murió por `OutOfMemoryError: Metaspace` (tope
+  de 256m, corregido a 512m); la alarma nueva avisó a los 5 min y desde entonces el
+  vigía lo levanta solo. OpenVPN se queda (se usa).
 - 05/09 19:40 UTC — fase 3 COMPLETA: formulas (e3b4151, run #294) y máquinas
   (b4d6f6b, el updater cambia la tarea solo) con `launch.py`; Metabase por
   java directo con log4j2 a `C:\metabase\logs` (toma efecto a las 02:30).
