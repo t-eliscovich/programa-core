@@ -86,6 +86,15 @@ CATS = ", ".join(_CATS)
 
 BODEGA_TERMINADO = 53
 MIN_KG = 20        # debajo de esto no vale el tiempo de revisarlo
+
+# ⭐ Una línea de factura de menos de esto es una MUESTRA, no una venta. Dueña
+# 08/09/2026, al ver Jersey Forro 1.2 JOS en la competencia con "Última
+# 13/08/26": *"si es muestra no vale la fecha"*. Esa "venta" era una línea de
+# 0,25 kg; la tela entró igual porque el filtro de entrada ya ignoraba lo que
+# suma menos de 1 kg en el año, pero la columna «Última» mostraba la fecha de
+# la muestra y parecía una contradicción. Es el mismo umbral que `_SIN_VENTA`
+# (kg_12m < 1) para que las dos columnas cuenten la misma historia.
+KG_MUESTRA = 1
 TOPE_CLIENTES = 12  # cuántos candidatos se guardan por tela
 
 # ⭐ Cuánto tiene que llevar la tela en la bodega para contar como ESTANCADA.
@@ -251,7 +260,11 @@ ven AS (
     -- (`SQL_VENTA_TELA`).
     SELECT pr.nombre_subcategoria_producto AS subcategoria,
            RIGHT(RTRIM(pr.codigo), 3)      AS color,
-           MAX(CAST(fc.fecha AS date))     AS ultima_venta,
+           -- ⭐ La última venta NO cuenta muestras (líneas de menos de
+           -- `KG_MUESTRA` kg): "si es muestra no vale la fecha". Los kilos del
+           -- año sí las suman — son tan pocos que no cambian el `< 1`.
+           MAX(CASE WHEN dfc.cantidad >= {KG_MUESTRA}
+                    THEN CAST(fc.fecha AS date) END) AS ultima_venta,
            SUM(CASE WHEN fc.fecha >= DATEADD(month, -12, GETDATE())
                     THEN dfc.cantidad ELSE 0 END) AS kg_12m
     FROM factura_cliente fc
@@ -762,6 +775,10 @@ GROUP BY pr.nombre_categoria_producto, {_VENDEDOR}
 # ocho telas que se vendieron ese día se quedaron con la columna en "—" y no
 # había de dónde sacarla (dueña 25/08/2026: "¿por qué cuellos no tiene última?").
 # El dato está en Asinfo; hay que ir a buscarlo con la fecha de corte.
+#
+# ⭐ Y sin MUESTRAS (dueña 08/09/2026: "si es muestra no vale la fecha"): una
+# línea de menos de `KG_MUESTRA` kg no es una venta. Ver el comentario de la
+# constante.
 def _sql_ultima_antes(desde: str) -> str:
     return f"""
 SELECT pr.nombre_subcategoria_producto AS subcategoria,
@@ -771,7 +788,7 @@ FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
 WHERE fc.id_documento IN (7, 251) AND fc.estado NOT IN (0, 1)
-  AND dfc.cantidad > 0 AND CAST(fc.fecha AS date) < '{desde}'
+  AND dfc.cantidad >= {KG_MUESTRA} AND CAST(fc.fecha AS date) < '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3)
 """

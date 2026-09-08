@@ -4756,3 +4756,22 @@ def test_el_join_al_lote_real_filtra_por_producto_antes_del_rtrim():
     # el filtro por producto tiene que ir ANTES (o junto) del RTRIM, para
     # que el optimizador de SQL Server lo pueda usar como primer paso
     assert fuente.index("id_producto") < fuente.index("RTRIM")
+
+
+def test_la_ultima_venta_no_cuenta_muestras():
+    """Dueña 08/09/2026, viendo Jersey Forro 1.2 JOS en la competencia con
+    "Última 13/08/26": *"si es muestra no vale la fecha"*. Esa venta era una
+    línea de 0,25 kg. La tela entró bien —el filtro de entrada ya ignora lo
+    que suma menos de 1 kg en el año— pero la columna «Última» mostraba la
+    fecha de la muestra y parecía una contradicción. Las dos consultas que
+    escriben esa fecha tienen que usar el mismo umbral que `_SIN_VENTA`."""
+    assert asinfo_parado.KG_MUESTRA == 1
+    antes = " ".join(asinfo_parado._sql_ultima_antes("2026-08-25").split())
+    assert "dfc.cantidad >= 1 AND CAST(fc.fecha AS date) < '2026-08-25'" in antes, (
+        "la última venta antes de la largada cuenta muestras")
+    assert "dfc.cantidad > 0" not in antes
+    parados = " ".join(asinfo_parado.SQL_PARADOS.split())
+    assert ("MAX(CASE WHEN dfc.cantidad >= 1 THEN CAST(fc.fecha AS date) END) "
+            "AS ultima_venta") in parados, "la foto de hoy cuenta muestras"
+    # ⚠ La ENTRADA no cambia: sigue sumando todo lo que salió (cantidad > 0).
+    assert "AND dfc.cantidad > 0 AND RTRIM(pr.codigo) <> 'SRLG'" in parados
