@@ -20,7 +20,7 @@
   <div class="flex items-center justify-between gap-3 mb-2 flex-wrap">
     <div class="flex items-baseline gap-2 min-w-0">
       <h1 class="text-base font-semibold text-slate-800">Guías del día</h1>
-      <span class="text-sm text-slate-500">{{ d.fecha }}</span>
+      <span class="text-sm text-slate-500">{{ d.fecha | fecha_es }}</span>
     </div>
     <form method="GET" class="flex items-center gap-2">
       <input type="date" name="fecha" value="{{ d.fecha }}"
