@@ -419,6 +419,12 @@ def main(argv: list[str] | None = None) -> int:
                       f"→ {_a['importe']:.2f}")
             for _c in (_rep.get("creadas") or []):
                 print(f"        + {_c['proveedor']} {_c['factura']} {_c['importe']:.2f}")
+            for _r in (_rep.get("renombradas") or []):
+                print(f"        # {_r['proveedor']} {_r['factura_previa']} "
+                      f"→ {_r['factura']} (cambió el N° en formulas)")
+            for _a in (_rep.get("anuladas") or []):
+                print(f"        - {_a['proveedor']} {_a['factura']} "
+                      f"{_a['importe']:.2f} anulada: ya no está en formulas")
             for _x in (_rep.get("errores") or []):
                 print(f"        ! {_x.get('proveedor')} {_x.get('factura')}: {_x.get('error')}")
     except Exception as _exc:  # noqa: BLE001

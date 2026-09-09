@@ -46,6 +46,19 @@ toca compras con usuario_crea 'formulas-%', NO pagadas y que NADIE editó a
 mano (usuario_modifica vacío o del puente) — así no pisa el arreglo manual de
 una factura con IVA mixto.
 
+El puente también DESHACE (dueña 2026-09-09, después de que una importación de
+colorantes por 273 k quedara dos veces como pasivo y sin stock: *"no puede
+quedar el pasivo vivo si se reversó"*):
+    - si a una factura le CAMBIAN EL NÚMERO en formulas, no se carga otra
+      compra: se le cambia el concepto a la que ya está (misma fecha, mismo
+      proveedor, mismo importe; ver `_emparejar_renombradas`).
+    - si la factura DESAPARECE de formulas (la borraron / reversaron), la
+      compra que el puente creó se ANULA con su posdatado, igual que por la
+      pantalla de Anular. Sólo las intactas: creadas por el puente, sin pago y
+      sin edición a mano — y sólo si formulas contestó de verdad (una base que
+      no responde devuelve [] y NO es lo mismo que un mes vacío; ver
+      `_formulas_responde`). Cada una va a la campanita.
+
 Coexistencia con el sync del dBase (mientras el dBase viva):
     - scripts/import_dbf.py preserva las compras usuario_crea='formulas-auto'
       a través del TRUNCATE, salvo que el DBF traiga una gemela (mismo
@@ -119,6 +132,12 @@ _VENTANA_MESES = 6
 # mes entero en silencio.
 _HISTORICO_DESDE = (2026, 7)
 
+# Tope de compras que una corrida puede ANULAR sola porque su factura ya no
+# está en formulas. Un borrado masivo en formulas (o algo que no entendemos)
+# no debería vaciar el pasivo de un mes en silencio: pasado el tope se anulan
+# las primeras y el resto queda avisado en la campanita y en la pantalla.
+_MAX_ANULAR_POR_CORRIDA = 25
+
 
 _AUTO_LOCK = threading.Lock()
 _auto_ultimo_ts = 0.0
@@ -152,6 +171,8 @@ class FilaPuente:
     id_compra_pc: int | None = None   # la compra de PC que la matcheó
     importe_pc: float | None = None   # importe con el que quedó cargada
     ajustable: bool = False           # formulas cambió → hay que corregirla
+    renombrar: bool = False           # le cambiaron el N° en formulas → editar concepto
+    factura_previa: str | None = None  # el N° con el que estaba cargada
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -300,14 +321,34 @@ def _compras_pc_mes(anio: int, mes: int) -> list[dict]:
     fin = _mes_offset(anio, mes, _VENTANA_MESES + 1)
     return db.fetch_all(
         """
-        SELECT id_compra, codigo_prov, importe, concepto,
-               usuario_crea, usuario_modifica, id_transaccion
+        SELECT id_compra, numero, fecha, codigo_prov, importe, concepto,
+               usuario_crea, usuario_modifica, id_transaccion, cuenta_pagada
           FROM scintela.compra
          WHERE fecha >= %s AND fecha < %s
            AND COALESCE(stat, '') <> 'Y'
         """,
         (ini, fin),
     )
+
+
+def _formulas_responde() -> bool:
+    """¿La base de formulas contesta AHORA? Distingue "mes vacío" de "caída".
+
+    `formulas_db.fetch_all` devuelve [] tanto si no hay filas como si la
+    consulta falló. Para el alta da igual (no se carga nada), pero para ANULAR
+    no: una base caída haría desaparecer todas las facturas del mes y el puente
+    anularía el pasivo entero. Por eso, antes de dar por desaparecida una
+    factura, se le pide a formulas una fila que siempre existe.
+    """
+    try:
+        return bool(formulas_db.fetch_one("SELECT COUNT(*) AS n FROM compras"))
+    except Exception:  # noqa: BLE001 -- ante la duda, NO anular
+        return False
+
+
+def _en_mes(fecha, anio: int, mes: int) -> bool:
+    f = _parse_fecha_iso(fecha) if not isinstance(fecha, date) else fecha
+    return bool(f) and f.year == anio and f.month == mes
 
 
 # ── Matching ────────────────────────────────────────────────────────────────
@@ -360,6 +401,79 @@ def _buscar_match(compras_pc: list[dict], prov_pc: str, factura_pc: str,
                 and lo <= imp <= hi):
             return f"factura ~{tok} + importe {imp:.2f} (id {c.get('id_compra')})", c
     return None
+
+
+def _huerfanas(compras_pc: list[dict], filas: list[FilaPuente],
+               anio: int, mes: int, responde: bool) -> list[dict]:
+    """Compras del puente, de este mes, que ninguna factura de formulas matcheó.
+
+    Son las que formulas ya no tiene: las borraron (reverso) o les cambiaron
+    el número. Condiciones, todas juntas:
+      · la creó el puente y nadie la tocó (`_es_del_puente_intacta`) y no
+        tiene pago de ninguna clase (`cuenta_pagada` vacía);
+      · su fecha cae en el mes que se está sincronizando (la compra del
+        puente lleva la fecha de formulas, así que el mes es el mismo);
+      · ninguna factura del mes la matcheó;
+      · `responde`: formulas contestó de verdad en esta corrida.
+    Devuelve dicts (no FilaPuente): son compras de PC, no facturas de formulas.
+    """
+    if not responde:
+        return []
+    usados = {f.id_compra_pc for f in filas if f.id_compra_pc}
+    out = []
+    for c in compras_pc:
+        if c.get("id_compra") in usados or not _es_del_puente_intacta(c):
+            continue
+        if (c.get("cuenta_pagada") or "").strip():
+            continue
+        if not _en_mes(c.get("fecha"), anio, mes):
+            continue
+        out.append({
+            "id_compra": c.get("id_compra"),
+            "numero": c.get("numero"),
+            "proveedor": (c.get("codigo_prov") or "").strip().upper(),
+            "factura": _primer_token(c.get("concepto")),
+            "fecha": _parse_fecha_iso(c.get("fecha")),
+            "importe": round(float(c.get("importe") or 0), 2),
+        })
+    return out
+
+
+def _emparejar_renombradas(filas: list[FilaPuente], huerfanas: list[dict]
+                           ) -> tuple[list[FilaPuente], list[dict]]:
+    """Una pendiente + una huérfana con MISMA fecha, proveedor e importe es la
+    misma factura con otro número: se marca para renombrar en vez de crear una
+    compra nueva (y la huérfana deja de serlo).
+
+    Visto el 09/09/2026: "007-2026" → "26-27/414" en formulas produjo dos
+    compras de 273.565,79 en PC. Con el importe exacto y el mismo día, dos
+    facturas distintas del mismo proveedor son la excepción; y si pasara, el
+    pasivo queda igual de bien (una se renombra, la otra se carga).
+    """
+    from dataclasses import replace
+
+    libres = list(huerfanas)
+    out: list[FilaPuente] = []
+    for f in filas:
+        if f.estado != "pendiente":
+            out.append(f)
+            continue
+        par = next((h for h in libres
+                    if h["proveedor"] == f.proveedor_pc
+                    and h["fecha"] == f.fecha
+                    and abs(h["importe"] - f.importe_con_iva) <= 0.01), None)
+        if par is None:
+            out.append(f)
+            continue
+        libres.remove(par)
+        out.append(replace(
+            f, estado="cargada", renombrar=True,
+            id_compra_pc=par["id_compra"], importe_pc=par["importe"],
+            factura_previa=par["factura"],
+            detalle_match=(f"estaba cargada como {par['factura']} "
+                           f"(id {par['id_compra']}) → se le cambia el N°"),
+        ))
+    return out, libres
 
 
 # ── Estado + sync ───────────────────────────────────────────────────────────
@@ -431,12 +545,22 @@ def estado_mes(anio: int, mes: int) -> dict:
             id_compra_pc=(compra_pc or {}).get("id_compra"),
             importe_pc=importe_pc, ajustable=ajustable,
         ))
+    # Lo que el puente cargó y ya NO está en formulas: o le cambiaron el
+    # número (→ se renombra) o lo borraron (→ se anula). Ver `_huerfanas`.
+    huerfanas = _huerfanas(compras_pc, filas, anio, mes,
+                           responde=bool(grupos) or _formulas_responde())
+    filas, huerfanas = _emparejar_renombradas(filas, huerfanas)
+
     pendientes = [f for f in filas if f.estado == "pendiente"]
     ajustables = [f for f in filas if f.ajustable]
     trabadas = [f for f in filas if f.estado in ("sin_mapear", "sin_numero")]
     return {
         "disponible": True,
         "filas": filas,
+        "huerfanas": huerfanas,
+        "total_huerfano": round(sum(float(h.get("importe") or 0)
+                                    for h in huerfanas), 2),
+        "renombradas": sum(1 for f in filas if f.renombrar),
         "proveedores_nuevos": sorted({f.proveedor_pc for f in filas
                                       if f.prov_origen == "nuevo"
                                       and f.proveedor_pc}),
@@ -477,9 +601,35 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
     est = estado_mes(anio, mes)
     if not est.get("disponible"):
         return {"disponible": False, "creadas": [], "errores": [],
-                "ya_cargadas": 0, "ajustadas": [], "proveedores": []}
+                "ya_cargadas": 0, "ajustadas": [], "proveedores": [],
+                "renombradas": [], "anuladas": []}
     creadas, errores, ajustadas, provs_dados_de_alta = [], [], [], []
+    renombradas: list = []
     for f in est["filas"]:
+        if f.renombrar and f.id_compra_pc:
+            try:
+                compras_queries.editar(
+                    f.id_compra_pc, concepto=concepto_pc(f.factura_pc, f.fecha),
+                    usuario=usuario,
+                    observacion=(f"puente formulas: la factura "
+                                 f"{f.factura_previa} pasó a ser "
+                                 f"{f.factura_pc} en formulas"),
+                )
+                renombradas.append({
+                    "proveedor": f.proveedor_pc, "factura": f.factura_pc,
+                    "factura_previa": f.factura_previa,
+                    "importe": f.importe_con_iva, "id_compra": f.id_compra_pc,
+                })
+                log.info("puente formulas: renombrada %s %s → %s (id %s)",
+                         f.proveedor_pc, f.factura_previa, f.factura_pc,
+                         f.id_compra_pc)
+            except Exception as e:  # noqa: BLE001
+                log.warning("puente formulas: no pude renombrar %s %s: %s",
+                            f.proveedor_pc, f.factura_pc, e)
+                errores.append({"proveedor": f.proveedor_pc,
+                                "factura": f.factura_pc,
+                                "error": f"no se pudo cambiar el N°: {e}"})
+            continue
         if f.ajustable and f.id_compra_pc:
             try:
                 res = compras_queries.editar(
@@ -541,7 +691,10 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 "factura": f.factura_pc,
                 "error": str(e),
             })
+    anuladas, sin_anular = _anular_huerfanas(est.get("huerfanas") or [],
+                                             usuario, errores)
     _avisar_novedades(creadas, errores, ajustadas)
+    _avisar_deshechas(renombradas, anuladas, sin_anular)
     avisar_proveedores(provs_dados_de_alta, creadas)
     avisar_trabadas(est)
     return {
@@ -549,9 +702,110 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
         "creadas": creadas,
         "errores": errores,
         "ajustadas": ajustadas,
+        "renombradas": renombradas,
+        "anuladas": anuladas,
+        "sin_anular": sin_anular,
         "proveedores": provs_dados_de_alta,
         "ya_cargadas": sum(1 for f in est["filas"] if f.estado == "cargada"),
     }
+
+
+def _anular_huerfanas(huerfanas: list[dict], usuario: str,
+                      errores: list) -> tuple[list[dict], list[dict]]:
+    """Anula (con su posdatado) las compras del puente que formulas ya no
+    tiene. Es el mismo camino que el botón Anular de la pantalla
+    (`queries.anular`), que además se niega si el posdatado ya se pagó con
+    cheque — ese caso queda en `errores`, no se fuerza. Pasado el tope
+    `_MAX_ANULAR_POR_CORRIDA`, el resto vuelve en `sin_anular`."""
+    from modules.compras import queries as compras_queries
+
+    anuladas: list[dict] = []
+    sin_anular: list[dict] = []
+    for h in huerfanas:
+        if len(anuladas) >= _MAX_ANULAR_POR_CORRIDA:
+            sin_anular.append(h)
+            continue
+        try:
+            compras_queries.anular(
+                h["id_compra"], usuario=usuario,
+                motivo=(f"puente formulas: la factura {h['factura']} ya no "
+                        f"está en el programa de tintorería"),
+            )
+            anuladas.append(h)
+            log.info("puente formulas: anulada %s %s por %.2f (id %s): "
+                     "ya no está en formulas", h["proveedor"], h["factura"],
+                     h["importe"], h["id_compra"])
+        except Exception as e:  # noqa: BLE001
+            log.warning("puente formulas: no pude anular %s %s (id %s): %s",
+                        h["proveedor"], h["factura"], h["id_compra"], e)
+            errores.append({"proveedor": h["proveedor"], "factura": h["factura"],
+                            "error": f"ya no está en formulas y no se pudo "
+                                     f"anular: {e}"})
+    return anuladas, sin_anular
+
+
+def _avisar_deshechas(renombradas: list, anuladas: list, sin_anular: list) -> None:
+    """Campanita de lo que el puente DESHIZO: números cambiados y compras
+    anuladas porque su factura desapareció de formulas. Dice de cuánto es cada
+    cosa (dueña: la campanita dice de cuánto a cuánto). Nunca levanta."""
+    if not renombradas and not anuladas and not sin_anular:
+        return
+    try:
+        from filters import num_es
+        from modules.avisos import avisar
+
+        if renombradas:
+            cambios = " · ".join(
+                f"{r['proveedor']} {r['factura_previa']} → {r['factura']} "
+                f"($ {num_es(float(r['importe'] or 0), 2)})"
+                for r in renombradas[:5])
+            avisar(
+                fuente="quimicos",
+                titulo=(f"Químicos · {len(renombradas)} compra"
+                        f"{'' if len(renombradas) == 1 else 's'} con N° de "
+                        f"factura cambiado"),
+                detalle=(f"Le cambiaron el número en el programa de tintorería; "
+                         f"se corrigió acá sin cargar otra: {cambios}"),
+                cantidad=len(renombradas), url="/compras",
+                clave=("quimicos:renombre:"
+                       + ",".join(f"{r['factura_previa']}>{r['factura']}"
+                                  for r in renombradas))[:400],
+            )
+        if anuladas:
+            total = sum(float(a.get("importe") or 0) for a in anuladas)
+            cuales = " · ".join(
+                f"{a['proveedor']} {a['factura']} $ "
+                f"{num_es(float(a['importe'] or 0), 2)}"
+                for a in anuladas[:5])
+            avisar(
+                fuente="quimicos", nivel="alerta",
+                titulo=(f"Químicos · se anuló {len(anuladas)} compra"
+                        f"{'' if len(anuladas) == 1 else 's'} por "
+                        f"$ {num_es(total, 2)}"),
+                detalle=(f"La factura ya no está en el programa de tintorería "
+                         f"(la borraron o reversaron), así que la compra y su "
+                         f"pasivo se anularon acá: {cuales}"),
+                importe=round(total, 2), cantidad=len(anuladas), url="/compras",
+                clave=("quimicos:anulada:"
+                       + ",".join(str(a.get("id_compra")) for a in anuladas))[:400],
+            )
+        if sin_anular:
+            total = sum(float(a.get("importe") or 0) for a in sin_anular)
+            avisar(
+                fuente="quimicos", nivel="alerta",
+                titulo=(f"Químicos · {len(sin_anular)} compra"
+                        f"{'' if len(sin_anular) == 1 else 's'} sin respaldo "
+                        f"en el programa de tintorería"),
+                detalle=(f"$ {num_es(total, 2)} de facturas que desaparecieron "
+                         f"del programa de tintorería y quedaron sin anular "
+                         f"(tope de {_MAX_ANULAR_POR_CORRIDA} por corrida). "
+                         f"Revisalas en Desde formulas."),
+                importe=round(total, 2), cantidad=len(sin_anular),
+                url="/compras/desde-formulas",
+                clave=f"quimicos:sin-anular:{len(sin_anular)}:{total:.2f}"[:400],
+            )
+    except Exception as e:  # noqa: BLE001 -- avisar nunca rompe nada
+        log.warning("puente formulas: no pude avisar lo deshecho: %s", e)
 
 
 def _dar_de_alta_prov(f: FilaPuente, dados_de_alta: list, errores: list,
@@ -903,6 +1157,8 @@ def correr_si_toca() -> dict:
         rep = sincronizar_mes_actual()
         res["creadas"] = len(rep.get("creadas") or [])
         res["ajustadas"] = len(rep.get("ajustadas") or [])
+        res["renombradas"] = len(rep.get("renombradas") or [])
+        res["anuladas"] = len(rep.get("anuladas") or [])
         res["importe"] = round(
             sum(float(c.get("importe") or 0) for c in (rep.get("creadas") or [])), 2)
         # Barrido de meses anteriores: si quedó un mes entero sin cargar,

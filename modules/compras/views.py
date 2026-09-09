@@ -709,6 +709,7 @@ def desde_formulas_historico():
 @requiere_login
 @requiere_permiso("compras.crear")
 def desde_formulas_sincronizar():
+    from filters import num_es
     from modules.compras import formulas_bridge
 
     anio, mes = _mes_arg()
@@ -729,6 +730,14 @@ def desde_formulas_sincronizar():
         if rep.get("ajustadas"):
             msg += (f" {len(rep['ajustadas'])} ya cargada(s) cambiaron en"
                     " formulas y se les corrigió el importe.")
+        if rep.get("renombradas"):
+            msg += (f" A {len(rep['renombradas'])} le{'' if len(rep['renombradas']) == 1 else 's'}"
+                    " cambiaron el N° de factura en formulas: se corrigió el concepto.")
+        if rep.get("anuladas"):
+            tot = sum(float(a.get("importe") or 0) for a in rep["anuladas"])
+            msg += (f" {len(rep['anuladas'])} ya no está{'' if len(rep['anuladas']) == 1 else 'n'}"
+                    f" en formulas: se anul{'ó' if len(rep['anuladas']) == 1 else 'aron'}"
+                    f" con su pasivo ({num_es(tot, 2)}).")
         if e:
             msg += f" {e} con error: " + "; ".join(
                 f"{x['proveedor']} {x['factura']}: {x['error']}" for x in rep["errores"][:3]

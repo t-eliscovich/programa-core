@@ -28,13 +28,16 @@
       </form>
       <a href="{{ url_for('compras.desde_formulas_historico') }}"
          class="text-sm px-4 py-2 rounded-lg border border-slate-300 hover:bg-slate-100">Meses anteriores</a>
-      {% if est.disponible and (est.pendientes > 0 or est.ajustables > 0) and tiene_permiso('compras.crear') %}
+      {% if est.disponible and (est.pendientes > 0 or est.ajustables > 0 or est.renombradas > 0 or est.huerfanas) and tiene_permiso('compras.crear') %}
         <form method="post" action="{{ url_for('compras.desde_formulas_sincronizar', mes=mes_str) }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit"
                   class="text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm">
             {% if est.pendientes > 0 %}Cargar las {{ est.pendientes }} pendientes ({{ est.total_pendiente | money_es }}){% if est.ajustables > 0 %} y corregir {{ est.ajustables }}{% endif %}
-            {% else %}Corregir el importe de {{ est.ajustables }} compra{{ '' if est.ajustables == 1 else 's' }}{% endif %}
+            {% elif est.ajustables > 0 %}Corregir el importe de {{ est.ajustables }} compra{{ '' if est.ajustables == 1 else 's' }}
+            {% elif est.renombradas > 0 %}Corregir el N° de {{ est.renombradas }} compra{{ '' if est.renombradas == 1 else 's' }}
+            {% else %}Anular {{ est.huerfanas | length }} compra{{ '' if est.huerfanas | length == 1 else 's' }} que ya no está{{ '' if est.huerfanas | length == 1 else 'n' }} en formulas ({{ est.total_huerfano | money_es }}){% endif %}
+            {% if est.huerfanas and (est.pendientes > 0 or est.ajustables > 0 or est.renombradas > 0) %} y anular {{ est.huerfanas | length }}{% endif %}
           </button>
         </form>
       {% endif %}
@@ -52,6 +55,37 @@
         a mano. <em>Sin N° de factura</em> = ponele el número en el
         programa de tintorería y entra sola.
       </p>
+    </div>
+  {% endif %}
+
+  {% if est.disponible and est.huerfanas %}
+    <div class="page-card mb-4" style="border-left:4px solid #e11d48">
+      <p class="text-sm mb-2" style="color:#9f1239">
+        <strong>{{ est.huerfanas | length }} compra{{ '' if est.huerfanas | length == 1 else 's' }}
+        cargada{{ '' if est.huerfanas | length == 1 else 's' }} por el puente ya no
+        está{{ '' if est.huerfanas | length == 1 else 'n' }} en formulas</strong>
+        ({{ est.total_huerfano | money_es }}) — la factura se borró o se reversó en el
+        programa de tintorería, pero acá la compra y su pasivo siguen vivos. El
+        automático las anula solo en la próxima corrida; con el botón de arriba lo
+        hacés ahora.
+      </p>
+      <table class="text-sm">
+        <thead><tr class="text-left text-slate-500">
+          <th class="pr-3">FECHA</th><th class="pr-3">PROV</th><th class="pr-3">FACTURA</th>
+          <th class="pr-3 text-right">IMPORTE</th><th>COMPRA</th>
+        </tr></thead>
+        <tbody>
+        {% for h in est.huerfanas %}
+          <tr>
+            <td class="pr-3">{{ h.fecha | fecha_es or '—' }}</td>
+            <td class="pr-3">{{ h.proveedor }}</td>
+            <td class="pr-3">{{ h.factura }}</td>
+            <td class="pr-3 text-right">{{ h.importe | money_es }}</td>
+            <td><a class="underline" href="{{ url_for('compras.detalle', id_compra=h.id_compra) }}">N° {{ h.numero }}</a></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
     </div>
   {% endif %}
 
@@ -110,7 +144,10 @@
             <td class="py-1.5 pr-3 text-right">{{ (f.iva_pct * 100) | int }}%</td>
             <td class="py-1.5 pr-3 text-right font-medium">{{ f.importe_con_iva | money_es }}</td>
             <td class="py-1.5 pr-3">
-              {% if f.estado == 'cargada' and f.ajustable %}
+              {% if f.estado == 'cargada' and f.renombrar %}
+                <span class="inline-block px-2 py-0.5 rounded text-xs bg-sky-100 text-sky-800"
+                      title="{{ f.detalle_match or '' }}">cambió el N°: estaba como {{ f.factura_previa }}</span>
+              {% elif f.estado == 'cargada' and f.ajustable %}
                 <span class="inline-block px-2 py-0.5 rounded text-xs bg-sky-100 text-sky-800"
                       title="{{ f.detalle_match or '' }}">cambió: cargada por {{ f.importe_pc | money_es }}</span>
               {% elif f.estado == 'cargada' %}
@@ -143,6 +180,9 @@
       ítems con y sin IVA, corregí el importe con Editar en /compras — el pasivo se ajusta
       solo y desde ese momento el puente no la vuelve a tocar.
       COLOURTEX (COLO) queda excluido: es importación y entra por su circuito (banc 9).
+      Si una factura desaparece del programa de tintorería (la borraron o reversaron), la
+      compra que el puente había cargado se anula sola con su pasivo; si sólo le cambian
+      el N°, se corrige el concepto sin cargar otra.
     </p>
   {% endif %}
 </div>

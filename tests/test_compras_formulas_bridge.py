@@ -815,3 +815,236 @@ def test_avisar_proveedores_sin_nada_no_avisa():
 def test_avisar_proveedores_nunca_levanta():
     with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
         assert fb.avisar_proveedores([{"codigo": "NSQ"}], []) == 0
+
+
+# ── deshacer: la factura desapareció o le cambiaron el N° (09/09/2026) ──────
+#
+# El caso real: Jonathan cargó una importación de colorantes en formulas como
+# AVQ "007-2026" (273.565,79 c/IVA); el puente la cargó. Después le cambió el
+# número a "26-27/414" → el puente cargó OTRA. Después borró los renglones →
+# las dos quedaron vivas con su pasivo y sin stock. Dueña: "no puede quedar el
+# pasivo vivo si se reversó".
+
+_G_IMPORTACION = [
+    {"proveedor": "AVQ", "factura": "26-27/414", "fecha": "2026-09-09",
+     "kg": 22850, "importe_siva": 237883.30},   # c/IVA = 273.565,79
+]
+_G_OTRA = [
+    {"proveedor": "SEY", "factura": "3053", "fecha": "2026-09-09",
+     "kg": 1000, "importe_siva": 3200.0},
+]
+
+
+def _pc_puente(**kw):
+    base = {"id_compra": 678, "numero": 10323, "fecha": date(2026, 9, 9),
+            "codigo_prov": "AQ", "importe": 273565.79,
+            "concepto": "007-2026      9", "usuario_crea": "formulas-auto",
+            "usuario_modifica": None, "id_transaccion": None,
+            "cuenta_pagada": None}
+    base.update(kw)
+    return base
+
+
+def _correr_deshacer(grupos, pc, responde=True, anular=None):
+    editadas, creadas, anuladas = [], [], []
+
+    def _anular(id_compra, **kw):
+        anuladas.append((id_compra, kw))
+        if anular:
+            anular(id_compra, kw)
+        return 1
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.formulas_db, "fetch_one",
+                      return_value={"n": 1} if responde else None), \
+         patch.object(fb.db, "fetch_all", return_value=pc), \
+         patch("modules.compras.queries.editar",
+               side_effect=lambda i, **kw: editadas.append((i, kw)) or {}), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw) or {"numero": 1}), \
+         patch("modules.compras.queries.anular", side_effect=_anular), \
+         patch("modules.avisos.avisar", return_value=True):
+        rep = fb.sincronizar_mes(2026, 9)
+    return rep, editadas, creadas, anuladas
+
+
+def test_estado_mes_lista_la_compra_del_puente_que_ya_no_esta_en_formulas():
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_G_OTRA), \
+         patch.object(fb.db, "fetch_all", return_value=[_pc_puente()]):
+        est = fb.estado_mes(2026, 9)
+    assert len(est["huerfanas"]) == 1
+    h = est["huerfanas"][0]
+    assert h["id_compra"] == 678 and h["numero"] == 10323
+    assert h["proveedor"] == "AQ" and h["factura"] == "007-2026"
+    assert h["fecha"] == date(2026, 9, 9)
+    assert est["total_huerfano"] == pytest.approx(273565.79)
+
+
+def test_sincronizar_anula_la_compra_cuya_factura_desaparecio():
+    rep, editadas, creadas, anuladas = _correr_deshacer(_G_OTRA, [_pc_puente()])
+    assert editadas == []
+    assert [c["codigo_prov"] for c in creadas] == ["SY"]   # la 3053 sí se carga
+    assert len(anuladas) == 1
+    id_compra, kw = anuladas[0]
+    assert id_compra == 678
+    assert kw["usuario"] == "formulas-auto"
+    assert "007-2026" in kw["motivo"] and "tintorería" in kw["motivo"]
+    assert [a["id_compra"] for a in rep["anuladas"]] == [678]
+    assert rep["errores"] == []
+
+
+@pytest.mark.parametrize("cambio", [
+    {"cuenta_pagada": "B"},                 # pagada
+    {"id_transaccion": 55},                 # pagada al instante
+    {"usuario_modifica": "andres"},         # alguien la editó a mano
+    {"usuario_crea": "andres"},             # no la creó el puente
+    {"fecha": date(2026, 8, 30)},           # de otro mes
+])
+def test_no_se_anula_lo_que_no_es_del_puente_intacto_de_este_mes(cambio):
+    rep, _, _, anuladas = _correr_deshacer(_G_OTRA, [_pc_puente(**cambio)])
+    assert anuladas == []
+    assert rep["anuladas"] == []
+
+
+def test_la_que_formulas_si_tiene_no_es_huerfana():
+    pc = [_pc_puente(concepto="26-27/414     9")]
+    rep, _, creadas, anuladas = _correr_deshacer(_G_IMPORTACION, pc)
+    assert anuladas == [] and creadas == []
+    assert rep["ya_cargadas"] == 1
+
+
+def test_formulas_caida_no_anula_nada():
+    """fetch_all devuelve [] tanto si el mes está vacío como si la base no
+    contesta. Con la base caída NO se puede dar por desaparecida ninguna
+    factura: anularía el pasivo del mes entero."""
+    rep, _, _, anuladas = _correr_deshacer([], [_pc_puente()], responde=False)
+    assert anuladas == [] and rep["anuladas"] == []
+
+
+def test_mes_vacio_con_formulas_respondiendo_si_anula():
+    """Si formulas contesta y el mes está vacío, las facturas de verdad se
+    borraron: se anulan."""
+    rep, _, _, anuladas = _correr_deshacer([], [_pc_puente()], responde=True)
+    assert [i for i, _ in anuladas] == [678]
+
+
+def test_cambio_de_numero_renombra_en_vez_de_cargar_otra():
+    """'007-2026' → '26-27/414' en formulas: misma fecha, mismo proveedor,
+    mismo importe. Se edita el concepto de la que está; ni se crea otra ni se
+    anula la vieja."""
+    rep, editadas, creadas, anuladas = _correr_deshacer(_G_IMPORTACION,
+                                                        [_pc_puente()])
+    assert creadas == [] and anuladas == []
+    assert len(editadas) == 1
+    id_compra, kw = editadas[0]
+    assert id_compra == 678
+    assert kw["concepto"].startswith("26-27/414")
+    assert kw["concepto"].endswith(" 9")
+    assert "007-2026" in kw["observacion"]
+    assert rep["renombradas"][0]["factura_previa"] == "007-2026"
+    assert rep["renombradas"][0]["factura"] == "26-27/414"
+
+
+def test_estado_mes_marca_la_renombrada_como_cargada():
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_G_IMPORTACION), \
+         patch.object(fb.db, "fetch_all", return_value=[_pc_puente()]):
+        est = fb.estado_mes(2026, 9)
+    f = est["filas"][0]
+    assert f.estado == "cargada" and f.renombrar
+    assert f.factura_previa == "007-2026" and f.id_compra_pc == 678
+    assert est["pendientes"] == 0 and est["renombradas"] == 1
+    assert est["huerfanas"] == []
+
+
+def test_distinto_importe_no_es_renombre():
+    """Mismo día y proveedor pero otro importe: son dos facturas distintas —
+    la nueva se carga y la vieja, que ya no está, se anula."""
+    pc = [_pc_puente(importe=1000.0)]
+    rep, editadas, creadas, anuladas = _correr_deshacer(_G_IMPORTACION, pc)
+    assert editadas == []
+    assert len(creadas) == 1 and creadas[0]["codigo_prov"] == "AQ"
+    assert [i for i, _ in anuladas] == [678]
+
+
+def test_si_anular_falla_queda_en_errores_y_sigue():
+    pc = [_pc_puente(), _pc_puente(id_compra=680, numero=10325,
+                                   concepto="26-27/414     9")]
+
+    def _boom(id_compra, kw):
+        if id_compra == 678:
+            raise ValueError("la posdat hermana ya fue pagada con cheque")
+
+    rep, _, _, anuladas = _correr_deshacer(_G_OTRA, pc, anular=_boom)
+    assert [i for i, _ in anuladas] == [678, 680]   # se intentaron las dos
+    assert [a["id_compra"] for a in rep["anuladas"]] == [680]
+    assert len(rep["errores"]) == 1
+    assert "cheque" in rep["errores"][0]["error"]
+    assert rep["errores"][0]["factura"] == "007-2026"
+
+
+def test_tope_de_anulaciones_por_corrida(monkeypatch):
+    monkeypatch.setattr(fb, "_MAX_ANULAR_POR_CORRIDA", 2)
+    pc = [_pc_puente(id_compra=i, numero=100 + i, concepto=f"{i}  9")
+          for i in range(1, 5)]
+    rep, _, _, anuladas = _correr_deshacer(_G_OTRA, pc)
+    assert len(anuladas) == 2
+    assert len(rep["anuladas"]) == 2 and len(rep["sin_anular"]) == 2
+
+
+def test_aviso_de_anuladas_dice_cuales_y_cuanto():
+    puestos = []
+    with patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        fb._avisar_deshechas(
+            [{"proveedor": "AQ", "factura": "26-27/414",
+              "factura_previa": "007-2026", "importe": 273565.79,
+              "id_compra": 678}],
+            [{"id_compra": 680, "proveedor": "AQ", "factura": "26-27/414",
+              "importe": 273565.79, "fecha": date(2026, 9, 9), "numero": 10325}],
+            [])
+    assert len(puestos) == 2
+    ren, anu = puestos
+    assert "N° de factura cambiado" in ren["titulo"]
+    assert "007-2026 → 26-27/414" in ren["detalle"]
+    assert anu["nivel"] == "alerta"
+    assert anu["titulo"] == "Químicos · se anuló 1 compra por $ 273.565,79"
+    assert "AQ 26-27/414" in anu["detalle"] and "pasivo" in anu["detalle"]
+    assert anu["url"] == "/compras"
+
+
+def test_aviso_de_deshechas_sin_nada_no_avisa_y_nunca_levanta():
+    with patch("modules.avisos.avisar") as av:
+        fb._avisar_deshechas([], [], [])
+    av.assert_not_called()
+    with patch("modules.avisos.avisar", side_effect=RuntimeError("boom")):
+        fb._avisar_deshechas([], [{"id_compra": 1, "proveedor": "AQ",
+                                   "factura": "1", "importe": 1.0}], [])
+
+
+def test_formulas_responde_ante_la_duda_dice_que_no():
+    with patch.object(fb.formulas_db, "fetch_one", side_effect=RuntimeError("x")):
+        assert fb._formulas_responde() is False
+    with patch.object(fb.formulas_db, "fetch_one", return_value={"n": 0}):
+        assert fb._formulas_responde() is True
+
+
+def test_si_renombrar_falla_queda_en_errores_y_no_se_carga_otra():
+    editadas, creadas = [], []
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=_G_IMPORTACION), \
+         patch.object(fb.db, "fetch_all", return_value=[_pc_puente()]), \
+         patch("modules.compras.queries.editar",
+               side_effect=ValueError("Compra ya pagada")), \
+         patch("modules.compras.queries.crear",
+               side_effect=lambda **kw: creadas.append(kw) or {"numero": 1}), \
+         patch("modules.compras.queries.anular") as anular, \
+         patch("modules.avisos.avisar", return_value=True):
+        rep = fb.sincronizar_mes(2026, 9)
+    assert creadas == [] and editadas == []
+    anular.assert_not_called()
+    assert rep["renombradas"] == []
+    assert len(rep["errores"]) == 1
+    assert "cambiar el N°" in rep["errores"][0]["error"]

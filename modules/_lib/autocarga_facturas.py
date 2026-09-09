@@ -196,11 +196,13 @@ def _loop() -> None:
             try:
                 from modules.compras import formulas_bridge as _fbr
                 fq = _fbr.correr_si_toca()
-                if fq.get("creadas") or fq.get("ajustadas"):
+                if (fq.get("creadas") or fq.get("ajustadas")
+                        or fq.get("renombradas") or fq.get("anuladas")):
                     _LOG.info(
                         "químicos formulas (fondo): %s compra(s) por $%s, "
-                        "%s corregida(s)",
+                        "%s corregida(s), %s renombrada(s), %s anulada(s)",
                         fq.get("creadas"), fq.get("importe"), fq.get("ajustadas"),
+                        fq.get("renombradas"), fq.get("anuladas"),
                     )
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("químicos formulas (fondo): %s", e)
