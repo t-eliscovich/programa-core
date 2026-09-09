@@ -135,16 +135,22 @@ a.fila:active{background:var(--bg)}
 .act .ic.despacho{background:var(--ambar-soft);color:var(--ambar)}.act .ic.pedido{background:var(--bg);color:var(--ink2)}.act .ic.credito{background:var(--verde-soft);color:var(--verde)}
 .datos{display:grid;grid-template-columns:1fr;gap:10px}.datos div{padding:10px 0;border-top:1px solid var(--line)}.datos div:first-child{border-top:0;padding-top:0}
 .datos b{display:block;font-size:14.5px;margin-top:2px}
+/* El resumen de arriba del inicio: tres tarjetas parejas (09/09). */
+.resumen{display:grid;gap:12px}.resumen .card{display:flex;flex-direction:column;justify-content:center}
+.resumen .big{font-size:28px}.resumen .vend{flex-direction:row}
+.hoja-barra{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px}
+.hoja-barra h2{margin:0;font-size:16px}.hoja-barra h2 small{font-weight:500;color:var(--ink3);font-size:12.5px;margin-left:6px}
 /* La hoja del estado de cuenta de la oficina, adentro del portal (09/09). */
 .hoja-ec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .hoja-ec h2{margin:6px 0 8px}.hoja-ec table{min-width:720px;font-size:13px}
 .hoja-ec .rounded-lg{border-radius:10px}.hoja-ec .ec-ch-resumen{display:none}
 @media (min-width:900px){
  .topnav{display:flex}.tabbar{display:none}main{padding:24px 24px 40px}
- .grid.inicio{grid-template-columns:380px 1fr;align-items:start}
+ .grid.inicio{grid-template-columns:1fr;align-items:start}
  .grid.inicio .hoja-ec{grid-column:1 / -1}
- .grid.inicio > .grid{grid-template-columns:1fr 1fr;align-items:start;grid-column:1 / -1}
- .grid.inicio > .grid > .card:first-child{grid-row:span 2}
+ .grid.inicio > .resumen{grid-template-columns:1.2fr 1fr 1.2fr;grid-column:1 / -1}
+ .resumen .vend small{white-space:nowrap}
+ .grid.inicio > .hoja-barra{grid-column:1 / -1}
  .big{font-size:40px}.top img{height:30px}
 }
 </style>

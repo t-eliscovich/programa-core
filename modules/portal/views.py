@@ -417,7 +417,7 @@ def estado_cuenta():
         "portal/inicio.html",
         n_devueltos=len(devueltos),
         importe_devueltos=sum(presentacion.numero(p.get("importe")) for p in devueltos),
-        data=data, t=t, codigo=cod, cli=fic,
+        data=data, t=t, codigo=cod, cli=fic, hoy=hoy,
         facturas=facturas,
         n_vencidas=len(vencidas),
         saldo_vencido=sum(presentacion.numero(f.get("saldo")) for f in vencidas),
