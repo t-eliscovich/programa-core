@@ -22,6 +22,10 @@
     <div><div class="lbl">Importe</div><b>{{ f.importe|money_es }}</b></div>
     <div><div class="lbl">Abonado{% if f.retencion %} + retención{% endif %}</div><b>{{ ((f.abono or 0) + (f.retencion or 0))|money_es }}</b></div>
   </div>
+  {% if pagada_con %}
+  {# Con qué se pagó (dueña 09/09/2026): los cheques aplicados a esta factura. #}
+  <p class="prox">Pagada con {{ pagada_con|join(' y ') }}</p>
+  {% endif %}
 </div>
 {% if f.numf_completo %}
 <div style="display:flex;gap:8px;margin-bottom:12px">

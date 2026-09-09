@@ -347,27 +347,37 @@ def _vendedor_de(fic: dict) -> dict | None:
             "whatsapp": presentacion.link_whatsapp((r or {}).get("whatsapp"), saludo)}
 
 
-def _despachos_recientes(cod: str, ruc: str) -> list | None:
-    """Los últimos despachos para el inicio. None si Asinfo no contestó."""
-    from modules.asinfo import despachos_cliente
+def _aplicaciones(cod: str) -> dict:
+    """``{"por_cheque": {id_cheque: ["183341 (735,25)", …]},
+    "por_factura": {id_factura: ["cheque 1840", …]}}`` — qué factura pagó
+    cada cheque, dicho como lo lee el cliente (dueña 09/09/2026). Fail-soft:
+    sin la tabla, sin las frases."""
+    from filters import money_es
+    from modules.informes import queries as _q
+    por_cheque: dict[int, list[str]] = {}
+    por_factura: dict[int, list[str]] = {}
     try:
-        d = despachos_cliente.de_cliente(cod, ruc, 3)
-    except Exception:  # noqa: BLE001 -- el puente no puede tumbar el inicio
-        return None
-    if not d.get("ok"):
-        return None
-    return presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
+        filas = _q.aplicaciones_cliente(cod)
+    except Exception:  # noqa: BLE001 -- el cruce no puede tumbar la lista
+        return {"por_cheque": {}, "por_factura": {}}
+    for a in filas:
+        numf = (a.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(a.get("numf") or "")
+        if numf:
+            por_cheque.setdefault(a["id_cheque"], []).append(
+                f"{numf} ({money_es(a.get('aplicado') or 0)})")
+        if a.get("id_fact"):
+            que = "cheque " + (str(a.get("no_cheque") or "").strip() or "s/n")
+            por_factura.setdefault(a["id_fact"], []).append(
+                f"{que} ({money_es(a.get('aplicado') or 0)})")
+    return {"por_cheque": por_cheque, "por_factura": por_factura}
 
 
-# El CUPO no se muestra. Dueña 04/09/2026: *"no mostremos cupo porque muchos
-# clientes están pasados"*. Un "puede comprar hasta $ 0 más" en el celular del
-# cliente es una conversación que tiene que tener el vendedor, no la pantalla.
-
-
-def _pagos_de(data: dict) -> list[dict]:
+def _pagos_de(data: dict, cod: str = "") -> list[dict]:
     """Los pagos que se le muestran, del más nuevo al más viejo (por la fecha
-    que se muestra, "Recibido")."""
+    que se muestra, "Recibido"). Con `cod`, cada uno trae `facturas_pagadas`:
+    qué facturas pagó (dueña 09/09/2026)."""
     from modules.cheques import estados
+    por_cheque = _aplicaciones(cod)["por_cheque"] if cod else {}
     pagos = [{**c, "que_es": _que_es(c),
               # Un cheque que el banco devolvió NO es un pago hecho: se ve, pero
               # rotulado (dueña 04/09). Los estados 1/2/3 son "devuelto" y el 9
@@ -378,7 +388,8 @@ def _pagos_de(data: dict) -> list[dict]:
               # que la fila, el orden y el mes del grupo usen la MISMA — el
               # 09/09 AJT veía un bloque "Sin fecha" con cheques que decían
               # "recibido 27/07/2026": el grupo iba por `dia_ingreso` pelado.
-              "dia_recibido": c.get("dia_ingreso") or c.get("fecha_recibido") or c.get("fecha")}
+              "dia_recibido": c.get("dia_ingreso") or c.get("fecha_recibido") or c.get("fecha"),
+              "facturas_pagadas": por_cheque.get(c.get("id_cheque")) or []}
              for c in (data.get("cheques") or [])
              if estados.se_le_muestra_al_cliente(c.get("stat"))]
     return sorted(pagos, key=_dia_recibido, reverse=True)
@@ -401,15 +412,16 @@ def estado_cuenta():
     t = data.get("totales") or {}
     fic = data.get("cliente") or acceso.cliente(cod) or {}
     vencidas = presentacion.vencidas(facturas)
+    devueltos = [p for p in _pagos_de(data) if p["devuelto"]]
     return render_template(
         "portal/inicio.html",
+        n_devueltos=len(devueltos),
+        importe_devueltos=sum(presentacion.numero(p.get("importe")) for p in devueltos),
         data=data, t=t, codigo=cod, cli=fic,
         facturas=facturas,
         n_vencidas=len(vencidas),
         saldo_vencido=sum(presentacion.numero(f.get("saldo")) for f in vencidas),
         proximo=presentacion.proximo_vencimiento(facturas, hoy),
-        pagos=_pagos_de(data),
-        despachos=_despachos_recientes(cod, (fic.get("ruc") or "")),
         vendedor=_vendedor_de(fic),
     )
 
@@ -507,6 +519,7 @@ def factura(numf: int):
     return render_template(
         "portal/factura.html", f=elegida, numero=numero, codigo=cod,
         cli=data.get("cliente") or {},
+        pagada_con=_aplicaciones(cod)["por_factura"].get(elegida.get("id_factura")) or [],
         det=factura_lineas.que_se_llevo(elegida.get("numf_completo")))
 
 
@@ -576,10 +589,14 @@ def mis_pagos():
     if not cod:
         return _pedir_entrar()
     data = _cargar_estado_cuenta(cod)
-    pagos = _pagos_de(data)
-    return render_template("portal/pagos.html", codigo=cod, pagos=pagos,
+    pagos = _pagos_de(data, cod)
+    devueltos = [p for p in pagos if p["devuelto"]]
+    filtro = "devueltos" if (request.args.get("ver") or "") == "devueltos" else ""
+    lista = devueltos if filtro else pagos
+    return render_template("portal/pagos.html", codigo=cod, pagos=lista,
                            cli=data.get("cliente") or {},
-                           grupos=presentacion.por_mes(pagos, "dia_recibido"))
+                           filtro=filtro, n_devueltos=len(devueltos),
+                           grupos=presentacion.por_mes(lista, "dia_recibido"))
 
 
 def _dia_recibido(c: dict):

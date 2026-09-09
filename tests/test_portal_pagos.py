@@ -75,7 +75,9 @@ def test_la_pantalla_NO_cuenta_el_recorrido_del_cheque():
     """🚨 Lo que la dueña sacó. Si alguien vuelve a poner el estado, esto se
     pone rojo: son palabras nuestras, no del cliente."""
     sin_comentarios = re.sub(r"\{#.*?#\}", "", PANTALLA, flags=re.S)
-    for palabra in ("Depositado", "Devuelto", "Endosado", "Postergado",
+    # "Devuelto" volvió el 09/09 (dueña: "mostrar cheques protestados"), pero
+    # como pestaña propia y rótulo, no como recorrido.
+    for palabra in ("Depositado", "Endosado", "Postergado",
                     "cartera", "Daniela", "stat"):
         assert palabra not in sin_comentarios, palabra
 
@@ -98,7 +100,8 @@ def _con_pagos(monkeypatch, cheques):
     from modules.informes import queries as q
     monkeypatch.setattr(q, "estado_cuenta_cliente", lambda cod: {
         "cliente": {"codigo_cli": cod, "nombre": "ALMACENES TEXTILES"},
-        "facturas": [], "cheques": cheques, "anticipos": [], "totales": {},
+        "facturas": [], "cheques": cheques, "anticipos": [],
+        "totales": q.totales_estado_cuenta_en_cero(),
     })
 
 
@@ -240,3 +243,56 @@ def test_el_cheque_devuelto_se_ve_pero_rotulado(monkeypatch):
     html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0004444", stat="1")])
     assert "devuelto" in html and "el banco lo devolvió" in html
     assert "Para depositar" not in html
+
+
+def test_cada_cheque_dice_que_facturas_pago(monkeypatch):
+    """Dueña 09/09/2026: "mostrar los cheques que facturas pagaron". Sale de
+    `chequesxfact` por `informes.queries.aplicaciones_cliente` (el portal
+    no lee facturas ni cheques por su cuenta)."""
+    from modules.informes import queries as iq
+    monkeypatch.setattr(iq, "aplicaciones_cliente", lambda cod: [
+        {"id_cheque": 1, "no_cheque": "0001840", "id_fact": 9, "numf": 183341,
+         "numf_completo": "001-099-000183341", "aplicado": 735.25},
+        {"id_cheque": 1, "no_cheque": "0001840", "id_fact": 8, "numf": 183198,
+         "numf_completo": "001-099-000183198", "aplicado": 580.74},
+    ])
+    html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0001840"),
+                                   _cheque(id_cheque=2, no_cheque="0001841")])
+    assert "pagó las facturas 183341 (735,25), 183198 (580,74)" in html
+    # El otro cheque no pagó nada todavía: sin la frase.
+    assert html.count("pagó la") == 1
+
+
+def test_el_cruce_no_tumba_la_lista_si_la_consulta_falla(monkeypatch):
+    from modules.informes import queries as iq
+    monkeypatch.setattr(iq, "aplicaciones_cliente", lambda cod: (_ for _ in ()).throw(RuntimeError("sin base")))
+    html = _pantalla(monkeypatch, [_cheque(no_cheque="0001840")])
+    assert "0001840" in html and "pagó" not in html
+
+
+def test_la_consulta_del_cruce_vive_en_informes_y_lee_chequesxfact():
+    import inspect
+
+    from modules.informes import queries as iq
+    assert "scintela.chequesxfact" in inspect.getsource(iq.aplicaciones_cliente)
+
+
+def test_los_devueltos_tienen_su_pestana_y_su_chip_en_el_inicio(monkeypatch):
+    """Dueña 09/09/2026: "mostrar en algún lugar cheques protestados"."""
+    from datetime import date
+    cheques = [_cheque(id_cheque=1, no_cheque="0004444", stat="1", dia_ingreso=date(2026, 7, 27)),
+               _cheque(id_cheque=2, no_cheque="0005555", stat="Z", dia_ingreso=date(2026, 9, 1))]
+    html = _pantalla(monkeypatch, cheques)
+    assert "Devueltos (1)" in html and "0005555" in html
+    app, deshacer = _app_portal()
+    try:
+        _con_pagos(monkeypatch, cheques)
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "ATE"
+        solo = c.get("/mis-pagos?ver=devueltos").get_data(as_text=True)
+        assert "0004444" in solo and "0005555" not in solo
+        inicio = c.get("/estado-de-cuenta").get_data(as_text=True)
+        assert "1 cheque devuelto" in inicio and 'href="/mis-pagos?ver=devueltos"' in inicio
+    finally:
+        deshacer()

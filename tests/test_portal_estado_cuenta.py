@@ -399,7 +399,6 @@ def _data(monkeypatch, facturas=(), cheques=()):
     monkeypatch.setattr(views, "_vendedor_de", lambda fic: {
         "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER",
         "whatsapp": "https://wa.me/593998299186"})
-    monkeypatch.setattr(views, "_despachos_recientes", lambda cod, ruc: [])
 
 
 def _factura(**kw):
@@ -548,3 +547,24 @@ def test_la_tarjeta_del_vendedor_sale_del_vendedor_y_sin_numero_no_hay_boton(mon
     monkeypatch.setattr(_db, "fetch_one", lambda sql, params: {"nombre": "EDGAR RAMIREZ", "whatsapp": None})
     assert views._vendedor_de({"vend": "EDG", "nombre": "X"})["whatsapp"] == ""
     assert views._vendedor_de({"vend": ""}) is None
+
+
+def test_la_ficha_de_la_factura_dice_con_que_cheque_se_pago(monkeypatch):
+    """Dueña 09/09/2026: "mostrar los cheques que facturas pagaron" — también
+    del lado de la factura."""
+    app, deshacer = _app_portal()
+    try:
+        _data(monkeypatch, facturas=[_factura(abono=735.25, saldo=0)])
+        from modules.asinfo import factura_lineas
+        monkeypatch.setattr(factura_lineas, "que_se_llevo", lambda numero: {"estado": "error", "lineas": [], "servicios": [], "totales": {}})
+        from modules.informes import queries as iq
+        monkeypatch.setattr(iq, "aplicaciones_cliente", lambda cod: [
+            {"id_cheque": 1, "no_cheque": "1840", "id_fact": 9, "numf": 183341,
+             "numf_completo": "001-099-000183341", "aplicado": 735.25}])
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+        html = c.get("/factura/183341?doc=001-099-000183341&id=9").get_data(as_text=True)
+        assert "Pagada con cheque 1840 (735,25)" in html
+    finally:
+        deshacer()

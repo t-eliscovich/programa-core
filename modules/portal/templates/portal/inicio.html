@@ -21,6 +21,7 @@
         <span class="chip ok">✓ Ninguna factura vencida</span>
       {% endif %}
       {% if facturas %}<span class="chip">{{ facturas|length }} factura{{ 's' if facturas|length != 1 }}</span>{% endif %}
+      {% if n_devueltos %}<a class="chip bad" href="/mis-pagos?ver=devueltos">{{ n_devueltos }} cheque{{ 's' if n_devueltos != 1 }} devuelto{{ 's' if n_devueltos != 1 }} · {{ importe_devueltos|money_es }}</a>{% endif %}
     </div>
     {% if proximo %}
       <p class="prox {{ 'warn' if proximo.dias <= 15 }}">Próximo vencimiento: <b>{{ proximo.fecha|fecha_es }}</b> · factura {{ proximo.factura.numf }} · {{ proximo.factura.saldo|money_es }}</p>

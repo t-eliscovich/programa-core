@@ -12345,3 +12345,27 @@ def facturas_pagadas_cliente(codigo_cli: str, meses: int = 12) -> list[dict]:
         """,
         (cod, str(int(meses))),
     ) or []
+
+
+def aplicaciones_cliente(codigo_cli: str) -> list[dict]:
+    """Qué factura pagó cada cheque del cliente (y al revés), para el portal
+    (dueña 09/09/2026: "mostrar los cheques que facturas pagaron").
+
+    Sale de `scintela.chequesxfact`, la misma tabla que lee la ficha del
+    cheque en la oficina (`cheques.queries.aplicaciones`). Una fila por
+    aplicación: id_cheque, no_cheque, id_fact, numf, numf_completo, aplicado.
+    """
+    cod = (codigo_cli or "").strip().upper()
+    return db.fetch_all(
+        """
+        SELECT cxf.id_cheque, c.no_cheque, cxf.id_fact,
+               f.numf, f.numf_completo, f.fecha AS fact_fecha,
+               cxf.importe AS aplicado, cxf.fechaing
+          FROM scintela.chequesxfact cxf
+          JOIN scintela.cheque  c ON c.id_cheque  = cxf.id_cheque
+          LEFT JOIN scintela.factura f ON f.id_factura = cxf.id_fact
+         WHERE UPPER(TRIM(c.codigo_cli)) = %s
+         ORDER BY cxf.fechaing, cxf.id_chequexfact
+        """,
+        (cod,),
+    ) or []

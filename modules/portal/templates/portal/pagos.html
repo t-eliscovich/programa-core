@@ -8,10 +8,20 @@
 {% block seccion %}pagos{% endblock %}
 {% block contenido %}
 <h1 class="pag">Mis pagos</h1>
+{# Los devueltos aparte (dueña 09/09/2026: "mostrar en algún lugar cheques
+   protestados"). Siguen también en la lista de todos, rotulados. #}
+<div class="seg">
+  <a href="/mis-pagos" class="{{ 'on' if not filtro }}">Todos</a>
+  <a href="/mis-pagos?ver=devueltos" class="{{ 'on' if filtro == 'devueltos' }}">Devueltos ({{ n_devueltos }})</a>
+</div>
 {% for g in grupos %}
   <div class="mes"><span>{{ g.mes }}</span><span>{{ g.total|money_es }}</span></div>
   <div class="lista">{% for p in g["items"] %}{% include "portal/_fila_pago.html" %}{% endfor %}</div>
 {% else %}
+  {% if filtro == 'devueltos' %}
+  <div class="card vacio"><b>Ningún cheque devuelto</b>Todo lo que nos dejó se cobró o está por cobrarse.</div>
+  {% else %}
   <div class="card vacio"><b>Todavía no registramos pagos suyos</b>Cuando nos deje un cheque, un depósito o efectivo, aparece acá.</div>
+  {% endif %}
 {% endfor %}
 {% endblock %}
