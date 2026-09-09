@@ -578,3 +578,50 @@ def test_un_pedido_terminado_muestra_terminado(app, fake_db):
     body = r.get_data(as_text=True)
     assert "Terminado" in body
     assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón
+
+
+# ── acabado en el memo (2026-09-09) ─────────────────────────────────────────
+
+def test_el_memo_lleva_el_acabado_de_cada_linea():
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(service, "acabados_por_producto",
+                      return_value={"PI28NEG": "TUB"}):
+        m = service.armar_memo("PDCL-26401")
+    assert m["lineas"][0]["acabado"] == "TUB"
+    # Un producto sin acabado en Asinfo viaja con '' — nunca sin la clave.
+    assert all("acabado" in ln for ln in m["lineas"])
+
+
+def test_sin_acabado_de_asinfo_el_memo_igual_sale():
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(service, "acabados_por_producto", return_value={}):
+        m = service.armar_memo("PDCL-26401")
+    assert m is not None and m["lineas"][0]["acabado"] == ""
+
+
+def test_el_sync_completa_el_acabado_de_los_memos_viejos_en_silencio():
+    from modules.pedidos import memos_sync
+    memo = {"numero": "PDCL-1", "detalle": {"lineas": [{"producto": "JE35ACU", "cantidad": 5}]}}
+    res = {"silenciosos": []}
+    with patch.object(service, "acabados_por_producto", return_value={"JE35ACU": "ABI"}), \
+         patch.object(memos_sync.formulas_memos, "actualizar",
+                      return_value=(True, "")) as act:
+        memos_sync._completar_acabado(memo, res)
+    assert act.call_args.args[1]["lineas"][0]["acabado"] == "ABI"
+    assert act.call_args.args[2] is None  # sin alerta
+    assert res["silenciosos"] == ["PDCL-1"]
+
+
+def test_el_sync_no_toca_un_memo_que_ya_tiene_acabado_ni_uno_sin_dato():
+    from modules.pedidos import memos_sync
+    ya = {"numero": "PDCL-2", "detalle": {"lineas": [{"producto": "X", "acabado": ""}]}}
+    sin = {"numero": "PDCL-3", "detalle": {"lineas": [{"producto": "X"}]}}
+    with patch.object(service, "acabados_por_producto", return_value={}), \
+         patch.object(memos_sync.formulas_memos, "actualizar") as act:
+        memos_sync._completar_acabado(ya, {"silenciosos": []})
+        memos_sync._completar_acabado(sin, {"silenciosos": []})
+    assert not act.called

@@ -161,10 +161,12 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
         numero = str(m["numero"]).strip().upper()
         sello = mods.get(numero)
         if not sello:
+            _completar_acabado(m, res)
             continue
         mod_ec, quien = sello
         viejo = m.get("detalle") or {}
         if viejo.get("asinfo_modificado") == mod_ec:
+            _completar_acabado(m, res)
             continue  # esta edición ya se procesó
         mod_utc = _a_utc(mod_ec)
         enviado = m.get("enviado_en")
@@ -204,6 +206,25 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
             continue
         (res["actualizados"] if cambio else res["silenciosos"]).append(numero)
     return res
+
+
+def _completar_acabado(m: dict, res: dict) -> None:
+    """Memos mandados ANTES de que la foto llevara `acabado` (09/09): se les
+    completa una vez, en silencio (no es un cambio del pedido, no hay alerta).
+    Si Asinfo no da el acabado, no se toca nada y se reintenta en la próxima
+    pasada."""
+    from modules.pedidos import service
+    viejo = m.get("detalle") or {}
+    lineas = viejo.get("lineas") or []
+    if not lineas or all("acabado" in ln for ln in lineas):
+        return
+    nuevas = service.lineas_con_acabado(lineas)
+    if not any(ln.get("acabado") for ln in nuevas):
+        return
+    numero = str(m["numero"]).strip().upper()
+    ok_upd, _ = formulas_memos.actualizar(numero, dict(viejo, lineas=nuevas), None, "")
+    if ok_upd:
+        res["silenciosos"].append(numero)
 
 
 def correr_si_toca() -> dict:

@@ -1044,9 +1044,19 @@ def armar_memo(numero: str) -> dict | None:
         "vendedor": {"codigo": p["dueno"]["codigo"],
                      "nombre": p["dueno"]["nombre"]},
         "descripcion": p["descripcion"],
-        "lineas": p["lineas"],
+        "lineas": lineas_con_acabado(p["lineas"]),
         "total_kg": p["total_kg"] if p["kg_completo"] else None,
     }
+
+
+def lineas_con_acabado(lineas: list[dict]) -> list[dict]:
+    """Las líneas del memo con su `acabado` (TUB / ABI) por producto —
+    dueña 09/09: la fábrica lo necesita ver en el memo. Sale del mismo
+    atributo del producto terminado que usa /pedidos (`acabados_por_producto`,
+    fail-soft: '' si Asinfo no lo da). Copia las líneas, no las pisa."""
+    m = acabados_por_producto()
+    return [dict(ln, acabado=m.get(ln.get("producto") or "", ""))
+            for ln in lineas]
 
 
 def etiqueta_dueno(dueno: dict) -> str:
