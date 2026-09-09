@@ -86,7 +86,16 @@
   }
 
   function detectType(value) {
-    if (value == null || value === '' || value === '—') return null;
+    // TMT 2026-09-09 (dueña, en la traza: "los de abajo tampoco, lo de
+    // facturas, banco"): una celda VACÍA del template trae saltos de línea y
+    // espacios, no ''. Sin el trim contaba como TEXTO, y en una columna donde
+    // la mayoría de las celdas están vacías (Fac., Bco., Chq.…) cinco
+    // muestras de "texto" ganaban y los números se ordenaban como palabras:
+    // +1.596, +12.455, +165. Al segundo click ya había números arriba y
+    // ordenaba bien — por eso parecía que "a veces" andaba.
+    if (value == null) return null;
+    value = String(value).trim();
+    if (value === '' || value === '—') return null;
     if (!isNaN(parseDate(value))) return 'date';
     if (!isNaN(parseNumber(value))) return 'number';
     return 'text';
