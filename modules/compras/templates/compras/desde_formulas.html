@@ -91,7 +91,7 @@
         <tbody>
           {% for f in est.filas %}
           <tr class="border-b border-slate-100 {% if f.estado == 'pendiente' %}bg-amber-50{% elif f.estado in ('sin_mapear', 'sin_numero') %}bg-rose-50{% elif f.ajustable %}bg-sky-50{% endif %}">
-            <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
+            <td class="py-1.5 pr-3">{{ f.fecha | fecha_es or '—' }}</td>
             <td class="py-1.5 pr-3">{{ f.proveedor_formulas }}</td>
             <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or '—' }}
               {% if f.prov_origen == 'nuevo' %}

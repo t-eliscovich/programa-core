@@ -66,10 +66,10 @@
         {% for o in tintura_ordenes %}
           <tr class="border-t border-slate-100 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30">
             <td class="px-3 py-2 font-mono text-xs" style="white-space:nowrap">{{ o.numero }}</td>
-            <td class="px-3 py-2 text-xs">{{ o.fecha.isoformat() if o.fecha else '—' }}</td>
+            <td class="px-3 py-2 text-xs">{{ o.fecha | fecha_es if o.fecha else '—' }}</td>
             <td class="px-3 py-2 text-xs">
               {% if o.fecha_terminado %}
-                {{ o.fecha_terminado.isoformat() }}
+                {{ o.fecha_terminado | fecha_es }}
               {% else %}
                 <span class="text-slate-400">en curso</span>
               {% endif %}
@@ -126,7 +126,7 @@
             <td class="px-3 py-2">{{ s.nombre }}</td>
             <td class="px-3 py-2 text-right text-mono">{{ s.stock_kg | num_es(2) }}</td>
             <td class="px-3 py-2 text-xs">
-              {{ s.fecha_lectura.isoformat() if s.fecha_lectura else '—' }}
+              {{ s.fecha_lectura | fecha_hora_es if s.fecha_lectura else '—' }}
             </td>
             <td class="px-3 py-2 text-right text-mono">$ {{ s.precio_us | num_es(4) }}</td>
             <td class="px-3 py-2 text-xs text-slate-500" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
@@ -167,7 +167,7 @@
   </form>
 
   <h3 class="text-sm uppercase tracking-wide text-slate-500 mb-2">
-    Totales por tipo en el rango {{ fecha_desde.isoformat() }} → {{ fecha_hasta.isoformat() }}
+    Totales por tipo en el rango {{ fecha_desde | fecha_es }} → {{ fecha_hasta | fecha_es }}
   </h3>
   <div class="overflow-x-auto rounded-lg border border-slate-200 dark:border-slate-800 mb-8">
     <table class="w-full text-sm">
@@ -243,7 +243,7 @@
                 {% endif %}">
               {{ r.tipo }}
             </td>
-            <td class="px-3 py-2 text-xs">{{ r.fecha }}</td>
+            <td class="px-3 py-2 text-xs">{{ r.fecha | fecha_es }}</td>
             <td class="px-3 py-2 text-xs font-mono" style="white-space:nowrap">{{ r.numero }}</td>
             <td class="px-3 py-2 text-xs">{{ r.cliente_codigo or '—' }}</td>
             <td class="px-3 py-2 text-xs text-slate-500">{{ r.vendedor or '—' }}</td>

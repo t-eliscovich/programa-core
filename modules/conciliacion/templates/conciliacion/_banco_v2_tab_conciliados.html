@@ -14,7 +14,7 @@
         <strong class="text-sm">Conciliados en esta sesión</strong>
         <span class="text-xs text-slate-500 ml-2">
           {{ matches_sesion|length }} match{% if matches_sesion|length != 1 %}es{% endif %}
-          desde {{ sesion.abierta_en|hora_ec('%Y-%m-%d %H:%M') if sesion.abierta_en else '—' }}
+          desde {{ sesion.abierta_en|hora_ec('%d/%m/%Y %H:%M') if sesion.abierta_en else '—' }}
         </span>
         <a href="{{ url_for('conciliacion.banco_relink_huerfanos') }}"
            class="no-print text-xs text-sky-600 hover:underline ml-2"
@@ -363,7 +363,7 @@
             <td class="px-2 py-1 font-mono text-[10px] text-slate-500 whitespace-nowrap">{{ g.fecha or '—' }}</td>
             <td class="px-2 py-1 truncate max-w-[240px]" title="{{ g.concepto }}">{{ g.concepto or '—' }}</td>
             <td class="px-2 py-1 text-right font-mono whitespace-nowrap">{{ ('+' if ((g.prog_total) or 0) >= 0 else '-') ~ (((g.prog_total) or 0)|abs|num_es) }}</td>
-            <td class="px-2 py-1 text-[10px] text-slate-500 whitespace-nowrap" title="Deshecho {{ g.deshecho_en|hora_ec('%Y-%m-%d %H:%M') if g.deshecho_en else '' }}">{{ g.deshecho_por or '—' }}</td>
+            <td class="px-2 py-1 text-[10px] text-slate-500 whitespace-nowrap" title="Deshecho {{ g.deshecho_en|hora_ec('%d/%m/%Y %H:%M') if g.deshecho_en else '' }}">{{ g.deshecho_por or '—' }}</td>
             <td class="px-2 py-1 text-right">
               <form method="POST" action="{{ url_for('conciliacion.banco_rehacer') }}" class="inline m-0"
                     onsubmit="return confirm('Rehacer esta conciliación ({{ g.n }} match{% if g.n != 1 %}es{% endif %})? Se restaura tal como estaba.');">

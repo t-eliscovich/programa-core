@@ -56,7 +56,7 @@
             <tbody>
               {% for f in m.filas %}
               <tr class="border-b border-slate-100">
-                <td class="py-1.5 pr-3">{{ f.fecha or '—' }}</td>
+                <td class="py-1.5 pr-3">{{ f.fecha | fecha_es or '—' }}</td>
                 <td class="py-1.5 pr-3 font-medium">{{ f.proveedor_pc or f.proveedor_formulas }}</td>
                 <td class="py-1.5 pr-3">{{ f.factura_pc or f.factura_formulas or '—' }}</td>
                 <td class="py-1.5 pr-3 text-right">{{ f.kg | num_es }}</td>

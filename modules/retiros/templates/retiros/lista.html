@@ -30,8 +30,8 @@
     </div>
     <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
       <div class="text-xs text-sky-700 uppercase tracking-wide">Periodo</div>
-      <div class="text-sm text-sky-900 text-right">{{ resumen.desde or '—' }}</div>
-      <div class="text-xs text-sky-700 text-right">a {{ resumen.hasta or '—' }}</div>
+      <div class="text-sm text-sky-900 text-right">{{ resumen.desde | fecha_es or '—' }}</div>
+      <div class="text-xs text-sky-700 text-right">a {{ resumen.hasta | fecha_es or '—' }}</div>
     </div>
   </div>
 

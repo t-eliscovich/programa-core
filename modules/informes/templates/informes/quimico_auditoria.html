@@ -88,7 +88,7 @@
             <td class="l">{{ f.nombre }}{% if f.a44 %} <span class="chip">/10</span>{% endif %}</td>
             <td class="l">{% if f.familia %}<span class="chip">{{ f.familia }}</span>{% endif %}</td>
             <td>{{ f.conteo_q | num_es(1) }}</td>
-            <td class="l muted">{{ f.conteo_f or '—' }}</td>
+            <td class="l muted">{{ f.conteo_f | fecha_es or '—' }}</td>
             <td class="{% if not f.comp_q %}muted{% endif %}">{{ f.comp_q | num_es(1) if f.comp_q else '—' }}</td>
             <td class="{% if not f.aju_q %}muted{% endif %}{% if f.aju_q < 0 %} neg{% endif %}">{{ f.aju_q | num_es(1) if f.aju_q else '—' }}</td>
             <td class="{% if not f.cons_q %}muted{% endif %}">{{ f.cons_q | num_es(1) if f.cons_q else '—' }}</td>

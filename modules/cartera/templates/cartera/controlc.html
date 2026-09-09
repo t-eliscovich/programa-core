@@ -52,7 +52,7 @@
   {% if fecha_snapshot %}
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
       <div class="rounded-lg bg-sky-50 border border-sky-200 px-4 py-3">
-        <div class="text-xs text-sky-700 uppercase tracking-wide">Saldo snapshot ({{ fecha_snapshot }})</div>
+        <div class="text-xs text-sky-700 uppercase tracking-wide">Saldo snapshot ({{ fecha_snapshot | fecha_es }})</div>
         <div class="text-lg font-semibold text-right tabular-nums">{{ totales.saldo_snapshot | num_es }}</div>
       </div>
       <div class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3">

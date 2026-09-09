@@ -31,10 +31,10 @@
         {% for s in sesiones %}
         <tr class="border-t border-slate-100 dark:border-slate-800 {% if not s.cerrada_en %}bg-emerald-50/30 dark:bg-emerald-900/10{% endif %}">
           <td class="px-3 py-1.5 font-mono">#{{ s.id }}</td>
-          <td class="px-3 py-1.5 text-slate-500">{{ s.abierta_en|hora_ec('%Y-%m-%d %H:%M') if s.abierta_en else '—' }}</td>
+          <td class="px-3 py-1.5 text-slate-500">{{ s.abierta_en|hora_ec('%d/%m/%Y %H:%M') if s.abierta_en else '—' }}</td>
           <td class="px-3 py-1.5">
             {% if s.cerrada_en %}
-              <span class="text-slate-500">cerrada {{ s.cerrada_en|hora_ec('%Y-%m-%d %H:%M') }}</span>
+              <span class="text-slate-500">cerrada {{ s.cerrada_en|hora_ec('%d/%m/%Y %H:%M') }}</span>
             {% else %}
               <span class="text-emerald-700 font-semibold">activa</span>
             {% endif %}

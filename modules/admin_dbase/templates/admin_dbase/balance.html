@@ -205,7 +205,7 @@
       <tbody>
         {% for m in resultado.faltantes_banco_en_pc[:200] %}
         <tr class="border-t border-slate-100 dark:border-slate-800">
-          <td class="px-3 py-1">{{ m.fecha.isoformat() }}</td>
+          <td class="px-3 py-1">{{ m.fecha | fecha_es }}</td>
           <td class="px-3 py-1 {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ m.tipo }}</td>
           <td class="px-3 py-1 font-mono text-slate-500">{{ m.documento }}</td>
           <td class="px-3 py-1 text-slate-600">{{ m.categoria }}</td>
@@ -254,7 +254,7 @@
       <tbody>
         {% for m in resultado.faltantes_pc_en_banco[:200] %}
         <tr class="border-t border-slate-100 dark:border-slate-800">
-          <td class="px-3 py-1">{{ m.fecha.isoformat() if m.fecha else '' }}</td>
+          <td class="px-3 py-1">{{ m.fecha | fecha_es if m.fecha else '' }}</td>
           <td class="px-3 py-1 font-mono">{{ m.documento }}</td>
           <td class="px-3 py-1 {% if m.tipo == 'C' %}text-emerald-700{% else %}text-rose-700{% endif %}">{{ m.tipo }}</td>
           <td class="px-3 py-1 text-slate-700 dark:text-slate-300">{{ m.concepto }}</td>

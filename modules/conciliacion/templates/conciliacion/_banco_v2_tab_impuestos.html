@@ -61,7 +61,7 @@
                      data-sig="{{ (m.fecha.isoformat() if m.fecha else '') }}|{{ m.documento or '' }}|{{ '%.2f'|format(m.monto|float) }}|{{ m.tipo or '' }}"
                      class="accent-amber-600">
             </td>
-            <td class="px-2 py-1 text-slate-500">{{ m.fecha.strftime('%Y-%m-%d') if m.fecha else '—' }}</td>
+            <td class="px-2 py-1 text-slate-500">{{ m.fecha | fecha_es if m.fecha else '—' }}</td>
             <td class="px-2 py-1">
               {% if m.tipo == 'C' %}<span class="text-emerald-700 font-bold">+</span>{% else %}<span class="text-rose-700 font-bold">−</span>{% endif %}
             </td>

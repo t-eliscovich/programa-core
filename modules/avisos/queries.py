@@ -222,7 +222,7 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
                    TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
                            'DD/MM HH24:MI') AS cuando,
                    TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
-                           'YYYY-MM-DD HH24:MI') AS creado_en
+                           'DD/MM/YYYY HH24:MI') AS creado_en
               FROM scintela.aviso
              {'''LEFT JOIN scintela.aviso_leido al
                          ON al.id_aviso = aviso.id_aviso

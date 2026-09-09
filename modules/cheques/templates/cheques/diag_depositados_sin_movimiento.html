@@ -51,7 +51,7 @@
           <td class="px-2 py-1 text-center font-mono">{{ f.stat }}</td>
           <td class="px-2 py-1 text-right font-mono">{{ f.no_banco if f.no_banco is not none else '—' }}</td>
           <td class="px-2 py-1">{{ f.banco or '—' }}</td>
-          <td class="px-2 py-1">{{ f.fecha.strftime('%Y-%m-%d') if f.fecha else '—' }}</td>
+          <td class="px-2 py-1">{{ f.fecha | fecha_es if f.fecha else '—' }}</td>
           <td class="px-2 py-1">{{ f.usuario_crea or '—' }}</td>
         </tr>
         {% endfor %}
