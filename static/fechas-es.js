@@ -29,10 +29,33 @@
     return m ? m[3] + '/' + m[2] + '/' + m[1] : '';
   }
 
+  // Lo que se puede escribir (Andrés, 09/09/2026: "debo tipear toda la fecha,
+  // antes el cursor solo pasaba al día, luego al mes y luego al año"):
+  //   15          → el 15 de este mes
+  //   15/10, 1510 → el 15 de octubre de este año
+  //   15/10/26, 151026, 15102026, 15.10.2026, 15-10-2026 → completo
+  // Las barras se ponen solas al escribir seguido (ver autoBarras).
   function aIso(texto) {
-    var t = (texto || '').trim();
-    var m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/.exec(t) ||
-            (/^\d{8}$/.test(t) ? [t, t.slice(0, 2), t.slice(2, 4), t.slice(4)] : null);
+    var t = (texto || '').trim().replace(/[\/.\-]+$/, '');  // "15/" es "15"
+    var hoy = new Date();
+    var m = /^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{2}|\d{4})$/.exec(t);
+    if (!m) {
+      var p = /^(\d{1,2})[\/.\-](\d{1,2})$/.exec(t);
+      if (p) m = [t, p[1], p[2], String(hoy.getFullYear())];
+    }
+    if (!m) {
+      var q = /^(\d{1,2})$/.exec(t);
+      if (q) m = [t, q[1], String(hoy.getMonth() + 1), String(hoy.getFullYear())];
+    }
+    if (!m && /^\d+$/.test(t)) {
+      var n = t.length;
+      if (n === 8) m = [t, t.slice(0, 2), t.slice(2, 4), t.slice(4)];
+      else if (n === 7) m = [t, t.slice(0, 1), t.slice(1, 3), t.slice(3)];
+      else if (n === 6) m = [t, t.slice(0, 2), t.slice(2, 4), t.slice(4)];
+      else if (n === 5) m = [t, t.slice(0, 1), t.slice(1, 3), t.slice(3)];
+      else if (n === 4) m = [t, t.slice(0, 2), t.slice(2, 4), String(hoy.getFullYear())];
+      else if (n === 3) m = [t, t.slice(0, 1), t.slice(1, 3), String(hoy.getFullYear())];
+    }
     if (!m) return null;
     var d = parseInt(m[1], 10), mo = parseInt(m[2], 10), a = parseInt(m[3], 10);
     if (m[3].length === 2) a += 2000;
@@ -42,8 +65,16 @@
     return a + '-' + (mo < 10 ? '0' : '') + mo + '-' + (d < 10 ? '0' : '') + d;
   }
 
+  var disparando = false;  // los eventos que YO le mando al nativo
   function disparar(el, tipo) {
-    el.dispatchEvent(new Event(tipo, { bubbles: true }));
+    disparando = true;
+    try { el.dispatchEvent(new Event(tipo, { bubbles: true })); } finally { disparando = false; }
+  }
+  // Mientras se escribe, sólo cuenta lo que ya trae AÑO; "15" recién se
+  // vuelve "el 15 de este mes" al salir del campo (change).
+  function completa(texto) {
+    var t = (texto || '').trim();
+    return /^\d{1,2}[\/.\-]\d{1,2}[\/.\-](\d{4})$/.test(t) || /^\d{7,8}$/.test(t);
   }
 
   // Los vestidos VIVOS (con sus listeners). Un WeakSet y no un atributo: un
@@ -153,6 +184,7 @@
         if (orig.value !== '') { orig.value = ''; disparar(orig, 'input'); if (tipo === 'change') disparar(orig, 'change'); }
         return;
       }
+      if (tipo === 'input' && !completa(t)) return;
       var iso = aIso(t);
       if (!iso) {
         // Se avisa al salir del campo, no en cada tecla.
@@ -177,7 +209,32 @@
         disparar(orig, 'change');
       }
     }
-    texto.addEventListener('input', function () { llevarAlNativo('input'); });
+    // Las barras se escriben solas: "15" → "15/", "15/10" → "15/10/". Sólo
+    // cuando se está escribiendo al final (no al borrar ni al editar en el
+    // medio), para que Backspace siga borrando de a uno.
+    var largoAnterior = texto.value.length;
+    function autoBarras() {
+      var v = texto.value;
+      if (/\/\//.test(v)) {  // la barra que puso el usuario sobre la automática
+        texto.value = v = v.replace(/\/{2,}/g, '/');
+      }
+      var alFinal = texto.selectionStart === v.length;
+      var creciendo = v.length > largoAnterior;
+      largoAnterior = v.length;
+      if (!alFinal || !creciendo) return;
+      // Igual que el nativo: un día que empieza en 4..9 o un mes que empieza
+      // en 2..9 ya están completos con un dígito (no hay día 40 ni mes 20).
+      if (/^\d{2}$/.test(v) || /^[4-9]$/.test(v) ||
+          /^\d{1,2}\/\d{2}$/.test(v) || /^\d{1,2}\/[2-9]$/.test(v)) {
+        texto.value = v + '/';
+        largoAnterior = texto.value.length;
+      }
+    }
+    texto.addEventListener('input', function () { autoBarras(); llevarAlNativo('input'); });
+    // Al entrar queda todo seleccionado: escribir reemplaza, como en el nativo.
+    texto.addEventListener('focus', function () {
+      setTimeout(function () { try { texto.select(); } catch (e) { /* nada */ } }, 0);
+    });
     texto.addEventListener('change', function () { llevarAlNativo('change'); });
     texto.addEventListener('keydown', function (ev) {
       if (ev.key === 'Enter' && texto.form && aIso(texto.value) === null && texto.value.trim() !== '') {
@@ -185,8 +242,8 @@
       }
     });
     // Lo que se elige en el calendario (o que otro JS escribe con change).
-    orig.addEventListener('input', function () { texto.value = aEs(orig.value); texto.setCustomValidity(''); });
-    orig.addEventListener('change', function () { texto.value = aEs(orig.value); texto.setCustomValidity(''); });
+    orig.addEventListener('input', function () { if (!disparando) { texto.value = aEs(orig.value); texto.setCustomValidity(''); } });
+    orig.addEventListener('change', function () { if (!disparando) { texto.value = aEs(orig.value); texto.setCustomValidity(''); } });
     // Un form.reset() vuelve el nativo a su valor inicial; el texto lo sigue.
     if (texto.form) texto.form.addEventListener('reset', function () {
       setTimeout(function () { texto.value = aEs(orig.value); }, 0);
