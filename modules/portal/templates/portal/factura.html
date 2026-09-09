@@ -27,13 +27,10 @@
   <p class="prox">Pagada con {{ pagada_con|join(' y ') }}</p>
   {% endif %}
 </div>
-{% if f.numf_completo %}
-<div style="display:flex;gap:8px;margin-bottom:12px">
-  {% if pdf_disponible() %}
-  <a class="btn" style="flex:1" href="/factura/{{ f.numf }}.pdf?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar factura (PDF)</a>
-  {% endif %}
-  <a class="btn sec" style="flex:1" href="/factura/{{ f.numf }}/papel?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}" target="_blank" rel="noopener">Ver la factura</a>
-</div>
+{# Sólo el PDF, chico (dueña 09/09: "ver factura eliminar, no nos sirve;
+   el descargar no tiene que ser gigante"). #}
+{% if f.numf_completo and pdf_disponible() %}
+<p style="margin:0 0 12px"><a class="btn sec chico" href="/factura/{{ f.numf }}.pdf?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar factura (PDF)</a></p>
 {% endif %}
 <div class="card">
   <h2 style="margin:0 0 8px">{{ det.titulo }}
