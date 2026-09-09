@@ -13,6 +13,14 @@
  * nativo (showPicker). Escribir en el texto actualiza el escondido y le
  * dispara `input`/`change`; elegir en el calendario actualiza el texto.
  *
+ * El cuadro de texto se maneja POR SEGMENTOS, como el nativo (dueña
+ * 09/09/2026: "el cursor debe seleccionar primero el día, luego el mes, luego
+ * el año"): al entrar queda marcado el día; se escriben dos dígitos (o uno
+ * que ya alcanza: día 4-9, mes 2-9) y pasa solo al mes, después al año.
+ * Flechas ← → cambian de segmento, ↑ ↓ suben y bajan el valor, Backspace
+ * vacía el segmento y vuelve al anterior, y "/" también avanza. Al salir, un
+ * día sin mes ni año es el día de este mes; un año de dos cifras es 20xx.
+ *
  * Para dejar un input como estaba: data-nativo.
  */
 (function fechasEs() {
@@ -34,7 +42,8 @@
   //   15          → el 15 de este mes
   //   15/10, 1510 → el 15 de octubre de este año
   //   15/10/26, 151026, 15102026, 15.10.2026, 15-10-2026 → completo
-  // Las barras se ponen solas al escribir seguido (ver autoBarras).
+  // (Eso es lo que se acepta pegado o escrito de corrido; tipeando, el cuadro
+  // va por segmentos: ver más abajo.)
   function aIso(texto) {
     var t = (texto || '').trim().replace(/[\/.\-]+$/, '');  // "15/" es "15"
     var hoy = new Date();
@@ -177,8 +186,8 @@
     caja.appendChild(orig);
     if (boton) caja.appendChild(boton);
 
-    function llevarAlNativo(tipo) {
-      var t = texto.value.trim();
+    function llevarAlNativo(tipo, t) {
+      t = (t === undefined ? texto.value : t).trim();
       if (t === '') {
         texto.setCustomValidity('');
         if (orig.value !== '') { orig.value = ''; disparar(orig, 'input'); if (tipo === 'change') disparar(orig, 'change'); }
@@ -188,7 +197,11 @@
       var iso = aIso(t);
       if (!iso) {
         // Se avisa al salir del campo, no en cada tecla.
-        if (tipo === 'change') texto.setCustomValidity('La fecha va día/mes/año: dd/mm/aaaa');
+        if (tipo === 'change') {
+          texto.setCustomValidity(/^\d{1,2}[\/.\-]\d{1,2}[\/.\-]\d{4}$/.test(t)
+            ? 'Esa fecha no existe: ' + t
+            : 'La fecha va día/mes/año: dd/mm/aaaa');
+        }
         return;
       }
       if (minIso && iso < minIso) {
@@ -209,38 +222,162 @@
         disparar(orig, 'change');
       }
     }
-    // Las barras se escriben solas: "15" → "15/", "15/10" → "15/10/". Sólo
-    // cuando se está escribiendo al final (no al borrar ni al editar en el
-    // medio), para que Backspace siga borrando de a uno.
-    var largoAnterior = texto.value.length;
-    function autoBarras() {
+
+    // ---- Los tres segmentos: día [0,2) · mes [3,5) · año [6,10) ----------
+    // Mientras el cuadro tiene el foco su valor SIEMPRE tiene la forma
+    // dd/mm/aaaa, con "dd", "mm", "aaaa" en lo que falta. Lo que se tipea
+    // reemplaza el segmento marcado; no hay cursor libre.
+    var SEG = [[0, 2, 'dd'], [3, 5, 'mm'], [6, 10, 'aaaa']];
+    var seg = 0, buf = '', porMouse = false;
+
+    function partes() {
       var v = texto.value;
-      if (/\/\//.test(v)) {  // la barra que puso el usuario sobre la automática
-        texto.value = v = v.replace(/\/{2,}/g, '/');
-      }
-      var alFinal = texto.selectionStart === v.length;
-      var creciendo = v.length > largoAnterior;
-      largoAnterior = v.length;
-      if (!alFinal || !creciendo) return;
-      // Igual que el nativo: un día que empieza en 4..9 o un mes que empieza
-      // en 2..9 ya están completos con un dígito (no hay día 40 ni mes 20).
-      if (/^\d{2}$/.test(v) || /^[4-9]$/.test(v) ||
-          /^\d{1,2}\/\d{2}$/.test(v) || /^\d{1,2}\/[2-9]$/.test(v)) {
-        texto.value = v + '/';
-        largoAnterior = texto.value.length;
-      }
+      if (/^.{2}\/.{2}\/.{4}$/.test(v)) return [v.slice(0, 2), v.slice(3, 5), v.slice(6, 10)];
+      var iso = aIso(v);
+      if (iso) { var e = aEs(iso); return [e.slice(0, 2), e.slice(3, 5), e.slice(6)]; }
+      return ['dd', 'mm', 'aaaa'];
     }
-    texto.addEventListener('input', function () { autoBarras(); llevarAlNativo('input'); });
-    // Al entrar queda todo seleccionado: escribir reemplaza, como en el nativo.
-    texto.addEventListener('focus', function () {
-      setTimeout(function () { try { texto.select(); } catch (e) { /* nada */ } }, 0);
-    });
-    texto.addEventListener('change', function () { llevarAlNativo('change'); });
-    texto.addEventListener('keydown', function (ev) {
-      if (ev.key === 'Enter' && texto.form && aIso(texto.value) === null && texto.value.trim() !== '') {
-        ev.preventDefault(); llevarAlNativo('change'); texto.reportValidity();
+    function mostrar(p) { texto.value = p[0] + '/' + p[1] + '/' + p[2]; }
+    function marcar(i) {
+      seg = i;
+      try { texto.setSelectionRange(SEG[i][0], SEG[i][1]); } catch (e) { /* sin foco */ }
+    }
+    function elegir(i) { buf = ''; marcar(i); }
+    function vacio(p, i) { return p[i] === SEG[i][2]; }
+    // Lo escrito, como texto suelto: '' si no hay nada; con el mes y el año
+    // de hoy si sólo se puso el día (Andrés, 09/09: "15" es el 15 de este mes).
+    function textoDe(p) {
+      if (vacio(p, 0) && vacio(p, 1) && vacio(p, 2)) return '';
+      if (vacio(p, 0)) return p.join('/');  // sin día no hay fecha: que avise
+      var hoy = new Date();
+      var mes = vacio(p, 1) ? String(hoy.getMonth() + 1) : p[1];
+      var anio = vacio(p, 2) ? String(hoy.getFullYear()) : p[2];
+      if (/^\d{4}$/.test(anio) && parseInt(anio, 10) < 100) anio = String(2000 + parseInt(anio, 10));
+      return p[0] + '/' + mes + '/' + anio;
+    }
+    function sincronizar(tipo) {
+      var p = partes();
+      var t = textoDe(p);
+      if (tipo === 'input') {
+        // Mientras se escribe sólo cuenta lo completo (o lo vacío): un año a
+        // medio tipear ("0202" camino a 2026) no se manda al nativo.
+        var anioListo = /^\d{4}$/.test(p[2]) && parseInt(p[2], 10) >= 1000;
+        if (t === '' || !(vacio(p, 1) || vacio(p, 2)) && anioListo) llevarAlNativo('input', t);
+        return;
       }
-    });
+      llevarAlNativo('change', t);
+      if (t === '') texto.value = '';
+    }
+    function digito(d) {
+      var p = partes(), i = seg;
+      if (i < 2) {
+        var tope = i === 0 ? 31 : 12;
+        buf = (buf + d).slice(-2);
+        if (parseInt(buf, 10) > tope) buf = d;     // "35" no es un día: empieza de nuevo
+        p[i] = ('0' + buf).slice(-2);
+        mostrar(p);
+        var n = parseInt(buf, 10);
+        // Igual que el nativo: un día que empieza en 4..9 o un mes que
+        // empieza en 2..9 ya están completos con un dígito.
+        var lleno = buf.length === 2 || (i === 0 ? n >= 4 : n >= 2);
+        if (lleno) elegir(i + 1); else marcar(i);
+      } else {
+        buf = (buf + d).slice(-4);
+        p[2] = ('0000' + buf).slice(-4);
+        mostrar(p);
+        marcar(2);
+      }
+      sincronizar('input');
+    }
+    function borrar() {
+      var p = partes();
+      if (vacio(p, seg)) {
+        if (seg > 0) elegir(seg - 1);
+        return;
+      }
+      p[seg] = SEG[seg][2];
+      mostrar(p);
+      elegir(seg);
+      sincronizar('input');
+    }
+    function avanzar() { if (seg < 2) elegir(seg + 1); }
+    function retroceder() { if (seg > 0) elegir(seg - 1); }
+    function subir(paso) {
+      var p = partes(), hoy = new Date();
+      var n = vacio(p, seg) ? [hoy.getDate(), hoy.getMonth() + 1, hoy.getFullYear()][seg]
+                            : parseInt(p[seg], 10);
+      n += paso;
+      if (seg === 0) n = n < 1 ? 31 : n > 31 ? 1 : n;
+      else if (seg === 1) n = n < 1 ? 12 : n > 12 ? 1 : n;
+      p[seg] = seg === 2 ? ('0000' + n).slice(-4) : ('0' + n).slice(-2);
+      mostrar(p);
+      elegir(seg);
+      sincronizar('input');
+    }
+    function segmentoDelCursor() {
+      var c = texto.selectionStart || 0;
+      return c <= 2 ? 0 : c <= 5 ? 1 : 2;
+    }
+
+    if (!texto.disabled && !texto.readOnly) {
+      var estabaVacio = false;
+      texto.addEventListener('mousedown', function () { porMouse = true; estabaVacio = texto.value.trim() === ''; });
+      texto.addEventListener('focus', function () {
+        mostrar(partes());
+        if (porMouse) return;  // el clic elige el segmento
+        // Con Tab, Chrome marca todo el cuadro DESPUÉS del focus: se vuelve a
+        // marcar el día un instante más tarde.
+        elegir(0);
+        setTimeout(function () { if (document.activeElement === texto) elegir(0); }, 0);
+      });
+      texto.addEventListener('click', function () {
+        porMouse = false;
+        mostrar(partes());
+        // En un cuadro vacío el clic cae al final (después de "aaaa"):
+        // igual se empieza por el día.
+        elegir(estabaVacio ? 0 : segmentoDelCursor());
+        estabaVacio = false;
+      });
+      // Los dígitos entran por beforeinput y no por keydown: en el celular
+      // (Android) keydown viene como "Unidentified" y lo único que trae la
+      // tecla es beforeinput.
+      texto.addEventListener('beforeinput', function (ev) {
+        var tipo = ev.inputType || '';
+        if (tipo === 'insertText' && /^\d$/.test(ev.data || '')) { ev.preventDefault(); digito(ev.data); }
+        else if (tipo === 'insertText' && /^[\/.\-\s]$/.test(ev.data || '')) { ev.preventDefault(); avanzar(); }
+        else if (tipo === 'deleteContentBackward' || tipo === 'deleteContentForward') { ev.preventDefault(); borrar(); }
+        else if (tipo === 'insertFromPaste') { /* lo atiende 'paste' */ }
+        else if (tipo.indexOf('insert') === 0 || tipo.indexOf('delete') === 0) ev.preventDefault();
+      });
+      texto.addEventListener('paste', function (ev) {
+        ev.preventDefault();
+        var cb = ev.clipboardData || window.clipboardData;
+        var iso = aIso(cb ? cb.getData('text') : '');
+        if (!iso) return;
+        texto.value = aEs(iso);
+        elegir(2);
+        sincronizar('input');
+      });
+      texto.addEventListener('keydown', function (ev) {
+        if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+        switch (ev.key) {
+          case 'ArrowRight': ev.preventDefault(); avanzar(); break;
+          case 'ArrowLeft': ev.preventDefault(); retroceder(); break;
+          case 'ArrowUp': ev.preventDefault(); subir(1); break;
+          case 'ArrowDown': ev.preventDefault(); subir(-1); break;
+          case 'Backspace': case 'Delete': ev.preventDefault(); borrar(); break;
+          case 'Enter':
+            sincronizar('change');
+            if (texto.value.trim() !== '' && aIso(texto.value) === null) { ev.preventDefault(); texto.reportValidity(); }
+            break;
+          default: break;
+        }
+      });
+      texto.addEventListener('blur', function () { sincronizar('change'); });
+    }
+    // Lo que entra por otro camino (autocompletar, un JS que escribe el cuadro).
+    texto.addEventListener('input', function () { llevarAlNativo('input'); });
+    texto.addEventListener('change', function () { llevarAlNativo('change'); });
     // Lo que se elige en el calendario (o que otro JS escribe con change).
     orig.addEventListener('input', function () { if (!disparando) { texto.value = aEs(orig.value); texto.setCustomValidity(''); } });
     orig.addEventListener('change', function () { if (!disparando) { texto.value = aEs(orig.value); texto.setCustomValidity(''); } });
