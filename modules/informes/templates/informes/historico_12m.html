@@ -214,8 +214,11 @@
       <div>
         <label class="block text-xs text-slate-500 mb-1">Mes A (referencia)</label>
         <div class="flex gap-2">
+          {# Federico 2026-09-09 — años DISTINTOS (últimos 10 hasta el año en
+             curso). Antes se iteraba meses_disponibles (año, mes) y cada año
+             salía repetido hasta 12 veces. #}
           <select name="a_a" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
-            {% for (a_, m_) in meses_disponibles %}
+            {% for a_ in anios_disponibles %}
               <option value="{{ a_ }}" {% if a_ == mom.par_a[0] %}selected{% endif %}>{{ a_ }}</option>
             {% endfor %}
           </select>
@@ -231,7 +234,7 @@
         <label class="block text-xs text-slate-500 mb-1">Mes B (actual)</label>
         <div class="flex gap-2">
           <select name="a_b" class="rounded border border-slate-300 bg-white px-2 py-1 text-sm">
-            {% for (a_, m_) in meses_disponibles %}
+            {% for a_ in anios_disponibles %}
               <option value="{{ a_ }}" {% if a_ == mom.par_b[0] %}selected{% endif %}>{{ a_ }}</option>
             {% endfor %}
           </select>

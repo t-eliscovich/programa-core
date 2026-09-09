@@ -1119,7 +1119,11 @@ def historico_12m():
     data: dict = {}
     mom: dict = {}
     snap_info: dict = {}
-    meses_disponibles: list[tuple[int, int]] = []
+    # Federico 2026-09-09 — el hint de AÑO del "mes vs mes" salía de la lista
+    # (año, mes) de snapshots, así que cada año aparecía repetido hasta 12
+    # veces. Ahora es una lista de años DISTINTOS: los últimos 10 hasta el año
+    # en curso (2026 → 2017), descendente.
+    anios_disponibles: list[int] = []
 
     if modo == "mom":
         # Defaults: comparar mes actual (b) vs mes anterior (a).
@@ -1141,9 +1145,16 @@ def historico_12m():
             prev_a -= 1
         a_a, m_a = _parse_par("a", prev_a, prev_m)
         a_b, m_b = _parse_par("b", mes_actual_a, mes_actual_m)
+        # Años del dropdown: últimos 10 hasta el año en curso, sin repetir.
+        # Si vino un año fuera de ese rango por URL, lo agregamos para que el
+        # <select> no pierda la selección.
+        anios_disponibles = list(range(hoy.year, hoy.year - 10, -1))
+        for _a in (a_a, a_b):
+            if _a not in anios_disponibles:
+                anios_disponibles.append(_a)
+        anios_disponibles = sorted(set(anios_disponibles), reverse=True)
         try:
             mom = queries.historico_mom(a_a, m_a, a_b, m_b)
-            meses_disponibles = queries.historico_meses_disponibles()
         except Exception as e:  # noqa: BLE001
             mom = {"par_a": (a_a, m_a), "par_b": (a_b, m_b), "lineas": [], "meses_sin_snap": []}
             error = str(e)
@@ -1191,7 +1202,7 @@ def historico_12m():
         data=data,
         mom=mom,
         modo=modo,
-        meses_disponibles=meses_disponibles,
+        anios_disponibles=anios_disponibles,
         error=error,
         snap_info=snap_info,
     )
