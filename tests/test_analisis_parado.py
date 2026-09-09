@@ -4843,3 +4843,31 @@ def test_una_fecha_de_pedido_ilegible_apaga_como_siempre():
     assert not queries._nacio_despues("ayer", date(2026, 8, 25))
     assert queries._nacio_despues("2026-09-07T00:00:00Z", date(2026, 8, 25))
     assert not queries._nacio_despues(date(2026, 8, 24), date(2026, 8, 25))
+
+
+def test_una_orden_anterior_a_la_largada_apaga_aunque_el_pedido_sea_nuevo(monkeypatch):
+    """Alemania AZN, 09/09/2026: pedido de 0,15 kg del 09/09 (no apaga) y una
+    orden de fabricación del 20/07 (sí: se seguía tejiendo antes de la
+    largada). Asinfo manda `produciendo = 0` cuando la tela está pedida, así
+    que la orden se mira por su fecha, no por la bandera."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Alemania", "color": "AZN", "stock_kg": 0,
+                  "stock_bodega": 248, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "ultimo_pedido": "2026-09-09T00:00:00Z",
+                  "produciendo": False, "ultima_orden": "2026-07-20T00:00:00Z",
+                  "entra": False}],
+        cohorte=[{"subcategoria": "Alemania", "color": "AZN",
+                  "fecha_marcado": date(2026, 8, 17), "motivo": "parado"}])
+    assert [p for _, p in db.sql_con("SET fuera = TRUE")] == [("Alemania", "AZN")]
+    # Una orden de hace más de 90 días ya no dice nada.
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Alemania", "color": "AZN", "stock_kg": 0,
+                  "stock_bodega": 248, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "ultimo_pedido": "2026-09-09T00:00:00Z",
+                  "produciendo": False, "ultima_orden": "2026-03-01T00:00:00Z",
+                  "entra": False}],
+        cohorte=[{"subcategoria": "Alemania", "color": "AZN",
+                  "fecha_marcado": date(2026, 8, 17), "motivo": "parado"}])
+    assert not db.sql_con("SET fuera = TRUE")

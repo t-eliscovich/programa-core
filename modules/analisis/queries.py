@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 import db
 from filters import today_ec
@@ -1152,6 +1152,7 @@ def actualizar() -> dict:
         # "nace" después: es el stock de hace 90 días, y se sigue mirando
         # igual.
         largada_f = date.fromisoformat(config("largada", "2026-08-25"))
+        corte_orden = hoy - timedelta(days=asinfo_parado.DIAS_PRODUCCION)
 
         def _descalifica(p: dict) -> bool:
             if p.get("nueva"):
@@ -1159,8 +1160,15 @@ def actualizar() -> dict:
             if p.get("pedida") and not _nacio_despues(
                     p.get("ultimo_pedido"), largada_f):
                 return True
-            return bool(p.get("produciendo") and not _nacio_despues(
-                p.get("ultima_orden"), largada_f))
+            # ⚠ La bandera `produciendo` de Asinfo viene en 0 cuando la tela
+            # está pedida (se cuentan aparte para la pantalla): si el pedido
+            # es nuevo y se ignora, la orden de ANTES de la largada tiene que
+            # seguir contando sola. Alemania AZN, 09/09/2026: pedido de 0,15
+            # kg del 09/09 (no apaga) y orden del 20/07 (sí apaga).
+            orden = p.get("ultima_orden")
+            orden_vigente = bool(p.get("produciendo")) or (
+                bool(orden) and _nacio_despues(orden, corte_orden))
+            return orden_vigente and not _nacio_despues(orden, largada_f)
 
         fuera = [p for p in todas
                  if not p.get("entra", True)
