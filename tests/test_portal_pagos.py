@@ -259,7 +259,8 @@ def test_cada_cheque_dice_que_facturas_pago(monkeypatch):
     html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0001840"),
                                    _cheque(id_cheque=2, no_cheque="0001841")])
     # En LISTA, una factura por renglón (dueña 09/09: "está todo en uno").
-    assert "<li>factura 183341 · 735,25</li>" in html and "<li>factura 183198 · 580,74</li>" in html
+    assert "<tr><td>183341</td><td class=\"n\">735,25</td></tr>" in html
+    assert "<tr><td>183198</td><td class=\"n\">580,74</td></tr>" in html
     # El otro cheque no pagó nada todavía: sin la lista.
     assert html.count('class="pago-facturas"') == 1
 

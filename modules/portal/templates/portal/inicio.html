@@ -14,36 +14,37 @@
     saldo con sus avisos, los cheques entregados, y el vendedor. #}
  <div class="resumen">
   <div class="card">
-    <div class="lbl">{{ 'Saldo a favor suyo' if _saldo < 0 else 'Su saldo con Intela' }}</div>
+    <div class="lbl">{{ 'A su favor' if _saldo < 0 else 'Saldo' }}</div>
     <div class="big">$ {{ _saldo|abs|money_es }}</div>
     <div class="chips">
       {% if n_vencidas %}
-        <span class="chip bad">{{ n_vencidas }} factura{{ 's' if n_vencidas != 1 }} vencida{{ 's' if n_vencidas != 1 }} · {{ saldo_vencido|money_es }}</span>
+        <span class="chip bad">{{ n_vencidas }} vencida{{ 's' if n_vencidas != 1 }} · {{ saldo_vencido|money_es }}</span>
       {% elif facturas %}
-        <span class="chip ok">✓ Ninguna factura vencida</span>
+        <span class="chip ok">Al día</span>
       {% endif %}
       {% if facturas %}<span class="chip">{{ facturas|length }} factura{{ 's' if facturas|length != 1 }}</span>{% endif %}
-      {% if n_devueltos %}<a class="chip bad" href="/mis-pagos?ver=devueltos">{{ n_devueltos }} cheque{{ 's' if n_devueltos != 1 }} devuelto{{ 's' if n_devueltos != 1 }} · {{ importe_devueltos|money_es }}</a>{% endif %}
+      {% if n_devueltos %}<a class="chip bad" href="/mis-pagos?ver=devueltos">{{ n_devueltos }} cheque{{ 's' if n_devueltos != 1 }} devuelto{{ 's' if n_devueltos != 1 }}</a>{% endif %}
     </div>
   </div>
 
   <div class="card">
-    <div class="lbl">Cheques entregados por cobrar</div>
+    <div class="lbl">Cheques por cobrar</div>
     <div class="big">$ {{ (t.cheques_por_cobrar or 0)|money_es }}</div>
-    {% if proximo %}
-      <p class="prox {{ 'warn' if proximo.dias <= 15 }}">Próximo vencimiento: <b>{{ proximo.fecha|fecha_es }}</b><br>factura {{ proximo.factura.numf }} · {{ proximo.factura.saldo|money_es }}</p>
-    {% else %}
-      <p class="prox">Sin vencimientos pendientes.</p>
-    {% endif %}
+    <div class="chips">
+      {% if proximo %}<span class="chip {{ 'warn' if proximo.dias <= 15 }}">Vence {{ proximo.fecha|fecha_es }} · {{ proximo.factura.saldo|money_es }}</span>{% endif %}
+    </div>
   </div>
 
   {% if vendedor %}
-  <div class="card vend">
-    <div class="av">{{ vendedor.iniciales }}</div>
-    <div style="flex:1 1 auto;min-width:0"><b>{{ vendedor.nombre }}</b><small>Su vendedor en Intela</small></div>
-    {% if vendedor.whatsapp %}
-    <a class="btn wa" href="{{ vendedor.whatsapp }}" target="_blank" rel="noopener" title="Escribirle por WhatsApp"><svg viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/><path d="M9.5 9.5c0 3 2 5 5 5l1-1.5-2-1-1 1a4 4 0 0 1-2-2l1-1-1-2z"/></svg>WhatsApp</a>
-    {% endif %}
+  <div class="card">
+    <div class="lbl">Su vendedor</div>
+    <div class="vend">
+      <div class="av">{{ vendedor.iniciales }}</div>
+      <b>{{ vendedor.nombre }}</b>
+      {% if vendedor.whatsapp %}
+      <a class="btn wa" href="{{ vendedor.whatsapp }}" target="_blank" rel="noopener" title="Escribirle por WhatsApp"><svg viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/><path d="M9.5 9.5c0 3 2 5 5 5l1-1.5-2-1-1 1a4 4 0 0 1-2-2l1-1-1-2z"/></svg>WhatsApp</a>
+      {% endif %}
+    </div>
   </div>
   {% endif %}
  </div>

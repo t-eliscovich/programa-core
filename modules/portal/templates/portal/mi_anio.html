@@ -14,37 +14,33 @@
   <div class="big">{{ a.kg|kg_es }} kg</div>
   {% if a.max_kg > 0 %}
   <div class="barras">
-    {% for m in a.meses %}<div title="{{ m.etiqueta }}: {{ m.kg|kg_es }} kg"><i class="{{ 'cero' if not m.kg }}" style="height:{{ m.pct if m.kg else 1 }}%"></i><b>{{ m.etiqueta }}</b></div>{% endfor %}
+    {# El total del mes arriba de cada barra (dueña 09/09). #}
+    {% for m in a.meses %}<div title="{{ m.etiqueta }}: {{ m.kg|kg_es }} kg">{% if m.kg %}<em>{{ m.kg|num_es(0) }}</em>{% endif %}<i class="{{ 'cero' if not m.kg }}" style="height:{{ m.pct if m.kg else 1 }}%"></i><b>{{ m.etiqueta }}</b></div>{% endfor %}
   </div>
   {% else %}
   <p class="vacio">Sin compras en {{ a.anio }}.</p>
   {% endif %}
 </div>
-{# Lo más comprado, y abajo el resto si quiere ver más (dueña 09/09). #}
+{# Lo más comprado: top 10 de tela + color, sólo kilos, y el resto plegado
+   (dueña 09/09). #}
 <h2 style="margin-top:18px">Lo que más compró en {{ a.anio }}</h2>
-{% if compro.estado == 'ok' and compro.telas %}
-{% set _top = compro.telas[:5] %}{% set _resto = compro.telas[5:] %}
+{% if compro.estado == 'ok' and compro.get('items') %}
+{% set _items = compro.get('items') or [] %}{% set _top = _items[:10] %}{% set _resto = _items[10:] %}
 <div class="card" style="padding:6px 8px">
   <table class="tabla">
-    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
-    <tbody>{% for t in _top %}
-      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
-      {% for c in t.colores[:3] %}
-      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
-      {% endfor %}
+    <thead><tr><th style="width:28px">#</th><th>Tela · color</th><th class="n">Kilos</th></tr></thead>
+    <tbody>{% for c in _top %}
+      <tr><td style="color:var(--ink3)">{{ loop.index }}</td><td><b>{{ c.tela }}</b> <span style="color:var(--ink2)">· {{ c.codigo }} {{ c.color|title }}</span></td><td class="n">{% if c.kg %}{{ c.kg|kg_es }}{% else %}{{ c.unidades|num_es(0) }} un.{% endif %}</td></tr>
     {% endfor %}</tbody>
   </table>
 </div>
 {% if _resto %}
 <details style="margin-top:10px">
-  <summary class="btn sec chico" style="cursor:pointer;list-style:none">Ver las otras {{ _resto|length }} telas</summary>
+  <summary class="btn sec chico" style="cursor:pointer;list-style:none">Ver los otros {{ _resto|length }}</summary>
   <div class="card" style="padding:6px 8px;margin-top:10px">
     <table class="tabla">
-      <tbody>{% for t in _resto %}
-        <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
-        {% for c in t.colores %}
-        <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
-        {% endfor %}
+      <tbody>{% for c in _resto %}
+        <tr><td style="color:var(--ink3)">{{ loop.index + 10 }}</td><td><b>{{ c.tela }}</b> <span style="color:var(--ink2)">· {{ c.codigo }} {{ c.color|title }}</span></td><td class="n">{% if c.kg %}{{ c.kg|kg_es }}{% else %}{{ c.unidades|num_es(0) }} un.{% endif %}</td></tr>
       {% endfor %}</tbody>
     </table>
   </div>

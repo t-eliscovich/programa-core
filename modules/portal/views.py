@@ -364,7 +364,7 @@ def _aplicaciones(cod: str) -> dict:
         numf = (a.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(a.get("numf") or "")
         if numf:
             por_cheque.setdefault(a["id_cheque"], []).append(
-                f"factura {numf} · {money_es(a.get('aplicado') or 0)}")
+                {"numf": numf, "importe": a.get("aplicado") or 0})
         if a.get("id_fact"):
             que = "cheque " + (str(a.get("no_cheque") or "").strip() or "s/n")
             por_factura.setdefault(a["id_fact"], []).append(

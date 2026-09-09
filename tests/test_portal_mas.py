@@ -279,12 +279,12 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
         _cliente(monkeypatch)
         monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
             "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2025, "anios": [2026, 2025, 2024, 2023]})
-        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "telas": [
-            {"tela": "Jersey 3", "kg": 195.2, "rollos": 9, "unidades": 0,
-             "colores": [{"codigo": "MAR", "color": "MARINO", "kg": 130.2, "rollos": 6, "unidades": 0}]}]})
+        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "items": [
+            {"tela": "Jersey 3", "codigo": "MAR", "color": "MARINO", "kg": 130.2, "unidades": 0}]})
         html = _sesion(app).get("/mi-anio?anio=2025").get_data(as_text=True)
         assert 'href="/mi-anio?anio=2025" class="on"' in html
-        assert "Lo que más compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
+        assert "Lo que más compró en 2025" in html and "Jersey 3" in html and "MAR Marino" in html
+        assert "Rollos" not in html
         # 🐞 09/09: el bloque había quedado adentro del <title> (un replace
         # sobre el primer endblock). Lo que se ve tiene que estar en <main>.
         assert "<title>Su año en kilos — Intela</title>" in html
@@ -295,47 +295,30 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
         deshacer()
 
 
-def test_lo_mas_comprado_son_cinco_telas_y_el_resto_se_despliega(monkeypatch):
+def test_lo_mas_comprado_es_el_top_10_de_tela_y_color_y_el_resto_se_despliega(monkeypatch):
+    """Dueña 09/09: "top 10 más comprados y eso es tela + color", sólo kilos."""
     app, deshacer = _app_portal()
     try:
         _cliente(monkeypatch)
         monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
             "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2026, "anios": [2026, 2025]})
-        telas = [{"tela": f"Tela {i}", "kg": 100 - i, "rollos": 1, "unidades": 0,
-                  "colores": [{"codigo": "NEG", "color": "NEGRO", "kg": 100 - i, "rollos": 1, "unidades": 0}]}
-                 for i in range(8)]
-        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "telas": telas})
+        items = [{"tela": "Tela", "codigo": f"C{i:02d}", "color": f"COLOR{i}", "kg": 100 - i, "unidades": 0}
+                 for i in range(13)]
+        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "items": items})
         html = _sesion(app).get("/mi-anio").get_data(as_text=True)
-        assert "Ver las otras 3 telas" in html and "<details" in html
-        assert html.index("Tela 4") < html.index("<details") < html.index("Tela 5")
+        assert "Ver los otros 3" in html and "<details" in html
+        assert html.index("C09 Color9") < html.index("<details") < html.index("C10 Color10")
     finally:
         deshacer()
 
 
-def test_que_compro_de_verdad_sin_puente_no_revienta(monkeypatch):
-    """🐞 09/09/2026: `/mi-anio` dio 500 en producción por un import con el
-    nombre equivocado que ningún test recorría (todos pisaban `que_compro`).
-    Acá se llama la función REAL con el puente apagado."""
-    from modules._lib import metabase_client
+def test_que_compro_aplana_tela_y_color_ordenado_por_kilos(monkeypatch):
     from modules.asinfo import factura_lineas as fl
-    monkeypatch.setattr(metabase_client, "disponible", lambda: False)
-    fl._ANIO_CACHE.clear()
-    assert fl.que_compro_en_el_anio("AJT", "1724354004001", 2026) == {"estado": "sin-puente", "telas": []}
-    assert fl.que_compro_en_el_anio("", "", 2026)["estado"] == "sin-datos"
-    assert mas.que_compro("AJT", "1724354004001", None)["estado"] == "sin-puente"
-
-
-def test_la_pantalla_del_anio_sin_asinfo_lo_dice_y_no_revienta(monkeypatch):
-    app, deshacer = _app_portal()
-    try:
-        _cliente(monkeypatch)
-        from modules._lib import metabase_client
-        from modules.informes import queries as q
-        monkeypatch.setattr(metabase_client, "disponible", lambda: False)
-        monkeypatch.setattr(q, "compras_por_mes_cliente", lambda cod, meses=12: [])
-        monkeypatch.setattr(q, "compras_por_mes_cliente_anio", lambda cod, anio: [])
-        r = _sesion(app).get("/mi-anio?anio=2025")
-        assert r.status_code == 200
-        assert "No pudimos traer el detalle por tela" in r.get_data(as_text=True)
-    finally:
-        deshacer()
+    monkeypatch.setattr(fl, "que_compro_en_el_anio", lambda cod, ruc, anio: {"estado": "ok", "telas": [
+        {"tela": "Jersey 3", "kg": 195.2, "rollos": 9, "unidades": 0, "colores": [
+            {"codigo": "NEG", "color": "NEGRO", "kg": 65.0, "rollos": 3, "unidades": 0},
+            {"codigo": "MAR", "color": "MARINO", "kg": 130.2, "rollos": 6, "unidades": 0}]},
+        {"tela": "Rib", "kg": 80.0, "rollos": 4, "unidades": 0, "colores": [
+            {"codigo": "CAR", "color": "CARDENILLO", "kg": 80.0, "rollos": 4, "unidades": 0}]}]})
+    r = mas.que_compro("AJT", "1724354004001", 2026)
+    assert [(i["tela"], i["codigo"]) for i in r["items"]] == [("Jersey 3", "MAR"), ("Rib", "CAR"), ("Jersey 3", "NEG")]

@@ -76,10 +76,16 @@ def que_compro(cod: str, ruc: str, anio: int | None) -> dict:
     from modules.asinfo import factura_lineas
 
     try:
-        return factura_lineas.que_compro_en_el_anio(cod, ruc, anio or today_ec().year)
+        res = factura_lineas.que_compro_en_el_anio(cod, ruc, anio or today_ec().year)
+        # Dueña 09/09: "top 10 más comprados, y eso es tela + color", sólo kilos.
+        items = [{"tela": t["tela"], "codigo": c["codigo"], "color": c["color"],
+                  "kg": c["kg"], "unidades": c["unidades"]}
+                 for t in res.get("telas") or [] for c in t.get("colores") or []]
+        items.sort(key=lambda x: (-x["kg"], -x["unidades"]))
+        return {**res, "items": items}
     except Exception as e:  # noqa: BLE001 -- el cuadro no puede tumbar la pantalla (09/09: un import mal escrito dio 500 en producción)
         _LOG.warning("portal: qué compró no disponible (%s)", e)
-        return {"estado": "error", "telas": []}
+        return {"estado": "error", "telas": [], "items": []}
 
 
 # ---------------------------------------------------------------------------

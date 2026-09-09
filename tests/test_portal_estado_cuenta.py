@@ -106,7 +106,7 @@ def test_el_saldo_a_favor_se_muestra_como_a_favor():
 
     Se resuelve cambiando el RÓTULO y mostrando el número en positivo, que es
     como lo diría una persona: 'saldo a favor suyo, $ 500'."""
-    assert "Saldo a favor suyo" in PANTALLA
+    assert "A su favor" in PANTALLA
     assert "_saldo|abs|money_es" in PANTALLA, (
         "el número tiene que ir en positivo; el signo lo dice el rótulo")
 
@@ -318,7 +318,7 @@ def test_el_inicio_tiene_UN_boton_y_avisa_lo_vencido_y_lo_proximo():
     assert PANTALLA.count('href="/estado-de-cuenta/imprimir"') == 1
     assert "{% if pdf_disponible() %}" in PANTALLA
     assert "n_vencidas" in PANTALLA and "proximo" in PANTALLA
-    assert "Ninguna factura vencida" in PANTALLA
+    assert "Al día" in PANTALLA
     # Dueña 09/09/2026: el inicio ES el estado de cuenta de la oficina — el
     # MISMO parcial que la hoja y el PDF, no una copia.
     assert '{% include "informes/_estado_cuenta_impreso.html" %}' in PANTALLA
@@ -425,8 +425,8 @@ def test_el_inicio_se_dibuja_con_datos_de_verdad(monkeypatch):
         r = c.get("/estado-de-cuenta")
         assert r.status_code == 200
         html = r.get_data(as_text=True)
-        assert "735,25" in html and "Ninguna factura vencida" in html
-        assert "Próximo vencimiento: <b>01/12/2026</b>" in html
+        assert "735,25" in html and ">Al día<" in html
+        assert "Vence 01/12/2026 · 735,25" in html
         # Las dos grillas de la oficina, con sus columnas (dueña 09/09).
         assert "183341" in html and "11852" in html
         for col in ("Fecha", "Número", "Importe", "Retención", "Abonado", "Saldo", "Acum.", "Días", "N° Cheque"):

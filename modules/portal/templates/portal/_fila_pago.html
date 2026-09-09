@@ -6,9 +6,10 @@
   <span class="m">{{ p.importe|money_es }}</span>
   <span class="s">{{ p.que_es }}{% if p.no_cheque and (p.no_cheque|cleanstr) %} {{ p.no_cheque|cleanstr }}{% endif %}{% if p.nombre_banco %} · {{ p.nombre_banco|title }}{% endif %}{% if p.devuelto %} · el banco lo devolvió: sigue pendiente{% elif p.que_es == 'Cheque' and p.fechad %} · para depositar el {{ p.fechad|fecha_es }}{% endif %}</span>
   {% if p.facturas_pagadas %}
-  <ul class="pago-facturas">
-    <li class="lbl">Pagó</li>
-    {% for fp in p.facturas_pagadas %}<li>{{ fp }}</li>{% endfor %}
-  </ul>
+  {# Una tablita, encolumnada (dueña 09/09). #}
+  <table class="pago-facturas">
+    <thead><tr><th>Pagó la factura</th><th class="n">Importe</th></tr></thead>
+    <tbody>{% for fp in p.facturas_pagadas %}<tr><td>{{ fp.numf }}</td><td class="n">{{ fp.importe|money_es }}</td></tr>{% endfor %}</tbody>
+  </table>
   {% endif %}
 </div>
