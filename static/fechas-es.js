@@ -64,6 +64,13 @@
     if (orig.disabled) texto.disabled = true;
     if (orig.readOnly) texto.readOnly = true;
     if (orig.required) { texto.required = true; orig.required = false; }
+    // min/max se validan acá, con mensaje en castellano. Si quedaran en el
+    // nativo escondido, una fecha fuera de rango lo dejaba inválido y el
+    // botón del form no hacía NADA (Chrome no puede enfocar un campo
+    // escondido para mostrar el aviso) — dueña 09/09/2026, "no puedo sacar
+    // el filtro" en la traza.
+    var minIso = orig.getAttribute('min') || '', maxIso = orig.getAttribute('max') || '';
+    orig.removeAttribute('min'); orig.removeAttribute('max');
     if (orig.id) {
       // El <label for=…> tiene que seguir apuntando al cuadro que se ve.
       var lab = document.querySelector('label[for="' + orig.id + '"]');
@@ -117,6 +124,14 @@
       if (!iso) {
         // Se avisa al salir del campo, no en cada tecla.
         if (tipo === 'change') texto.setCustomValidity('La fecha va día/mes/año: dd/mm/aaaa');
+        return;
+      }
+      if (minIso && iso < minIso) {
+        if (tipo === 'change') texto.setCustomValidity('La fecha tiene que ser ' + aEs(minIso) + ' o después');
+        return;
+      }
+      if (maxIso && iso > maxIso) {
+        if (tipo === 'change') texto.setCustomValidity('La fecha tiene que ser ' + aEs(maxIso) + ' o antes');
         return;
       }
       texto.setCustomValidity('');
