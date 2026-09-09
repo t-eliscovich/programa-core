@@ -149,10 +149,17 @@ def test_la_lista_es_la_de_los_estados_de_cuenta_con_saldo_a_favor_nuestro(monke
 # ---------------------------------------------------------------------------
 
 
+VENDEDORES = [
+    {"codigo": "EDG", "nombre": "EDGAR RAMIREZ", "whatsapp": "", "correo": "", "clientes": 330},
+    {"codigo": "FL1", "nombre": "FELIPE", "whatsapp": "0998299186", "correo": "felipe@intela.com.ec", "clientes": 208},
+]
+
+
 def _pantalla_lista(monkeypatch, encendido=False):
     monkeypatch.setattr(queries, "lista", lambda: [AJT, SIN])
     monkeypatch.setattr(queries, "historial", lambda limite=200: [])
     monkeypatch.setattr(queries, "a_clientes_encendido", lambda: encendido)
+    monkeypatch.setattr(queries, "vendedores", lambda: VENDEDORES)
 
 
 def test_sin_el_permiso_no_existe(app, monkeypatch):
@@ -235,3 +242,54 @@ def test_el_interruptor_vive_en_la_base_y_nace_en_cero():
     fuente = (ROOT / "migrations" / "0242_portal_aviso.sql").read_text(encoding="utf8")
     assert "('portal_aviso_a_clientes', '0')" in fuente
     assert queries.CLAVE_INTERRUPTOR == "portal_aviso_a_clientes"
+
+
+# ---------------------------------------------------------------------------
+# El WhatsApp del vendedor (mig 0246) — dueña 09/09: "poné el whatsapp de
+# cada vendedor"
+# ---------------------------------------------------------------------------
+
+
+def test_la_pantalla_muestra_a_los_vendedores_y_a_quien_le_falta_el_whatsapp(app, monkeypatch):
+    _login(app, DUENA, {"portal.avisar"})
+    _pantalla_lista(monkeypatch)
+    cuerpo = app.test_client().get("/portal-aviso").get_data(as_text=True)
+    bloque = cuerpo.split("Los vendedores, como los ve el cliente")[1].split("A quién le va")[0]
+    assert "EDG" in bloque and "FL1" in bloque
+    assert 'value="0998299186"' in bloque
+    # A EDG le falta el número y el correo: se ve, no hay que adivinarlo.
+    fila_edg = bloque.split("/portal-aviso/vendedor/EDG/whatsapp")[1].split("/portal-aviso/vendedor/FL1/")[0]
+    assert "falta" in fila_edg and "sin correo" in fila_edg
+
+
+def test_el_whatsapp_se_guarda_como_se_escribe_y_el_que_no_es_celular_no_entra(app, monkeypatch):
+    _login(app, DUENA, {"portal.avisar"})
+    _pantalla_lista(monkeypatch)
+    guardados = []
+    monkeypatch.setattr(queries, "guardar_whatsapp",
+                        lambda cod, num, quien: guardados.append((cod, num, quien)) or 1)
+    c = app.test_client()
+    c.post("/portal-aviso/vendedor/EDG/whatsapp", data={"whatsapp": "099 829 9186"})
+    # Un fijo de Quito, o el número de 11 dígitos que quedó en Asinfo: no.
+    c.post("/portal-aviso/vendedor/EDG/whatsapp", data={"whatsapp": "022222222"})
+    c.post("/portal-aviso/vendedor/RMY/whatsapp", data={"whatsapp": "09843998270"})
+    # Vacío borra: el botón desaparece del portal.
+    c.post("/portal-aviso/vendedor/EDG/whatsapp", data={"whatsapp": ""})
+    assert guardados == [("EDG", "099 829 9186", "tamara"), ("EDG", "", "tamara")]
+
+
+def test_sin_el_permiso_no_se_toca_el_whatsapp(app, monkeypatch):
+    _login(app, OFICINA, {"clientes.ver"})
+    _pantalla_lista(monkeypatch)
+    monkeypatch.setattr(queries, "guardar_whatsapp", lambda *a: (_ for _ in ()).throw(AssertionError("no")))
+    r = app.test_client().post("/portal-aviso/vendedor/EDG/whatsapp", data={"whatsapp": "0998299186"})
+    assert r.status_code == 404
+
+
+def test_la_migracion_0246_agrega_el_whatsapp_al_vendedor():
+    fuente = (ROOT / "migrations" / "0246_vendedor_whatsapp.sql").read_text(encoding="utf8")
+    assert "ALTER TABLE scintela.vendedor" in fuente and "whatsapp" in fuente
+    # Y la consulta lee de ahí, no de seguridad.usuario: el número es del
+    # vendedor, no de cada usuario que tenga.
+    import inspect
+    assert "scintela.vendedor" in inspect.getsource(queries.guardar_whatsapp)

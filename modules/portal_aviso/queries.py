@@ -157,3 +157,36 @@ def historial(limite: int = 200) -> list[dict]:
          LIMIT %s
         """,
         (limite,))
+
+
+def vendedores() -> list[dict]:
+    """Los vendedores como los ve el cliente en su portal: código, nombre,
+    el WhatsApp cargado (mig 0246) y el correo de su usuario (el Reply-To
+    del aviso). Sirve para ver de un vistazo a quién le falta qué."""
+    return db.fetch_all(
+        """
+        SELECT v.codigo, COALESCE(v.nombre, '') AS nombre,
+               COALESCE(v.whatsapp, '')         AS whatsapp,
+               COALESCE((SELECT u.email FROM seguridad.usuario u
+                          WHERE UPPER(TRIM(u.vend)) = UPPER(TRIM(v.codigo)) AND u.activo
+                          ORDER BY u.id_usuario LIMIT 1), '') AS correo,
+               (SELECT COUNT(*) FROM scintela.cliente c
+                 WHERE UPPER(TRIM(c.vend)) = UPPER(TRIM(v.codigo))) AS clientes
+          FROM scintela.vendedor v
+         WHERE v.activo
+         ORDER BY v.codigo
+        """
+    )
+
+
+def guardar_whatsapp(codigo: str, numero: str, usuario: str) -> int:
+    return db.execute(
+        """
+        UPDATE scintela.vendedor
+           SET whatsapp          = NULLIF(%s, ''),
+               fecha_actualiza   = CURRENT_TIMESTAMP,
+               usuario_actualiza = %s
+         WHERE UPPER(TRIM(codigo)) = UPPER(TRIM(%s))
+        """,
+        ((numero or "").strip()[:20], (usuario or "")[:30], codigo),
+    )

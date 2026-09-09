@@ -332,14 +332,19 @@ def _vendedor_de(fic: dict) -> dict | None:
     if not vend:
         return None
     try:
-        r = db.fetch_one("SELECT nombre FROM scintela.vendedor WHERE UPPER(TRIM(codigo)) = %s",
-                         (vend,))
+        r = db.fetch_one("SELECT nombre, whatsapp FROM scintela.vendedor "
+                         " WHERE UPPER(TRIM(codigo)) = %s", (vend,))
     except Exception:  # noqa: BLE001 -- la tarjeta no puede tumbar el inicio
         return None
     nombre = presentacion.nombre_lindo((r or {}).get("nombre") or vend)
-    # Sin el correo (dueña 04/09): es personal, y el canal es WhatsApp.
+    # Sin el correo (dueña 04/09): es personal, y el canal es WhatsApp
+    # (dueña 09/09: "poné el whatsapp de cada vendedor"). El número se
+    # carga en /portal-aviso; sin número no hay botón.
+    cli = presentacion.nombre_lindo(fic.get("nombre") or "")
+    saludo = f"Hola {nombre.split()[0] if nombre else ''}, le escribo de {cli}".strip() if cli else ""
     return {"codigo": vend, "nombre": nombre,
-            "iniciales": presentacion.iniciales(nombre)}
+            "iniciales": presentacion.iniciales(nombre),
+            "whatsapp": presentacion.link_whatsapp((r or {}).get("whatsapp"), saludo)}
 
 
 def _despachos_recientes(cod: str, ruc: str) -> list | None:
@@ -750,7 +755,9 @@ def como_pagar():
     cod = cliente_actual()
     if not cod:
         return _pedir_entrar()
-    return render_template("portal/como_pagar.html", **_ctx(cod), texto=mas_.como_pagar())
+    ctx = _ctx(cod)
+    return render_template("portal/como_pagar.html", **ctx, texto=mas_.como_pagar(),
+                           vendedor=_vendedor_de(ctx["cli"]))
 
 
 @portal_bp.route("/mis-datos", methods=["GET", "POST"])

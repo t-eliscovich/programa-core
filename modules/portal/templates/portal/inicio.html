@@ -38,7 +38,10 @@
   {% if vendedor %}
   <div class="card vend">
     <div class="av">{{ vendedor.iniciales }}</div>
-    <div><b>{{ vendedor.nombre }}</b><small>Su vendedor en Intela</small></div>
+    <div style="flex:1 1 auto;min-width:0"><b>{{ vendedor.nombre }}</b><small>Su vendedor en Intela</small></div>
+    {% if vendedor.whatsapp %}
+    <a class="btn wa" href="{{ vendedor.whatsapp }}" target="_blank" rel="noopener" title="Escribirle por WhatsApp"><svg viewBox="0 0 24 24"><path d="M20 11.5a8 8 0 0 1-11.7 7.1L4 20l1.4-4.2A8 8 0 1 1 20 11.5z"/><path d="M9.5 9.5c0 3 2 5 5 5l1-1.5-2-1-1 1a4 4 0 0 1-2-2l1-1-1-2z"/></svg>WhatsApp</a>
+    {% endif %}
   </div>
   {% endif %}
  </div>

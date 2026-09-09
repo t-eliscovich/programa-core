@@ -154,3 +154,29 @@ def iniciales(nombre: str) -> str:
 
 def nombre_lindo(nombre: str) -> str:
     return " ".join(p.capitalize() for p in (nombre or "").split())
+
+
+def celular_ecuador(numero) -> str:
+    """El celular del vendedor como lo quiere wa.me: sólo dígitos, con el
+    593 adelante y sin el 0. Acepta cómo se cargan acá: "0998299186",
+    "099 829 9186", "+593 99 829 9186". Lo que no es un celular de Ecuador
+    (9 dígitos después del 593, empezando en 9) vuelve vacío: mejor sin
+    botón que un botón que abre un chat con cualquiera."""
+    d = "".join(c for c in str(numero or "") if c.isdigit())
+    if d.startswith("593"):
+        d = d[3:]
+    elif d.startswith("0"):
+        d = d[1:]
+    if len(d) != 9 or not d.startswith("9"):
+        return ""
+    return "593" + d
+
+
+def link_whatsapp(numero, texto: str = "") -> str:
+    """La puerta al chat: https://wa.me/593…?text=… — vacío si el número
+    no sirve. Abre WhatsApp en el teléfono y WhatsApp Web en la compu."""
+    from urllib.parse import quote
+    cel = celular_ecuador(numero)
+    if not cel:
+        return ""
+    return f"https://wa.me/{cel}" + (f"?text={quote(texto)}" if texto else "")

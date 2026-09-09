@@ -56,6 +56,11 @@ def pantalla():
         como_pagar_texto = portal_mas.como_pagar()
     except Exception:  # noqa: BLE001 -- sin la clave, vacío
         como_pagar_texto = ""
+    try:
+        vendedores = queries.vendedores()
+    except Exception as e:  # noqa: BLE001 -- sin la columna (mig 0246), sin el bloque
+        _LOG.warning("portal_aviso: no pude leer los vendedores (%s)", e)
+        vendedores = []
     return render_template(
         "portal_aviso/pantalla.html",
         filas=filas, con_correo=con_correo, sin_correo=sin_correo,
@@ -63,6 +68,7 @@ def pantalla():
         ejemplo=envio.texto_del_aviso(con_correo[0]["nombre"] if con_correo else "cliente"),
         mail_prueba=request.args.get("a", ""),
         como_pagar_texto=como_pagar_texto,
+        vendedores=vendedores,
     )
 
 
@@ -125,4 +131,28 @@ def interruptor():
     queries.encender_a_clientes(prender)
     flash("El envío a clientes quedó PRENDIDO." if prender
           else "El envío a clientes quedó apagado.", "ok")
+    return redirect(url_for("portal_aviso.pantalla"))
+
+
+@portal_aviso_bp.route("/portal-aviso/vendedor/<codigo>/whatsapp", methods=["POST"])
+@requiere_login
+@requiere_permiso(PERMISO)
+def whatsapp_del_vendedor(codigo: str):
+    """El celular del vendedor que el cliente ve en su portal (mig 0246).
+    Dueña 09/09/2026: "poné el whatsapp de cada vendedor". Se guarda como
+    se escribe; el portal lo normaliza y, si no es un celular de Ecuador,
+    no muestra el botón — acá se avisa para que se corrija en el momento."""
+    from modules.portal import presentacion
+
+    numero = (request.form.get("whatsapp") or "").strip()
+    if numero and not presentacion.celular_ecuador(numero):
+        flash(f"«{numero}» no parece un celular de Ecuador (09… de 10 números). No lo guardé.", "error")
+        return redirect(url_for("portal_aviso.pantalla"))
+    n = queries.guardar_whatsapp(codigo, numero, _quien())
+    if not n:
+        flash(f"No encontré al vendedor {codigo}.", "error")
+    elif numero:
+        flash(f"WhatsApp de {codigo.upper()} guardado. Ya sale en el portal de sus clientes.", "ok")
+    else:
+        flash(f"WhatsApp de {codigo.upper()} borrado. Sus clientes ya no ven el botón.", "ok")
     return redirect(url_for("portal_aviso.pantalla"))

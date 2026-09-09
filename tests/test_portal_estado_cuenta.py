@@ -396,7 +396,8 @@ def _data(monkeypatch, facturas=(), cheques=()):
     })
     from modules.portal import views
     monkeypatch.setattr(views, "_vendedor_de", lambda fic: {
-        "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER"})
+        "codigo": "EDG", "nombre": "Edgar Ramirez", "iniciales": "ER",
+        "whatsapp": "https://wa.me/593998299186"})
     monkeypatch.setattr(views, "_despachos_recientes", lambda cod, ruc: [])
 
 
@@ -428,6 +429,8 @@ def test_el_inicio_se_dibuja_con_datos_de_verdad(monkeypatch):
         assert "Próximo vencimiento: <b>01/12/2026</b>" in html
         assert "183341" in html and "al día" in html and "a su favor" in html
         assert "Edgar Ramirez" in html and "Su vendedor" in html
+        # Dueña 09/09: el WhatsApp del vendedor, como botón en su tarjeta.
+        assert 'href="https://wa.me/593998299186"' in html and ">WhatsApp</a>" in html
         assert 'class="tabbar"' in html
         # El nombre del cliente, como persona y no a los gritos.
         assert "Totoy Buitron Andres Julio" in html
@@ -482,3 +485,33 @@ def test_la_factura_que_una_devolucion_deja_en_cero_se_ve_compensada():
 def test_el_inicio_no_muestra_el_correo_del_vendedor():
     assert "vendedor.correo" not in PANTALLA
     assert "seguridad.usuario" not in VISTAS.split("def _vendedor_de")[1].split("def ")[0]
+
+
+def test_el_celular_del_vendedor_se_normaliza_para_wa_me_y_el_que_no_sirve_no_da_boton():
+    from modules.portal import presentacion as pr
+    assert pr.celular_ecuador("0998299186") == "593998299186"
+    assert pr.celular_ecuador("099 829 9186") == "593998299186"
+    assert pr.celular_ecuador("+593 99 829 9186") == "593998299186"
+    assert pr.celular_ecuador("593998299186") == "593998299186"
+    # El de 11 dígitos que quedó en Asinfo, un fijo, vacío, None: nada.
+    for malo in ("09843998270", "022222222", "", None, "hola"):
+        assert pr.celular_ecuador(malo) == ""
+        assert pr.link_whatsapp(malo) == ""
+    assert pr.link_whatsapp("0998299186") == "https://wa.me/593998299186"
+    assert pr.link_whatsapp("0998299186", "Hola Edgar") == "https://wa.me/593998299186?text=Hola%20Edgar"
+
+
+def test_la_tarjeta_del_vendedor_sale_del_vendedor_y_sin_numero_no_hay_boton(monkeypatch):
+    """`_vendedor_de` lee scintela.vendedor (nombre y whatsapp) y arma el
+    link con un saludo que dice de qué cliente le escriben."""
+    import db as _db
+    from modules.portal import views
+    monkeypatch.setattr(_db, "fetch_one", lambda sql, params: {
+        "nombre": "EDGAR RAMIREZ", "whatsapp": "0998299186"})
+    v = views._vendedor_de({"vend": "EDG", "nombre": "TOTOY BUITRON ANDRES JULIO"})
+    assert v["nombre"] == "Edgar Ramirez" and v["iniciales"] == "ER"
+    assert v["whatsapp"].startswith("https://wa.me/593998299186?text=")
+    assert "Totoy%20Buitron" in v["whatsapp"] and "Hola%20Edgar" in v["whatsapp"]
+    monkeypatch.setattr(_db, "fetch_one", lambda sql, params: {"nombre": "EDGAR RAMIREZ", "whatsapp": None})
+    assert views._vendedor_de({"vend": "EDG", "nombre": "X"})["whatsapp"] == ""
+    assert views._vendedor_de({"vend": ""}) is None
