@@ -2,29 +2,18 @@
 {% block titulo %}Mis despachos — Intela{% endblock %}
 {% block seccion %}despachos{% endblock %}
 {% block contenido %}
-<h1 class="pag">Mis despachos</h1>
-<div class="seg">
-  {% for m in (3, 6, 12) %}<a href="/despachos?meses={{ m }}" class="{{ 'on' if d.meses == m }}">{{ '1 año' if m == 12 else (m ~ ' meses') }}</a>{% endfor %}
-</div>
+{# Dueña 09/09/2026: "despachos sólo mostrar los que están pendientes de
+   factura; el resto de la información se ve en la factura". #}
+<h1 class="pag">Despachos sin facturar</h1>
 {% if not d.ok %}
   <div class="card vacio"><b>No pudimos traer sus despachos</b>Pruebe de nuevo en un momento.</div>
 {% elif d.sin_ruc %}
   <div class="card vacio"><b>Falta su RUC en nuestra ficha</b>Pídale a su vendedor que lo cargue y va a ver sus despachos acá.</div>
 {% else %}
-  <div class="card" style="margin-bottom:12px">
-    <div class="lbl">Desde el {{ d.desde|fecha_es }}</div>
-    <div class="chips" style="margin-top:6px">
-      <span class="chip">{{ d.guias|length }} despacho{{ 's' if d.guias|length != 1 }}</span>
-      {% if d.rollos %}<span class="chip">{{ d.rollos }} rollo{{ 's' if d.rollos != 1 }}</span>{% endif %}
-      {% if d.unidades %}<span class="chip">{{ d.unidades }} unidad{{ 'es' if d.unidades != 1 }}</span>{% endif %}
-      {% if d.devueltos %}<span class="chip warn">{{ d.devueltos }} devuelto{{ 's' if d.devueltos != 1 }}</span>{% endif %}
-    </div>
-  </div>
-  {% for g in grupos %}
-    <div class="mes"><span>{{ g.mes }}</span><span>{{ g["items"]|length }} despacho{{ 's' if g["items"]|length != 1 }}</span></div>
-    <div class="lista">{% for g in g["items"] %}{% include "portal/_fila_despacho.html" %}{% endfor %}</div>
-  {% else %}
-    <div class="card vacio"><b>Sin despachos en este período</b>Pruebe con un período más largo.</div>
+  <div class="lista">
+  {% for g in pendientes %}{% include "portal/_fila_despacho.html" %}{% else %}
+    <div class="card vacio"><b>No tiene despachos pendientes de factura</b>Lo que ya se facturó lo ve en cada factura.</div>
   {% endfor %}
+  </div>
 {% endif %}
 {% endblock %}

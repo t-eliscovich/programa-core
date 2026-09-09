@@ -245,9 +245,9 @@ def test_el_anio_en_kilos_tambien_sabe_de_otros_anios(monkeypatch):
     assert a["anio"] == 2025 and a["anios"] == [2026, 2025, 2024, 2023]
     assert [x["mes"] for x in a["meses"]] == [dt.date(2025, mm, 1) for mm in range(1, 13)]
     assert a["meses"][1]["kg"] == 100.0 and a["kg"] == 100.0
-    # Un año fuera del selector cae a los últimos 12 meses.
-    monkeypatch.setattr(q, "compras_por_mes_cliente", lambda cod, meses=12: [])
-    assert m.anio_en_kilos("AJT", 1999)["anio"] is None
+    # Un año fuera del selector cae al año en curso (dueña 09/09: sin la
+    # pestaña de últimos 12 meses).
+    assert m.anio_en_kilos("AJT", 1999)["anio"] == 2026
 
 
 def test_que_compro_agrupa_por_tela_y_color_y_los_cuellos_van_en_unidades():
@@ -284,11 +284,30 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
              "colores": [{"codigo": "MAR", "color": "MARINO", "kg": 130.2, "rollos": 6, "unidades": 0}]}]})
         html = _sesion(app).get("/mi-anio?anio=2025").get_data(as_text=True)
         assert 'href="/mi-anio?anio=2025" class="on"' in html
-        assert "Qué compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
+        assert "Lo que más compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
         # 🐞 09/09: el bloque había quedado adentro del <title> (un replace
         # sobre el primer endblock). Lo que se ve tiene que estar en <main>.
         assert "<title>Su año en kilos — Intela</title>" in html
-        assert html.index("<main>") < html.index("Qué compró en 2025") < html.index("</main>")
+        assert html.index("<main>") < html.index("Lo que más compró en 2025") < html.index("</main>")
+        # Sin "últimos 12 meses", sin importe y sin la tabla por mes.
+        assert "ltimos 12 meses" not in html and "facturados" not in html and "<th>Mes</th>" not in html
+    finally:
+        deshacer()
+
+
+def test_lo_mas_comprado_son_cinco_telas_y_el_resto_se_despliega(monkeypatch):
+    app, deshacer = _app_portal()
+    try:
+        _cliente(monkeypatch)
+        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
+            "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2026, "anios": [2026, 2025]})
+        telas = [{"tela": f"Tela {i}", "kg": 100 - i, "rollos": 1, "unidades": 0,
+                  "colores": [{"codigo": "NEG", "color": "NEGRO", "kg": 100 - i, "rollos": 1, "unidades": 0}]}
+                 for i in range(8)]
+        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "telas": telas})
+        html = _sesion(app).get("/mi-anio").get_data(as_text=True)
+        assert "Ver las otras 3 telas" in html and "<details" in html
+        assert html.index("Tela 4") < html.index("<details") < html.index("Tela 5")
     finally:
         deshacer()
 

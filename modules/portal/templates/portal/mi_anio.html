@@ -4,50 +4,54 @@
 {% block contenido %}
 <a class="volver" href="/mas">‹ Más</a>
 <h1 class="pag">Su año en kilos</h1>
-{# Otros años (dueña 09/09/2026). #}
+{# Por año calendario, el actual primero (dueña 09/09/2026: "mostrar 2026 y
+   etc., no hace falta la pestaña últimos 12 meses"). #}
 <div class="seg">
-  <a href="/mi-anio" class="{{ 'on' if not a.anio }}">Últimos 12 meses</a>
   {% for y in a.anios %}<a href="/mi-anio?anio={{ y }}" class="{{ 'on' if a.anio == y }}">{{ y }}</a>{% endfor %}
 </div>
 <div class="card">
-  <div class="lbl">{{ a.anio if a.anio else 'Últimos 12 meses' }}</div>
+  <div class="lbl">{{ a.anio }}</div>
   <div class="big">{{ a.kg|kg_es }} kg</div>
-  <div class="chips"><span class="chip">{{ a.importe|money_es }} facturados</span></div>
   {% if a.max_kg > 0 %}
   <div class="barras">
     {% for m in a.meses %}<div title="{{ m.etiqueta }}: {{ m.kg|kg_es }} kg"><i class="{{ 'cero' if not m.kg }}" style="height:{{ m.pct if m.kg else 1 }}%"></i><b>{{ m.etiqueta }}</b></div>{% endfor %}
   </div>
   {% else %}
-  <p class="vacio">{{ 'Sin compras en ' ~ a.anio if a.anio else 'Todavía no hay compras en estos 12 meses.' }}</p>
+  <p class="vacio">Sin compras en {{ a.anio }}.</p>
   {% endif %}
 </div>
-{% if a.max_kg > 0 %}
-<div class="card" style="margin-top:12px;padding:6px 8px">
-  <table class="tabla">
-    <thead><tr><th>Mes</th><th class="n">Kilos</th><th class="n">Importe</th></tr></thead>
-    <tbody>{% for m in a.meses|reverse if m.kg or m.importe %}
-      <tr><td>{{ m.etiqueta }} {{ m.mes.year }}</td><td class="n">{{ m.kg|kg_es }}</td><td class="n">{{ m.importe|money_es }}</td></tr>
-    {% endfor %}</tbody>
-  </table>
-</div>
-{% endif %}
-{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
-   pongamos algo más, colores telas etc." #}
-<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
+{# Lo más comprado, y abajo el resto si quiere ver más (dueña 09/09). #}
+<h2 style="margin-top:18px">Lo que más compró en {{ a.anio }}</h2>
 {% if compro.estado == 'ok' and compro.telas %}
+{% set _top = compro.telas[:5] %}{% set _resto = compro.telas[5:] %}
 <div class="card" style="padding:6px 8px">
   <table class="tabla">
     <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
-    <tbody>{% for t in compro.telas %}
+    <tbody>{% for t in _top %}
       <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
-      {% for c in t.colores %}
+      {% for c in t.colores[:3] %}
       <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
       {% endfor %}
     {% endfor %}</tbody>
   </table>
 </div>
+{% if _resto %}
+<details style="margin-top:10px">
+  <summary class="btn sec chico" style="cursor:pointer;list-style:none">Ver las otras {{ _resto|length }} telas</summary>
+  <div class="card" style="padding:6px 8px;margin-top:10px">
+    <table class="tabla">
+      <tbody>{% for t in _resto %}
+        <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
+        {% for c in t.colores %}
+        <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
+        {% endfor %}
+      {% endfor %}</tbody>
+    </table>
+  </div>
+</details>
+{% endif %}
 {% elif compro.estado == 'ok' %}
-<div class="card vacio">Sin compras de tela en ese año.</div>
+<div class="card vacio">Sin compras de tela en {{ a.anio }}.</div>
 {% else %}
 <div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
 {% endif %}

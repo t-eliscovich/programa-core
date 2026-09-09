@@ -364,7 +364,7 @@ def _aplicaciones(cod: str) -> dict:
         numf = (a.get("numf_completo") or "").split("-")[-1].lstrip("0") or str(a.get("numf") or "")
         if numf:
             por_cheque.setdefault(a["id_cheque"], []).append(
-                f"{numf} ({money_es(a.get('aplicado') or 0)})")
+                f"factura {numf} · {money_es(a.get('aplicado') or 0)}")
         if a.get("id_fact"):
             que = "cheque " + (str(a.get("no_cheque") or "").strip() or "s/n")
             por_factura.setdefault(a["id_fact"], []).append(
@@ -645,18 +645,18 @@ def despachos():
 
     from modules.asinfo import despachos_cliente
 
-    try:
-        meses = int(request.args.get("meses") or despachos_cliente.MESES_DEFAULT)
-    except (TypeError, ValueError):
-        meses = despachos_cliente.MESES_DEFAULT
+    meses = despachos_cliente.MESES_DEFAULT
     # ⭐ El RUC va con el código: hay `nombre_comercial` repetidos en dos
     # empresas que son contribuyentes DISTINTOS (PRE, MCS). Ver la auditoría
     # del 26/08 en `despachos_cliente`.
     fic = acceso.cliente(cod) or {}
     d = despachos_cliente.de_cliente(cod, fic.get("ruc") or "", meses)
-    guias = presentacion.ordenar_por_fecha(list(d.get("guias") or []), "dia")
+    # Dueña 09/09/2026: sólo los que todavía no tienen factura; el resto se
+    # ve en la factura. Sin el filtro de meses: lo pendiente es poco.
+    guias = [g for g in (d.get("guias") or []) if not (g.get("factura") or "").strip()]
+    guias = presentacion.ordenar_por_fecha(guias, "dia")
     return render_template("portal/despachos.html", codigo=cod, cli=fic, d=d,
-                           grupos=presentacion.por_mes(guias, "dia"))
+                           pendientes=guias)
 
 
 @portal_bp.route("/despacho/<numero>", methods=["GET"])
@@ -797,7 +797,7 @@ def mi_anio():
     if not cod:
         return _pedir_entrar()
     anio = re.sub(r"\D", "", request.args.get("anio") or "")[:4]
-    anio = int(anio) if anio else None
+    anio = int(anio) if anio else today_ec().year
     ctx = _ctx(cod)
     a = mas_.anio_en_kilos(cod, anio)
     return render_template("portal/mi_anio.html", **ctx, a=a,

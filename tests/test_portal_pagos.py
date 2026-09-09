@@ -258,16 +258,17 @@ def test_cada_cheque_dice_que_facturas_pago(monkeypatch):
     ])
     html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0001840"),
                                    _cheque(id_cheque=2, no_cheque="0001841")])
-    assert "pagó las facturas 183341 (735,25), 183198 (580,74)" in html
-    # El otro cheque no pagó nada todavía: sin la frase.
-    assert html.count("pagó la") == 1
+    # En LISTA, una factura por renglón (dueña 09/09: "está todo en uno").
+    assert "<li>factura 183341 · 735,25</li>" in html and "<li>factura 183198 · 580,74</li>" in html
+    # El otro cheque no pagó nada todavía: sin la lista.
+    assert html.count('class="pago-facturas"') == 1
 
 
 def test_el_cruce_no_tumba_la_lista_si_la_consulta_falla(monkeypatch):
     from modules.informes import queries as iq
     monkeypatch.setattr(iq, "aplicaciones_cliente", lambda cod: (_ for _ in ()).throw(RuntimeError("sin base")))
     html = _pantalla(monkeypatch, [_cheque(no_cheque="0001840")])
-    assert "0001840" in html and "pagó" not in html
+    assert "0001840" in html and 'class="pago-facturas"' not in html
 
 
 def test_la_consulta_del_cruce_vive_en_informes_y_lee_chequesxfact():

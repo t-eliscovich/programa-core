@@ -1,7 +1,14 @@
 {# Un pago en la lista: la FECHA en que lo recibimos es lo grande (dueña
-   09/09/2026); qué fue y cuánto, debajo y a la derecha. #}
+   09/09/2026); qué fue y cuánto, debajo y a la derecha. Las facturas que
+   pagó van en LISTA, una por renglón ("está todo en uno, no se entiende"). #}
 <div class="fila">
   <span class="t">{{ p.dia_recibido|fecha_es }}{% if p.devuelto %}<span class="pill bad">devuelto</span>{% endif %}</span>
   <span class="m">{{ p.importe|money_es }}</span>
-  <span class="s">{{ p.que_es }}{% if p.no_cheque and (p.no_cheque|cleanstr) %} {{ p.no_cheque|cleanstr }}{% endif %}{% if p.nombre_banco %} · {{ p.nombre_banco|title }}{% endif %}{% if p.devuelto %} · el banco lo devolvió: sigue pendiente{% elif p.que_es == 'Cheque' and p.fechad %} · para depositar el {{ p.fechad|fecha_es }}{% endif %}{% if p.facturas_pagadas %} · pagó {{ 'la factura' if p.facturas_pagadas|length == 1 else 'las facturas' }} {{ p.facturas_pagadas|join(', ') }}{% endif %}</span>
+  <span class="s">{{ p.que_es }}{% if p.no_cheque and (p.no_cheque|cleanstr) %} {{ p.no_cheque|cleanstr }}{% endif %}{% if p.nombre_banco %} · {{ p.nombre_banco|title }}{% endif %}{% if p.devuelto %} · el banco lo devolvió: sigue pendiente{% elif p.que_es == 'Cheque' and p.fechad %} · para depositar el {{ p.fechad|fecha_es }}{% endif %}</span>
+  {% if p.facturas_pagadas %}
+  <ul class="pago-facturas">
+    <li class="lbl">Pagó</li>
+    {% for fp in p.facturas_pagadas %}<li>{{ fp }}</li>{% endfor %}
+  </ul>
+  {% endif %}
 </div>

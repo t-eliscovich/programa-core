@@ -40,7 +40,7 @@ def anio_en_kilos(cod: str, anio: int | None = None) -> dict:
     hoy = today_ec()
     anios = list(range(hoy.year, hoy.year - ANIOS_PARA_ATRAS - 1, -1))
     if anio is not None and anio not in anios:
-        anio = None
+        anio = anios[0]
     if anio is None:
         filas = {f["mes"]: f for f in q.compras_por_mes_cliente(cod, 12)}
         meses = []
