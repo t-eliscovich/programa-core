@@ -230,12 +230,13 @@ def test_se_llega_desde_el_estado_de_cuenta():
     # "Ver todos" del inicio.
     armazon = (TPL / "_app.html").read_text(encoding="utf-8")
     assert '"/mis-pagos"' in re.sub(r"\{#.*?#\}", "", armazon, flags=re.S)
-    assert '"/mis-pagos"' in (TPL / "inicio.html").read_text(encoding="utf-8")
+    # Desde el 09/09/2026 el inicio es la grilla de la oficina: el link va
+    # sólo por el armazón.
 
 
 def test_el_cheque_devuelto_se_ve_pero_rotulado(monkeypatch):
     """Dueña 04/09: un devuelto que se ve como un pago más hace creer al
     cliente que ya pagó. Se ve, con "devuelto" y sin la fecha de depósito."""
     html = _pantalla(monkeypatch, [_cheque(id_cheque=1, no_cheque="0004444", stat="1")])
-    assert "devuelto" in html and "El banco lo devolvió" in html
+    assert "devuelto" in html and "el banco lo devolvió" in html
     assert "Para depositar" not in html

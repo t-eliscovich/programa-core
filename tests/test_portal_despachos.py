@@ -496,8 +496,8 @@ def test_el_estado_de_cuenta_linkea_los_despachos():
     # de arriba) y en el "Ver todos" del inicio.
     armazon = (TPL / "_app.html").read_text(encoding="utf-8")
     assert 'href="/despachos"' in re.sub(r"\{#.*?#\}", "", armazon, flags=re.S)
-    inicio = (TPL / "inicio.html").read_text(encoding="utf-8")
-    assert 'href="/despachos"' in inicio
+    # Desde el 09/09/2026 el inicio es la grilla de la oficina: el link va
+    # sólo por el armazón.
 
 
 def test_la_pantalla_muestra_la_tela_los_rollos_y_la_factura():

@@ -319,9 +319,10 @@ def test_el_inicio_tiene_UN_boton_y_avisa_lo_vencido_y_lo_proximo():
     assert "{% if pdf_disponible() %}" in PANTALLA
     assert "n_vencidas" in PANTALLA and "proximo" in PANTALLA
     assert "Ninguna factura vencida" in PANTALLA
-    # Pagos y despachos se llegan por el menú y por los "Ver todos" de las
-    # listas, no por botones sueltos.
-    assert "Ver todos" in PANTALLA
+    # Dueña 09/09/2026: el inicio ES el estado de cuenta de la oficina — el
+    # MISMO parcial que la hoja y el PDF, no una copia.
+    assert '{% include "informes/_estado_cuenta_impreso.html" %}' in PANTALLA
+    assert "Ver todos" not in PANTALLA
 
 
 def test_los_estados_hablan_el_idioma_del_cliente():
@@ -427,7 +428,12 @@ def test_el_inicio_se_dibuja_con_datos_de_verdad(monkeypatch):
         html = r.get_data(as_text=True)
         assert "735,25" in html and "Ninguna factura vencida" in html
         assert "Próximo vencimiento: <b>01/12/2026</b>" in html
-        assert "183341" in html and "al día" in html and "a su favor" in html
+        # Las dos grillas de la oficina, con sus columnas (dueña 09/09).
+        assert "183341" in html and "11852" in html
+        for col in ("Fecha", "Número", "Importe", "Retención", "Abonado", "Saldo", "Acum.", "Días", "N° Cheque"):
+            assert col in html, col
+        # La franja en códigos (Z/P/D, 1/2/3/R/9) no se le muestra al cliente.
+        assert ".hoja-ec .ec-ch-resumen{display:none}" in html
         assert "Edgar Ramirez" in html and "Su vendedor" in html
         # Dueña 09/09: el WhatsApp del vendedor, como botón en su tarjeta.
         assert 'href="https://wa.me/593998299186"' in html and ">WhatsApp</a>" in html
@@ -481,8 +487,10 @@ def test_las_pagadas_muestran_lo_que_fue_la_factura_y_no_un_cero(monkeypatch):
             s["portal_cliente"] = "AJT"
         html = c.get("/facturas?ver=pagadas").get_data(as_text=True)
         fila = html.split("id=3\"")[1].split("</a>")[0]
-        assert "2.107,96" in fila and "<small>pagada</small>" in fila
+        assert "2.107,96" in fila and "Factura 182188 · pagada" in fila
         assert "0,02" not in fila and "0,00" not in fila
+        # Y la fecha es lo grande (dueña 09/09: "más importante las fechas").
+        assert '<span class="t">19/08/2026' in fila
         assert "abonado 2.071,28" in fila and "retención 36,66" in fila
     finally:
         deshacer()

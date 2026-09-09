@@ -756,16 +756,6 @@ def mas():
                            varias_cuentas=len(session.get(CUENTAS) or []) > 1)
 
 
-@portal_bp.route("/como-pagar", methods=["GET"])
-def como_pagar():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    ctx = _ctx(cod)
-    return render_template("portal/como_pagar.html", **ctx, texto=mas_.como_pagar(),
-                           vendedor=_vendedor_de(ctx["cli"]))
-
-
 @portal_bp.route("/mis-datos", methods=["GET", "POST"])
 def mis_datos():
     cod = cliente_actual()
@@ -798,53 +788,6 @@ def pedidos():
     if not cod:
         return _pedir_entrar()
     return render_template("portal/pedidos.html", **_ctx(cod), p=mas_.pedidos_de(cod))
-
-
-@portal_bp.route("/avisar-pago", methods=["GET", "POST"])
-@limiter.limit("10 per hour", methods=["POST"])
-def avisar_pago():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    if request.method == "POST":
-        ok, msg = mas_.guardar_aviso_pago(
-            cod, request.form.get("tipo"), request.form.get("importe"),
-            request.form.get("fecha") or None, request.form.get("referencia") or "",
-            request.form.get("nota") or "", request.files.get("comprobante"))
-        flash(msg, "ok" if ok else "error")
-        if ok:
-            try:
-                from modules.avisos import queries as avisos
-                fic = acceso.ficha(cod) or {}
-                avisos.avisar(fuente="portal", nivel="ok",
-                              titulo=f"{cod} avisa un pago desde el portal",
-                              detalle=f"{presentacion.nombre_lindo(fic.get('nombre') or cod)}: "
-                                      f"{mas_.TIPOS_DE_PAGO.get(request.form.get('tipo'), '')} "
-                                      f"{request.form.get('importe') or ''}",
-                              url="/clientes/avisos-de-pago")
-            except Exception:  # noqa: BLE001 -- la campanita no frena el aviso
-                _LOG.exception("portal: no pude avisar a la oficina del pago de %s", cod)
-            return redirect(url_for("portal.avisar_pago"))
-    return render_template("portal/avisar_pago.html", **_ctx(cod),
-                           tipos=mas_.TIPOS_DE_PAGO, hoy=today_ec(),
-                           anteriores=mas_.avisos_de_pago_de(cod))
-
-
-@portal_bp.route("/actividad", methods=["GET"])
-def actividad():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    data = _cargar_estado_cuenta(cod)
-    hoy = today_ec()
-    fic = data.get("cliente") or {}
-    facturas = presentacion.con_estado(data.get("facturas") or [], hoy)
-    ped = mas_.pedidos_de(cod)
-    items = mas_.actividad(facturas, _pagos_de(data),
-                           _despachos_recientes(cod, fic.get("ruc") or ""),
-                           ped.get("pedidos") or [])
-    return render_template("portal/actividad.html", codigo=cod, cli=fic,
-                           grupos=presentacion.por_mes(items, "fecha", "importe"))
 
 
 @portal_bp.route("/", methods=["GET"])

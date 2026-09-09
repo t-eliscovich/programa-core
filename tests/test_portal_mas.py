@@ -74,49 +74,6 @@ def test_si_asinfo_no_contesta_los_pedidos_lo_dicen(monkeypatch):
     assert mas.pedidos_de("AJT") == {"ok": False, "pedidos": [], "etapas": {}}
 
 
-def test_el_aviso_de_pago_rechaza_lo_que_no_sirve(monkeypatch):
-    escrito = []
-    import db
-    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append(params))
-    assert mas.guardar_aviso_pago("AJT", "regalo", "10", None, "", "")[0] is False
-    assert mas.guardar_aviso_pago("AJT", "cheque", "abc", None, "", "")[0] is False
-    assert mas.guardar_aviso_pago("AJT", "cheque", "-5", None, "", "")[0] is False
-
-    class _F:
-        filename = "x.exe"
-        mimetype = "application/x-msdownload"
-    assert mas.guardar_aviso_pago("AJT", "cheque", "10", None, "", "", _F())[0] is False
-
-    class _G:
-        filename = "foto.jpg"
-        mimetype = "image/jpeg"
-
-        def read(self):
-            return b"x" * (mas.TOPE_ARCHIVO + 1)
-    assert mas.guardar_aviso_pago("AJT", "cheque", "10", None, "", "", _G())[0] is False
-    assert escrito == []
-
-
-def test_el_aviso_de_pago_bueno_entra_con_el_importe_en_formato_ecuador(monkeypatch):
-    escrito = []
-    import db
-    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append((sql, params)))
-
-    class _G:
-        filename = "comprobante.jpg"
-        mimetype = "image/jpeg"
-
-        def read(self):
-            return b"jpegdata"
-    ok, msg = mas.guardar_aviso_pago("AJT", "transferencia", "1.234,56", "2026-09-04",
-                                     " 778899 ", "por la 183341", _G())
-    assert ok and "Recibimos" in msg
-    sql, params = escrito[0]
-    assert "portal_aviso_pago" in sql
-    assert params[0] == "AJT" and params[1] == "transferencia" and params[2] == 1234.56
-    assert params[4] == "778899" and params[6] == b"jpegdata" and params[8] == "image/jpeg"
-
-
 def test_pedir_correccion_deja_un_aviso_y_no_toca_la_ficha(monkeypatch):
     from modules.avisos import queries as avisos
     dejados = []
@@ -147,36 +104,21 @@ def test_el_anio_en_kilos_trae_doce_meses_con_los_vacios_en_cero(monkeypatch):
     assert a["meses"][0]["kg"] == 0 and a["meses"][0]["pct"] == 0
 
 
-def test_la_actividad_mezcla_todo_por_fecha():
-    hoy = dt.date(2026, 9, 4)
-    facturas = presentacion.con_estado([
-        {"numf": 1, "numf_completo": "001-099-000000001", "id_factura": 1, "fecha": dt.date(2026, 9, 2),
-         "importe": 100, "saldo": 100, "vencimiento": dt.date(2026, 12, 1)},
-        {"numf": 2, "numf_completo": "", "id_factura": 2, "fecha": dt.date(2026, 8, 31),
-         "importe": -50, "saldo": -50, "vencimiento": None}], hoy)
-    pagos = [{"que_es": "Cheque", "no_cheque": "1840", "nombre_banco": "PICHINCHA",
-              "dia_ingreso": dt.date(2026, 9, 1), "importe": 300}]
-    despachos = [{"numero": "DES-1", "corto": "1", "dia": "2026-09-03", "rollos": 2, "unidades": 0}]
-    pedidos = [{"numero": "P9", "fecha": "2026-08-20", "n_lineas": 3}]
-    items = mas.actividad(facturas, pagos, despachos, pedidos)
-    assert [x["tipo"] for x in items] == ["despacho", "factura", "pago", "credito", "pedido"]
-    assert items[2]["titulo"] == "Recibimos su cheque 1840" and items[2]["importe"] == 300
-    assert items[3]["titulo"] == "Devolución 2" and items[3]["importe"] == 50
-
-
 # ---------------------------------------------------------------------------
 # Las pantallas
 # ---------------------------------------------------------------------------
 
 
 def test_las_pantallas_de_mas_usan_el_armazon_y_estan_en_el_menu():
-    for pantalla in ("mas", "como_pagar", "mis_datos", "mi_anio", "pedidos", "avisar_pago", "actividad"):
+    for pantalla in ("mas", "mis_datos", "mi_anio", "pedidos"):
         t = (TPL / f"{pantalla}.html").read_text(encoding="utf-8")
         assert '{% extends "portal/_app.html" %}' in t, pantalla
     menu = (TPL / "mas.html").read_text(encoding="utf-8")
-    for destino in ("/pedidos", "/avisar-pago", "/como-pagar", "/actividad", "/mi-anio",
-                    "/facturas?ver=pagadas", "/mis-datos", "/mis-cuentas", "/salir"):
+    for destino in ("/pedidos", "/mi-anio", "/mis-datos", "/mis-cuentas", "/salir"):
         assert f'href="{destino}"' in menu, destino
+    # Dueña 09/09/2026: "o no sirven o la info está en otros lados".
+    for fuera in ("/avisar-pago", "/como-pagar", "/actividad", "/facturas?ver=pagadas"):
+        assert fuera not in menu, fuera
     app_ = (TPL / "_app.html").read_text(encoding="utf-8")
     assert app_.count('href="/mas"') >= 2
 
@@ -184,8 +126,7 @@ def test_las_pantallas_de_mas_usan_el_armazon_y_estan_en_el_menu():
 def test_sin_sesion_todo_manda_a_la_puerta():
     app, deshacer = _app_portal()
     try:
-        for ruta in ("/mas", "/como-pagar", "/mis-datos", "/mi-anio", "/pedidos",
-                     "/avisar-pago", "/actividad"):
+        for ruta in ("/mas", "/mis-datos", "/mi-anio", "/pedidos"):
             r = app.test_client().get(ruta)
             assert r.status_code == 302 and r.headers["Location"].endswith("/ingresar"), ruta
     finally:
@@ -203,45 +144,6 @@ def test_mis_datos_muestra_la_ficha_y_el_pedido_de_correccion_deja_aviso(monkeyp
         assert "0997857539" in html and "teliscovich@gmail.com" in html and "Quito" in html.title() or "QUITO" in html
         r = c.post("/mis-datos", data={"texto": "cambió el teléfono"})
         assert r.status_code == 302 and dejados == ["cambió el teléfono"]
-    finally:
-        deshacer()
-
-
-def test_avisar_un_pago_por_la_pantalla_guarda_y_avisa_a_la_oficina(monkeypatch):
-    app, deshacer = _app_portal()
-    try:
-        _cliente(monkeypatch)
-        guardados, campanita = [], []
-        monkeypatch.setattr(mas, "guardar_aviso_pago",
-                            lambda *a: guardados.append(a) or (True, "Recibimos su aviso."))
-        monkeypatch.setattr(mas, "avisos_de_pago_de", lambda cod, limite=20: [])
-        from modules.avisos import queries as avisos
-        monkeypatch.setattr(avisos, "avisar", lambda **kw: campanita.append(kw) or True)
-        c = _sesion(app)
-        assert "Mandar el aviso" in c.get("/avisar-pago").get_data(as_text=True)
-        r = c.post("/avisar-pago", data={
-            "tipo": "transferencia", "importe": "500", "fecha": "2026-09-04",
-            "referencia": "123", "nota": "",
-            "comprobante": (io.BytesIO(b"jpg"), "c.jpg", "image/jpeg")},
-            content_type="multipart/form-data")
-        assert r.status_code == 302
-        assert guardados[0][0] == "AJT" and guardados[0][1] == "transferencia"
-        assert campanita[0]["titulo"] == "AJT avisa un pago desde el portal"
-        assert campanita[0]["url"] == "/clientes/avisos-de-pago"
-    finally:
-        deshacer()
-
-
-def test_como_pagar_sin_texto_dice_que_llame(monkeypatch):
-    app, deshacer = _app_portal()
-    try:
-        _cliente(monkeypatch)
-        monkeypatch.setattr(mas, "como_pagar", lambda: "")
-        html = _sesion(app).get("/como-pagar").get_data(as_text=True)
-        assert "Llámenos" in html
-        monkeypatch.setattr(mas, "como_pagar", lambda: "Banco Pichincha cta 123")
-        html = _sesion(app).get("/como-pagar").get_data(as_text=True)
-        assert "Banco Pichincha cta 123" in html
     finally:
         deshacer()
 
@@ -267,34 +169,6 @@ def _login(app, user, permisos):
         session["user_id"] = user["id_usuario"]
         g.user = user
         g.permisos = set(permisos)
-
-
-def test_el_buzon_de_la_oficina_pide_permiso_de_cheques(app, monkeypatch):
-    import db
-    monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [])
-    _login(app, {"id_usuario": 3, "username": "maribel", "nombre_rol": "INT", "activo": True, "vend": None},
-           {"clientes.ver"})
-    assert app.test_client().get("/clientes/avisos-de-pago").status_code == 404
-
-
-def test_el_buzon_lista_y_marca_atendido(app, monkeypatch):
-    import db
-    monkeypatch.setattr(db, "fetch_all", lambda *a, **k: [
-        {"id_aviso_pago": 7, "codigo_cli": "AJT", "nombre": "TOTOY", "vend": "EDG",
-         "tipo": "transferencia", "importe": 500, "fecha": dt.date(2026, 9, 4),
-         "referencia": "123", "nota": None, "archivo_nombre": "c.jpg", "archivo_tipo": "image/jpeg",
-         "creado_en": dt.datetime(2026, 9, 4, 15, 0), "atendido_en": None,
-         "atendido_por": None, "atendido_nota": None}])
-    ejecutado = []
-    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: ejecutado.append((sql, params)) or 1)
-    _login(app, {"id_usuario": 3, "username": "alex", "nombre_rol": "INT", "activo": True, "vend": None},
-           {"cheques.ver"})
-    c = app.test_client()
-    html = c.get("/clientes/avisos-de-pago").get_data(as_text=True)
-    assert "AJT" in html and "Transferencia" in html and "500,00" in html and "Atendido" in html
-    r = c.post("/clientes/avisos-de-pago/7/atender", data={"nota": "cheque 1840"})
-    assert r.status_code == 302
-    assert "atendido_en = now()" in ejecutado[0][0] and ejecutado[0][1] == ("alex", "cheque 1840", 7)
 
 
 def test_los_pedidos_dicen_medio_rollo_y_un_rollo_como_una_persona(monkeypatch):

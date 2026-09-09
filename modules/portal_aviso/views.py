@@ -52,11 +52,6 @@ def pantalla():
     con_correo = [f for f in filas if f["correo"]]
     sin_correo = [f for f in filas if not f["correo"]]
     try:
-        from modules.portal import mas as portal_mas
-        como_pagar_texto = portal_mas.como_pagar()
-    except Exception:  # noqa: BLE001 -- sin la clave, vacío
-        como_pagar_texto = ""
-    try:
         vendedores = queries.vendedores()
     except Exception as e:  # noqa: BLE001 -- sin la columna (mig 0246), sin el bloque
         _LOG.warning("portal_aviso: no pude leer los vendedores (%s)", e)
@@ -67,7 +62,6 @@ def pantalla():
         historial=historial, encendido=encendido, error=error,
         ejemplo=envio.texto_del_aviso(con_correo[0]["nombre"] if con_correo else "cliente"),
         mail_prueba=request.args.get("a", ""),
-        como_pagar_texto=como_pagar_texto,
         vendedores=vendedores,
     )
 
@@ -109,17 +103,6 @@ def mandar():
         return redirect(url_for("portal_aviso.pantalla"))
     envio.mandar_en_fondo(filas, _quien())
     flash(f"Saliendo el aviso a {len(filas)} clientes. Van apareciendo abajo a medida que salen.", "ok")
-    return redirect(url_for("portal_aviso.pantalla"))
-
-
-@portal_aviso_bp.route("/portal-aviso/como-pagar", methods=["POST"])
-@requiere_login
-@requiere_permiso(PERMISO)
-def como_pagar():
-    """El texto de "Cómo pagar" que ve el cliente en su portal."""
-    from modules.portal import mas as portal_mas
-    portal_mas.guardar_como_pagar(request.form.get("texto") or "")
-    flash("Guardado. Es lo que ve el cliente en «Cómo pagar».", "ok")
     return redirect(url_for("portal_aviso.pantalla"))
 
 

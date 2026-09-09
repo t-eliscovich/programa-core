@@ -3,6 +3,10 @@
 {% extends "portal/_app.html" %}
 {% block titulo %}Mi cuenta — Intela{% endblock %}
 {% block seccion %}inicio{% endblock %}
+{% block cabeza %}
+<link rel="stylesheet" href="/static/tailwind.css">
+{% include "portal/_hoja_css.html" %}
+{% endblock %}
 {% block contenido %}
 {% set _saldo = t.saldo_neto if t.saldo_neto is not none else (t.saldo or 0) %}
 <div class="grid inicio">
@@ -46,35 +50,13 @@
   {% endif %}
  </div>
 
- <div class="grid">
-  <div>
-    <h2>Facturas pendientes <a href="/facturas">Ver todas{% if facturas %} ({{ facturas|length }}){% endif %} ›</a></h2>
-    <div class="lista">
-      {% for f in facturas[:5] %}{% include "portal/_fila_factura.html" %}{% else %}
-        <div class="card vacio"><b>No tiene facturas pendientes</b>Está al día con Intela.</div>
-      {% endfor %}
-    </div>
-  </div>
-  <div>
-    <h2>Últimos pagos recibidos <a href="/mis-pagos">Ver todos ›</a></h2>
-    <div class="lista">
-      {% for p in pagos[:3] %}{% include "portal/_fila_pago.html" %}{% else %}
-        <div class="card vacio">Todavía no registramos pagos suyos.</div>
-      {% endfor %}
-    </div>
-  </div>
-  <div>
-    <h2>Últimos despachos <a href="/despachos">Ver todos ›</a></h2>
-    <div class="lista">
-      {% if despachos is none %}
-        <div class="card vacio">No pudimos traer sus despachos en este momento. <a href="/despachos" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
-      {% else %}
-      {% for g in despachos[:3] %}{% include "portal/_fila_despacho.html" %}{% else %}
-        <div class="card vacio">Sin despachos en los últimos 3 meses.</div>
-      {% endfor %}
-      {% endif %}
-    </div>
-  </div>
+ {# EL ESTADO DE CUENTA, tal como lo ve la oficina (dueña 09/09/2026:
+    "inicio tiene que ser estado de cuenta tal como se ve en estado de cuenta
+    de Programa Core"). Es el MISMO parcial que imprime la oficina y que va en
+    el PDF: mismas columnas, mismo orden, mismos números. En el celular la
+    grilla se desliza de costado. #}
+ <div class="hoja-ec">
+   {% include "informes/_estado_cuenta_impreso.html" %}
  </div>
 </div>
 {% endblock %}

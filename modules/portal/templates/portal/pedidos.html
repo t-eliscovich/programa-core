@@ -16,8 +16,9 @@
   {% set et = p.etapas.get(ped.numero) %}
   <div class="fila" style="display:block">
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:baseline">
-      <span class="t">Pedido {{ ped.numero }}</span>
-      <span class="s" style="grid-column:auto">{{ ped.fecha_es }}{% if ped.dias %} · hace {{ ped.dias }} día{{ 's' if ped.dias != 1 }}{% endif %}</span>
+      {# La fecha es lo grande (dueña 09/09/2026). #}
+      <span class="t">{{ ped.fecha|fecha_es if ped.fecha else ped.fecha_es }}{% if ped.dias %} <small style="font-weight:500;color:var(--ink3)">· hace {{ ped.dias }} día{{ 's' if ped.dias != 1 }}</small>{% endif %}</span>
+      <span class="s" style="grid-column:auto">Pedido {{ ped.numero }}</span>
     </div>
     {% set _n = {'enviado': 0, 'en_tintura': 1, 'terminado': 2}.get(et.pedido if et else 'enviado', 0) %}
     <div class="pasos">

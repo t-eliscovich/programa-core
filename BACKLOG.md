@@ -20,8 +20,12 @@ El plan entero, con el porqué de cada fase, está en
 ## Portal del cliente
 
 El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md`. El
-04/09 se rediseñó entero (armazón `_app.html`, "Más" con pedidos, avisar un
-pago, cómo pagar, actividad, año en kilos, pagadas, mis datos). Lo que queda:
+04/09 se rediseñó entero (armazón `_app.html`); el 09/09 el inicio pasó a ser
+la grilla del estado de cuenta de la oficina, las fechas van primero, "Más"
+quedó con pedidos, año en kilos y mis datos (se fueron avisar un pago, cómo
+pagar, actividad y facturas pagadas), y se cruzan cheques con facturas. Queda
+la tabla `scintela.portal_aviso_pago` (mig 0245) sin pantalla: borrarla en la
+próxima limpieza. Lo que queda:
 
 ### [S] Fase 4 por MAIL: lo que queda después de la pantalla
 La pantalla /portal-aviso ya está (04/09): prueba a la casa, interruptor
@@ -30,10 +34,6 @@ prueba y ajuste el texto; (2) el "sale solo los lunes" —hoy se aprieta el
 botón—, que es un cron sobre `envio.mandar` con el interruptor prendido;
 (3) el correo de cada vendedor en `seguridad.usuario.email` para que el
 Reply-To le llegue a él.
-
-### [XS] Cargar el texto de "Cómo pagar"
-Desde /portal-aviso (cuenta del Pichincha, a nombre de quién, RUC). Hasta
-que esté, el portal le dice al cliente que llame a la oficina.
 
 ### [XS] Cliente de prueba AJT: sacarle el correo de Tamara de la ficha
 Antes del lanzamiento real. Se le cargó `teliscovich@gmail.com` en
