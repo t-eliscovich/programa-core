@@ -9,7 +9,7 @@
   <div><span class="lbl">RUC</span><b>{{ cli.ruc or '—' }}</b></div>
   <div><span class="lbl">Correo para el portal</span><b>{{ correo_portal or cli.correo or '—' }}</b></div>
   <div><span class="lbl">Teléfono</span><b>{{ cli.telefono or '—' }}</b></div>
-  <div><span class="lbl">Dirección</span><b>{{ cli.direccion1 or '—' }}{% if cli.direccion2 %}<br>{{ cli.direccion2 }}{% endif %}</b>
+  <div><span class="lbl">Dirección</span><b>{{ cli.direccion1 or '—' }}{% if cli.direccion2 and cli.direccion2|trim|upper not in (cli.direccion1 or '')|upper %}<br>{{ cli.direccion2 }}{% endif %}</b>
     {% if cli.canton or cli.provincia %}<small style="color:var(--ink3)">{{ cli.canton }}{% if cli.canton and cli.provincia %} · {% endif %}{{ cli.provincia }}</small>{% endif %}</div>
 </div>
 <div class="card" style="margin-top:12px">

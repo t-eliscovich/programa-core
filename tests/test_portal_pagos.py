@@ -165,6 +165,22 @@ def test_el_orden_es_por_la_fecha_que_se_muestra(monkeypatch):
     assert html.index("0003333") < html.index("0001111") < html.index("0002222")
 
 
+def test_el_mes_del_grupo_es_el_de_la_fecha_que_se_muestra(monkeypatch):
+    """🐞 09/09/2026, con AJT: un bloque "SIN FECHA" entre septiembre y julio
+    con cuatro cheques que decían "recibido 27/07/2026". El grupo iba por
+    `dia_ingreso` pelado y la fila por `dia_ingreso or fecha_recibido or
+    fecha`: dos reglas para la misma fecha. Ahora es UNA (`dia_recibido`)."""
+    from datetime import date
+    html = _pantalla(monkeypatch, [
+        _cheque(id_cheque=1, no_cheque="0001111", dia_ingreso=date(2026, 9, 1)),
+        _cheque(id_cheque=2, no_cheque="0002222", dia_ingreso=None,
+                fecha_recibido=date(2026, 7, 27), fecha=date(2026, 7, 27)),
+    ])
+    assert "Sin fecha" not in html and "SIN FECHA" not in html
+    assert "Julio 2026" in html
+    assert html.index("Septiembre 2026") < html.index("0001111") < html.index("Julio 2026") < html.index("0002222")
+
+
 def test_el_deposito_no_se_llama_cheque(monkeypatch):
     """En la tabla de cheques viven las tres cosas. Decirle 'Cheque' a una
     transferencia hace que el cliente jure que él no dejó ningún cheque."""

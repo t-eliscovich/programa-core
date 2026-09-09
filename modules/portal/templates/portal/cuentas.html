@@ -3,9 +3,14 @@
 {% extends "portal/base.html" %}
 {% block titulo %}Sus cuentas — Intela{% endblock %}
 {% block contenido %}
-  <div class="titulo">Tiene dos cuentas</div>
+  {% if cuentas|length > 1 %}
+  <div class="titulo">Tiene {{ 'dos' if cuentas|length == 2 else cuentas|length }} cuentas</div>
   <p class="bajada">Su RUC figura en más de una. Elija cuál quiere ver — puede
     cambiar cuando quiera.</p>
+  {% else %}
+  <div class="titulo">Su cuenta</div>
+  <p class="bajada">Su RUC figura en una sola.</p>
+  {% endif %}
 
   <form method="post">
     {{ csrf_token_input | safe }}

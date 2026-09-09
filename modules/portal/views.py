@@ -372,7 +372,13 @@ def _pagos_de(data: dict) -> list[dict]:
               # Un cheque que el banco devolvió NO es un pago hecho: se ve, pero
               # rotulado (dueña 04/09). Los estados 1/2/3 son "devuelto" y el 9
               # "sin fondos" (ver cheques/estados.py).
-              "devuelto": (c.get("stat") or "").strip().upper() in ("1", "2", "3", "9")}
+              "devuelto": (c.get("stat") or "").strip().upper() in ("1", "2", "3", "9"),
+              # LA fecha que se le muestra ("recibido …"): la de ingreso, y si
+              # no está, la de recibo o la del cheque. Se guarda una vez para
+              # que la fila, el orden y el mes del grupo usen la MISMA — el
+              # 09/09 AJT veía un bloque "Sin fecha" con cheques que decían
+              # "recibido 27/07/2026": el grupo iba por `dia_ingreso` pelado.
+              "dia_recibido": c.get("dia_ingreso") or c.get("fecha_recibido") or c.get("fecha")}
              for c in (data.get("cheques") or [])
              if estados.se_le_muestra_al_cliente(c.get("stat"))]
     return sorted(pagos, key=_dia_recibido, reverse=True)
@@ -573,7 +579,7 @@ def mis_pagos():
     pagos = _pagos_de(data)
     return render_template("portal/pagos.html", codigo=cod, pagos=pagos,
                            cli=data.get("cliente") or {},
-                           grupos=presentacion.por_mes(pagos, "dia_ingreso"))
+                           grupos=presentacion.por_mes(pagos, "dia_recibido"))
 
 
 def _dia_recibido(c: dict):

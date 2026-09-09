@@ -39,10 +39,6 @@ que esté, el portal le dice al cliente que llame a la oficina.
 Antes del lanzamiento real. Se le cargó `teliscovich@gmail.com` en
 `cliente.correo` (04/09) para probar el portal; la ficha no tenía correo.
 
-### [S] El teléfono del vendedor en su tarjeta del portal
-La tarjeta "Su vendedor" muestra nombre y correo; no hay columna de
-teléfono/WhatsApp en `seguridad.usuario`. Agregarla y un botón de WhatsApp.
-
 ## Poner red donde no hay
 
 ### [L] Cobertura real de la conciliación

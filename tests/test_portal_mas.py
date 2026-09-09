@@ -295,3 +295,66 @@ def test_el_buzon_lista_y_marca_atendido(app, monkeypatch):
     r = c.post("/clientes/avisos-de-pago/7/atender", data={"nota": "cheque 1840"})
     assert r.status_code == 302
     assert "atendido_en = now()" in ejecutado[0][0] and ejecutado[0][1] == ("alex", "cheque 1840", 7)
+
+
+def test_los_pedidos_dicen_medio_rollo_y_un_rollo_como_una_persona(monkeypatch):
+    """🐞 09/09/2026, con AJT: "0 rollos" (era medio rollo redondeado a
+    entero) y "1 rollos"."""
+    app, deshacer = _app_portal()
+    try:
+        _cliente(monkeypatch)
+        monkeypatch.setattr(mas, "pedidos_de", lambda cod: {"ok": True, "etapas": {}, "pedidos": [{
+            "numero": "PDCL-1", "fecha": "2026-09-07", "fecha_es": "7 sep", "dias": 2,
+            "codigo_cliente": "AJT", "lineas": [
+                {"tela": "Alemania 1.2", "color": "BLA", "producto": "p1", "cantidad": 0.5, "unidad": "roll"},
+                {"tela": "Kiana Mundial", "color": "NAF", "producto": "p2", "cantidad": 1.0, "unidad": "roll"},
+                {"tela": "Pique Especial", "color": "VPI", "producto": "p3", "cantidad": 2.0, "unidad": "roll"},
+                {"tela": "Cuellos T40", "color": "ARV", "producto": "p4", "cantidad": 1.0, "unidad": "un"},
+                {"tela": "Puños", "color": "SAL", "producto": "p5", "cantidad": 2.0, "unidad": "kg"},
+            ]}]})
+        html = _sesion(app).get("/pedidos").get_data(as_text=True)
+        assert "0,5 rollos" in html and "1 rollo<" in html and "2 rollos" in html
+        assert "1 unidad<" in html and "2 kg" in html
+        assert "0 rollos" not in html and "1 rollos" not in html
+    finally:
+        deshacer()
+
+
+def test_mis_datos_no_repite_el_pedazo_de_direccion_que_asinfo_trae_dos_veces(monkeypatch):
+    """🐞 09/09/2026, con AJT: la dirección salía "…Y ALFARO FTE PARQUE
+    ECOLOGICO" y debajo "FARO FTE PARQUE ECOLOGICO" — `direccion2` de Asinfo
+    es la cola de `direccion1`. Si ya está adentro, no se repite."""
+    app, deshacer = _app_portal()
+    try:
+        _cliente(monkeypatch)
+        from modules.portal import acceso
+        fic = acceso.ficha("AJT")
+        fic.update(direccion1="SOLANO DE QUIÑONEZ OE1-126 Y ALFARO FTE PARQUE ECOLOGICO",
+                   direccion2="FARO FTE PARQUE ECOLOGICO")
+        monkeypatch.setattr(acceso, "ficha", lambda cod: dict(fic))
+        html = _sesion(app).get("/mis-datos").get_data(as_text=True)
+        assert html.count("FTE PARQUE ECOLOGICO") == 1
+        fic["direccion2"] = "OFICINA 3"
+        html = _sesion(app).get("/mis-datos").get_data(as_text=True)
+        assert "OFICINA 3" in html
+    finally:
+        deshacer()
+
+
+def test_mis_cuentas_no_dice_dos_cuando_hay_una():
+    """🐞 09/09/2026: /mis-cuentas decía "Tiene dos cuentas" mostrando una."""
+    app, deshacer = _app_portal()
+    try:
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+            s["portal_cuentas"] = [{"codigo_cli": "AJT", "nombre": "TOTOY"}]
+        html = c.get("/mis-cuentas").get_data(as_text=True)
+        assert "dos cuentas" not in html and "Su cuenta" in html
+        with c.session_transaction() as s:
+            s["portal_cuentas"] = [{"codigo_cli": "AJO", "nombre": "PUEBLA"}, {"codigo_cli": "AJ2", "nombre": "PUEBLA"}]
+            s["portal_cliente"] = "AJO"
+        html = c.get("/mis-cuentas").get_data(as_text=True)
+        assert "Tiene dos cuentas" in html
+    finally:
+        deshacer()

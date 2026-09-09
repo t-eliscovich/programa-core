@@ -209,7 +209,7 @@ def actividad(facturas: list[dict], pagos: list[dict], despachos: list | None,
     for p in pagos:
         num = (p.get("no_cheque") or "").strip()
         items.append({
-            "fecha": p.get("dia_ingreso") or p.get("fecha_recibido") or p.get("fecha"),
+            "fecha": p.get("dia_recibido") or p.get("dia_ingreso") or p.get("fecha_recibido") or p.get("fecha"),
             "tipo": "pago",
             "titulo": f"Recibimos su {p.get('que_es', 'pago').lower()}{(' ' + num) if num else ''}",
             "detalle": (p.get("nombre_banco") or "").title(),

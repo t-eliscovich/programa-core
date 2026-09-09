@@ -463,6 +463,31 @@ def test_facturas_filtra_vencidas_y_busca_por_numero(monkeypatch):
         deshacer()
 
 
+def test_las_pagadas_muestran_lo_que_fue_la_factura_y_no_un_cero(monkeypatch):
+    """🐞 09/09/2026, con AJT: la lista de pagadas era una columna de "0,00"
+    (el número grande era el saldo). Una pagada no tiene saldo: se muestra el
+    importe, y abajo lo abonado y la retención."""
+    import datetime as dt
+    app, deshacer = _app_portal()
+    try:
+        _data(monkeypatch)
+        from modules.informes import queries as q
+        monkeypatch.setattr(q, "facturas_pagadas_cliente", lambda cod, meses: [
+            _factura(numf=182188, numf_completo="001-099-000182188", id_factura=3,
+                     fecha=dt.date(2026, 8, 19), importe=2107.96, saldo=0.02,
+                     abono=2071.28, retencion=36.66, stat="X")])
+        c = app.test_client()
+        with c.session_transaction() as s:
+            s["portal_cliente"] = "AJT"
+        html = c.get("/facturas?ver=pagadas").get_data(as_text=True)
+        fila = html.split("id=3\"")[1].split("</a>")[0]
+        assert "2.107,96" in fila and "<small>pagada</small>" in fila
+        assert "0,02" not in fila and "0,00" not in fila
+        assert "abonado 2.071,28" in fila and "retención 36,66" in fila
+    finally:
+        deshacer()
+
+
 def test_la_factura_que_una_devolucion_deja_en_cero_se_ve_compensada():
     """Dueña 04/09, con AJT: la 181251 por 10.741,46 y la devolución 11852
     por −10.741,46 se leían como "debo" y "me deben" en la misma pantalla."""
