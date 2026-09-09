@@ -709,7 +709,14 @@ def _sql_anio(cod: str, r10: str, anio: int) -> str:
 SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
        ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.codigo, ''))), ''),
               RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3))            AS codigo,
-       LTRIM(RTRIM(ISNULL(col.nombre, '')))                      AS color,
+       -- Si el renglón no trae el atributo Color, el nombre se busca por el
+       -- código que va al final del producto (NTBLA → BLA → BLANCO). Dueña
+       -- 09/09: "Naty · BLA" sin nombre, "y veo que es blanco".
+       ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.nombre, ''))), ''),
+              (SELECT TOP 1 LTRIM(RTRIM(va.nombre)) FROM valor_atributo va
+                WHERE va.id_atributo = {ATRIBUTO_COLOR}
+                  AND va.codigo = RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3)
+                ORDER BY va.activo DESC, va.id_valor_atributo))  AS color,
        LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, '')))    AS categoria,
        SUM(CASE WHEN fc.id_documento IN ({DOC_DEVOLUCION}, {DOC_NCNT})
                 THEN -dfc.cantidad ELSE dfc.cantidad END)        AS cantidad,
@@ -779,8 +786,11 @@ def _agrupar_anio(filas: list[dict]) -> list[dict]:
         t = telas.setdefault(tela, {"tela": tela, "kg": 0.0, "rollos": 0, "unidades": 0.0,
                                     "colores": {}})
         c = t["colores"].setdefault((f.get("codigo") or "").strip(), {
-            "codigo": (f.get("codigo") or "").strip(), "color": (f.get("color") or "").strip(),
+            "codigo": (f.get("codigo") or "").strip(), "color": "",
             "kg": 0.0, "rollos": 0, "unidades": 0.0})
+        # El mismo código puede venir en dos filas (con y sin el atributo):
+        # el nombre lo pone la que lo tenga.
+        c["color"] = c["color"] or (f.get("color") or "").strip()
         if en_unidades:
             t["unidades"] += cant
             c["unidades"] += cant

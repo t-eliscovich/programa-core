@@ -322,3 +322,17 @@ def test_que_compro_aplana_tela_y_color_ordenado_por_kilos(monkeypatch):
             {"codigo": "CAR", "color": "CARDENILLO", "kg": 80.0, "rollos": 4, "unidades": 0}]}]})
     r = mas.que_compro("AJT", "1724354004001", 2026)
     assert [(i["tela"], i["codigo"]) for i in r["items"]] == [("Jersey 3", "MAR"), ("Rib", "CAR"), ("Jersey 3", "NEG")]
+
+
+def test_el_color_sin_nombre_lo_toma_de_la_fila_que_si_lo_trae_y_del_sql():
+    """🐞 09/09 (dueña): "Naty · BLA" sin nombre. Naty tiene renglones con y
+    sin el atributo Color: el nombre lo pone el que lo trae, y en la base
+    se busca por el código del producto."""
+    from modules.asinfo import factura_lineas as fl
+    telas = fl._agrupar_anio([
+        {"tela": "Naty", "codigo": "BLA", "color": "", "categoria": "Jersey", "cantidad": 100.0, "renglones": 4},
+        {"tela": "Naty", "codigo": "BLA", "color": "BLANCO", "categoria": "Jersey", "cantidad": 50.0, "renglones": 2},
+    ])
+    assert telas[0]["colores"][0] == {"codigo": "BLA", "color": "BLANCO", "kg": 150.0, "rollos": 6, "unidades": 0.0}
+    sql = fl._sql_anio("AJT", "1724354004", 2026)
+    assert "FROM valor_atributo va" in sql and "RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3)" in sql
