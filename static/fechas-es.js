@@ -46,9 +46,42 @@
     el.dispatchEvent(new Event(tipo, { bubbles: true }));
   }
 
+  // Los vestidos VIVOS (con sus listeners). Un WeakSet y no un atributo: un
+  // `cloneNode(true)` (el "+ Otro cheque" de Cobranza, y otros cuatro) copia
+  // los atributos pero NO los listeners, así que el clon llegaba con el cuadro
+  // de texto suelto —escribir ahí no movía nada— y el atributo lo hacía pasar
+  // por vestido. Dueña 09/09/2026: la fecha del anticipo "al revés".
+  var vivos = new WeakSet();
+
+  function desvestir(orig) {
+    // Un clon muerto: sacar el cuadro y el botón viejos y dejar el nativo
+    // como estaba, con lo que se le guardó en data-fe-*.
+    var caja = orig.parentNode;
+    if (!caja || !caja.classList || !caja.classList.contains('fecha-es')) return;
+    caja.parentNode.insertBefore(orig, caja);
+    caja.parentNode.removeChild(caja);
+    if (orig.dataset.feStyle) orig.setAttribute('style', orig.dataset.feStyle);
+    else orig.removeAttribute('style');
+    if (orig.dataset.feMin) orig.setAttribute('min', orig.dataset.feMin);
+    if (orig.dataset.feMax) orig.setAttribute('max', orig.dataset.feMax);
+    if (orig.dataset.feReq === '1') orig.required = true;
+    orig.removeAttribute('tabindex');
+    orig.removeAttribute('aria-hidden');
+  }
+
   function vestir(orig) {
-    if (orig.dataset.fechasEs || orig.hasAttribute('data-nativo')) return;
-    orig.dataset.fechasEs = '1';
+    if (vivos.has(orig) || orig.hasAttribute('data-nativo')) return;
+    vivos.add(orig);
+    if (orig.parentNode && orig.parentNode.classList &&
+        orig.parentNode.classList.contains('fecha-es')) {
+      desvestir(orig);
+    }
+    // Lo que hay que recordar para poder desvestir un clon.
+    orig.dataset.feStyle = orig.getAttribute('style') || '';
+    orig.dataset.feMin = orig.getAttribute('min') || '';
+    orig.dataset.feMax = orig.getAttribute('max') || '';
+    orig.dataset.feReq = orig.required ? '1' : '';
+    if (orig.offsetWidth > 0) orig.dataset.feWidth = String(orig.offsetWidth);
 
     var texto = document.createElement('input');
     texto.type = 'text';
@@ -59,7 +92,7 @@
     texto.autocomplete = 'off';
     texto.value = aEs(orig.value);
     // El mismo ancho que tenía el nativo (un input de texto sale más ancho).
-    if (orig.offsetWidth > 0) texto.style.width = orig.offsetWidth + 'px';
+    if (orig.dataset.feWidth) texto.style.width = orig.dataset.feWidth + 'px';
     if (orig.title) texto.title = orig.title;
     if (orig.disabled) texto.disabled = true;
     if (orig.readOnly) texto.readOnly = true;
@@ -73,7 +106,7 @@
     orig.removeAttribute('min'); orig.removeAttribute('max');
     if (orig.id) {
       // El <label for=…> tiene que seguir apuntando al cuadro que se ve.
-      var lab = document.querySelector('label[for="' + orig.id + '"]');
+      var lab = document.querySelector('label[for="' + orig.id + '"], label[for="' + orig.id + '-es"]');
       texto.id = orig.id + '-es';
       if (lab) lab.setAttribute('for', texto.id);
     }
@@ -173,6 +206,21 @@
   // Lo que htmx trae después también.
   document.addEventListener('htmx:afterSwap', function (ev) { vestirTodos(ev.target); });
   document.addEventListener('htmx:load', function (ev) { vestirTodos(ev.target); });
+  // Y lo que cualquier JS agrega después (clones de "+ Otro cheque", filas
+  // nuevas): se viste solo, sin que cada pantalla tenga que acordarse.
+  if (window.MutationObserver) {
+    new MutationObserver(function (muts) {
+      for (var i = 0; i < muts.length; i++) {
+        var agregados = muts[i].addedNodes;
+        for (var j = 0; j < agregados.length; j++) {
+          var n = agregados[j];
+          if (n.nodeType !== 1) continue;
+          if (n.matches && n.matches('input[type="date"]')) vestir(n);
+          else vestirTodos(n);
+        }
+      }
+    }).observe(document.documentElement, { childList: true, subtree: true });
+  }
 
   window.fechasEs = { vestir: vestirTodos, aIso: aIso, aEs: aEs };
 })();
