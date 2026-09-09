@@ -1,46 +1,6 @@
 {% extends "portal/_app.html" %}
-{% block titulo %}Su año en kilos — Intela{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
-   pongamos algo más, colores telas etc." #}
-<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
-{% if compro.estado == 'ok' and compro.telas %}
-<div class="card" style="padding:6px 8px">
-  <table class="tabla">
-    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
-    <tbody>{% for t in compro.telas %}
-      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
-      {% for c in t.colores %}
-      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
-      {% endfor %}
-    {% endfor %}</tbody>
-  </table>
-</div>
-{% elif compro.estado == 'ok' %}
-<div class="card vacio">Sin compras de tela en ese año.</div>
-{% else %}
-<div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
-{% endif %}
-{% endblock %}
-{% block seccion %}mas{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
-   pongamos algo más, colores telas etc." #}
-<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
-{% if compro.estado == 'ok' and compro.telas %}
-<div class="card" style="padding:6px 8px">
-  <table class="tabla">
-    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
-    <tbody>{% for t in compro.telas %}
-      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
-      {% for c in t.colores %}
-      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
-      {% endfor %}
-    {% endfor %}</tbody>
-  </table>
-</div>
-{% elif compro.estado == 'ok' %}
-<div class="card vacio">Sin compras de tela en ese año.</div>
-{% else %}
-<div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
-{% endif %}
-{% endblock %}
+{% block titulo %}Su año en kilos — Intela{% endblock %}
+{% block seccion %}mas{% endblock %}
 {% block contenido %}
 <a class="volver" href="/mas">‹ Más</a>
 <h1 class="pag">Su año en kilos</h1>

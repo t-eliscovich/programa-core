@@ -285,6 +285,10 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
         html = _sesion(app).get("/mi-anio?anio=2025").get_data(as_text=True)
         assert 'href="/mi-anio?anio=2025" class="on"' in html
         assert "Qué compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
+        # 🐞 09/09: el bloque había quedado adentro del <title> (un replace
+        # sobre el primer endblock). Lo que se ve tiene que estar en <main>.
+        assert "<title>Su año en kilos — Intela</title>" in html
+        assert html.index("<main>") < html.index("Qué compró en 2025") < html.index("</main>")
     finally:
         deshacer()
 
