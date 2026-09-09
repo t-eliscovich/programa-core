@@ -1131,9 +1131,40 @@ def actualizar() -> dict:
         # tela que se vendió entera tampoco está en la lista —no le queda un
         # kilo— y ésa tiene que quedarse: vender lo parado es exactamente lo que
         # la competencia premia. La que se saca es la que no debió entrar nunca.
+        #
+        # ⭐⭐ Y UN PEDIDO (U ORDEN) QUE NACE DESPUÉS DE LA LARGADA NO APAGA
+        # NADA (dueña 09/09/2026). Inter BLA estaba en la cohorte desde el
+        # 20/08 con 255 kg parados y 10 puntos; el 07/09 RMY colocó 146,9 kg
+        # (factura 001-099-000183621) y ESE MISMO DÍA entró en Asinfo un
+        # pedido de 3 kg de otro cliente. El refresco vio `pedida`, apagó el
+        # ítem y al rehacer `parado_venta` se llevó la venta: el vendedor
+        # perdió ~1.470 puntos por un pedido de 3 kg. Mismo agujero con
+        # Alemania AZN (248 kg apagados por un pedido de 0,15 kg del 09/09),
+        # Fleece 102 CPA (pedido de 4 kg del 03/09) y Fleece 2.2 Sin Perchar
+        # BHU (orden de fabricación del 08/09).
+        #
+        # La regla "pedida / produciendo = no es saldo" sirve para no dejar
+        # ENTRAR tela que ya tiene dueño. Pero una tela que el día de la
+        # largada era un saldo sigue siéndolo aunque después alguien pida 3
+        # kg: lo que se congela en la largada (meta, puntos, motivo) se
+        # congela también acá. Sólo apaga la prueba ANTERIOR a la largada —
+        # la que dice "nunca debió entrar". `nueva` no lleva fecha y no
+        # "nace" después: es el stock de hace 90 días, y se sigue mirando
+        # igual.
+        largada_f = date.fromisoformat(config("largada", "2026-08-25"))
+
+        def _descalifica(p: dict) -> bool:
+            if p.get("nueva"):
+                return True
+            if p.get("pedida") and not _nacio_despues(
+                    p.get("ultimo_pedido"), largada_f):
+                return True
+            return bool(p.get("produciendo") and not _nacio_despues(
+                p.get("ultima_orden"), largada_f))
+
         fuera = [p for p in todas
                  if not p.get("entra", True)
-                 and (p.get("nueva") or p.get("pedida") or p.get("produciendo"))
+                 and _descalifica(p)
                  and (motivo_previo.get((p["subcategoria"], p["color"]))
                       or "parado") == "parado"]
         nuevas = [p for p in fuera if p.get("nueva")]
@@ -1161,8 +1192,7 @@ def actualizar() -> dict:
                       AND (motivo IS NULL
                            OR (%s AND motivo = 'parado'))""",
                 (p.get("motivo"), p["subcategoria"], p["color"],
-                 bool(p.get("nueva") or p.get("pedida")
-                      or p.get("produciendo"))), conn=conn)
+                 _descalifica(p)), conn=conn)
             # ⭐ Y se vuelve a encender la que había quedado afuera: cumplió
             # los días en bodega, o su pedido ya salió (o envejeció). Hoy sí
             # está parada.
@@ -1493,6 +1523,18 @@ def _fecha(v):
     if isinstance(v, date):
         return v
     return date.fromisoformat(str(v)[:10])
+
+
+def _nacio_despues(fecha, largada: date) -> bool:
+    """Si un pedido u orden es de la largada en adelante — y entonces no
+    apaga (ver `actualizar()`). Sin fecha no se puede decir que sea nuevo, así
+    que apaga como siempre: la duda no regala puntos."""
+    if not fecha:
+        return False
+    try:
+        return _fecha(fecha) >= largada
+    except ValueError:
+        return False
 
 
 def telas_a_sacar(filas: list[dict], puntos: dict[str, dict] | None = None) -> list[dict]:
@@ -2135,3 +2177,35 @@ def mis_clientes_parado(vend: str) -> list[dict]:
         """,
         {"cartera": vend},
     )
+
+
+def entradas() -> dict:
+    """Qué día entró cada tela a la lista, con sus kilos — y cuánta segunda
+    va entrando.
+
+    ⭐ Dueña 09/09/2026: *"una lista para mí a ver qué día entró qué tela con
+    sus kg… quiero ver cuánta segunda va entrando"*. La cohorte guarda
+    exactamente eso (`fecha_marcado`, `kg_al_marcar`, `motivo`) y nunca se
+    borra, así que la pantalla es una lectura, sin foto ni Asinfo.
+
+    Devuelve los renglones (más nuevos primero) y el resumen por día: kilos
+    que entraron como parada y como segunda. La apagada (`fuera`) se muestra
+    igual —entró ese día— pero dice que hoy no cuenta.
+    """
+    filas = db.fetch_all(
+        """
+        SELECT c.fecha_marcado AS fecha, c.subcategoria, c.color,
+               c.kg_al_marcar AS kg, c.motivo, c.fuera,
+               p.categoria
+          FROM scintela.parado_cohorte c
+          LEFT JOIN scintela.parado_punto p ON p.subcategoria = c.subcategoria
+         ORDER BY c.fecha_marcado DESC, c.subcategoria, c.color
+        """)
+    por_dia: dict = {}
+    for f in filas:
+        d = por_dia.setdefault(f["fecha"], {"fecha": f["fecha"], "telas": 0,
+                                            "parada": 0.0, "segunda": 0.0})
+        d["telas"] += 1
+        d["segunda" if f.get("motivo") == "segunda" else "parada"] += float(
+            f.get("kg") or 0)
+    return {"filas": filas, "dias": list(por_dia.values())}

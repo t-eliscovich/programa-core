@@ -1,0 +1,67 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Entradas{% endblock %}
+{% block contenido %}
+{# ⭐ ENTRADAS — sólo la dueña (09/09/2026: *"una lista para mí a ver qué día
+   entró qué tela con sus kg… quiero ver cuánta segunda va entrando"*).
+   Es la cohorte tal cual se fue escribiendo: la lista no borra nunca, así que
+   cada renglón es el día en que esa tela × color entró y con cuántos kilos.
+   Arriba, el resumen por día (lo que ella quiere mirar); abajo, el detalle. #}
+<div class="titulo-fila">
+  <h2 style="margin-top:0">Entradas</h2>
+</div>
+{% if dias %}
+<p class="sub" style="margin:0 0 10px">
+<b>{{ filas | sum(attribute='kg') | num_es(0) }} kg</b> en {{ filas | length }} telas ·
+parada <b>{{ dias | sum(attribute='parada') | num_es(0) }}</b> ·
+segunda <b>{{ dias | sum(attribute='segunda') | num_es(0) }}</b></p>
+
+<div class="caja"><table class="resumen" id="por-dia">
+<thead><tr>
+<th>Día</th><th class="n">Telas</th><th class="n">Parada</th>
+<th class="n">Segunda</th><th class="n">Total</th>
+</tr></thead>
+<tbody>
+{% for d in dias %}
+  <tr>
+    <td>{{ d.fecha.strftime('%d/%m/%y') }}</td>
+    <td class="n">{{ d.telas }}</td>
+    <td class="n">{% if d.parada %}{{ d.parada | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n">{% if d.segunda %}{{ d.segunda | num_es(0) }}{% else %}—{% endif %}</td>
+    <td class="n"><b>{{ (d.parada + d.segunda) | num_es(0) }}</b></td>
+  </tr>
+{% endfor %}
+</tbody></table></div>
+
+{# El detalle va plegado: se abre cuando un día llama la atención. #}
+<details style="margin-top:10px">
+<summary>Tela por tela</summary>
+<div class="caja"><table class="resumen" id="entradas">
+<thead><tr>
+<th>Día</th><th class="opt">Grupo</th><th>Tela</th><th>Color</th>
+<th>Entró por</th><th class="n">Kg</th><th>Hoy</th>
+</tr></thead>
+<tbody>
+{% for f in filas %}
+  <tr onclick="location.href='/analisis/parado?subgrupo={{ f.subcategoria | urlencode }}&q={{ f.color | urlencode }}'"
+      style="cursor:pointer">
+    <td class="g">{{ f.fecha.strftime('%d/%m/%y') }}</td>
+    <td class="g opt">{{ f.categoria or '—' }}</td>
+    <td class="tela">{{ f.subcategoria }}</td>
+    <td class="col2"><b>{{ f.color }}</b></td>
+    <td>{{ 'segunda' if f.motivo == 'segunda' else 'parada' }}</td>
+    <td class="n">{{ f.kg | num_es(1) if f.kg < 1 else f.kg | num_es(0) }}</td>
+    {# ⚠ La apagada no se borra ni se deja en blanco: se dice qué le pasó. #}
+    <td class="g">{% if f.fuera %}<span class="pill viejo">apagada</span>{% else %}—{% endif %}</td>
+  </tr>
+{% endfor %}
+</tbody></table></div>
+</details>
+{% else %}
+<p class="sub">Todavía no entró ninguna tela.</p>
+{% endif %}
+
+<footer>
+Los kilos son los del día que entró, no los de hoy. «Apagada» es la que después
+resultó pedida o recién hecha antes de la largada y hoy no cuenta.
+</footer>
+{% endblock %}

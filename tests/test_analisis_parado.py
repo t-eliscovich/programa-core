@@ -3077,6 +3077,65 @@ def test_la_tela_que_ya_se_vendio_no_pierde_su_lugar(monkeypatch):
         "sin stock pero sin bandera: se vendió, y ésa es la que hay que premiar")
 
 
+def test_un_pedido_posterior_a_la_largada_no_apaga_la_tela(monkeypatch):
+    """⭐ Dueña 09/09/2026, caso Inter BLA: 255 kg parados desde el 20/08, el
+    07/09 se venden 146,9 kg y ese mismo día entra un pedido de 3 kg de otro
+    cliente. El refresco la apagaba y se llevaba la venta: el vendedor perdía
+    ~1.470 puntos por un pedido de 3 kg. Lo que era saldo el día de la largada
+    sigue siéndolo — sólo apaga la prueba ANTERIOR a la largada."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[
+            {"subcategoria": "Inter", "color": "BLA", "stock_kg": 0,
+             "stock_bodega": 65, "motivo": "segunda", "nueva": False,
+             "pedida": True, "ultimo_pedido": "2026-09-07T00:00:00Z",
+             "entra": False},
+            {"subcategoria": "Fleece 2.2 Sin Perchar", "color": "BHU",
+             "stock_kg": 0, "stock_bodega": 130, "motivo": "segunda",
+             "nueva": False, "pedida": False, "produciendo": True,
+             "ultima_orden": "2026-09-08T00:00:00Z", "entra": False},
+        ],
+        cohorte=[{"subcategoria": "Inter", "color": "BLA",
+                  "fecha_marcado": date(2026, 8, 20), "motivo": "parado"},
+                 {"subcategoria": "Fleece 2.2 Sin Perchar", "color": "BHU",
+                  "fecha_marcado": date(2026, 8, 21), "motivo": "parado"}])
+    assert not db.sql_con("SET fuera = TRUE"), (
+        "un pedido u orden de después de la largada no apaga nada")
+    assert res["pedidas"] == 0 and res["produciendo"] == 0
+
+
+def test_un_pedido_anterior_a_la_largada_si_apaga(monkeypatch):
+    """La regla original sigue viva para lo que nunca debió entrar: un pedido
+    vivo de ANTES de la largada dice que la tela ya tenía dueño ese día."""
+    db, res = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Pique Nido", "color": "CRO", "stock_kg": 0,
+                  "stock_bodega": 195, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "ultimo_pedido": "2026-07-30T00:00:00Z",
+                  "entra": False}],
+        cohorte=[{"subcategoria": "Pique Nido", "color": "CRO",
+                  "fecha_marcado": date(2026, 8, 20), "motivo": "parado"}])
+    assert [p for _, p in db.sql_con("SET fuera = TRUE")] == [
+        ("Pique Nido", "CRO")]
+    assert res["pedidas"] == 1
+
+
+def test_el_pedido_posterior_tampoco_le_cambia_el_motivo(monkeypatch):
+    """Si el ítem sigue en la lista por su segunda, el pedido nuevo tampoco
+    puede pasarlo de `parado` a `segunda`: cambiaría la regla de qué kilo
+    puntúa en la mitad de la carrera."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Alemania", "color": "AZN", "stock_kg": 40,
+                  "stock_bodega": 248, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "ultimo_pedido": "2026-09-09T00:00:00Z",
+                  "entra": True}],
+        cohorte=[{"subcategoria": "Alemania", "color": "AZN",
+                  "fecha_marcado": date(2026, 8, 17), "motivo": "parado"}])
+    motivos = db.sql_con("SET motivo = %s")
+    assert motivos and motivos[0][1] == ("segunda", "Alemania", "AZN", False)
+
+
 def test_la_reciente_que_se_vendio_entera_igual_pierde_los_puntos(monkeypatch):
     """El agujero que destapó la largada: Intela arrancó con 640 puntos y 554
     eran UNA venta de Jersey 3 BLA. Apenas se vende, la tela pasa a tener ventas
@@ -4775,3 +4834,12 @@ def test_la_ultima_venta_no_cuenta_muestras():
             "AS ultima_venta") in parados, "la foto de hoy cuenta muestras"
     # ⚠ La ENTRADA no cambia: sigue sumando todo lo que salió (cantidad > 0).
     assert "AND dfc.cantidad > 0 AND RTRIM(pr.codigo) <> 'SRLG'" in parados
+
+
+def test_una_fecha_de_pedido_ilegible_apaga_como_siempre():
+    """La duda no regala puntos: sin fecha, o con una que no se puede leer, la
+    bandera vale lo que valía antes del 09/09/2026."""
+    assert not queries._nacio_despues(None, date(2026, 8, 25))
+    assert not queries._nacio_despues("ayer", date(2026, 8, 25))
+    assert queries._nacio_despues("2026-09-07T00:00:00Z", date(2026, 8, 25))
+    assert not queries._nacio_despues(date(2026, 8, 24), date(2026, 8, 25))

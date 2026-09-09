@@ -63,6 +63,16 @@ MENU = [
         "listo": True,
     },
     {
+        # ⭐ Sólo para la dueña (09/09/2026: "visible solo para admin"): es la
+        # trazabilidad de la lista, no algo que un vendedor tenga que mirar.
+        "url": "/analisis/entradas",
+        "titulo": "Entradas",
+        "bajada": "Qué día entró cada tela a la lista y con cuántos kilos. "
+                  "Cuánta segunda va entrando.",
+        "listo": True,
+        "admin": True,
+    },
+    {
         "url": "/analisis/clientes",
         "titulo": "Clientes",
         "bajada": "Quién se movió, quién dejó de comprar, quién se está enfriando.",
@@ -91,14 +101,19 @@ def _menu():
     """
     if (g.get("user") or {}).get("vend"):
         return {"menu_global": MENU_VENDEDOR}
-    return {"menu_global": [m for m in MENU if m["listo"]]}
+    admin = "*" in (g.get("permisos") or set())
+    return {"menu_global": [m for m in MENU
+                            if m["listo"] and (admin or not m.get("admin"))]}
 
 
 @analisis_bp.route("/analisis")
 @requiere_login
 @requiere_permiso("analisis.ver")
 def inicio():
-    return render_template("analisis/inicio.html", menu=MENU)
+    admin = "*" in (g.get("permisos") or set())
+    return render_template(
+        "analisis/inicio.html",
+        menu=[m for m in MENU if admin or not m.get("admin")])
 
 
 @analisis_bp.route("/analisis/parado")
@@ -246,6 +261,19 @@ def vendidos():
         "analisis/vendidos.html",
         vendidos=queries.vendidos(queries.config("largada", "2026-08-25")),
     )
+
+
+@analisis_bp.route("/analisis/entradas")
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def entradas():
+    """Qué día entró qué tela, con sus kilos. Sólo la dueña (wildcard).
+
+    Dueña 09/09/2026: *"me hacés una lista para mí a ver qué día entró qué tela
+    con sus kg. o sea visible solo para admin. quiero ver cuánta segunda va
+    entrando"*.
+    """
+    return render_template("analisis/entradas.html", **queries.entradas())
 
 
 @analisis_bp.route("/analisis/vendidos.xlsx")
