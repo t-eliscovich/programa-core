@@ -183,7 +183,12 @@
         {% set roja = f.d_utilidad is not none and f.d_utilidad <= -1000 %}
         {% set fondo = 'rgb(254 242 242)' if roja else 'rgb(255 255 255)' %}
         <tr class="border-t border-slate-100" style="background:{{ fondo }};">
-          <td class="px-1.5 py-0.5 tz-1" style="white-space:nowrap;position:sticky;z-index:1;background:{{ fondo }};">
+          {# ⭐ Ordenar por HORA (dueña 09/09/2026: "que el filtro me ordene bien
+             las horas"). La celda muestra "09/09 10:07" sólo en la primera foto
+             del día y "10:01" en las demás, así que ordenada como texto
+             mezclaba días. El valor de orden es el instante (epoch), no el
+             texto. #}
+          <td class="px-1.5 py-0.5 tz-1" data-sort-value="{{ f.cuando_orden or '' }}" style="white-space:nowrap;position:sticky;z-index:1;background:{{ fondo }};">
             <a href="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                data-foto="{{ url_for('informes.traza_foto', id_traza=f.id_traza) }}"
                aria-expanded="false" style="color:rgb(30 64 175);"

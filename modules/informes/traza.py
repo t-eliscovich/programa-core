@@ -454,7 +454,8 @@ def ultimas(n: int = 120) -> list[dict]:
             f"""
             SELECT *,
                    TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
-                           'DD/MM HH24:MI') AS cuando
+                           'DD/MM HH24:MI') AS cuando,
+                   EXTRACT(EPOCH FROM creado_en)::bigint AS cuando_orden
               FROM scintela.traza_utilidad
              ORDER BY creado_en DESC, id_traza DESC
              LIMIT {n}
@@ -508,6 +509,7 @@ def entre(desde: str, hasta: str, n: int = TOPE_RANGO) -> list[dict]:
             SELECT x.*,
                    TO_CHAR(x.creado_en AT TIME ZONE 'America/Guayaquil',
                            'DD/MM HH24:MI') AS cuando,
+                   EXTRACT(EPOCH FROM x.creado_en)::bigint AS cuando_orden,
                    ((x.creado_en AT TIME ZONE 'America/Guayaquil')::date
                     BETWEEN %s AND %s) AS en_rango
               FROM (SELECT * FROM rango UNION ALL SELECT * FROM ancla) x
