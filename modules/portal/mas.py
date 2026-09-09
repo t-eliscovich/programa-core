@@ -27,7 +27,7 @@ _LOG = logging.getLogger("programa_core.portal")
 ANIOS_PARA_ATRAS = 3
 
 
-def anio_en_kilos(cod: str, anio: int | None = None) -> dict:
+def anio_en_kilos(cod: str, anio: int | None = None, asinfo_meses: dict | None = None) -> dict:
     """``{"meses": [{"mes": date, "etiqueta": "Sep", "kg": float,
     "importe": float, "pct": 0..100}], "kg": total, "importe": total,
     "max_kg": float, "anio": int | None, "anios": [int, …]}`` — los últimos
@@ -53,6 +53,11 @@ def anio_en_kilos(cod: str, anio: int | None = None) -> dict:
         meses.reverse()
     else:
         filas = {f["mes"]: f for f in q.compras_por_mes_cliente_anio(cod, anio)}
+        # Las facturas de Programa Core arrancan en 2025: para los años de
+        # antes (y para que las barras digan lo mismo que la tabla de telas)
+        # los kilos por mes vienen de Asinfo cuando Asinfo contesta.
+        if asinfo_meses:
+            filas = {date(anio, m, 1): {"kg": kg} for m, kg in asinfo_meses.items() if 1 <= m <= 12}
         meses = [date(anio, m, 1) for m in range(1, 13)]
     salida = []
     for d in meses:

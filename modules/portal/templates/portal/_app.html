@@ -145,6 +145,9 @@ a.fila:active{background:var(--bg)}
 .hoja-ec{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 14px;overflow-x:auto;-webkit-overflow-scrolling:touch}
 .hoja-ec h2{margin:6px 0 8px}.hoja-ec table{min-width:720px;font-size:13px}
 .hoja-ec .rounded-lg{border-radius:10px}.hoja-ec .ec-ch-resumen{display:none}
+/* La columna Stat de los cheques es un código nuestro (Z): al cliente no (dueña 09/09). */
+.hoja-ec .ec-bloque-cheques thead th:last-child,.hoja-ec .ec-bloque-cheques tbody td:last-child:not([colspan]){display:none}
+.titulo-fila{display:flex;align-items:center;justify-content:space-between;gap:10px}.titulo-fila .pag{margin-bottom:0}
 @media (min-width:900px){
  .topnav{display:flex}.tabbar{display:none}main{padding:24px 24px 40px}
  .grid.inicio{grid-template-columns:1fr;align-items:start}

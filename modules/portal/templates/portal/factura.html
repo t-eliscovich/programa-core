@@ -8,7 +8,13 @@
 {% block seccion %}facturas{% endblock %}
 {% block contenido %}
 <a class="volver" href="/facturas">‹ Mis facturas</a>
-<h1 class="pag">Factura {{ numero }}</h1>
+<div class="titulo-fila">
+  <h1 class="pag">Factura {{ numero }}</h1>
+  {# El PDF al lado del número, arriba de todo (dueña 09/09). #}
+  {% if f.numf_completo and pdf_disponible() %}
+  <a class="btn sec chico" href="/factura/{{ f.numf }}.pdf?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar PDF</a>
+  {% endif %}
+</div>
 {% set e = f.estado_cliente %}
 <div class="card" style="margin-bottom:12px">
   <div class="lbl">{{ 'A su favor' if e.texto == 'a su favor' else 'Saldo de esta factura' }}</div>
@@ -27,11 +33,6 @@
   <p class="prox">Pagada con {{ pagada_con|join(' y ') }}</p>
   {% endif %}
 </div>
-{# Sólo el PDF, chico (dueña 09/09: "ver factura eliminar, no nos sirve;
-   el descargar no tiene que ser gigante"). #}
-{% if f.numf_completo and pdf_disponible() %}
-<p style="margin:0 0 12px"><a class="btn sec chico" href="/factura/{{ f.numf }}.pdf?doc={{ f.numf_completo }}&id={{ f.id_factura or '' }}"><svg viewBox="0 0 24 24"><path d="M12 3v11m0 0 4-4m-4 4-4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>Descargar factura (PDF)</a></p>
-{% endif %}
 <div class="card">
   <h2 style="margin:0 0 8px">{{ det.titulo }}
     {% if det.estado == 'ok' and det.totales.kg is not none %}

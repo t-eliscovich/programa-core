@@ -799,9 +799,9 @@ def mi_anio():
     anio = re.sub(r"\D", "", request.args.get("anio") or "")[:4]
     anio = int(anio) if anio else today_ec().year
     ctx = _ctx(cod)
-    a = mas_.anio_en_kilos(cod, anio)
-    return render_template("portal/mi_anio.html", **ctx, a=a,
-                           compro=mas_.que_compro(cod, (ctx["cli"] or {}).get("ruc") or "", a["anio"]))
+    compro = mas_.que_compro(cod, (ctx["cli"] or {}).get("ruc") or "", anio)
+    a = mas_.anio_en_kilos(cod, anio, asinfo_meses=compro.get("meses") if compro.get("estado") == "ok" else None)
+    return render_template("portal/mi_anio.html", **ctx, a=a, compro=compro)
 
 
 @portal_bp.route("/pedidos", methods=["GET"])

@@ -277,7 +277,7 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
     app, deshacer = _app_portal()
     try:
         _cliente(monkeypatch)
-        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
+        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None, asinfo_meses=None: {
             "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2025, "anios": [2026, 2025, 2024, 2023]})
         monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "items": [
             {"tela": "Jersey 3", "codigo": "MAR", "color": "MARINO", "kg": 130.2, "unidades": 0}]})
@@ -300,7 +300,7 @@ def test_lo_mas_comprado_es_el_top_10_de_tela_y_color_y_el_resto_se_despliega(mo
     app, deshacer = _app_portal()
     try:
         _cliente(monkeypatch)
-        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
+        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None, asinfo_meses=None: {
             "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2026, "anios": [2026, 2025]})
         items = [{"tela": "Tela", "codigo": f"C{i:02d}", "color": f"COLOR{i}", "kg": 100 - i, "unidades": 0}
                  for i in range(13)]
@@ -336,3 +336,22 @@ def test_el_color_sin_nombre_lo_toma_de_la_fila_que_si_lo_trae_y_del_sql():
     assert telas[0]["colores"][0] == {"codigo": "BLA", "color": "BLANCO", "kg": 150.0, "rollos": 6, "unidades": 0.0}
     sql = fl._sql_anio("AJT", "1724354004", 2026)
     assert "FROM valor_atributo va" in sql and "RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3)" in sql
+
+
+def test_las_barras_de_un_anio_salen_de_asinfo_cuando_asinfo_contesta(monkeypatch):
+    """🐞 09/09: 2024 y 2023 daban "0,00 kg" con la tabla de telas llena —
+    las facturas de Programa Core arrancan en 2025."""
+    from modules.informes import queries as q
+    from modules.portal import mas as m
+    monkeypatch.setattr(m, "today_ec", lambda: dt.date(2026, 9, 9))
+    monkeypatch.setattr(q, "compras_por_mes_cliente_anio", lambda cod, anio: [])
+    a = m.anio_en_kilos("AJT", 2024, asinfo_meses={3: 1200.5, 11: 800.0})
+    assert a["kg"] == 2000.5 and a["meses"][2]["kg"] == 1200.5 and a["meses"][10]["kg"] == 800.0
+    # Sin Asinfo, lo de siempre.
+    assert m.anio_en_kilos("AJT", 2024, asinfo_meses=None)["kg"] == 0
+
+
+def test_la_consulta_de_meses_deja_afuera_cuellos_y_punos():
+    from modules.asinfo import factura_lineas as fl
+    sql = fl._sql_anio_meses("AJT", "1724354004", 2024)
+    assert "MONTH(fc.fecha)" in sql and "NOT IN ('Cuellos', 'Puños')" in sql

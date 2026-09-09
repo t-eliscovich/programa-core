@@ -14,7 +14,7 @@
     saldo con sus avisos, los cheques entregados, y el vendedor. #}
  <div class="resumen">
   <div class="card">
-    <div class="lbl">{{ 'A su favor' if _saldo < 0 else 'Saldo' }}</div>
+    <div class="lbl">{{ 'A su favor' if _saldo < 0 else 'Saldo facturas' }}</div>
     <div class="big">$ {{ _saldo|abs|money_es }}</div>
     <div class="chips">
       {% if n_vencidas %}
@@ -30,9 +30,6 @@
   <div class="card">
     <div class="lbl">Cheques por cobrar</div>
     <div class="big">$ {{ (t.cheques_por_cobrar or 0)|money_es }}</div>
-    <div class="chips">
-      {% if proximo %}<span class="chip {{ 'warn' if proximo.dias <= 15 }}">Vence {{ proximo.fecha|fecha_es }} · {{ proximo.factura.saldo|money_es }}</span>{% endif %}
-    </div>
   </div>
 
   {% if vendedor %}

@@ -739,6 +739,31 @@ SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
 """
 
 
+def _sql_anio_meses(cod: str, r10: str, anio: int) -> str:
+    """Kilos por MES del mismo universo que `_sql_anio` (sin cuellos/puños,
+    que van en unidades). Las barras de "Su año en kilos" salen de acá: la
+    tabla de facturas de Programa Core arranca en 2025 y 2024/2023 daban
+    "0,00 kg" con la tabla de telas llena (dueña 09/09)."""
+    return f"""
+SELECT MONTH(fc.fecha) AS mes,
+       SUM(CASE WHEN fc.id_documento IN ({DOC_DEVOLUCION}, {DOC_NCNT})
+                THEN -dfc.cantidad ELSE dfc.cantidad END) AS kg
+  FROM factura_cliente fc
+  JOIN empresa e ON e.id_empresa = fc.id_empresa
+  JOIN detalle_factura_cliente dfc
+    ON dfc.id_factura_cliente = fc.id_factura_cliente
+  JOIN producto pr ON pr.id_producto = dfc.id_producto
+ WHERE UPPER(LTRIM(RTRIM(e.nombre_comercial))) = '{cod}'
+   AND LEFT(LTRIM(RTRIM(ISNULL(e.identificacion, ''))), {len(r10)}) = '{r10}'
+   AND fc.fecha >= '{anio}-01-01' AND fc.fecha < '{anio + 1}-01-01'
+   AND fc.estado <> 0
+   AND fc.id_documento IN ({DOC_FACTURA}, {DOC_NTEN}, {DOC_DEVOLUCION}, {DOC_NCNT})
+   AND LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, ''))) <> '{CATEGORIA_SERVICIOS}'
+   AND LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, ''))) NOT IN ('Cuellos', 'Puños')
+ GROUP BY MONTH(fc.fecha)
+"""
+
+
 def que_compro_en_el_anio(codigo: str, ruc: str, anio: int) -> dict:
     """``{"estado": "ok"|"sin-puente"|"error", "telas": [{"tela", "kg",
     "rollos", "unidades", "colores": [{"codigo", "color", "kg", "rollos",
@@ -752,7 +777,7 @@ def que_compro_en_el_anio(codigo: str, ruc: str, anio: int) -> dict:
     from modules.asinfo.despachos_cliente import _quien
 
     cod, r10 = _quien(codigo, ruc)
-    vacio = {"telas": []}
+    vacio = {"telas": [], "meses": {}}
     if not cod or not r10:
         return {"estado": "sin-datos", **vacio}
     llave = (cod, int(anio))
@@ -764,12 +789,16 @@ def que_compro_en_el_anio(codigo: str, ruc: str, anio: int) -> dict:
     try:
         filas, ok = metabase_client.fetch_dataset_estado(
             DB_ASINFO, _sql_anio(cod, r10, int(anio)), max_results=5000)
+        meses, ok2 = metabase_client.fetch_dataset_estado(
+            DB_ASINFO, _sql_anio_meses(cod, r10, int(anio)), max_results=20)
     except Exception as e:  # noqa: BLE001 — el puente no tumba la pantalla
         _LOG.warning("qué compró %s/%s: %s", cod, anio, e)
         return {"estado": "error", **vacio}
-    if not ok:
+    if not ok or not ok2:
         return {"estado": "error", **vacio}
-    res = {"estado": "ok", "telas": _agrupar_anio(filas)}
+    res = {"estado": "ok", "telas": _agrupar_anio(filas),
+           "meses": {int(_num(m.get("mes"))): round(_num(m.get("kg")), 1)
+                     for m in meses if m.get("mes") is not None}}
     _ANIO_CACHE[llave] = (time.monotonic(), res)
     return res
 

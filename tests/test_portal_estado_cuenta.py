@@ -317,7 +317,7 @@ def test_el_inicio_tiene_UN_boton_y_avisa_lo_vencido_y_lo_proximo():
     assert PANTALLA.count('href="/estado-de-cuenta.pdf"') == 1
     assert PANTALLA.count('href="/estado-de-cuenta/imprimir"') == 1
     assert "{% if pdf_disponible() %}" in PANTALLA
-    assert "n_vencidas" in PANTALLA and "proximo" in PANTALLA
+    assert "n_vencidas" in PANTALLA
     assert "Al día" in PANTALLA
     # Dueña 09/09/2026: el inicio ES el estado de cuenta de la oficina — el
     # MISMO parcial que la hoja y el PDF, no una copia.
@@ -426,7 +426,7 @@ def test_el_inicio_se_dibuja_con_datos_de_verdad(monkeypatch):
         assert r.status_code == 200
         html = r.get_data(as_text=True)
         assert "735,25" in html and ">Al día<" in html
-        assert "Vence 01/12/2026 · 735,25" in html
+        assert "Saldo facturas" in html and "Vence " not in html  # dueña 09/09: sin el próximo vencimiento
         # Las dos grillas de la oficina, con sus columnas (dueña 09/09).
         assert "183341" in html and "11852" in html
         for col in ("Fecha", "Número", "Importe", "Retención", "Abonado", "Saldo", "Acum.", "Días", "N° Cheque"):
