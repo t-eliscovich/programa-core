@@ -280,52 +280,6 @@
 </div>
 {% endif %}
 
-
-{# ---------------------------------------------------------------------------
-   EL PORTAL DEL CLIENTE — el control del vendedor.
-
-   TMT 2026-08-24. El cliente entra al portal con su código de 3 letras y su
-   RUC, que son los dos públicos (el RUC está impreso en cada factura y se
-   consulta gratis en el SRI). Se eligió a propósito NO ponerle un chequeo
-   previo: le cargaría fricción al 100% de los clientes para atajar un caso
-   raro.
-
-   ⭐ Este bloque es la otra mitad de esa decisión. El vendedor conoce a sus
-   clientes uno por uno: es quien de verdad puede darse cuenta de que quien
-   entró no es quien debería. Por eso el botón vive ACÁ, donde el vendedor ya
-   está parado, y no en una pantalla nueva que nadie abre.
-
-   Si el cliente nunca entró, el bloque NO se dibuja: "todavía no entró" en
-   400 fichas es ruido. --------------------------------------------------- #}
-{% if portal is defined and portal.tiene %}
-<div class="portal-caja {{ 'cortado' if not portal.activo }}">
-  <div class="portal-tit">
-    {% if portal.activo %}Entra al portal{% else %}Sin acceso al portal{% endif %}
-  </div>
-  <div class="portal-detalle">
-    {% if portal.activo %}
-      {% if portal.ultimo_ingreso %}Última vez: {{ portal.ultimo_ingreso|fecha_hora_ec }}{% endif %}
-      {% if not portal.eligio_clave %} · todavía no eligió clave{% endif %}
-      {% if portal.mail %}<br>Su correo: {{ portal.mail }}{% if portal.mail_cambiado %} (lo cambió él){% endif %}{% endif %}
-    {% else %}
-      Se lo cerró {{ portal.cortado_por or 'la oficina' }}.
-    {% endif %}
-  </div>
-  <form method="post"
-        action="{{ url_for('mi_cartera.portal_acceso', codigo_cli=cliente.codigo_cli) }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    {% if portal.activo %}
-      <input type="hidden" name="accion" value="cortar">
-      <button type="submit" class="portal-btn cortar">Cortar el acceso</button>
-    {% else %}
-      <input type="hidden" name="accion" value="reabrir">
-      <button type="submit" class="portal-btn">Abrirle el acceso de nuevo</button>
-    {% endif %}
-  </form>
-</div>
-{% endif %}
-
-
 {% include "mi_cartera/_acciones_css.html" %}
 {% include "mi_cartera/_ficha_css.html" %}
 {% endblock %}

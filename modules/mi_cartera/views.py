@@ -42,7 +42,7 @@ from modules.pedidos import service as pedidos_service
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
-from . import portal_cliente, queries
+from . import queries
 
 mi_cartera_bp = Blueprint("mi_cartera", __name__, template_folder="templates")
 
@@ -321,9 +321,6 @@ def cliente(codigo_cli: str):
         factura_args={"codigo_cli": codigo_cli},
         tab=tab,
         d=despachos_d,
-        # El acceso de ESTE cliente al portal. Va acá, donde el vendedor ya
-        # está parado, y no en una pantalla nueva que nadie abre.
-        portal=portal_cliente.estado(codigo_cli),
         **data,
         **_ctx_base(vend),
     )
@@ -376,33 +373,6 @@ def despacho(codigo_cli: str, numero: str):
         abort(404)
     return render_template("mi_cartera/despacho.html", cliente=ficha, g=guia,
                            **_ctx_base(vend))
-
-
-@mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/portal", methods=["POST"])
-@requiere_login
-@requiere_permiso("micartera.ver")
-def portal_acceso(codigo_cli: str):
-    """Cortarle o reabrirle al cliente el acceso al portal.
-
-    ⭐ Es el control de todo el diseño del portal: se entra con el código y el
-    RUC, que son públicos, y lo que frena al que no debería estar es que el
-    vendedor lo ve y le corta. Por eso vive donde el vendedor trabaja.
-
-    Pasa por `_cargar_cliente` ANTES de tocar nada: ese guard es el que
-    verifica que el cliente sea SUYO. Sin él, tipear el código de un cliente
-    ajeno sería cortarle el acceso a un cliente de otro vendedor.
-    """
-    vend = _vend_actual()
-    _cargar_cliente(vend, codigo_cli)      # 404 si no es suyo
-
-    quien = (getattr(g, "user", None) or {}).get("username") or vend
-    accion = (request.form.get("accion") or "").strip()
-    if accion == "reabrir":
-        ok, msg = portal_cliente.reabrir(codigo_cli, quien)
-    else:
-        ok, msg = portal_cliente.cortar(codigo_cli, quien)
-    flash(msg, "success" if ok else "error")
-    return redirect(url_for("mi_cartera.cliente", codigo_cli=codigo_cli))
 
 
 @mi_cartera_bp.route("/mi-cartera/cliente/<codigo_cli>/imprimir")
