@@ -130,6 +130,15 @@
          style="padding:.15rem .5rem;border-radius:.25rem;text-decoration:none;
                 {% if comp == col %}background:rgb(30 64 175);color:#fff;{% else %}color:rgb(30 64 175);{% endif %}">{{ label }}</a>
     {% endfor %}
+    {# ⭐ UN click que saca TODO (dueña 09/09/2026: "una vez que pongo filtros
+       no los puedo sacar"). Con días y componente puestos a la vez, «todo»
+       conserva los días y «volver a lo último» conserva el componente: cada
+       uno saca lo suyo y ninguno saca los dos. Este link va a la pantalla
+       pelada. #}
+    {% if comp or desde %}
+      <a href="{{ url_for('informes.traza') }}"
+         style="margin-left:.75rem;color:rgb(185 28 28);text-decoration:underline;">sacar los filtros</a>
+    {% endif %}
   </div>
 
   {# 🚨 Acá había un cartel permanente: "1 ventana sin explicar del todo…".
