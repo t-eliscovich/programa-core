@@ -287,3 +287,32 @@ def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
         assert "Qué compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
     finally:
         deshacer()
+
+
+def test_que_compro_de_verdad_sin_puente_no_revienta(monkeypatch):
+    """🐞 09/09/2026: `/mi-anio` dio 500 en producción por un import con el
+    nombre equivocado que ningún test recorría (todos pisaban `que_compro`).
+    Acá se llama la función REAL con el puente apagado."""
+    from modules._lib import metabase_client
+    from modules.asinfo import factura_lineas as fl
+    monkeypatch.setattr(metabase_client, "disponible", lambda: False)
+    fl._ANIO_CACHE.clear()
+    assert fl.que_compro_en_el_anio("AJT", "1724354004001", 2026) == {"estado": "sin-puente", "telas": []}
+    assert fl.que_compro_en_el_anio("", "", 2026)["estado"] == "sin-datos"
+    assert mas.que_compro("AJT", "1724354004001", None)["estado"] == "sin-puente"
+
+
+def test_la_pantalla_del_anio_sin_asinfo_lo_dice_y_no_revienta(monkeypatch):
+    app, deshacer = _app_portal()
+    try:
+        _cliente(monkeypatch)
+        from modules._lib import metabase_client
+        from modules.informes import queries as q
+        monkeypatch.setattr(metabase_client, "disponible", lambda: False)
+        monkeypatch.setattr(q, "compras_por_mes_cliente", lambda cod, meses=12: [])
+        monkeypatch.setattr(q, "compras_por_mes_cliente_anio", lambda cod, anio: [])
+        r = _sesion(app).get("/mi-anio?anio=2025")
+        assert r.status_code == 200
+        assert "No pudimos traer el detalle por tela" in r.get_data(as_text=True)
+    finally:
+        deshacer()

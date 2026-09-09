@@ -742,9 +742,9 @@ def que_compro_en_el_anio(codigo: str, ruc: str, anio: int) -> dict:
     renglón por rollo: los kilos son la suma y los rollos, la cuenta.
     """
     from modules._lib import metabase_client
-    from modules.asinfo.despachos_cliente import _codigo_y_ruc
+    from modules.asinfo.despachos_cliente import _quien
 
-    cod, r10 = _codigo_y_ruc(codigo, ruc)
+    cod, r10 = _quien(codigo, ruc)
     vacio = {"telas": []}
     if not cod or not r10:
         return {"estado": "sin-datos", **vacio}

@@ -75,7 +75,11 @@ def que_compro(cod: str, ruc: str, anio: int | None) -> dict:
     Sin año elegido, el año en curso. Fail-soft: la pantalla lo dice."""
     from modules.asinfo import factura_lineas
 
-    return factura_lineas.que_compro_en_el_anio(cod, ruc, anio or today_ec().year)
+    try:
+        return factura_lineas.que_compro_en_el_anio(cod, ruc, anio or today_ec().year)
+    except Exception as e:  # noqa: BLE001 -- el cuadro no puede tumbar la pantalla (09/09: un import mal escrito dio 500 en producción)
+        _LOG.warning("portal: qué compró no disponible (%s)", e)
+        return {"estado": "error", "telas": []}
 
 
 # ---------------------------------------------------------------------------
