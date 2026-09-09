@@ -687,3 +687,116 @@ def que_se_llevo(numero) -> dict:
     _guardar(num, res)
     _recordar(num, res)
     return res
+
+
+# ---------------------------------------------------------------------------
+# Qué compró en el año, por tela y color (portal, "Su año en kilos")
+# ---------------------------------------------------------------------------
+
+#: Cuánto dura en memoria el "qué compró" de un cliente y un año: la pregunta
+#: a Asinfo recorre todas sus facturas del año, y el cliente la mira una vez.
+_ANIO_TTL = 24 * 3600.0
+_ANIO_CACHE: dict[tuple[str, int], tuple[float, dict]] = {}
+
+
+def _sql_anio(cod: str, r10: str, anio: int) -> str:
+    """Kilos y rollos por tela y color de UN cliente en UN año, agrupado en
+    Asinfo. Mismo WHERE del cliente que las guías (`despachos_cliente`: el
+    código de 3 letras Y el RUC, porque el código solo no identifica). Sólo
+    los documentos que venden mercadería (factura y nota de entrega); las
+    devoluciones restan; las notas de crédito no tienen kilos (punto 7)."""
+    return f"""
+SELECT LTRIM(RTRIM(ISNULL(pr.nombre_subcategoria_producto, ''))) AS tela,
+       ISNULL(NULLIF(LTRIM(RTRIM(ISNULL(col.codigo, ''))), ''),
+              RIGHT(RTRIM(ISNULL(pr.codigo, '')), 3))            AS codigo,
+       LTRIM(RTRIM(ISNULL(col.nombre, '')))                      AS color,
+       LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, '')))    AS categoria,
+       SUM(CASE WHEN fc.id_documento IN ({DOC_DEVOLUCION}, {DOC_NCNT})
+                THEN -dfc.cantidad ELSE dfc.cantidad END)        AS cantidad,
+       SUM(CASE WHEN fc.id_documento IN ({DOC_DEVOLUCION}, {DOC_NCNT})
+                THEN -1 ELSE 1 END)                              AS renglones
+  FROM factura_cliente fc
+  JOIN empresa e ON e.id_empresa = fc.id_empresa
+  JOIN detalle_factura_cliente dfc
+    ON dfc.id_factura_cliente = fc.id_factura_cliente
+  JOIN producto pr ON pr.id_producto = dfc.id_producto
+  LEFT JOIN valor_atributo col ON col.id_valor_atributo = {_slot(ATRIBUTO_COLOR)}
+ WHERE UPPER(LTRIM(RTRIM(e.nombre_comercial))) = '{cod}'
+   AND LEFT(LTRIM(RTRIM(ISNULL(e.identificacion, ''))), {len(r10)}) = '{r10}'
+   AND fc.fecha >= '{anio}-01-01' AND fc.fecha < '{anio + 1}-01-01'
+   AND fc.estado <> 0
+   AND fc.id_documento IN ({DOC_FACTURA}, {DOC_NTEN}, {DOC_DEVOLUCION}, {DOC_NCNT})
+   AND LTRIM(RTRIM(ISNULL(pr.nombre_categoria_producto, ''))) <> '{CATEGORIA_SERVICIOS}'
+ GROUP BY pr.nombre_subcategoria_producto, col.codigo, pr.codigo, col.nombre,
+          pr.nombre_categoria_producto
+"""
+
+
+def que_compro_en_el_anio(codigo: str, ruc: str, anio: int) -> dict:
+    """``{"estado": "ok"|"sin-puente"|"error", "telas": [{"tela", "kg",
+    "rollos", "unidades", "colores": [{"codigo", "color", "kg", "rollos",
+    "unidades"}]}]}`` — de la tela que más compró a la que menos.
+
+    Cuellos y puños se piden por unidad (`CATEGORIAS_EN_UNIDADES` de pedidos):
+    ahí `cantidad` son unidades, no kilos, y se dicen aparte. El resto es un
+    renglón por rollo: los kilos son la suma y los rollos, la cuenta.
+    """
+    from modules._lib import metabase_client
+    from modules.asinfo.despachos_cliente import _codigo_y_ruc
+
+    cod, r10 = _codigo_y_ruc(codigo, ruc)
+    vacio = {"telas": []}
+    if not cod or not r10:
+        return {"estado": "sin-datos", **vacio}
+    llave = (cod, int(anio))
+    guardado = _ANIO_CACHE.get(llave)
+    if guardado and time.monotonic() - guardado[0] < _ANIO_TTL:
+        return guardado[1]
+    if not metabase_client.disponible():
+        return {"estado": "sin-puente", **vacio}
+    try:
+        filas, ok = metabase_client.fetch_dataset_estado(
+            DB_ASINFO, _sql_anio(cod, r10, int(anio)), max_results=5000)
+    except Exception as e:  # noqa: BLE001 — el puente no tumba la pantalla
+        _LOG.warning("qué compró %s/%s: %s", cod, anio, e)
+        return {"estado": "error", **vacio}
+    if not ok:
+        return {"estado": "error", **vacio}
+    res = {"estado": "ok", "telas": _agrupar_anio(filas)}
+    _ANIO_CACHE[llave] = (time.monotonic(), res)
+    return res
+
+
+def _agrupar_anio(filas: list[dict]) -> list[dict]:
+    from modules.pedidos.service import CATEGORIAS_EN_UNIDADES
+
+    telas: dict[str, dict] = {}
+    for f in filas:
+        tela = (f.get("tela") or "").strip() or "(sin tela)"
+        en_unidades = any(tela.lower().startswith(c.lower()) for c in CATEGORIAS_EN_UNIDADES)
+        cant = _num(f.get("cantidad"))
+        n = int(_num(f.get("renglones")))
+        t = telas.setdefault(tela, {"tela": tela, "kg": 0.0, "rollos": 0, "unidades": 0.0,
+                                    "colores": {}})
+        c = t["colores"].setdefault((f.get("codigo") or "").strip(), {
+            "codigo": (f.get("codigo") or "").strip(), "color": (f.get("color") or "").strip(),
+            "kg": 0.0, "rollos": 0, "unidades": 0.0})
+        if en_unidades:
+            t["unidades"] += cant
+            c["unidades"] += cant
+        else:
+            t["kg"] += cant
+            t["rollos"] += n
+            c["kg"] += cant
+            c["rollos"] += n
+    salida = []
+    for t in telas.values():
+        colores = sorted(t["colores"].values(), key=lambda x: (-x["kg"], -x["unidades"]))
+        colores = [c for c in colores if c["kg"] > 0.05 or c["unidades"] > 0]
+        if not colores:
+            continue
+        salida.append({**t, "kg": round(t["kg"], 1), "unidades": round(t["unidades"], 1),
+                       "colores": [{**c, "kg": round(c["kg"], 1), "unidades": round(c["unidades"], 1)}
+                                   for c in colores]})
+    salida.sort(key=lambda x: (-x["kg"], -x["unidades"]))
+    return salida

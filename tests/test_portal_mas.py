@@ -232,3 +232,58 @@ def test_mis_cuentas_no_dice_dos_cuando_hay_una():
         assert "Tiene dos cuentas" in html
     finally:
         deshacer()
+
+
+def test_el_anio_en_kilos_tambien_sabe_de_otros_anios(monkeypatch):
+    """Dueña 09/09/2026: "puede ser también que puedan ver otros años"."""
+    from modules.informes import queries as q
+    from modules.portal import mas as m
+    monkeypatch.setattr(m, "today_ec", lambda: dt.date(2026, 9, 9))
+    monkeypatch.setattr(q, "compras_por_mes_cliente_anio", lambda cod, anio: [
+        {"mes": dt.date(anio, 2, 1), "kg": 100.0, "importe": 900, "facturas": 1}])
+    a = m.anio_en_kilos("AJT", 2025)
+    assert a["anio"] == 2025 and a["anios"] == [2026, 2025, 2024, 2023]
+    assert [x["mes"] for x in a["meses"]] == [dt.date(2025, mm, 1) for mm in range(1, 13)]
+    assert a["meses"][1]["kg"] == 100.0 and a["kg"] == 100.0
+    # Un año fuera del selector cae a los últimos 12 meses.
+    monkeypatch.setattr(q, "compras_por_mes_cliente", lambda cod, meses=12: [])
+    assert m.anio_en_kilos("AJT", 1999)["anio"] is None
+
+
+def test_que_compro_agrupa_por_tela_y_color_y_los_cuellos_van_en_unidades():
+    from modules.asinfo import factura_lineas as fl
+    telas = fl._agrupar_anio([
+        {"tela": "Jersey 3", "codigo": "NEG", "color": "NEGRO", "categoria": "Jersey", "cantidad": 65.0, "renglones": 3},
+        {"tela": "Jersey 3", "codigo": "MAR", "color": "MARINO", "categoria": "Jersey", "cantidad": 130.2, "renglones": 6},
+        {"tela": "Cuellos T40", "codigo": "ARV", "color": "ARVEJA", "categoria": "Cuellos", "cantidad": 40, "renglones": 2},
+        {"tela": "Rib", "codigo": "CAR", "color": "CARDENILLO", "categoria": "Rib", "cantidad": 0.0, "renglones": 0},
+    ])
+    assert [t["tela"] for t in telas] == ["Jersey 3", "Cuellos T40"]
+    j = telas[0]
+    assert j["kg"] == 195.2 and j["rollos"] == 9
+    assert [c["codigo"] for c in j["colores"]] == ["MAR", "NEG"]
+    assert telas[1]["unidades"] == 40 and telas[1]["kg"] == 0
+
+
+def test_la_consulta_del_anio_ata_al_cliente_por_codigo_y_ruc_y_resta_las_devoluciones():
+    from modules.asinfo import factura_lineas as fl
+    sql = fl._sql_anio("AJT", "1724354004", 2026)
+    assert "= 'AJT'" in sql and "'1724354004'" in sql
+    assert "fc.fecha >= '2026-01-01' AND fc.fecha < '2027-01-01'" in sql
+    assert "THEN -dfc.cantidad" in sql and "'SERVICIOS'" in sql
+
+
+def test_la_pantalla_del_anio_muestra_el_selector_y_las_telas(monkeypatch):
+    app, deshacer = _app_portal()
+    try:
+        _cliente(monkeypatch)
+        monkeypatch.setattr(mas, "anio_en_kilos", lambda cod, anio=None: {
+            "meses": [], "kg": 0, "importe": 0, "max_kg": 0, "anio": 2025, "anios": [2026, 2025, 2024, 2023]})
+        monkeypatch.setattr(mas, "que_compro", lambda cod, ruc, anio: {"estado": "ok", "telas": [
+            {"tela": "Jersey 3", "kg": 195.2, "rollos": 9, "unidades": 0,
+             "colores": [{"codigo": "MAR", "color": "MARINO", "kg": 130.2, "rollos": 6, "unidades": 0}]}]})
+        html = _sesion(app).get("/mi-anio?anio=2025").get_data(as_text=True)
+        assert 'href="/mi-anio?anio=2025" class="on"' in html
+        assert "Qué compró en 2025" in html and "Jersey 3" in html and "MAR · Marino" in html
+    finally:
+        deshacer()

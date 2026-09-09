@@ -1,11 +1,56 @@
 {% extends "portal/_app.html" %}
-{% block titulo %}Su año en kilos — Intela{% endblock %}
-{% block seccion %}mas{% endblock %}
+{% block titulo %}Su año en kilos — Intela{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
+   pongamos algo más, colores telas etc." #}
+<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
+{% if compro.estado == 'ok' and compro.telas %}
+<div class="card" style="padding:6px 8px">
+  <table class="tabla">
+    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
+    <tbody>{% for t in compro.telas %}
+      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
+      {% for c in t.colores %}
+      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
+      {% endfor %}
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% elif compro.estado == 'ok' %}
+<div class="card vacio">Sin compras de tela en ese año.</div>
+{% else %}
+<div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
+{% endif %}
+{% endblock %}
+{% block seccion %}mas{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
+   pongamos algo más, colores telas etc." #}
+<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
+{% if compro.estado == 'ok' and compro.telas %}
+<div class="card" style="padding:6px 8px">
+  <table class="tabla">
+    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
+    <tbody>{% for t in compro.telas %}
+      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
+      {% for c in t.colores %}
+      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
+      {% endfor %}
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% elif compro.estado == 'ok' %}
+<div class="card vacio">Sin compras de tela en ese año.</div>
+{% else %}
+<div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
+{% endif %}
+{% endblock %}
 {% block contenido %}
 <a class="volver" href="/mas">‹ Más</a>
 <h1 class="pag">Su año en kilos</h1>
+{# Otros años (dueña 09/09/2026). #}
+<div class="seg">
+  <a href="/mi-anio" class="{{ 'on' if not a.anio }}">Últimos 12 meses</a>
+  {% for y in a.anios %}<a href="/mi-anio?anio={{ y }}" class="{{ 'on' if a.anio == y }}">{{ y }}</a>{% endfor %}
+</div>
 <div class="card">
-  <div class="lbl">Últimos 12 meses</div>
+  <div class="lbl">{{ a.anio if a.anio else 'Últimos 12 meses' }}</div>
   <div class="big">{{ a.kg|kg_es }} kg</div>
   <div class="chips"><span class="chip">{{ a.importe|money_es }} facturados</span></div>
   {% if a.max_kg > 0 %}
@@ -13,7 +58,7 @@
     {% for m in a.meses %}<div title="{{ m.etiqueta }}: {{ m.kg|kg_es }} kg"><i class="{{ 'cero' if not m.kg }}" style="height:{{ m.pct if m.kg else 1 }}%"></i><b>{{ m.etiqueta }}</b></div>{% endfor %}
   </div>
   {% else %}
-  <p class="vacio">Todavía no hay compras en estos 12 meses.</p>
+  <p class="vacio">{{ 'Sin compras en ' ~ a.anio if a.anio else 'Todavía no hay compras en estos 12 meses.' }}</p>
   {% endif %}
 </div>
 {% if a.max_kg > 0 %}
@@ -25,5 +70,25 @@
     {% endfor %}</tbody>
   </table>
 </div>
+{% endif %}
+{# Qué compró: telas y colores del año (Asinfo). Dueña 09/09/2026: "quizás
+   pongamos algo más, colores telas etc." #}
+<h2 style="margin-top:18px">Qué compró en {{ a.anio if a.anio else (a.anios[0]) }}</h2>
+{% if compro.estado == 'ok' and compro.telas %}
+<div class="card" style="padding:6px 8px">
+  <table class="tabla">
+    <thead><tr><th>Tela · color</th><th class="n">Rollos</th><th class="n">Kilos</th></tr></thead>
+    <tbody>{% for t in compro.telas %}
+      <tr class="tela-fila"><td><b>{{ t.tela }}</b></td><td class="n"><b>{{ t.rollos if t.rollos else '' }}{% if t.unidades %}{{ t.unidades|num_es(0) }} un.{% endif %}</b></td><td class="n"><b>{{ t.kg|kg_es if t.kg else '' }}</b></td></tr>
+      {% for c in t.colores %}
+      <tr><td style="padding-left:18px;color:var(--ink2)">{{ c.codigo }} · {{ c.color|title }}</td><td class="n">{{ c.rollos if c.rollos else '' }}{% if c.unidades %}{{ c.unidades|num_es(0) }} un.{% endif %}</td><td class="n">{{ c.kg|kg_es if c.kg else '' }}</td></tr>
+      {% endfor %}
+    {% endfor %}</tbody>
+  </table>
+</div>
+{% elif compro.estado == 'ok' %}
+<div class="card vacio">Sin compras de tela en ese año.</div>
+{% else %}
+<div class="card vacio">No pudimos traer el detalle por tela en este momento. <a href="" style="color:var(--azul);font-weight:600">Probar de nuevo</a></div>
 {% endif %}
 {% endblock %}

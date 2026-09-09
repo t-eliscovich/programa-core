@@ -23,24 +23,37 @@ _LOG = logging.getLogger("programa_core.portal")
 # Su año en kilos
 # ---------------------------------------------------------------------------
 
-def anio_en_kilos(cod: str) -> dict:
+#: Cuántos años para atrás se pueden elegir en "Su año en kilos".
+ANIOS_PARA_ATRAS = 3
+
+
+def anio_en_kilos(cod: str, anio: int | None = None) -> dict:
     """``{"meses": [{"mes": date, "etiqueta": "Sep", "kg": float,
     "importe": float, "pct": 0..100}], "kg": total, "importe": total,
-    "max_kg": float}`` — los últimos 12 meses, con los que no compró en 0."""
+    "max_kg": float, "anio": int | None, "anios": [int, …]}`` — los últimos
+    12 meses, o un año calendario si `anio` viene (dueña 09/09/2026: "que
+    puedan ver otros años"). Los meses en que no compró van en 0."""
     from datetime import date
 
     from modules.informes import queries as q
 
-    filas = {f["mes"]: f for f in q.compras_por_mes_cliente(cod, 12)}
     hoy = today_ec()
-    meses = []
-    y, m = hoy.year, hoy.month
-    for _ in range(12):
-        meses.append(date(y, m, 1))
-        m -= 1
-        if m == 0:
-            m, y = 12, y - 1
-    meses.reverse()
+    anios = list(range(hoy.year, hoy.year - ANIOS_PARA_ATRAS - 1, -1))
+    if anio is not None and anio not in anios:
+        anio = None
+    if anio is None:
+        filas = {f["mes"]: f for f in q.compras_por_mes_cliente(cod, 12)}
+        meses = []
+        y, m = hoy.year, hoy.month
+        for _ in range(12):
+            meses.append(date(y, m, 1))
+            m -= 1
+            if m == 0:
+                m, y = 12, y - 1
+        meses.reverse()
+    else:
+        filas = {f["mes"]: f for f in q.compras_por_mes_cliente_anio(cod, anio)}
+        meses = [date(anio, m, 1) for m in range(1, 13)]
     salida = []
     for d in meses:
         f = filas.get(d) or {}
@@ -53,7 +66,16 @@ def anio_en_kilos(cod: str) -> dict:
     for x in salida:
         x["pct"] = round(100 * x["kg"] / max_kg) if max_kg > 0 else 0
     return {"meses": salida, "kg": sum(x["kg"] for x in salida),
-            "importe": sum(x["importe"] for x in salida), "max_kg": max_kg}
+            "importe": sum(x["importe"] for x in salida), "max_kg": max_kg,
+            "anio": anio, "anios": anios}
+
+
+def que_compro(cod: str, ruc: str, anio: int | None) -> dict:
+    """Qué telas y colores compró en el año (Asinfo), para "Su año en kilos".
+    Sin año elegido, el año en curso. Fail-soft: la pantalla lo dice."""
+    from modules.asinfo import factura_lineas
+
+    return factura_lineas.que_compro_en_el_anio(cod, ruc, anio or today_ec().year)
 
 
 # ---------------------------------------------------------------------------

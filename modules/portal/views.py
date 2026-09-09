@@ -796,7 +796,12 @@ def mi_anio():
     cod = cliente_actual()
     if not cod:
         return _pedir_entrar()
-    return render_template("portal/mi_anio.html", **_ctx(cod), a=mas_.anio_en_kilos(cod))
+    anio = re.sub(r"\D", "", request.args.get("anio") or "")[:4]
+    anio = int(anio) if anio else None
+    ctx = _ctx(cod)
+    a = mas_.anio_en_kilos(cod, anio)
+    return render_template("portal/mi_anio.html", **ctx, a=a,
+                           compro=mas_.que_compro(cod, (ctx["cli"] or {}).get("ruc") or "", a["anio"]))
 
 
 @portal_bp.route("/pedidos", methods=["GET"])
