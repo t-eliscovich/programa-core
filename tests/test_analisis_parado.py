@@ -4871,3 +4871,21 @@ def test_una_orden_anterior_a_la_largada_apaga_aunque_el_pedido_sea_nuevo(monkey
         cohorte=[{"subcategoria": "Alemania", "color": "AZN",
                   "fecha_marcado": date(2026, 8, 17), "motivo": "parado"}])
     assert not db.sql_con("SET fuera = TRUE")
+
+
+def test_la_apagada_por_error_se_vuelve_a_prender_aunque_ya_se_haya_vendido(monkeypatch):
+    """Inter BLA, 09/09/2026: apagada por un pedido de 3 kg posterior a la
+    largada y VENDIDA (146,9 kg) — ya no califica como parada, así que el
+    «vuelve sola» de `par` no la alcanzaba y se quedaba apagada con la venta
+    adentro. Se prende por su cuenta: estaba apagada y no tiene motivo."""
+    db, _ = _refresco(
+        monkeypatch,
+        parados=[{"subcategoria": "Inter", "color": "BLA", "stock_kg": 0,
+                  "stock_bodega": 65, "motivo": "segunda", "nueva": False,
+                  "pedida": True, "ultimo_pedido": "2026-09-07T00:00:00Z",
+                  "entra": False}],
+        cohorte=[{"subcategoria": "Inter", "color": "BLA",
+                  "fecha_marcado": date(2026, 8, 20), "motivo": "parado",
+                  "fuera": True}])
+    assert [p for _, p in db.sql_con("SET fuera = FALSE")] == [("Inter", "BLA")]
+    assert not db.sql_con("SET fuera = TRUE")

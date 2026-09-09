@@ -1121,11 +1121,13 @@ def actualizar() -> dict:
         # kilos que son un saldo se venda la tela o no, así que ninguna de las
         # tres banderas lo descalifica — y si vendió toda su segunda, eso es
         # justo lo que hay que premiar.
-        motivo_previo = {
-            (c["subcategoria"], c["color"]): c.get("motivo")
-            for c in db.fetch_all(
-                "SELECT subcategoria, color, motivo FROM scintela.parado_cohorte",
-                conn=conn)}
+        previo = db.fetch_all(
+            "SELECT subcategoria, color, motivo, fuera "
+            "FROM scintela.parado_cohorte", conn=conn)
+        motivo_previo = {(c["subcategoria"], c["color"]): c.get("motivo")
+                         for c in previo}
+        apagado_previo = {(c["subcategoria"], c["color"])
+                          for c in previo if c.get("fuera")}
 
         # ⚠ Se APAGA por la bandera, no por "no está en la lista de hoy". La
         # tela que se vendió entera tampoco está en la lista —no le queda un
@@ -1221,6 +1223,21 @@ def actualizar() -> dict:
                 """UPDATE scintela.parado_cohorte SET fuera = TRUE
                     WHERE subcategoria = %s AND color = %s""",
                 (p["subcategoria"], p["color"]), conn=conn)
+
+        # ⭐ Y la que estaba apagada SIN motivo vigente se vuelve a encender,
+        # esté o no en la lista de hoy. El «vuelve sola» de arriba corre sólo
+        # sobre `par` —lo que HOY califica como parado—, y la tela que se
+        # apagó mal y encima se vendió ya no califica (tiene ventas en 12
+        # meses): quedaba apagada para siempre con su venta adentro. Inter BLA
+        # el 09/09/2026, después de corregir la regla del pedido: seguía
+        # `fuera` porque nadie la volvía a prender.
+        for p in todas:
+            k = (p["subcategoria"], p["color"])
+            if k in apagado_previo and not _descalifica(p):
+                db.execute(
+                    """UPDATE scintela.parado_cohorte SET fuera = FALSE
+                        WHERE subcategoria = %s AND color = %s AND fuera""",
+                    k, conn=conn)
 
         # ⚠⚠ EL ÍTEM QUE ASINFO YA NO DEVUELVE TAMBIÉN NECESITA MOTIVO.
         #
