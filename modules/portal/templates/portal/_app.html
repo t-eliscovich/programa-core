@@ -151,6 +151,24 @@ form.card h2{margin:0 0 4px;font-size:15px}
 /* La columna Stat de los cheques es un código nuestro (Z): al cliente no (dueña 09/09). */
 .hoja-ec .ec-bloque-cheques thead th:last-child,.hoja-ec .ec-bloque-cheques tbody td:last-child:not([colspan]){display:none}
 .titulo-fila{display:flex;align-items:center;justify-content:space-between;gap:10px}.titulo-fila .pag{margin-bottom:0}
+.hoja-barra h2{white-space:nowrap}.hoja-barra .btn{white-space:nowrap}
+/* En el celular la grilla NO se desliza de costado: se queda con lo que el
+   cliente mira (fecha · número · importe · saldo; en cheques n° · fecha de
+   depósito · importe). Retención, abonado, acumulado, días, postergada,
+   depositado y banco están en la hoja completa (PDF) y en la pantalla ancha. */
+@media (max-width:599px){
+ .hoja-ec{padding:8px 6px}.hoja-ec table{min-width:0;table-layout:auto!important;font-size:12.5px}
+ .hoja-ec .ec-bloque-facturas col.ec-col{width:auto!important}
+ .hoja-ec .ec-c-ret,.hoja-ec .ec-c-abo,.hoja-ec .ec-c-acum,.hoja-ec .ec-c-dias{display:none}
+ .hoja-ec .ec-bloque-facturas tfoot td:nth-child(3),.hoja-ec .ec-bloque-facturas tfoot td:nth-child(4),
+ .hoja-ec .ec-bloque-facturas tfoot td:nth-child(6),.hoja-ec .ec-bloque-facturas tfoot td:nth-child(7){display:none}
+ .hoja-ec .ec-bloque-cheques thead th:nth-child(2),.hoja-ec .ec-bloque-cheques thead th:nth-child(4),
+ .hoja-ec .ec-bloque-cheques thead th:nth-child(5),.hoja-ec .ec-bloque-cheques thead th:nth-child(7),
+ .hoja-ec .ec-bloque-cheques tbody td:nth-child(2):not([colspan]),.hoja-ec .ec-bloque-cheques tbody td:nth-child(4):not([colspan]),
+ .hoja-ec .ec-bloque-cheques tbody td:nth-child(5):not([colspan]),.hoja-ec .ec-bloque-cheques tbody td:nth-child(7):not([colspan]){display:none}
+ .hoja-ec .ec-bloque-cheques tfoot td:nth-child(3){display:none}
+ .hoja-ec table th,.hoja-ec table td{padding-left:8px;padding-right:8px}
+}
 @media (min-width:900px){
  .topnav{display:flex}.tabbar{display:none}main{padding:24px 24px 40px}
  .grid.inicio{grid-template-columns:1fr;align-items:start}
