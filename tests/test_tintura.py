@@ -647,10 +647,9 @@ def test_stock_colorante_fisico_suma_solo_poli_y_alg():
     from types import SimpleNamespace
 
     rows = [
-        # 200/201/202: nums que NO están en la lista de importados (100-107 sí, son Colourtex)
-        SimpleNamespace(num=200, familia="POLI", stock_al_dia_kg=100.0, precio_us=2.0),  # 200 × 1.15
-        SimpleNamespace(num=201, familia="alg", stock_al_dia_kg=50.0, precio_us=3.0),    # 150 × 1.15 (case-insensitive)
-        SimpleNamespace(num=202, familia="AUX", stock_al_dia_kg=999.0, precio_us=9.0),   # ignorado
+        SimpleNamespace(num=100, familia="POLI", stock_al_dia_kg=100.0, precio_us=2.0),  # 200 × 1.15
+        SimpleNamespace(num=101, familia="alg", stock_al_dia_kg=50.0, precio_us=3.0),    # 150 × 1.15 (case-insensitive)
+        SimpleNamespace(num=102, familia="AUX", stock_al_dia_kg=999.0, precio_us=9.0),   # ignorado
         SimpleNamespace(num=None, familia=None, stock_al_dia_kg="", precio_us=None),     # robusto a nulls
     ]
     with patch("modules.tintura.service.stock_quimicos_al_dia", return_value=rows):
@@ -677,19 +676,8 @@ def test_factor_iva_producto():
 
 def test_sql_factor_iva_fragmento():
     frag = service.sql_factor_iva("ol.producto_num")
-    assert "ol.producto_num IN (12, " in frag   # la sal…
-    assert "277" in frag and "101" in frag       # …y los colorantes importados de Colourtex
+    assert "ol.producto_num IN (12)" in frag
     assert "1.15" in frag
-
-
-def test_colorantes_importados_de_colourtex_sin_iva():
-    """Dueña 10/09/2026: la importación no paga IVA. Los 16 colorantes que se
-    compran a C2 se valúan al 1.0; un local cualquiera sigue al 1.15."""
-    for n in (100, 101, 107, 149, 261, 277, 282):
-        assert service.factor_iva_producto(n) == 1.0
-    assert service.factor_iva_producto(12) == 1.0
-    assert service.factor_iva_producto(69) == pytest.approx(1.15)
-    assert service.PRODUCTOS_IMPORTADOS_C2 <= service.PRODUCTOS_IVA_CERO
 
 
 def test_stock_colorante_fisico_sal_exenta_no_lleva_iva():

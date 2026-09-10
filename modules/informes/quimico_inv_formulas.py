@@ -32,14 +32,6 @@ _LOG = logging.getLogger("programa_core.quimico_inv_formulas")
 # se identifica por nombre ('SAL'), igual que formulas_app (match por nombre, no
 # por num, porque la sal se consolidó de varias variantes).
 _IVA_FACTOR = 1.15
-from modules.tintura import service as _tsvc  # noqa: E402 — la lista de exentos vive allá
-
-
-def _iva_de(num, nombre) -> float:
-    """1.0 para la sal (por nombre, como formulas) y los importados (por num)."""
-    if (nombre or "").strip().upper() == "SAL":
-        return 1.0
-    return _tsvc.factor_iva_producto(num)
 
 
 def _tipo_key(num: int, familia: str) -> str:
@@ -178,7 +170,7 @@ def quimico_final_por_tipo(corte: date | None = None, detalle: bool = False) -> 
 
         if us <= 0:
             continue
-        iva_mult = _iva_de(num, nombre)
+        iva_mult = 1.0 if nombre == "SAL" else _IVA_FACTOR
         monto = round(final * us, 2)
         monto_iva = round(monto * iva_mult, 2)
         buckets[tipo] = buckets.get(tipo, 0.0) + monto_iva
@@ -220,7 +212,7 @@ def quimico_total_fisico(corte: date | None = None) -> float | None:
     return None if r is None else float(r["total"])
 
 
-_SQL_CONSUMO = f"""
+_SQL_CONSUMO = """
 SELECT COALESCE(SUM(
     (ol.cantidad_kg
      + COALESCE((SELECT SUM((e->>'kg')::numeric)
@@ -228,7 +220,7 @@ SELECT COALESCE(SUM(
                           CASE WHEN jsonb_typeof(ol.ajustes) = 'array'
                                THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
     * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-    * {_tsvc.sql_factor_iva('p.num')}
+    * (CASE WHEN p.num = 12 THEN 1.0 ELSE 1.15 END)
     -- A44 (AV SOFT NI, aux num_visible=44): consumo en escamas 10x → /10
     * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44
             THEN 0.1 ELSE 1.0 END)
@@ -268,7 +260,7 @@ def quimico_consumido_us(desde: date, hasta: date) -> float | None:
 # "Consumido" de "TOTALES POR TIPO" de formulas (compute_row: cantidad × us ×
 # IVA). SAL exenta por NOMBRE (no por num), A44 (aux num_visible=44) /10. Todo
 # el químico (POLI+ALG+AUX o num<300). TMT 2026-07-24.
-_SQL_CONSUMO_CAT = f"""
+_SQL_CONSUMO_CAT = """
 SELECT COALESCE(SUM(
     (ol.cantidad_kg
      + COALESCE((SELECT SUM((e->>'kg')::numeric)
@@ -276,7 +268,7 @@ SELECT COALESCE(SUM(
                           CASE WHEN jsonb_typeof(ol.ajustes) = 'array'
                                THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
     * COALESCE(p.us, 0)
-    * (CASE WHEN UPPER(TRIM(p.nombre)) = 'SAL' THEN 1.0 ELSE {_tsvc.sql_factor_iva('p.num')} END)
+    * (CASE WHEN UPPER(TRIM(p.nombre)) = 'SAL' THEN 1.0 ELSE 1.15 END)
     * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44
             THEN 0.1 ELSE 1.0 END)
 ), 0) AS us
@@ -451,7 +443,7 @@ def quimico_totales_por_tipo(desde: date, hasta: date) -> dict | None:
             else:
                 continue
 
-        iva = _iva_de(num, nombre)
+        iva = 1.0 if nombre == "SAL" else _IVA_FACTOR
         tot["inicial"] += inicial_kg * us * iva
         tot["compras"] += comp_per * us * iva
         tot["ajuste"] += aju_per * us * iva
