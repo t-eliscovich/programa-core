@@ -11,9 +11,12 @@ pasivo (`scintela.posdat` banc=0) — con:
       compra: si ese mismo código existe en el maestro de proveedores se usa
       ése, y si no existe se da de alta el proveedor con ese código y ese
       nombre, se carga la compra y la campanita pide completarle el nombre
-      real (ver `resolver_prov`). COLO (COLOURTEX) se EXCLUYE: es importación
-      y entra por otro circuito (banc=9, con gastos de importación que
-      formulas no conoce).
+      real (ver `resolver_prov`). COLOURTEX (C2, o COLO como lo escribían
+      antes) también entra, SIN IVA: es importación. Dueña 10/09/2026: la
+      compra se carga en formulas con el gasto de importación adentro del
+      precio por kg, el puente crea la compra con su deuda, y los anticipos
+      ya pagados se descuentan desde la ficha de la compra ("Descontar
+      anticipos", compras.queries.descontar_anticipos).
     - Nº de factura normalizado a la convención del programa: sin ceros a la
       izquierda ('0085' → '85'); el campo `factura` de formulas tiene 4
       caracteres, así que los proveedores con numeración más larga pierden el
@@ -97,6 +100,7 @@ PROV_MAP = {
     "NQ": "NQ",    # ANDESCHEMIE
     "EMP": "ES",   # CECILIA FREIRE (sal en grano)
     "QSI": "QI",   # Q.S.I. (colorantes poliéster FORON)
+    "COLO": "C2",  # COLOURTEX (importación de colorantes; hoy se carga como C2)
 }
 
 # El campo `factura` de formulas tiene 4 caracteres: un proveedor cuya
@@ -107,16 +111,18 @@ PROV_MAP = {
 #              la que Andrés marcó como faltante y llegó como '4904')
 PREFIJO_TRUNCADO = {"SY": "2", "QI": "10"}
 
-# Proveedores de formulas que NO pasan por este puente.
-PROV_EXCLUIDOS = {
-    "COLO",  # COLOURTEX — importación: banc=9, gastos de importación aparte.
-}
+# Proveedores de formulas que NO pasan por este puente. Vacío desde el
+# 10/09/2026: COLOURTEX (COLO/C2) pasó a entrar sin IVA (ver arriba).
+PROV_EXCLUIDOS: set[str] = set()
 
 IVA_DEFAULT = 0.15
 # IVA por proveedor PC. La sal es 0%. OJO: algunas facturas SY mezclan
 # ítems 15% y 0% — el importe queda aproximado por arriba; se corrige
 # editando la compra (pantalla /compras → Editar), el posdat se ajusta solo.
-IVA_POR_PROV = {"ES": 0.0}
+IVA_POR_PROV = {
+    "ES": 0.0,   # sal
+    "C2": 0.0,   # COLOURTEX: importación, sin IVA
+}
 
 # Tolerancia de matching por importe (para reconocer cargas manuales del
 # dBase con IVA mixto: el total real cae entre s/IVA y s/IVA*1.15).

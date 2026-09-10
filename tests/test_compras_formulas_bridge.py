@@ -78,7 +78,7 @@ GRUPOS = [
     # pendiente
     {"proveedor": "AVQ", "factura": "0127", "fecha": "2026-07-14",
      "kg": 1015, "importe_siva": 5391.45},
-    # excluida (importación)
+    # COLOURTEX (importación): entra como C2, sin IVA (dueña 10/09/2026)
     {"proveedor": "COLO", "factura": "26-27/125", "fecha": "2026-07-09",
      "kg": 9000, "importe_siva": 228863.50},
     # el código no entra en 3 letras: se traba
@@ -115,7 +115,11 @@ def test_estado_mes_estados():
     assert por_factura[("AVQ", "0085")].estado == "cargada"
     assert por_factura[("SEY", "1945")].estado == "cargada"
     assert por_factura[("AVQ", "0127")].estado == "pendiente"
-    assert por_factura[("COLO", "26-27/125")].estado == "excluida"
+    colo = por_factura[("COLO", "26-27/125")]
+    assert colo.estado == "pendiente"
+    assert colo.proveedor_pc == "C2"
+    assert colo.iva_pct == 0.0
+    assert colo.importe_con_iva == 228863.50
     assert por_factura[("NUEVO", "1")].estado == "sin_mapear"
     assert por_factura[("EMP", "7197")].estado == "pendiente"
 
@@ -133,8 +137,8 @@ def test_estado_mes_iva_por_proveedor():
 
 def test_estado_mes_pendientes_y_total():
     est = _estado_mock()
-    assert est["pendientes"] == 2  # AVQ 0127 + EMP 7197
-    assert est["total_pendiente"] == pytest.approx(6200.17 + 5000.0, abs=0.02)
+    assert est["pendientes"] == 3  # AVQ 0127 + EMP 7197 + COLO (C2, sin IVA)
+    assert est["total_pendiente"] == pytest.approx(6200.17 + 5000.0 + 228863.50, abs=0.02)
 
 
 def test_estado_mes_no_matchea_por_importe_solo():
@@ -185,11 +189,15 @@ def test_sincronizar_crea_solo_pendientes():
         rep = fb.sincronizar_mes(2026, 7, usuario="formulas-test")
 
     assert rep["disponible"] is True
-    assert len(rep["creadas"]) == 2
+    assert len(rep["creadas"]) == 3
     assert rep["errores"] == []
     assert rep["ya_cargadas"] == 2
     por_prov = {c["proveedor"]: c for c in rep["creadas"]}
-    assert set(por_prov) == {"AQ", "ES"}
+    assert set(por_prov) == {"AQ", "ES", "C2"}
+    # COLOURTEX entra como C2 y SIN IVA (importación)
+    kw_c2 = next(k for k in llamadas if k["codigo_prov"] == "C2")
+    assert kw_c2["importe"] == pytest.approx(228863.50, abs=0.01)
+    assert kw_c2["tipo"] == "Q"
     # argumentos del alta: tipo Q, clave F, concepto formato dBase, importe c/IVA
     kw_aq = next(k for k in llamadas if k["codigo_prov"] == "AQ")
     assert kw_aq["tipo"] == "Q"
@@ -219,8 +227,8 @@ def test_sincronizar_un_error_no_frena_al_resto():
          patch("modules.compras.queries.crear", side_effect=_crear):
         rep = fb.sincronizar_mes(2026, 7)
 
-    assert len(intentos) == 2
-    assert len(rep["creadas"]) == 1
+    assert len(intentos) == 3
+    assert len(rep["creadas"]) == 2
     assert len(rep["errores"]) == 1
     assert rep["errores"][0]["proveedor"] == "AQ"
 
@@ -253,7 +261,7 @@ def test_sincronizar_carga_tambien_las_de_hoy():
     # AVQ 0127 es del 14/07 (= hoy simulado) → SÍ se carga
     assert any(k["codigo_prov"] == "AQ" and k["fecha"] == date(2026, 7, 14)
                for k in llamadas)
-    assert len(rep["creadas"]) == 2
+    assert len(rep["creadas"]) == 3
     assert "dejadas_para_manana" not in rep
 
 

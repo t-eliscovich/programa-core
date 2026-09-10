@@ -112,6 +112,63 @@
     </table>
   </div>
 
+  {% if not anulada and (anticipos_vivos or descuentos) %}
+  {# Descontar anticipos (dueña 10/09/2026): la compra nace con la deuda
+     entera; los anticipos ya pagados al proveedor se descuentan acá. #}
+  <h2 class="text-lg font-semibold mb-2">Anticipos de {{ c.codigo_prov }}</h2>
+  <p class="text-sm text-slate-500 mb-3">
+    Plata ya pagada a este proveedor. Tildá los que son de esta compra y la deuda baja.
+    {% if deuda is not none %}Deuda abierta hoy: <b class="font-mono">{{ deuda | money_es }}</b>.{% endif %}
+  </p>
+  {% for d in descuentos %}
+  <div class="mb-3 px-4 py-3 rounded bg-emerald-50 dark:bg-emerald-900/20 text-sm flex items-center justify-between gap-4 flex-wrap">
+    <div>
+      Descontados el {{ d.fecha | fecha_es }}: <b class="font-mono">{{ d.importe | money_es }}</b>
+      <span class="text-slate-500">
+        ({% for a in d.anticipos %}{{ a.concepto or 'anticipo' }} {{ a.importe | money_es }}{% if not loop.last %} · {% endif %}{% endfor %})
+      </span>
+    </div>
+    {% if tiene_permiso('compras.editar') %}
+    <form method="post" action="{{ url_for('compras.deshacer_descuento', id_compra=c.id_compra, id_mov_doble=d.id_mov_doble) }}" class="no-print">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="text-xs px-2 py-1 rounded border border-slate-300 dark:border-slate-700 hover:bg-white dark:hover:bg-slate-800">Deshacer</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% if anticipos_vivos and deuda and tiene_permiso('compras.editar') %}
+  <form method="post" action="{{ url_for('compras.descontar_anticipos', id_compra=c.id_compra) }}"
+        class="mb-8 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden no-print">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2 w-8"></th>
+          <th class="px-3 py-2 text-left font-medium">Fecha</th>
+          <th class="px-3 py-2 text-left font-medium">Concepto</th>
+          <th class="px-3 py-2 text-right font-medium">Importe</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for a in anticipos_vivos %}
+        <tr class="border-t border-slate-100 dark:border-slate-800">
+          <td class="px-3 py-2"><input type="checkbox" name="id_dolares" value="{{ a.id_dolares }}" id="ant-{{ a.id_dolares }}"></td>
+          <td class="px-3 py-2" style="white-space: nowrap;"><label for="ant-{{ a.id_dolares }}">{{ a.fecha | fecha_es if a.fecha else '—' }}</label></td>
+          <td class="px-3 py-2"><label for="ant-{{ a.id_dolares }}">{{ a.concepto | cleanstr if a.concepto else '—' }}</label></td>
+          <td class="px-3 py-2 text-right font-mono">{{ a.importe | money_es }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <div class="px-3 py-2 border-t border-slate-100 dark:border-slate-800 flex justify-end">
+      <button class="text-sm px-3 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">Descontar de la deuda</button>
+    </div>
+  </form>
+  {% elif anticipos_vivos and not deuda %}
+  <p class="text-sm text-slate-400 mb-8">Esta compra no tiene deuda abierta, no hay nada que descontar.</p>
+  {% endif %}
+  {% endif %}
+
   <h2 class="text-lg font-semibold mb-2">Movimientos</h2>
   <p class="text-sm text-slate-500 mb-3">
     Todo lo que el programa registró contra esta compra: el pago, los anticipos

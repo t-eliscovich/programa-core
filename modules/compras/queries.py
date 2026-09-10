@@ -518,14 +518,15 @@ def editar(
     # NO importe_compra. Editar importe sin restar el parcial le metería
     # un saldo incorrecto al proveedor. Decisión: BLOQUEAR el cambio de
     # importe con mensaje claro (más simple que propagar el delta).
+    # 10/09/2026: un descuento de anticipos (`compra_descuenta_anticipos`)
+    # también deja el posdat con el saldo, no el total → mismo freno.
     md_parcial = db.fetch_one(
         """
-        SELECT id_mov_doble, importe FROM scintela.mov_doble
+        SELECT COALESCE(SUM(importe), 0) AS importe FROM scintela.mov_doble
          WHERE origen_table = 'compra'
            AND origen_id    = %s
-           AND tipo         = 'compra_pago_parcial'
+           AND tipo IN ('compra_pago_parcial', 'compra_descuenta_anticipos')
            AND estado       = 'activo'
-         ORDER BY id_mov_doble DESC LIMIT 1
         """,
         (id_compra,),
     )
@@ -773,6 +774,14 @@ def anular(id_compra: int, *, motivo: str = "", usuario: str = "web") -> int:
             conn=conn,
         )
 
+        # 1b) Si la compra tenía anticipos descontados, vuelven a vivos
+        # (dueña 10/09/2026): anular la compra no puede dejar los anticipos
+        # aplicados a una deuda que ya no existe.
+        anticipos_revividos: list[str] = []
+        for d in descuentos_de_anticipos(id_compra):
+            deshacer_descuento_anticipos(d["id_mov_doble"], usuario=usuario, conn=conn)
+            anticipos_revividos.append(f"anticipos revividos ${d['importe']:.2f}")
+
         # 2) Anula la posdat hermana (si existe) — saldo o deuda íntegra.
         # #10 (TMT 2026-05-14): primero chequear que la posdat NO esté
         # pagada con cheque emitido (banc<>0). Si está pagada y la
@@ -819,7 +828,7 @@ def anular(id_compra: int, *, motivo: str = "", usuario: str = "web") -> int:
             )
 
         # 3) Reverte side-effects según cuenta_pagada
-        side_effect_resumen: list[str] = []
+        side_effect_resumen: list[str] = list(anticipos_revividos)
 
         # 3a) Pagada por caja (cuenta_pagada='C'). En pagos parciales también
         # puede tener cuenta='P' con id_transaccion apuntando a caja: detectamos
@@ -1524,3 +1533,275 @@ def marcar_al_precio_hilo(id_compra: int, *, marcar: bool, usuario: str = "web")
                       "kg": float(c.get("kg") or 0), "mes": str(c.get("fecha"))[:7]},
         )
     return {"cambio": True, "marcada": bool(marcar), "numero": c.get("numero")}
+
+
+# ── Descontar anticipos (dueña 10/09/2026, compra de colorantes COLOURTEX) ──
+#
+# Una compra que ya tuvo anticipos (scintela.dolares, cuenta = proveedor)
+# nace con la deuda ENTERA en posdat. Acá se le descuentan los anticipos
+# vivos que la dueña tilde: los anticipos pasan a consumidos (st='B', igual
+# que "Convertir a compra"), el posdat hermano baja por la suma, y la compra
+# queda con cuenta_pagada 'P' (parcial) o 'A' (cubierta del todo). Todo
+# linkeado por mov_doble `compra_descuenta_anticipos`, reversible con
+# `deshacer_descuento_anticipos` y deshecho solo si la compra se anula.
+
+TIPO_MD_DESCUENTO = "compra_descuenta_anticipos"
+
+
+def anticipos_vivos_del_proveedor(codigo_prov: str) -> list[dict]:
+    """Anticipos vivos (st vacío) de un proveedor, del más viejo al más nuevo."""
+    codigo_prov = (codigo_prov or "").strip().upper()
+    if not codigo_prov:
+        return []
+    return db.fetch_all(
+        """
+        SELECT id_dolares, fecha, importe, concepto
+          FROM scintela.dolares
+         WHERE UPPER(TRIM(cta)) = %s
+           AND (st IS NULL OR TRIM(st) = '')
+         ORDER BY fecha ASC, id_dolares ASC
+        """,
+        (codigo_prov,),
+    ) or []
+
+
+def _posdat_hermano_abierto(conn, codigo_prov: str, numero) -> dict | None:
+    return db.fetch_one(
+        """
+        SELECT id_posdat, importe, banc
+          FROM scintela.posdat
+         WHERE prov = %s AND num = %s
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+         ORDER BY id_posdat DESC LIMIT 1
+         FOR UPDATE
+        """,
+        (codigo_prov, numero), conn=conn,
+    )
+
+
+def deuda_abierta(codigo_prov: str, numero) -> float | None:
+    """Importe del posdat hermano abierto (banc=0, no anulado), o None."""
+    if not codigo_prov or numero is None:
+        return None
+    r = db.fetch_one(
+        """
+        SELECT importe FROM scintela.posdat
+         WHERE prov = %s AND num = %s AND COALESCE(banc, 0) = 0
+           AND (anulada IS NOT TRUE OR anulada IS NULL)
+         ORDER BY id_posdat DESC LIMIT 1
+        """,
+        ((codigo_prov or "").strip().upper(), numero),
+    )
+    return float(r["importe"] or 0) if r else None
+
+
+def descuentos_de_anticipos(id_compra: int) -> list[dict]:
+    """Descuentos activos de una compra (para la ficha: qué se descontó y el
+    botón Deshacer)."""
+    import json as _json
+    rows = db.fetch_all(
+        """
+        SELECT id_mov_doble, importe, fecha, metadata
+          FROM scintela.mov_doble
+         WHERE origen_table = 'compra' AND origen_id = %s
+           AND tipo = %s AND estado = 'activo'
+         ORDER BY id_mov_doble ASC
+        """,
+        (int(id_compra), TIPO_MD_DESCUENTO),
+    ) or []
+    out = []
+    for r in rows:
+        meta = r.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = _json.loads(meta)
+            except Exception:  # noqa: BLE001
+                meta = {}
+        out.append({
+            "id_mov_doble": r.get("id_mov_doble"),
+            "importe": float(r.get("importe") or 0),
+            "fecha": r.get("fecha"),
+            "anticipos": meta.get("anticipos") or [],
+        })
+    return out
+
+
+def descontar_anticipos(id_compra: int, ids_anticipos, *, usuario: str = "web") -> dict:
+    """Descuenta anticipos vivos del proveedor de la deuda de una compra.
+
+    Reglas:
+      - La compra está viva, tiene proveedor y número, y un posdat hermano
+        abierto (banc=0, no anulado). Sin deuda abierta no hay qué descontar.
+      - Los anticipos son del mismo proveedor y están vivos.
+      - La suma no supera la deuda abierta (un anticipo más grande que la
+        deuda se resuelve a mano: no inventamos un saldo a favor).
+    """
+    ids = sorted({int(i) for i in (ids_anticipos or []) if i})
+    if not ids:
+        raise ValueError("Tildá al menos un anticipo.")
+    with db.tx() as conn:
+        c = db.fetch_one(
+            "SELECT id_compra, numero, codigo_prov, importe, stat, cuenta_pagada "
+            "  FROM scintela.compra WHERE id_compra = %s FOR UPDATE",
+            (int(id_compra),), conn=conn,
+        )
+        if not c:
+            raise ValueError(f"No encontré la compra id={id_compra}.")
+        if (c.get("stat") or "").strip().upper() in ("X", "Y"):
+            raise ValueError("La compra está anulada.")
+        prov = (c.get("codigo_prov") or "").strip().upper()
+        if not prov or c.get("numero") is None:
+            raise ValueError("La compra no tiene proveedor o número.")
+        posdat = _posdat_hermano_abierto(conn, prov, c["numero"])
+        if not posdat or (posdat.get("banc") or 0) != 0:
+            raise ValueError("Esta compra no tiene deuda abierta para descontar.")
+        deuda = float(posdat.get("importe") or 0)
+
+        ph = ", ".join(["%s"] * len(ids))
+        ants = db.fetch_all(
+            f"SELECT id_dolares, cta, importe, st, concepto FROM scintela.dolares "
+            f" WHERE id_dolares IN ({ph}) ORDER BY id_dolares FOR UPDATE",
+            tuple(ids), conn=conn,
+        ) or []
+        if len(ants) != len(ids):
+            faltan = set(ids) - {int(a["id_dolares"]) for a in ants}
+            raise ValueError(f"No encontré los anticipos {sorted(faltan)}.")
+        for a in ants:
+            if (a.get("cta") or "").strip().upper() != prov:
+                raise ValueError(
+                    f"El anticipo {a['id_dolares']} es de {(a.get('cta') or '').strip().upper()!r}, "
+                    f"no de {prov!r}.")
+            if (a.get("st") or "").strip():
+                raise ValueError(f"El anticipo {a['id_dolares']} ya está aplicado.")
+        total = round(sum(float(a.get("importe") or 0) for a in ants), 2)
+        if total <= 0:
+            raise ValueError("Los anticipos tildados suman cero.")
+        if total > deuda + 0.01:
+            raise ValueError(
+                f"Los anticipos suman {total:,.2f} y la deuda abierta es {deuda:,.2f}: "
+                f"destildá alguno.")
+
+        db.execute(
+            f"UPDATE scintela.dolares SET st = 'B', usuario_modifica = %s, "
+            f"fecha_modifica = CURRENT_TIMESTAMP WHERE id_dolares IN ({ph})",
+            (usuario[:50], *ids), conn=conn,
+        )
+        nueva_deuda = round(deuda - total, 2)
+        if nueva_deuda < 0:
+            nueva_deuda = 0.0
+        db.execute(
+            "UPDATE scintela.posdat SET importe = %s, usuario_modifica = %s "
+            " WHERE id_posdat = %s",
+            (nueva_deuda, usuario[:50], posdat["id_posdat"]), conn=conn,
+        )
+        cuenta_antes = (c.get("cuenta_pagada") or "").strip() or None
+        cuenta_nueva = "P" if nueva_deuda > 0.01 else "A"
+        db.execute(
+            "UPDATE scintela.compra SET cuenta_pagada = %s, usuario_modifica = %s "
+            " WHERE id_compra = %s",
+            (cuenta_nueva, usuario[:50], int(id_compra)), conn=conn,
+        )
+        import mov_doble as _md
+        id_md = _md.registrar(
+            conn=conn,
+            tipo=TIPO_MD_DESCUENTO,
+            origen_table="compra", origen_id=int(id_compra),
+            destino_table="posdat", destino_id=int(posdat["id_posdat"]),
+            importe=total,
+            fecha=today_ec(),
+            concepto=(f"{prov} · compra #{c.get('numero')}: descontados "
+                      f"{len(ids)} anticipos ({total:,.2f}); deuda "
+                      f"{deuda:,.2f} → {nueva_deuda:,.2f}")[:200],
+            usuario=usuario,
+            metadata={
+                "numero": c.get("numero"), "codigo_prov": prov,
+                "id_posdat": posdat["id_posdat"],
+                "deuda_antes": deuda, "deuda_despues": nueva_deuda,
+                "cuenta_pagada_antes": cuenta_antes,
+                "anticipos": [
+                    {"id_dolares": int(a["id_dolares"]),
+                     "importe": float(a.get("importe") or 0),
+                     "concepto": (a.get("concepto") or "")[:50]}
+                    for a in ants
+                ],
+            },
+        )
+    return {"id_mov_doble": id_md, "total": total, "n": len(ids),
+            "deuda_antes": deuda, "deuda_despues": nueva_deuda,
+            "numero": c.get("numero"), "cuenta_pagada": cuenta_nueva}
+
+
+def deshacer_descuento_anticipos(id_mov_doble: int, *, usuario: str = "web",
+                                 conn=None) -> dict:
+    """Deshace un descuento: los anticipos vuelven a vivos, la deuda sube.
+
+    Si el posdat ya se pagó con cheque (banc<>0) no se puede: primero
+    reversar el cheque. `conn` permite llamarlo desde adentro de anular().
+    """
+    import json as _json
+
+    def _run(conn):
+        md = db.fetch_one(
+            "SELECT id_mov_doble, tipo, estado, importe, origen_id, destino_id, metadata "
+            "  FROM scintela.mov_doble WHERE id_mov_doble = %s FOR UPDATE",
+            (int(id_mov_doble),), conn=conn,
+        )
+        if not md or md.get("tipo") != TIPO_MD_DESCUENTO:
+            raise ValueError("Ese movimiento no es un descuento de anticipos.")
+        if (md.get("estado") or "") != "activo":
+            raise ValueError("Ese descuento ya está deshecho.")
+        meta = md.get("metadata") or {}
+        if isinstance(meta, str):
+            try:
+                meta = _json.loads(meta)
+            except Exception:  # noqa: BLE001
+                meta = {}
+        ids = [int(a["id_dolares"]) for a in (meta.get("anticipos") or []) if a.get("id_dolares")]
+        total = float(md.get("importe") or 0)
+        posdat = db.fetch_one(
+            "SELECT id_posdat, importe, banc, anulada FROM scintela.posdat "
+            " WHERE id_posdat = %s FOR UPDATE",
+            (md.get("destino_id"),), conn=conn,
+        )
+        if not posdat:
+            raise ValueError("La deuda de esta compra ya no existe.")
+        if (posdat.get("banc") or 0) != 0:
+            raise ValueError("La deuda ya se pagó con cheque: reversá el cheque primero.")
+        if ids:
+            ph = ", ".join(["%s"] * len(ids))
+            db.execute(
+                f"UPDATE scintela.dolares SET st = '', usuario_modifica = %s, "
+                f"fecha_modifica = CURRENT_TIMESTAMP "
+                f" WHERE id_dolares IN ({ph}) AND COALESCE(st, '') = 'B'",
+                (usuario[:50], *ids), conn=conn,
+            )
+        if not posdat.get("anulada"):
+            db.execute(
+                "UPDATE scintela.posdat SET importe = %s, usuario_modifica = %s "
+                " WHERE id_posdat = %s",
+                (round(float(posdat.get("importe") or 0) + total, 2), usuario[:50],
+                 posdat["id_posdat"]), conn=conn,
+            )
+        db.execute(
+            "UPDATE scintela.compra SET cuenta_pagada = %s, usuario_modifica = %s "
+            " WHERE id_compra = %s",
+            (meta.get("cuenta_pagada_antes"), usuario[:50], md.get("origen_id")), conn=conn,
+        )
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo=TIPO_MD_DESCUENTO + "_reverso",
+            origen_table="compra", origen_id=md.get("origen_id"),
+            destino_table="posdat", destino_id=md.get("destino_id"),
+            importe=-total, fecha=today_ec(),
+            concepto=(f"{meta.get('codigo_prov') or ''} · compra #{meta.get('numero')}: "
+                      f"deshecho el descuento de {len(ids)} anticipos ({total:,.2f})")[:200],
+            usuario=usuario, id_original=int(id_mov_doble),
+            metadata={"anticipos": ids, "numero": meta.get("numero")},
+        )
+        return {"total": total, "n": len(ids), "numero": meta.get("numero")}
+
+    if conn is not None:
+        return _run(conn)
+    with db.tx() as tx_conn:
+        return _run(tx_conn)

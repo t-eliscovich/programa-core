@@ -248,7 +248,57 @@ def detalle(id_compra: int):
     if not c:
         abort(404)
     movs = queries.movimientos(c["id_compra"])
-    return render_template("compras/detalle.html", c=c, movs=movs)
+    # Descontar anticipos (dueña 10/09/2026): la ficha muestra los anticipos
+    # vivos del proveedor para tildar, y los descuentos ya hechos con Deshacer.
+    anticipos_vivos: list[dict] = []
+    descuentos: list[dict] = []
+    deuda = None
+    if (c.get("stat") or "").strip().upper() not in ("X", "Y"):
+        try:
+            anticipos_vivos = queries.anticipos_vivos_del_proveedor(c.get("codigo_prov"))
+            descuentos = queries.descuentos_de_anticipos(c["id_compra"])
+            deuda = queries.deuda_abierta(c.get("codigo_prov"), c.get("numero"))
+        except Exception:  # noqa: BLE001
+            anticipos_vivos, descuentos, deuda = [], [], None
+    return render_template("compras/detalle.html", c=c, movs=movs,
+                           anticipos_vivos=anticipos_vivos, descuentos=descuentos,
+                           deuda=deuda)
+
+
+@compras_bp.route("/compras/<int:id_compra>/descontar-anticipos", methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def descontar_anticipos(id_compra: int):
+    """Descuenta de la deuda de la compra los anticipos tildados (dueña 10/09/2026)."""
+    ids = request.form.getlist("id_dolares")
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.descontar_anticipos(id_compra, ids, usuario=usuario)
+        flash(f"Compra #{r['numero']}: descontados {r['n']} anticipos por "
+              f"$ {r['total']:,.2f}. La deuda queda en $ {r['deuda_despues']:,.2f}.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude descontar los anticipos", e)
+    return redirect(url_for("compras.detalle", id_compra=id_compra))
+
+
+@compras_bp.route("/compras/<int:id_compra>/deshacer-descuento/<int:id_mov_doble>",
+                  methods=["POST"])
+@requiere_login
+@requiere_permiso("compras.editar")
+def deshacer_descuento(id_compra: int, id_mov_doble: int):
+    """Deshace un descuento de anticipos: los anticipos vuelven a vivos."""
+    try:
+        usuario = (g.user or {}).get("username", "web")
+        r = queries.deshacer_descuento_anticipos(id_mov_doble, usuario=usuario)
+        flash(f"Compra #{r['numero']}: deshecho el descuento de {r['n']} anticipos "
+              f"($ {r['total']:,.2f}). Volvieron a vivos.", "ok")
+    except ValueError as e:
+        flash(str(e), "warn")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude deshacer el descuento", e)
+    return redirect(url_for("compras.detalle", id_compra=id_compra))
 
 
 @compras_bp.route("/compras/<int:id_compra>/confirmar-anulacion", methods=["GET"])
