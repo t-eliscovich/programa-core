@@ -12,11 +12,15 @@ pasivo (`scintela.posdat` banc=0) — con:
       ése, y si no existe se da de alta el proveedor con ese código y ese
       nombre, se carga la compra y la campanita pide completarle el nombre
       real (ver `resolver_prov`). COLOURTEX (C2, o COLO como lo escribían
-      antes) también entra, SIN IVA: es importación. Dueña 10/09/2026: la
-      compra se carga en formulas con el gasto de importación adentro del
-      precio por kg, el puente crea la compra con su deuda, y los anticipos
-      ya pagados se descuentan desde la ficha de la compra ("Descontar
-      anticipos", compras.queries.descontar_anticipos).
+      antes) también entra, CON el 15% como todos. Convención de Andrés
+      (10/09/2026): la importación no paga IVA pero tiene 21% de recargo;
+      Hermes carga en formulas el precio de factura × 1,21 ÷ 1,15, así la
+      columna "con IVA" de formulas (y la compra que trae el puente) da el
+      precio × 1,21 = lo que entró al inventario. Después, en la ficha de
+      la compra, se descuentan los anticipos ya pagados ("Descontar
+      anticipos", compras.queries.descontar_anticipos). El primer intento
+      del 10/09 traía C2 al 0% y la compra quedó 15% corta (215.802 en vez
+      de 248.172): Andrés corrigió la deuda a mano esa vez.
     - Nº de factura normalizado a la convención del programa: sin ceros a la
       izquierda ('0085' → '85'); el campo `factura` de formulas tiene 4
       caracteres, así que los proveedores con numeración más larga pierden el
@@ -121,7 +125,8 @@ IVA_DEFAULT = 0.15
 # editando la compra (pantalla /compras → Editar), el posdat se ajusta solo.
 IVA_POR_PROV = {
     "ES": 0.0,   # sal
-    "C2": 0.0,   # COLOURTEX: importación, sin IVA
+    # C2 (COLOURTEX) va al 15% default a propósito: el 21% de importación se
+    # carga en formulas como precio × 1,21 ÷ 1,15 (convención de Andrés).
 }
 
 # Tolerancia de matching por importe (para reconocer cargas manuales del

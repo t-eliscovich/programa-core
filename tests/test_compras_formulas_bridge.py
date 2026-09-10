@@ -78,7 +78,8 @@ GRUPOS = [
     # pendiente
     {"proveedor": "AVQ", "factura": "0127", "fecha": "2026-07-14",
      "kg": 1015, "importe_siva": 5391.45},
-    # COLOURTEX (importación): entra como C2, sin IVA (dueña 10/09/2026)
+    # COLOURTEX (importación): entra como C2 con el 15% como todos — en
+    # formulas se carga precio × 1,21 ÷ 1,15 (Andrés 10/09/2026)
     {"proveedor": "COLO", "factura": "26-27/125", "fecha": "2026-07-09",
      "kg": 9000, "importe_siva": 228863.50},
     # el código no entra en 3 letras: se traba
@@ -118,8 +119,8 @@ def test_estado_mes_estados():
     colo = por_factura[("COLO", "26-27/125")]
     assert colo.estado == "pendiente"
     assert colo.proveedor_pc == "C2"
-    assert colo.iva_pct == 0.0
-    assert colo.importe_con_iva == 228863.50
+    assert colo.iva_pct == pytest.approx(0.15)
+    assert colo.importe_con_iva == pytest.approx(228863.50 * 1.15, abs=0.01)
     assert por_factura[("NUEVO", "1")].estado == "sin_mapear"
     assert por_factura[("EMP", "7197")].estado == "pendiente"
 
@@ -138,7 +139,7 @@ def test_estado_mes_iva_por_proveedor():
 def test_estado_mes_pendientes_y_total():
     est = _estado_mock()
     assert est["pendientes"] == 3  # AVQ 0127 + EMP 7197 + COLO (C2, sin IVA)
-    assert est["total_pendiente"] == pytest.approx(6200.17 + 5000.0 + 228863.50, abs=0.02)
+    assert est["total_pendiente"] == pytest.approx(6200.17 + 5000.0 + round(228863.50 * 1.15, 2), abs=0.02)
 
 
 def test_estado_mes_no_matchea_por_importe_solo():
@@ -194,9 +195,9 @@ def test_sincronizar_crea_solo_pendientes():
     assert rep["ya_cargadas"] == 2
     por_prov = {c["proveedor"]: c for c in rep["creadas"]}
     assert set(por_prov) == {"AQ", "ES", "C2"}
-    # COLOURTEX entra como C2 y SIN IVA (importación)
+    # COLOURTEX entra como C2 con el 15% (el ×1,21 viene de formulas ÷ 1,15)
     kw_c2 = next(k for k in llamadas if k["codigo_prov"] == "C2")
-    assert kw_c2["importe"] == pytest.approx(228863.50, abs=0.01)
+    assert kw_c2["importe"] == pytest.approx(228863.50 * 1.15, abs=0.01)
     assert kw_c2["tipo"] == "Q"
     # argumentos del alta: tipo Q, clave F, concepto formato dBase, importe c/IVA
     kw_aq = next(k for k in llamadas if k["codigo_prov"] == "AQ")

@@ -179,9 +179,9 @@
       editado a mano. El importe C/IVA usa 15% (0% para la sal / ES). Si una factura mezcla
       ítems con y sin IVA, corregí el importe con Editar en /compras — el pasivo se ajusta
       solo y desde ese momento el puente no la vuelve a tocar.
-      COLOURTEX (C2) entra sin IVA porque es importación: en formulas se carga con el
-      gasto de importación adentro del precio por kg, y los anticipos ya pagados se
-      descuentan desde la ficha de la compra.
+      COLOURTEX (C2) es importación (sin IVA, 21% de recargo): en formulas se carga el
+      precio de factura × 1,21 ÷ 1,15, así la compra entra acá por el precio × 1,21;
+      los anticipos ya pagados se descuentan desde la ficha de la compra.
       Si una factura desaparece del programa de tintorería (la borraron o reversaron), la
       compra que el puente había cargado se anula sola con su pasivo; si sólo le cambian
       el N°, se corrige el concepto sin cargar otra.
