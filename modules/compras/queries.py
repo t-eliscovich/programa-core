@@ -1601,7 +1601,7 @@ def descuentos_de_anticipos(id_compra: int) -> list[dict]:
     import json as _json
     rows = db.fetch_all(
         """
-        SELECT id_mov_doble, importe, fecha, metadata
+        SELECT id_mov_doble, importe, fecha_operacion AS fecha, metadata
           FROM scintela.mov_doble
          WHERE origen_table = 'compra' AND origen_id = %s
            AND tipo = %s AND estado = 'activo'

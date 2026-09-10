@@ -55,6 +55,9 @@ class _FakeDB:
             return [dict(d) for d in self.dolares.values()
                     if d["cta"] == params[0] and not d["st"]]
         if "from scintela.mov_doble where origen_table = 'compra'" in s:
+            # mov_doble NO tiene columna `fecha`: es `fecha_operacion` (en
+            # prod la ficha se quedaba sin el bloque porque esta query rompía).
+            assert "fecha_operacion as fecha" in s and ", fecha," not in s
             return [dict(m) for m in self.movs.values()
                     if m["origen_id"] == params[0] and m["tipo"] == params[1]
                     and m["estado"] == "activo"]
