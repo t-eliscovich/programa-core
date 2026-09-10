@@ -137,10 +137,12 @@ def test_detalle_sin_anticipos_no_muestra_el_bloque(app_con_compra, monkeypatch)
     assert "Anticipos de C2" not in body
 
 
-def test_detalle_sin_deuda_abierta_no_deja_descontar(app_con_compra, monkeypatch):
+def test_detalle_sin_deuda_abierta_no_muestra_el_bloque(app_con_compra, monkeypatch):
+    """Una compra ya pagada de un proveedor con anticipos (AC tiene 60) no
+    tiene que mostrar el bloque: sería ruido en cada ficha."""
     _patch_anticipos(monkeypatch, vivos=VIVOS, deuda=None)
     body = app_con_compra.test_client().get("/compras/473").get_data(as_text=True)
-    assert "no tiene deuda abierta" in body
+    assert "Anticipos de C2" not in body
     assert "Descontar de la deuda" not in body
 
 

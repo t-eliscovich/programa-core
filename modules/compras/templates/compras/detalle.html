@@ -112,7 +112,7 @@
     </table>
   </div>
 
-  {% if not anulada and (anticipos_vivos or descuentos) %}
+  {% if not anulada and ((anticipos_vivos and deuda) or descuentos) %}
   {# Descontar anticipos (dueña 10/09/2026): la compra nace con la deuda
      entera; los anticipos ya pagados al proveedor se descuentan acá. #}
   <h2 class="text-lg font-semibold mb-2">Anticipos de {{ c.codigo_prov }}</h2>
@@ -164,8 +164,6 @@
       <button class="text-sm px-3 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">Descontar de la deuda</button>
     </div>
   </form>
-  {% elif anticipos_vivos and not deuda %}
-  <p class="text-sm text-slate-400 mb-8">Esta compra no tiene deuda abierta, no hay nada que descontar.</p>
   {% endif %}
   {% endif %}
 
