@@ -204,11 +204,11 @@
                 {% if peds %}
                   <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
                     <span class="chev" aria-hidden="true"></span>
-                    {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
+                    {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ 'AB' if f.acabado == 'ABI' else f.acabado }}</span>{% endif %}
                     <span><span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span></span>
                   </button>
                 {% else %}
-                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
+                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ 'AB' if f.acabado == 'ABI' else f.acabado }}</span>{% endif %}
                   <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
                 {% endif %}
               </td>
@@ -268,7 +268,7 @@
               <td class="cod">
                 <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
                   <span class="chev" aria-hidden="true"></span>
-                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado }}</span>{% endif %}
+                  {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ 'AB' if f.acabado == 'ABI' else f.acabado }}</span>{% endif %}
                   <span class="color">{{ f.color }}</span>
                   <span class="prod">{{ f.codigo }}</span>
                 </button>
@@ -417,7 +417,7 @@
             {% for l in items %}
             {% set le = et.lineas.get(l.producto) if et else none %}
             <tr class="det{% if loop.last and tela_ultima and not p.descripcion %} ultima{% endif %}" data-grupo="m-{{ p.numero }}" data-fila-hija>
-              <td class="linea" colspan="4"><span class="color">{{ l.color }}</span><span class="prod">{{ l.producto }}</span></td>
+              <td class="linea" colspan="4"><span class="color">{{ l.color }}</span><span class="prod">{{ l.producto }}</span>{% if l.acabado %}<span class="aca {{ 'tub' if l.acabado == 'TUB' else ('abi' if l.acabado == 'ABI' else 'otro') }}" style="margin-left:6px">{{ 'AB' if l.acabado == 'ABI' else l.acabado }}</span>{% endif %}</td>
               <td>{{ l.cantidad|num_es(0) }} <span class="u">{{ l.unidad }}</span></td>
               <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
               {# la etapa de ESTA línea, debajo de la tira del pedido #}

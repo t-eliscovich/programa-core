@@ -625,3 +625,13 @@ def test_el_sync_no_toca_un_memo_que_ya_tiene_acabado_ni_uno_sin_dato():
         memos_sync._completar_acabado(ya, {"silenciosos": []})
         memos_sync._completar_acabado(sin, {"silenciosos": []})
     assert not act.called
+
+
+def test_por_pedido_trae_el_acabado_de_cada_linea():
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(_FILAS, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(service, "acabados_por_producto", return_value={"PI28NEG": "ABI"}):
+        pedidos, _ = service.por_pedido()
+    p = next(x for x in pedidos if x["numero"] == "PDCL-26401")
+    assert p["lineas"][0]["acabado"] == "ABI"

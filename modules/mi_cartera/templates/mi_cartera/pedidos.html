@@ -48,6 +48,8 @@
   .lst{font-style:normal;font-size:10.5px;font-weight:700;flex:0 0 auto;white-space:nowrap}
   .lst.done{color:#16a34a}
   .lst.tinto{color:#1d4ed8}
+  .aca{font-size:10px;font-weight:700;padding:0 5px;border-radius:4px;flex:0 0 auto;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+  .aca.tub{background:#eef2ff;color:#3730a3}.aca.abi{background:#fef3c7;color:#92400e}.aca.otro{background:#f1f5f9;color:#475569}
   /* La tira de etapas del pedido: enviado → en tintura → terminado.
      TMT 27/08 (celular de Edgar): "Terminado" se salía de la pantalla —
      la tira tiene que entrar hasta en 320px Y con la letra del sistema
@@ -110,6 +112,8 @@
         {% set le = et.lineas.get(l.producto) if et else none %}
         <li>
           <span class="c">{{ l.color }}</span>
+          {# Acabado del producto (TUB / AB), dueña 09/09. Hermano con flex:0 0 auto: nunca adentro de un span con ellipsis. #}
+          {% if l.acabado %}<span class="aca {{ 'tub' if l.acabado == 'TUB' else ('abi' if l.acabado == 'ABI' else 'otro') }}">{{ 'AB' if l.acabado == 'ABI' else l.acabado }}</span>{% endif %}
           {# El estado POR RENGLÓN (dueña 27/08): en tintura y terminado son
              de cada línea; "enviado" es del pedido entero y no se repite. #}
           {%- if le == 'terminado' %}<i class="lst done">✓ Terminado</i>

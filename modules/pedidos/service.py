@@ -1023,6 +1023,9 @@ def por_pedido() -> tuple[list[dict], bool]:
     for p in pedidos:
         p["total_kg"] = round(p["total_kg"])
         p["n_lineas"] = len(p["lineas"])
+        # El acabado (TUB / ABI) de cada línea — dueña 09/09: se ve en
+        # /pedidos, en el portal del vendedor y viaja en el memo.
+        p["lineas"] = lineas_con_acabado(p["lineas"])
     pedidos.sort(key=lambda p: (p["fecha"], p["numero"]), reverse=True)
     return pedidos, True
 
@@ -1044,16 +1047,17 @@ def armar_memo(numero: str) -> dict | None:
         "vendedor": {"codigo": p["dueno"]["codigo"],
                      "nombre": p["dueno"]["nombre"]},
         "descripcion": p["descripcion"],
-        "lineas": lineas_con_acabado(p["lineas"]),
+        "lineas": p["lineas"],
         "total_kg": p["total_kg"] if p["kg_completo"] else None,
     }
 
 
 def lineas_con_acabado(lineas: list[dict]) -> list[dict]:
-    """Las líneas del memo con su `acabado` (TUB / ABI) por producto —
-    dueña 09/09: la fábrica lo necesita ver en el memo. Sale del mismo
-    atributo del producto terminado que usa /pedidos (`acabados_por_producto`,
-    fail-soft: '' si Asinfo no lo da). Copia las líneas, no las pisa."""
+    """Las líneas con su `acabado` (TUB / ABI) por producto — dueña 09/09:
+    se ve en /pedidos, en /mi-cartera y en el memo de la fábrica. Sale del
+    mismo atributo del producto terminado que el corte por color
+    (`acabados_por_producto`, fail-soft: '' si Asinfo no lo da). Copia las
+    líneas, no las pisa."""
     m = acabados_por_producto()
     return [dict(ln, acabado=m.get(ln.get("producto") or "", ""))
             for ln in lineas]
