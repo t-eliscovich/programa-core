@@ -146,7 +146,14 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
     "disponible": si Asinfo contestó}."""
     from modules.pedidos import service
 
-    res = {"revisados": 0, "actualizados": [], "silenciosos": [], "disponible": True}
+    res = {"revisados": 0, "actualizados": [], "silenciosos": [], "disponible": True,
+           "acabados": []}
+    # Primero el acabado (10/09): vale para vivos y terminados, y no depende
+    # de que haya memos vivos que vigilar.
+    try:
+        res["acabados"] = completar_acabados()
+    except Exception:  # noqa: BLE001 — nunca frena el sync principal
+        _LOG.warning("sync memos: completar acabados falló", exc_info=True)
     memos = formulas_memos.vivos()
     if not memos:
         return res
@@ -161,12 +168,10 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
         numero = str(m["numero"]).strip().upper()
         sello = mods.get(numero)
         if not sello:
-            _completar_acabado(m, res)
             continue
         mod_ec, quien = sello
         viejo = m.get("detalle") or {}
         if viejo.get("asinfo_modificado") == mod_ec:
-            _completar_acabado(m, res)
             continue  # esta edición ya se procesó
         mod_utc = _a_utc(mod_ec)
         enviado = m.get("enviado_en")
@@ -208,29 +213,37 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
     return res
 
 
-def _completar_acabado(m: dict, res: dict) -> None:
-    """Memos mandados con la regla VIEJA del acabado (o sin acabado): se les
-    pisa el acabado de cada línea con el de la LÍNEA del pedido en Asinfo,
-    en silencio (no es un cambio del pedido, no hay alerta). Si el pedido ya
-    no está entre los pendientes o Asinfo no contesta, no se toca nada y se
-    reintenta en la próxima pasada."""
+def completar_acabados() -> list[str]:
+    """Memos mandados con la regla VIEJA del acabado (por producto, 09/09) o
+    sin acabado: se les pisa el acabado de cada línea con el de la LÍNEA del
+    pedido en Asinfo, en silencio (no es un cambio del pedido, no hay
+    alerta). Vivos Y terminados — la fábrica mira los terminados también.
+    UNA consulta a Asinfo por pasada para todos los pendientes de esto; si
+    Asinfo no contesta, no se toca nada y se reintenta en la próxima.
+    Devuelve los números completados."""
     from modules.pedidos import service
-    viejo = m.get("detalle") or {}
-    lineas = viejo.get("lineas") or []
-    if not lineas or viejo.get("acabado_v") == service.ACABADO_VERSION:
-        return
-    numero = str(m["numero"]).strip().upper()
-    nuevo = service.armar_memo(numero)
-    if nuevo is None:
-        return
-    por_producto = {ln.get("producto"): ln.get("acabado", "")
-                    for ln in nuevo.get("lineas") or []}
-    nuevas = [dict(ln, acabado=por_producto.get(ln.get("producto"), ln.get("acabado", "")))
-              for ln in lineas]
-    ok_upd, _ = formulas_memos.actualizar(
-        numero, dict(viejo, lineas=nuevas, acabado_v=service.ACABADO_VERSION), None, "")
-    if ok_upd:
-        res["silenciosos"].append(numero)
+    memos = formulas_memos.con_acabado_viejo(service.ACABADO_VERSION)
+    if not memos:
+        return []
+    por_pedido, ok = service.acabados_de_pedidos([m["numero"] for m in memos])
+    if not ok:
+        return []
+    hechos: list[str] = []
+    for m in memos:
+        numero = str(m["numero"]).strip().upper()
+        viejo = m.get("detalle") or {}
+        lineas = viejo.get("lineas") or []
+        de_asinfo = por_pedido.get(numero)
+        if not lineas or de_asinfo is None:
+            # Un pedido que Asinfo ya no tiene (borrado) queda como está;
+            # el memo sin líneas no tiene qué completar.
+            continue
+        nuevas = [dict(ln, acabado=de_asinfo.get(ln.get("producto"), ln.get("acabado", "")))
+                  for ln in lineas]
+        if formulas_memos.pisar_detalle(
+                numero, dict(viejo, lineas=nuevas, acabado_v=service.ACABADO_VERSION)):
+            hechos.append(numero)
+    return hechos
 
 
 def correr_si_toca() -> dict:

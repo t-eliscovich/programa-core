@@ -894,6 +894,66 @@ aca AS (
      GROUP BY d.id_pedido_cliente, d.id_producto
 )"""
 
+_SQL_ACABADO_POR_NUMERO = """
+SELECT p.numero, pr.codigo,
+       MIN(va.codigo) AS aca_min, MAX(va.codigo) AS aca_max
+  FROM detalle_pedido_cliente d
+  JOIN pedido_cliente p ON p.id_pedido_cliente = d.id_pedido_cliente
+  JOIN producto pr ON pr.id_producto = d.id_producto
+  JOIN valor_atributo va ON va.id_valor_atributo = CASE
+           WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
+           WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
+           WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
+           WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
+           WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
+           WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
+           WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
+           WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
+           WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
+           WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
+       END
+ WHERE p.numero IN ({in_list})
+ GROUP BY p.numero, pr.codigo
+"""
+
+
+def _numero_pedido_seguro(numero: str) -> str:
+    """Sólo lo que puede ser un número de pedido ('PDCL-30949'): va
+    interpolado en el IN de la SQL."""
+    return "".join(
+        c for c in (numero or "").strip().upper() if c.isalnum() or c == "-"
+    )[:20]
+
+
+def _acabado_etiqueta(aca_min, aca_max) -> str:
+    a, b = str(aca_min or "").strip().upper(), str(aca_max or "").strip().upper()
+    if not a:
+        return ""
+    return a if a == b else f"{a}/{b}"
+
+
+def acabados_de_pedidos(numeros: list[str]) -> tuple[dict[str, dict[str, str]], bool]:
+    """`{numero de pedido: {código de producto: 'TUB' | 'ABI' | 'ABI/TUB'}}`
+    directo de la LÍNEA del pedido en Asinfo — sirve también para pedidos que
+    ya se despacharon (no están en `por_pedido`). `({}, False)` si Asinfo
+    no contesta."""
+    seguros = sorted({_numero_pedido_seguro(n) for n in numeros if _numero_pedido_seguro(n)})
+    if not seguros:
+        return {}, True
+    in_list = ", ".join(f"'{n}'" for n in seguros)
+    filas, ok = metabase_client.fetch_dataset_estado(
+        ASINFO_DB, _SQL_ACABADO_POR_NUMERO.format(in_list=in_list))
+    if not ok:
+        return {}, False
+    out: dict[str, dict[str, str]] = {}
+    for r in filas:
+        numero = str(r.get("numero") or "").strip().upper()
+        cod = str(r.get("codigo") or "").strip()
+        if numero and cod:
+            out.setdefault(numero, {})[cod] = _acabado_etiqueta(r.get("aca_min"), r.get("aca_max"))
+    return out, True
+
+
 _SQL_POR_PEDIDO = """
 WITH """ + _SQL_ACABADO_LINEA + """
 SELECT v.numero, v.fecha, v.cliente,

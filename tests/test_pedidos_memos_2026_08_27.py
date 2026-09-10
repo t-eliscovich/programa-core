@@ -610,36 +610,52 @@ def test_la_sql_busca_el_acabado_por_numero_de_atributo_no_por_slot():
         assert f"d.id_atributo_{n}" in sql and f"d.id_valor_atributo_{n}" in sql
 
 
-def test_el_sync_pisa_el_acabado_viejo_con_el_de_la_linea_en_silencio():
+def test_el_sync_pisa_el_acabado_viejo_con_el_de_la_linea_vivos_y_terminados():
     from modules.pedidos import memos_sync
-    memo = {"numero": "PDCL-1", "detalle": {"acabado_v": 1, "lineas": [
-        {"producto": "JE35NEG", "cantidad": 6, "acabado": "TUB"},
-        {"producto": "RINEG", "cantidad": 2.5, "acabado": "TUB"}]}}
-    nuevo = {"lineas": [{"producto": "JE35NEG", "acabado": "ABI"},
-                        {"producto": "RINEG", "acabado": "TUB"}]}
-    res = {"silenciosos": []}
-    with patch.object(service, "armar_memo", return_value=nuevo), \
-         patch.object(memos_sync.formulas_memos, "actualizar",
-                      return_value=(True, "")) as act:
-        memos_sync._completar_acabado(memo, res)
-    det = act.call_args.args[1]
-    assert [ln["acabado"] for ln in det["lineas"]] == ["ABI", "TUB"]
-    assert det["acabado_v"] == service.ACABADO_VERSION
-    assert det["lineas"][0]["cantidad"] == 6  # la foto no se pisa, sólo el acabado
-    assert act.call_args.args[2] is None  # sin alerta
-    assert res["silenciosos"] == ["PDCL-1"]
+    memos = [
+        {"numero": "PDCL-1", "estado": "en_proceso", "detalle": {"acabado_v": 1, "lineas": [
+            {"producto": "JE35NEG", "cantidad": 6, "acabado": "TUB"},
+            {"producto": "RINEG", "cantidad": 2.5, "acabado": "TUB"}]}},
+        {"numero": "PDCL-2", "estado": "terminado", "detalle": {"lineas": [
+            {"producto": "JE35ACU", "cantidad": 5}]}},
+        {"numero": "PDCL-3", "estado": "pendiente", "detalle": {"lineas": [
+            {"producto": "X", "cantidad": 1}]}},  # Asinfo ya no lo tiene
+    ]
+    filas = [{"numero": "PDCL-1", "codigo": "JE35NEG", "aca_min": "ABI", "aca_max": "ABI"},
+             {"numero": "PDCL-1", "codigo": "RINEG", "aca_min": "TUB", "aca_max": "TUB"},
+             {"numero": "PDCL-2", "codigo": "JE35ACU", "aca_min": "ABI", "aca_max": "TUB"}]
+    with patch.object(memos_sync.formulas_memos, "con_acabado_viejo", return_value=memos), \
+         patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)) as asinfo, \
+         patch.object(memos_sync.formulas_memos, "pisar_detalle", return_value=True) as pisa:
+        hechos = memos_sync.completar_acabados()
+    assert hechos == ["PDCL-1", "PDCL-2"]
+    assert asinfo.call_count == 1  # una consulta para todos
+    det1 = pisa.call_args_list[0].args[1]
+    assert [ln["acabado"] for ln in det1["lineas"]] == ["ABI", "TUB"]
+    assert det1["acabado_v"] == service.ACABADO_VERSION
+    assert det1["lineas"][0]["cantidad"] == 6  # la foto no se pisa, sólo el acabado
+    det2 = pisa.call_args_list[1].args[1]
+    assert det2["lineas"][0]["acabado"] == "ABI/TUB"  # mismo producto en los dos acabados
 
 
-def test_el_sync_no_toca_un_memo_ya_al_dia_ni_uno_cuyo_pedido_ya_no_esta():
+def test_si_asinfo_no_contesta_el_acabado_no_se_toca():
     from modules.pedidos import memos_sync
-    al_dia = {"numero": "PDCL-2", "detalle": {"acabado_v": service.ACABADO_VERSION,
-                                             "lineas": [{"producto": "X", "acabado": "TUB"}]}}
-    sin_pedido = {"numero": "PDCL-3", "detalle": {"lineas": [{"producto": "X"}]}}
-    with patch.object(service, "armar_memo", return_value=None), \
-         patch.object(memos_sync.formulas_memos, "actualizar") as act:
-        memos_sync._completar_acabado(al_dia, {"silenciosos": []})
-        memos_sync._completar_acabado(sin_pedido, {"silenciosos": []})
-    assert not act.called
+    memos = [{"numero": "PDCL-1", "estado": "pendiente",
+              "detalle": {"lineas": [{"producto": "X"}]}}]
+    with patch.object(memos_sync.formulas_memos, "con_acabado_viejo", return_value=memos), \
+         patch.object(service.metabase_client, "fetch_dataset_estado", return_value=([], False)), \
+         patch.object(memos_sync.formulas_memos, "pisar_detalle") as pisa:
+        assert memos_sync.completar_acabados() == []
+    assert not pisa.called
+
+
+def test_acabados_de_pedidos_limpia_los_numeros_antes_de_interpolarlos():
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([], True)) as asinfo:
+        service.acabados_de_pedidos(["pdcl-1'; DROP TABLE x--", "PDCL-2"])
+    sql = asinfo.call_args.args[1]
+    assert "'PDCL-1DROPTABLEX--'" in sql and "'PDCL-2'" in sql and ";" not in sql
 
 
 def test_por_pedido_trae_el_acabado_de_cada_linea():

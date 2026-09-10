@@ -239,6 +239,55 @@ def vivos() -> list[dict]:
         return []
 
 
+def con_acabado_viejo(version: int) -> list[dict]:
+    """Los memos (vivos O terminados — el terminado también se mira después)
+    cuya foto tiene el acabado de una regla anterior a `version`, o no lo
+    tiene. [] sin bridge o con la base caída."""
+    if _pool is None:
+        return []
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT pedido_numero, estado, detalle
+                  FROM memos
+                 WHERE estado <> 'cancelado'
+                   AND jsonb_typeof(detalle->'lineas') = 'array'
+                   AND COALESCE((detalle->>'acabado_v')::int, 0) < %s
+                """,
+                (version,),
+            )
+            filas = cur.fetchall()
+        return [{"numero": r[0], "estado": r[1],
+                 "detalle": r[2] if isinstance(r[2], dict) else (r[2] or {})}
+                for r in filas]
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_memos.con_acabado_viejo falló: %s", e)
+        return []
+
+
+def pisar_detalle(numero: str, detalle: dict) -> bool:
+    """Pisa la foto SIN mirar el estado y sin sellar nada — sólo para
+    completar datos que no cambian lo pedido (el acabado). Para cambios del
+    pedido va `actualizar`, que respeta el estado y prende la alerta."""
+    if _pool is None:
+        return False
+    try:
+        with _conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    "UPDATE memos SET detalle = %s WHERE pedido_numero = %s "
+                    "AND estado <> 'cancelado' RETURNING id",
+                    (json.dumps(detalle, default=str), numero),
+                )
+                fila = cur.fetchone()
+            c.commit()
+        return bool(fila)
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_memos.pisar_detalle falló: %s", e)
+        return False
+
+
 def actualizar(numero: str, detalle: dict, cambio: dict | None,
                modificado_por: str) -> tuple[bool, str]:
     """Pisa la foto del memo con `detalle`. Si `cambio` viene (hubo
