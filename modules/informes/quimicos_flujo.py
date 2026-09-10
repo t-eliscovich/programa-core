@@ -23,6 +23,8 @@ import os
 import time
 from datetime import date
 
+from modules.tintura import service as _tsvc  # factor IVA por producto (lista única de exentos)
+
 _LOG = logging.getLogger(__name__)
 
 _TTL_SECS = 240  # < TTL 300 de Asinfo; el warmup refresca cada 240s
@@ -69,7 +71,7 @@ def consumo_quimico_desglose(anio: int, mes: int) -> dict | None:
         d2 = date(int(anio), int(mes),
                   calendar.monthrange(int(anio), int(mes))[1]).isoformat()
         rows = _fdb.fetch_all(
-            """
+            f"""
             SELECT CASE
                      WHEN (COALESCE(f.categoria, '') ILIKE '%%lavado%%'
                            OR COALESCE(f.color, '') ILIKE 'LAV%%'
@@ -80,7 +82,7 @@ def consumo_quimico_desglose(anio: int, mes: int) -> dict | None:
                    END AS clase,
                    COALESCE(SUM(ol.cantidad_kg
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                     * {_tsvc.sql_factor_iva('ol.producto_num')}), 0) AS us
               FROM orden_lineas ol
               JOIN ordenes   o ON o.id  = ol.orden_id
               JOIN productos p ON p.num = ol.producto_num
@@ -147,10 +149,10 @@ def color_movimiento_mes(anio: int, mes: int) -> dict | None:
         d2 = date(int(anio), int(mes),
                   calendar.monthrange(int(anio), int(mes))[1]).isoformat()
         cons = _fdb.fetch_one(
-            """
+            f"""
             SELECT COALESCE(SUM(ol.cantidad_kg
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
+                     * {_tsvc.sql_factor_iva('ol.producto_num')}), 0) AS us,
                    COUNT(DISTINCT o.id) AS n_ordenes
               FROM orden_lineas ol
               JOIN ordenes o   ON o.id  = ol.orden_id
@@ -165,10 +167,10 @@ def color_movimiento_mes(anio: int, mes: int) -> dict | None:
         if cons is None:
             return None
         comp = _fdb.fetch_one(
-            """
+            f"""
             SELECT COALESCE(SUM(c.cantidad
                      * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
-                     * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                     * {_tsvc.sql_factor_iva('c.producto_num')}), 0) AS us
               FROM compras c
               JOIN productos p ON p.num = c.producto_num
              WHERE UPPER(TRIM(p.familia)) IN ('POLI', 'ALG')
@@ -203,7 +205,7 @@ def color_movimiento_mes(anio: int, mes: int) -> dict | None:
 _FAMILIAS_QUIMICO = ("POLI", "ALG", "AUX")
 _SQL_FAM_QUIMICO = "UPPER(TRIM(p.familia)) IN ('POLI', 'ALG', 'AUX')"
 # Factor IVA a catálogo — mismo CASE que el resto del módulo (sal num=12 al 0%).
-_SQL_IVA = "(CASE WHEN p.num IN (12) THEN 1.0 ELSE 1.15 END)"
+_SQL_IVA = _tsvc.sql_factor_iva("p.num")
 
 
 def fisico_total_al_dia(corte: date) -> float | None:
@@ -271,7 +273,7 @@ def entradas_bodega_mes(anio: int, mes: int) -> dict | None:
             f"""
             SELECT COALESCE(SUM(c.cantidad
                      * COALESCE(NULLIF(c.precio_us, 0), p.us, 0)
-                     * (CASE WHEN c.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
+                     * {_tsvc.sql_factor_iva('c.producto_num')}), 0) AS us,
                    COUNT(*) AS n
               FROM compras c
               JOIN productos p ON p.num = c.producto_num
@@ -367,7 +369,7 @@ def consumo_terminadas_mes(anio: int, mes: int) -> dict | None:
             f"""
             SELECT COALESCE(SUM(ol.cantidad_kg
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                     * {_tsvc.sql_factor_iva('ol.producto_num')}), 0) AS us
               FROM orden_lineas ol
               JOIN ordenes   o ON o.id  = ol.orden_id
               JOIN productos p ON p.num = ol.producto_num

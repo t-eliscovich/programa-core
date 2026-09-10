@@ -575,12 +575,21 @@ def _row_to_stock_al_dia(r: dict) -> StockProductoAlDia:
 # factura) y el libro histórico del dBase siempre fueron c/IVA. formulas guarda
 # precios SIN IVA y NO se toca — el factor se aplica acá, del lado del
 # programa, producto por producto ("si no estamos sumando peras con manzanas").
-# Único producto 0% en formulas: la SAL (num=12, familia aux).
-# OJO mantenimiento: modules/informes/views.py replica el CASE literal en 3
-# queries (color_consumo, color_compras, tinturado diario) — si cambia el IVA
-# o los exentos, actualizar allá también.
+# Exentos: la SAL (num=12) y los colorantes importados (ver abajo). Desde el
+# 10/09/2026 TODAS las queries usan sql_factor_iva()/factor_iva_producto(); no
+# queda ningún CASE literal copiado (informes/quimicos_flujo y
+# quimico_inv_formulas los importan de acá).
 IVA_QUIMICOS = 0.15
-PRODUCTOS_IVA_CERO = frozenset({12})
+# Sin IVA: la SAL (12) y los COLORANTES IMPORTADOS de Colourtex (C2) — las
+# familias "AV DISP MD" (poliéster) y "AV REACT" (algodón). Dueña 10/09/2026:
+# la importación no paga IVA y valuarla al 15% le sumaba 37.590 de utilidad
+# que no existía (más ~28k de lo que quedaba de la importación de junio).
+# Verificado en formulas: esos 16 productos se compran casi sólo a C2/COLO.
+PRODUCTOS_IMPORTADOS_C2 = frozenset({
+    100, 101, 102, 103, 104, 105, 107, 149,      # poliéster: * AV DISP MD, AZUL DISPERSE CCR, AZ TURQZA DISP GDXF
+    261, 263, 268, 273, 277, 279, 281, 282,      # algodón: * AV REACT *
+})
+PRODUCTOS_IVA_CERO = frozenset({12}) | PRODUCTOS_IMPORTADOS_C2
 
 
 def factor_iva_producto(num) -> float:
