@@ -8,10 +8,18 @@
   <div><span class="lbl">Razón social</span><b>{{ cli.nombre|title }}</b></div>
   <div><span class="lbl">RUC</span><b>{{ cli.ruc or '—' }}</b></div>
   <div><span class="lbl">Correo para el portal</span><b>{{ correo_portal or cli.correo or '—' }}</b></div>
+  {% if cargado %}
+  {# Lo que cargó él (mig 0249); se edita en /sus-datos. #}
+  <div><span class="lbl">Correo para las facturas</span><b>{{ cargado.correo_facturas }}</b></div>
+  <div><span class="lbl">Celular</span><b>{{ cargado.celular }}</b>{% if cargado.telefono %}<small style="color:var(--ink3)">Fijo {{ cargado.telefono }}</small>{% endif %}</div>
+  <div><span class="lbl">Dirección de entrega</span><b>{{ cargado.calle_principal }} {{ cargado.numero }} y {{ cargado.calle_secundaria }}</b><small style="color:var(--ink3)">{{ cargado.ciudad }}{% if cargado.referencia %} · {{ cargado.referencia }}{% endif %}</small></div>
+  {% else %}
   <div><span class="lbl">Teléfono</span><b>{{ cli.telefono or '—' }}</b></div>
   <div><span class="lbl">Dirección</span><b>{{ cli.direccion1 or '—' }}{% if cli.direccion2 and cli.direccion2|trim|upper not in (cli.direccion1 or '')|upper %}<br>{{ cli.direccion2 }}{% endif %}</b>
     {% if cli.canton or cli.provincia %}<small style="color:var(--ink3)">{{ cli.canton }}{% if cli.canton and cli.provincia %} · {% endif %}{{ cli.provincia }}</small>{% endif %}</div>
+  {% endif %}
 </div>
+<p style="margin:10px 0 0"><a class="btn sec chico" href="/sus-datos">Corregir mis datos</a></p>
 <div class="card" style="margin-top:12px">
   {# Texto libre (dueña 10/09): un dato mal, una queja, lo que sea. Va a la
      oficina (campanita) y por mail a la lista de /portal-aviso. #}

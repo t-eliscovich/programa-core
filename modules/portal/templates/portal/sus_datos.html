@@ -1,0 +1,32 @@
+{# SUS DATOS: el paso después de elegir la clave (dueña 10/09/2026), y la
+   misma pantalla para editarlos desde Perfil. Obligatorio la primera vez:
+   hasta que no lo completa no ve el resto. Precargado con lo que teníamos. #}
+{% extends "portal/_app.html" %}
+{% block titulo %}Sus datos — Intela{% endblock %}
+{% block seccion %}perfil{% endblock %}
+{% block contenido %}
+{% if editando %}<a class="volver" href="/mis-datos">‹ Perfil</a>{% endif %}
+<h1 class="pag">{{ 'Sus datos' if editando else 'Antes de entrar, sus datos' }}</h1>
+<p style="margin:-6px 0 12px;font-size:13.5px;color:var(--ink2)">{% if editando %}Lo que tenemos suyo para facturas y entregas. Corrija lo que haga falta.{% else %}Es una sola vez: revise que el correo, los teléfonos y la dirección de entrega estén bien. Ya vienen cargados con lo que tenemos.{% endif %}</p>
+{% macro campo(nombre, rotulo, tipo='text', ayuda='', obligatorio=true, mode='') %}
+<div class="campo{{ ' mal' if errores.get(nombre) }}">
+  <label for="{{ nombre }}">{{ rotulo }}{% if not obligatorio %} <small>(si tiene)</small>{% endif %}</label>
+  <input type="{{ tipo }}" id="{{ nombre }}" name="{{ nombre }}" value="{{ d.get(nombre) or '' }}"{% if ayuda %} placeholder="{{ ayuda }}"{% endif %}{% if mode %} inputmode="{{ mode }}"{% endif %}{% if obligatorio %} required{% endif %} spellcheck="false">
+  {% if errores.get(nombre) %}<small class="err">{{ errores[nombre] }}</small>{% endif %}
+</div>
+{% endmacro %}
+<form method="post" class="card" novalidate>
+  {{ csrf_token_input | safe }}
+  <h2>Contacto</h2>
+  {{ campo('correo_facturas', 'Correo para las facturas', 'email', 'facturas@suempresa.com') }}
+  {{ campo('celular', 'Celular', 'tel', '09…', mode='tel') }}
+  {{ campo('telefono', 'Teléfono fijo', 'tel', '02…', obligatorio=false, mode='tel') }}
+  <h2 style="margin-top:18px">Dirección de entrega</h2>
+  {{ campo('ciudad', 'Ciudad', ayuda='Quito') }}
+  {{ campo('calle_principal', 'Calle principal') }}
+  {{ campo('numero', 'Número', ayuda='OE1-126, o S/N') }}
+  {{ campo('calle_secundaria', 'Calle secundaria') }}
+  {{ campo('referencia', 'Referencia', ayuda='Frente al parque, portón verde…', obligatorio=false) }}
+  <button class="btn ancho" style="margin-top:16px" type="submit">{{ 'Guardar' if editando else 'Guardar y entrar' }}</button>
+</form>
+{% endblock %}

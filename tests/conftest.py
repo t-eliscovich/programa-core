@@ -423,3 +423,15 @@ with contextlib.suppress(ImportError):
         real_db_conn,
         real_pg_dsn,
     )
+
+
+@pytest.fixture(autouse=True)
+def _portal_con_sus_datos_cargados(monkeypatch):
+    """Desde el 10/09/2026 el portal del cliente exige "sus datos" (mig
+    0249) antes de mostrar cualquier pantalla. Los ~150 tests del portal
+    entran con la sesión puesta y sin base: acá se da por cargado, y los
+    tests del freno (`test_portal_sus_datos.py`) lo pisan a mano."""
+    from modules.portal import datos as _pd
+
+    monkeypatch.setattr(_pd, "completo", lambda cod: True)
+    yield

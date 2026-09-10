@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% from "_ui.html" import empty_row, page_hero %}
+{% block title %}Datos cargados en el portal{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('clientes.lista') }}" class="hover:underline">Clientes</a> / <strong>Datos del portal</strong>{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+  {{ page_hero('Datos cargados en el portal',
+               descripcion='Lo que cada cliente escribió en su portal (correo para facturas, celular, fijo y dirección de entrega), al lado de lo que tiene la ficha.') }}
+
+  <div class="flex flex-wrap items-center justify-between gap-2 mb-3">
+    <p class="text-sm text-slate-600 dark:text-slate-300">
+      {{ filas|length }} cliente{{ 's' if filas|length != 1 }} cargaron sus datos · {{ n_sin_aplicar }} sin pasar a la ficha.
+      <span class="text-slate-500">Correo y celular se pasan con el botón; la dirección va a Asinfo con el Excel (el sync de clientes la pisa cada hora).</span>
+    </p>
+    <a href="{{ url_for('clientes.datos_del_portal_excel') }}"
+       class="text-sm px-3 py-1.5 rounded bg-emerald-600 text-white hover:bg-emerald-700 font-medium">Excel para Asinfo</a>
+  </div>
+
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Cliente</th>
+          <th class="px-3 py-2">Correo facturas</th>
+          <th class="px-3 py-2">Celular · fijo</th>
+          <th class="px-3 py-2">Dirección de entrega</th>
+          <th class="px-3 py-2">Cargado</th>
+          <th class="px-3 py-2"></th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for f in filas %}
+        <tr class="align-top hover:bg-slate-50 dark:hover:bg-slate-800/50">
+          <td class="px-3 py-2">
+            <a class="font-semibold hover:underline" href="{{ url_for('clientes.editar', codigo_cli=f.codigo_cli) }}">{{ f.codigo_cli }}</a>
+            <div class="text-xs text-slate-500">{{ f.nombre }}{% if f.vend %} · {{ f.vend }}{% endif %}</div>
+          </td>
+          <td class="px-3 py-2">
+            <div class="{{ 'font-semibold text-amber-700 dark:text-amber-300' if f.dif.correo }}">{{ f.correo_facturas }}</div>
+            {% if f.dif.correo %}<div class="text-xs text-slate-400 line-through">{{ f.ficha_correo or '(sin correo)' }}</div>{% endif %}
+          </td>
+          <td class="px-3 py-2 tabular-nums">
+            <div class="{{ 'font-semibold text-amber-700 dark:text-amber-300' if f.dif.telefono }}">{{ f.celular }}{% if f.telefono %} · {{ f.telefono }}{% endif %}</div>
+            {% if f.dif.telefono %}<div class="text-xs text-slate-400 line-through">{{ f.ficha_telefono or '(sin teléfono)' }}</div>{% endif %}
+          </td>
+          <td class="px-3 py-2">
+            <div class="{{ 'font-semibold text-amber-700 dark:text-amber-300' if f.dif.direccion }}">{{ f.direccion }}</div>
+            <div class="text-xs text-slate-500">{{ f.ciudad }}</div>
+            {% if f.dif.direccion %}<div class="text-xs text-slate-400 line-through">{{ f.ficha_direccion1 or '(sin dirección)' }}</div>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500 whitespace-nowrap">{{ f.actualizado_en | fecha_hora_ec }}
+            {% if f.aplicado_en %}<div class="text-xs text-emerald-700">en la ficha · {{ f.aplicado_por }}</div>{% endif %}</td>
+          <td class="px-3 py-2 whitespace-nowrap">
+            {% if not f.aplicado_en and tiene_permiso('clientes.editar') %}
+            <form method="post" action="{{ url_for('clientes.datos_del_portal_a_la_ficha', codigo_cli=f.codigo_cli) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="text-xs px-2 py-1 rounded border border-sky-300 text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/30">Pasar correo y celular a la ficha</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+          {{ empty_row(6, 'Todavía ningún cliente cargó sus datos.', 'Se los pide el portal en el primer ingreso.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

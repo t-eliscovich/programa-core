@@ -1122,3 +1122,58 @@ def grupos_carga_aplicar():
         flash(msg, "error")
     return redirect(url_for("clientes.lista"))
 
+
+
+# ---------------------------------------------------------------------------
+# Lo que los clientes cargaron en el portal (mig 0249, dueña 10/09/2026)
+# ---------------------------------------------------------------------------
+
+@clientes_bp.route("/clientes/datos-del-portal", methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def datos_del_portal():
+    """Correo, teléfonos y dirección de entrega que cada cliente cargó en su
+    portal, al lado de lo que tiene la ficha. De acá salen dos cosas: pasar
+    correo y celular a la ficha (botón por cliente), y el Excel segmentado
+    para que Asinfo actualice calle A · número · calle B."""
+    from modules.portal import datos as pd
+
+    filas = pd.cargados()
+    for f in filas:
+        f["dif"] = pd.con_diferencias(f)
+        f["direccion"] = pd.direccion_en_una_linea(f)
+    return render_template("clientes/datos_del_portal.html", filas=filas,
+                           n_sin_aplicar=sum(1 for f in filas if not f.get("aplicado_en")))
+
+
+@clientes_bp.route("/clientes/datos-del-portal.xlsx", methods=["GET"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def datos_del_portal_excel():
+    from flask import Response
+
+    from modules.portal import datos as pd
+
+    datos = pd.excel(pd.cargados())
+    return Response(
+        datos,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="datos-del-portal.xlsx"'})
+
+
+@clientes_bp.route("/clientes/datos-del-portal/<codigo_cli>/a-la-ficha", methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.editar")
+def datos_del_portal_a_la_ficha(codigo_cli: str):
+    """Pasa correo y celular a la ficha. La dirección NO: el sync de Asinfo la
+    pisa cada hora, tiene que entrar por Asinfo (el Excel)."""
+    from modules.portal import datos as pd
+
+    quien = (g.get("user") or {}).get("username") or "web"
+    try:
+        n = pd.pasar_a_la_ficha(codigo_cli, quien)
+        flash(f"{codigo_cli.upper()}: correo y celular pasados a la ficha." if n
+              else f"{codigo_cli.upper()}: la ficha ya tenía esos datos.", "success")
+    except Exception as e:  # noqa: BLE001
+        flash_exc("No pude pasar los datos a la ficha", e)
+    return redirect(url_for("clientes.datos_del_portal"))

@@ -36,7 +36,7 @@ from markupsafe import Markup
 import db
 from extensions import limiter
 from filters import today_ec
-from modules.portal import acceso, presentacion
+from modules.portal import acceso, datos, presentacion
 from modules.portal import mas as mas_
 
 _LOG = logging.getLogger("programa_core.portal")
@@ -77,6 +77,27 @@ def _comunes():
 def cliente_actual() -> str:
     """El código del cliente logueado, o vacío."""
     return (session.get(LLAVE) or "").strip().upper()
+
+
+#: Adonde se puede ir SIN haber cargado sus datos: la pantalla misma, salir,
+#: cambiar de cuenta, y la puerta.
+_SIN_DATOS_OK = ("/sus-datos", "/salir", "/mis-cuentas", "/ingresar", "/elegir-clave",
+                 "/olvide-la-clave", "/codigo")
+
+
+@portal_bp.before_request
+def _exigir_sus_datos():
+    """Obligatorio (dueña 10/09): un cliente adentro que todavía no cargó sus
+    datos va a /sus-datos, esté donde esté. Los que ya entraron antes del
+    10/09 pasan por acá en su próximo ingreso, que es la idea."""
+    if request.method != "GET" or request.path.startswith("/static"):
+        return None
+    cod = cliente_actual()
+    if not cod or request.path in _SIN_DATOS_OK:
+        return None
+    if not datos.completo(cod):
+        return redirect(url_for("portal.sus_datos"))
+    return None
 
 
 def _pedir_entrar():
@@ -192,7 +213,8 @@ def elegir_clave():
 
     acceso.guardar_mail(cod, mail, mail_previo)
     flash(msg, "ok")
-    return redirect(url_for("portal.inicio"))
+    # Dueña 10/09: antes de entrar, sus datos (correo, teléfonos, dirección).
+    return redirect(url_for("portal.sus_datos"))
 
 
 # ---------------------------------------------------------------------------
@@ -764,6 +786,33 @@ def _ctx(cod: str) -> dict:
     return {"codigo": cod, "cli": acceso.ficha(cod) or acceso.cliente(cod) or {}}
 
 
+@portal_bp.route("/sus-datos", methods=["GET", "POST"])
+def sus_datos():
+    """Correo, teléfonos y dirección de entrega (dueña 10/09/2026). La
+    primera vez es obligatorio; después se edita desde Perfil. Nunca escribe
+    en la ficha: la oficina lo pasa desde /clientes/datos-del-portal."""
+    cod = cliente_actual()
+    if not cod:
+        return _pedir_entrar()
+    fic = acceso.ficha(cod) or {}
+    acc = acceso.acceso(cod) or {}
+    guardado = datos.leer(cod)
+    editando = guardado is not None
+    if request.method == "POST":
+        d, errores = datos.validar(request.form)
+        if errores:
+            flash("Revise los campos marcados.", "error")
+            return render_template("portal/sus_datos.html", **_ctx(cod), d=d,
+                                   errores=errores, editando=editando), 400
+        datos.guardar(cod, d, previo=None if editando else fic)
+        flash("Gracias, sus datos quedaron guardados." if not editando else "Datos actualizados.", "ok")
+        return redirect(url_for("portal.inicio"))
+    d = {k: guardado.get(k) or "" for k in datos.CAMPOS} if editando \
+        else datos.precarga(fic, acc.get("mail") or "")
+    return render_template("portal/sus_datos.html", **_ctx(cod), d=d, errores={},
+                           editando=editando)
+
+
 @portal_bp.route("/mis-datos", methods=["GET", "POST"])
 def mis_datos():
     cod = cliente_actual()
@@ -780,6 +829,7 @@ def mis_datos():
             flash("Escriba su mensaje.", "error")
         return redirect(url_for("portal.mis_datos"))
     return render_template("portal/mis_datos.html", codigo=cod, cli=fic,
+                           cargado=datos.leer(cod),
                            varias_cuentas=len(session.get(CUENTAS) or []) > 1,
                            correo_portal=(acc.get("mail") or "").strip())
 

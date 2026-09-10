@@ -1553,6 +1553,9 @@
             {% if tiene_permiso('portal.avisar') %}
               <a href="{{ url_for('portal_aviso.pantalla') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Aviso del portal a clientes</a>
             {% endif %}
+            {% if tiene_permiso('clientes.ver') %}
+              <a href="{{ url_for('clientes.datos_del_portal') }}" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Datos cargados en el portal</a>
+            {% endif %}
             {% if tiene_permiso('cheques.ver') %}
             {% endif %}
             {% endif %}
