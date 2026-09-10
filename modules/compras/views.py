@@ -274,8 +274,9 @@ def descontar_anticipos(id_compra: int):
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.descontar_anticipos(id_compra, ids, usuario=usuario)
+        from filters import money_es
         flash(f"Compra #{r['numero']}: descontados {r['n']} anticipos por "
-              f"$ {r['total']:,.2f}. La deuda queda en $ {r['deuda_despues']:,.2f}.", "ok")
+              f"$ {money_es(r['total'])}. La deuda queda en $ {money_es(r['deuda_despues'])}.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001
@@ -292,8 +293,9 @@ def deshacer_descuento(id_compra: int, id_mov_doble: int):
     try:
         usuario = (g.user or {}).get("username", "web")
         r = queries.deshacer_descuento_anticipos(id_mov_doble, usuario=usuario)
+        from filters import money_es
         flash(f"Compra #{r['numero']}: deshecho el descuento de {r['n']} anticipos "
-              f"($ {r['total']:,.2f}). Volvieron a vivos.", "ok")
+              f"($ {money_es(r['total'])}). Volvieron a vivos.", "ok")
     except ValueError as e:
         flash(str(e), "warn")
     except Exception as e:  # noqa: BLE001

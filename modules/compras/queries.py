@@ -1677,8 +1677,9 @@ def descontar_anticipos(id_compra: int, ids_anticipos, *, usuario: str = "web") 
         if total <= 0:
             raise ValueError("Los anticipos tildados suman cero.")
         if total > deuda + 0.01:
+            from filters import money_es
             raise ValueError(
-                f"Los anticipos suman {total:,.2f} y la deuda abierta es {deuda:,.2f}: "
+                f"Los anticipos suman {money_es(total)} y la deuda abierta es {money_es(deuda)}: "
                 f"destildá alguno.")
 
         db.execute(
@@ -1702,6 +1703,7 @@ def descontar_anticipos(id_compra: int, ids_anticipos, *, usuario: str = "web") 
             (cuenta_nueva, usuario[:50], int(id_compra)), conn=conn,
         )
         import mov_doble as _md
+        from filters import money_es
         id_md = _md.registrar(
             conn=conn,
             tipo=TIPO_MD_DESCUENTO,
@@ -1710,8 +1712,8 @@ def descontar_anticipos(id_compra: int, ids_anticipos, *, usuario: str = "web") 
             importe=total,
             fecha=today_ec(),
             concepto=(f"{prov} · compra #{c.get('numero')}: descontados "
-                      f"{len(ids)} anticipos ({total:,.2f}); deuda "
-                      f"{deuda:,.2f} → {nueva_deuda:,.2f}")[:200],
+                      f"{len(ids)} anticipos ({money_es(total)}); deuda "
+                      f"{money_es(deuda)} → {money_es(nueva_deuda)}")[:200],
             usuario=usuario,
             metadata={
                 "numero": c.get("numero"), "codigo_prov": prov,
@@ -1788,6 +1790,7 @@ def deshacer_descuento_anticipos(id_mov_doble: int, *, usuario: str = "web",
             (meta.get("cuenta_pagada_antes"), usuario[:50], md.get("origen_id")), conn=conn,
         )
         import mov_doble as _md
+        from filters import money_es
         _md.registrar(
             conn=conn,
             tipo=TIPO_MD_DESCUENTO + "_reverso",
@@ -1795,7 +1798,7 @@ def deshacer_descuento_anticipos(id_mov_doble: int, *, usuario: str = "web",
             destino_table="posdat", destino_id=md.get("destino_id"),
             importe=-total, fecha=today_ec(),
             concepto=(f"{meta.get('codigo_prov') or ''} · compra #{meta.get('numero')}: "
-                      f"deshecho el descuento de {len(ids)} anticipos ({total:,.2f})")[:200],
+                      f"deshecho el descuento de {len(ids)} anticipos ({money_es(total)})")[:200],
             usuario=usuario, id_original=int(id_mov_doble),
             metadata={"anticipos": ids, "numero": meta.get("numero")},
         )
