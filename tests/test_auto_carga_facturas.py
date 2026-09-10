@@ -10,8 +10,13 @@ from modules.facturas import views as fv
 
 def _reset_throttle(monkeypatch):
     # El throttle global usa time.monotonic(); reseteamos el último ts para que
-    # la corrida no se saltee.
-    monkeypatch.setattr(fv, "_auto_carga_ultimo_ts", 0.0)
+    # la corrida no se saltee. OJO: NO a 0.0 — monotonic() cuenta desde el
+    # arranque de la máquina, y en un runner del CI recién levantado vale
+    # menos de 60 s, así que `ahora - 0 < 60` era True y la corrida se
+    # salteaba (CI rojo el 10/09/2026 en dos corridas seguidas, verde en la
+    # tercera). Con un sentinel negativo grande la diferencia siempre supera
+    # el intervalo (mismo truco que test_vigia_anuladas_asinfo).
+    monkeypatch.setattr(fv, "_auto_carga_ultimo_ts", -1.0e9)
 
 
 def test_auto_carga_no_duplica_ni_carga_dias_previos(monkeypatch):
