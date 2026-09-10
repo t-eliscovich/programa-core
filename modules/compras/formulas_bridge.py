@@ -21,10 +21,14 @@ pasivo (`scintela.posdat` banc=0) — con:
       Concepto en formato dBase: factura + día.
     - IVA por proveedor: 15% default, 0% para ES (sal). El importe cargado
       es el total c/IVA, como carga el dBase.
-    - dedup: una compra de formulas NO se carga si ya existe en
-      scintela.compra una compra del mismo proveedor+mes con el mismo número
-      de factura (token del concepto) o con importe equivalente (la carga
-      manual del dBase suele llegar por el sync).
+    - identidad: cada renglón de formulas tiene su `id` y el puente guarda,
+      por compra de PC, qué ids la armaron (scintela.compra_formulas, mig
+      0247; dueña 2026-09-10: "tienen que tener id único"). Por eso la
+      compra se reconoce aunque en formulas le cambien el número, la fecha
+      o el producto. Las compras cargadas antes de eso se reconocen como
+      siempre — mismo proveedor+mes y mismo número de factura (token del
+      concepto), o número parecido + importe equivalente — y en el primer
+      match se les guardan los ids.
 
 Todo fail-soft: si el pool `formulas_db` no está configurado o la query
 rompe, `estado_mes()` devuelve disponible=False y `sincronizar_mes()` no
@@ -173,6 +177,8 @@ class FilaPuente:
     ajustable: bool = False           # formulas cambió → hay que corregirla
     renombrar: bool = False           # le cambiaron el N° en formulas → editar concepto
     factura_previa: str | None = None  # el N° con el que estaba cargada
+    ids_formulas: tuple = ()          # los renglones de formulas que la arman
+    vincular: bool = False            # hay ids sin guardar en compra_formulas
 
     def to_dict(self) -> dict:
         d = asdict(self)
@@ -283,7 +289,8 @@ def grupos_formulas(anio: int, mes: int) -> list[dict]:
                COALESCE(factura, '')            AS factura,
                MIN(fecha)                       AS fecha,
                COALESCE(SUM(cantidad), 0)       AS kg,
-               COALESCE(SUM(cantidad * precio_us), 0) AS importe_siva
+               COALESCE(SUM(cantidad * precio_us), 0) AS importe_siva,
+               array_agg(id ORDER BY id)        AS ids
           FROM compras
          WHERE fecha >= %s AND fecha <= %s
          GROUP BY proveedor, COALESCE(factura, '')
@@ -329,6 +336,48 @@ def _compras_pc_mes(anio: int, mes: int) -> list[dict]:
         """,
         (ini, fin),
     )
+
+
+def _vinculos(compras_pc: list[dict]) -> dict[int, int]:
+    """{formulas_id: id_compra} de las compras dadas (scintela.compra_formulas).
+
+    Es la memoria del puente: qué renglones de formulas armaron cada compra.
+    Con eso la compra se reconoce aunque en formulas le cambien el número, la
+    fecha o el producto (dueña 10/09/2026: "tienen que tener id único"). Las
+    compras de antes de la migración 0247 no están acá y se reconocen por
+    número; el primer match les guarda los ids.
+    """
+    ids = [c.get("id_compra") for c in compras_pc if c.get("id_compra")]
+    if not ids:
+        return {}
+    out: dict[int, int] = {}
+    for r in db.fetch_all(
+        "SELECT formulas_id, id_compra FROM scintela.compra_formulas "
+        " WHERE id_compra = ANY(%s)", (ids,),
+    ) or []:
+        fid, idc = r.get("formulas_id"), r.get("id_compra")
+        if fid is not None and idc is not None and "formulas_id" in r:
+            out[int(fid)] = int(idc)
+    return out
+
+
+def vincular(id_compra: int, ids_formulas) -> int:
+    """Guarda qué renglones de formulas arman la compra. Idempotente: un
+    renglón que ya estaba atado a otra compra pasa a ésta (la última corrida
+    manda: es la que vio a formulas como está ahora)."""
+    n = 0
+    for fid in ids_formulas or ():
+        try:
+            n += db.execute(
+                "INSERT INTO scintela.compra_formulas (formulas_id, id_compra) "
+                "VALUES (%s, %s) "
+                "ON CONFLICT (formulas_id) DO UPDATE SET id_compra = EXCLUDED.id_compra",
+                (int(fid), int(id_compra)),
+            ) or 0
+        except Exception as e:  # noqa: BLE001 -- el vínculo nunca frena la carga
+            log.warning("puente formulas: no pude vincular %s → compra %s: %s",
+                        fid, id_compra, e)
+    return n
 
 
 def _formulas_responde() -> bool:
@@ -403,8 +452,31 @@ def _buscar_match(compras_pc: list[dict], prov_pc: str, factura_pc: str,
     return None
 
 
+def _match_por_vinculo(ids: tuple, vinculos: dict[int, int], por_id: dict,
+                       factura_pc: str) -> tuple[str, dict] | None:
+    """La compra de PC atada a estos renglones de formulas, si hay una.
+
+    Si los ids apuntan a más de una compra (juntaron dos facturas en una),
+    gana la que tiene más renglones; la otra queda sin match y, si todos sus
+    renglones se fueron, cae como huérfana."""
+    if not ids:
+        return None
+    votos: dict[int, int] = {}
+    for i in ids:
+        idc = vinculos.get(i)
+        if idc is not None and idc in por_id:
+            votos[idc] = votos.get(idc, 0) + 1
+    if not votos:
+        return None
+    idc = max(votos, key=lambda k: (votos[k], -k))
+    return (f"ids {votos[idc]}/{len(ids)} → factura {factura_pc} (id {idc})",
+            por_id[idc])
+
+
 def _huerfanas(compras_pc: list[dict], filas: list[FilaPuente],
-               anio: int, mes: int, responde: bool) -> list[dict]:
+               anio: int, mes: int, responde: bool,
+               vinculos: dict[int, int] | None = None,
+               ids_vivos: set[int] | None = None) -> list[dict]:
     """Compras del puente, de este mes, que ninguna factura de formulas matcheó.
 
     Son las que formulas ya no tiene: las borraron (reverso) o les cambiaron
@@ -414,12 +486,18 @@ def _huerfanas(compras_pc: list[dict], filas: list[FilaPuente],
       · su fecha cae en el mes que se está sincronizando (la compra del
         puente lleva la fecha de formulas, así que el mes es el mismo);
       · ninguna factura del mes la matcheó;
+      · si la compra tiene sus renglones guardados (`compra_formulas`), es
+        EXACTO: ninguno de sus ids sigue en formulas. Si alguno sigue (lo
+        movieron a otra factura), no es huérfana;
       · `responde`: formulas contestó de verdad en esta corrida.
     Devuelve dicts (no FilaPuente): son compras de PC, no facturas de formulas.
     """
     if not responde:
         return []
     usados = {f.id_compra_pc for f in filas if f.id_compra_pc}
+    ids_por_compra: dict[int, set[int]] = {}
+    for fid, idc in (vinculos or {}).items():
+        ids_por_compra.setdefault(idc, set()).add(fid)
     out = []
     for c in compras_pc:
         if c.get("id_compra") in usados or not _es_del_puente_intacta(c):
@@ -428,6 +506,9 @@ def _huerfanas(compras_pc: list[dict], filas: list[FilaPuente],
             continue
         if not _en_mes(c.get("fecha"), anio, mes):
             continue
+        mios = ids_por_compra.get(c.get("id_compra")) or set()
+        if mios and (ids_vivos or set()) & mios:
+            continue  # sus renglones siguen en formulas, bajo otra factura
         out.append({
             "id_compra": c.get("id_compra"),
             "numero": c.get("numero"),
@@ -485,6 +566,8 @@ def estado_mes(anio: int, mes: int) -> dict:
                 "total_pendiente": 0.0}
     grupos = grupos_formulas(anio, mes)
     compras_pc = _compras_pc_mes(anio, mes)
+    vinculos = _vinculos(compras_pc)
+    por_id = {c.get("id_compra"): c for c in compras_pc}
     maestro = proveedores_pc()
     filas: list[FilaPuente] = []
     for g in grupos:
@@ -493,6 +576,7 @@ def estado_mes(anio: int, mes: int) -> dict:
         fecha = _parse_fecha_iso(g.get("fecha"))
         kg = float(g.get("kg") or 0)
         siva = round(float(g.get("importe_siva") or 0), 2)
+        ids = tuple(int(i) for i in (g.get("ids") or ()) if i is not None)
         if prov_f in PROV_EXCLUIDOS:
             filas.append(FilaPuente(prov_f, None, factura_f, None, fecha, kg,
                                     siva, 0.0, siva, "excluida",
@@ -523,10 +607,23 @@ def estado_mes(anio: int, mes: int) -> dict:
         iva = IVA_POR_PROV.get(prov_pc, IVA_DEFAULT)
         civa = round(siva * (1 + iva), 2)
         factura_pc = normalizar_factura(prov_pc, factura_f)
-        hit = _buscar_match(compras_pc, prov_pc, factura_pc, siva, civa)
+        hit = _match_por_vinculo(ids, vinculos, por_id, factura_pc) \
+            or _buscar_match(compras_pc, prov_pc, factura_pc, siva, civa)
         detalle, compra_pc = hit if hit else (None, None)
         importe_pc = (float(compra_pc.get("importe") or 0)
                       if compra_pc is not None else None)
+        # Le cambiaron el N° en formulas: la compra es la misma (por los
+        # ids), el concepto de PC quedó con el número viejo → se renombra.
+        factura_previa = None
+        if compra_pc is not None and hit and hit[0].startswith("ids "):
+            tok = _primer_token(compra_pc.get("concepto"))
+            if tok and factura_pc and tok != factura_pc \
+                    and _es_del_puente_intacta(compra_pc):
+                factura_previa = tok
+        # Hay ids que todavía no están guardados para esta compra (compra de
+        # antes de la migración 0247, o renglones nuevos en la factura).
+        faltan_ids = bool(compra_pc is not None and ids and any(
+            vinculos.get(i) != compra_pc.get("id_compra") for i in ids))
         # Auto-corrección: formulas cambió el importe DESPUÉS de que el
         # puente cargó la compra (la factura se seguía tipeando). Sólo si
         # la creó el puente y nadie la editó a mano.
@@ -544,11 +641,15 @@ def estado_mes(anio: int, mes: int) -> dict:
             prov_origen=origen, prov_nombre_pc=prov_nombre,
             id_compra_pc=(compra_pc or {}).get("id_compra"),
             importe_pc=importe_pc, ajustable=ajustable,
+            renombrar=bool(factura_previa), factura_previa=factura_previa,
+            ids_formulas=ids, vincular=faltan_ids,
         ))
     # Lo que el puente cargó y ya NO está en formulas: o le cambiaron el
     # número (→ se renombra) o lo borraron (→ se anula). Ver `_huerfanas`.
+    ids_vivos = {int(i) for g in grupos for i in (g.get("ids") or ()) if i is not None}
     huerfanas = _huerfanas(compras_pc, filas, anio, mes,
-                           responde=bool(grupos) or _formulas_responde())
+                           responde=bool(grupos) or _formulas_responde(),
+                           vinculos=vinculos, ids_vivos=ids_vivos)
     filas, huerfanas = _emparejar_renombradas(filas, huerfanas)
 
     pendientes = [f for f in filas if f.estado == "pendiente"]
@@ -606,15 +707,26 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
     creadas, errores, ajustadas, provs_dados_de_alta = [], [], [], []
     renombradas: list = []
     for f in est["filas"]:
+        if f.vincular and f.id_compra_pc:
+            # compra de antes de la mig 0247 (o renglones nuevos): se le
+            # guardan sus ids para que el próximo match sea por id
+            vincular(f.id_compra_pc, f.ids_formulas)
         if f.renombrar and f.id_compra_pc:
             try:
                 compras_queries.editar(
                     f.id_compra_pc, concepto=concepto_pc(f.factura_pc, f.fecha),
+                    importe=(f.importe_con_iva if f.ajustable else None),
                     usuario=usuario,
                     observacion=(f"puente formulas: la factura "
                                  f"{f.factura_previa} pasó a ser "
                                  f"{f.factura_pc} en formulas"),
                 )
+                if f.ajustable:
+                    ajustadas.append({
+                        "proveedor": f.proveedor_pc, "factura": f.factura_pc,
+                        "importe_previo": f.importe_pc,
+                        "importe": f.importe_con_iva,
+                    })
                 renombradas.append({
                     "proveedor": f.proveedor_pc, "factura": f.factura_pc,
                     "factura_previa": f.factura_previa,
@@ -672,6 +784,8 @@ def sincronizar_mes(anio: int, mes: int, usuario: str = "formulas-auto") -> dict
                 pagada=False,
                 usuario=usuario,
             )
+            if (res or {}).get("id_compra") and f.ids_formulas:
+                vincular(res["id_compra"], f.ids_formulas)
             creadas.append({
                 "proveedor": f.proveedor_pc,
                 "factura": f.factura_pc,

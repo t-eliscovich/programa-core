@@ -1048,3 +1048,126 @@ def test_si_renombrar_falla_queda_en_errores_y_no_se_carga_otra():
     assert rep["renombradas"] == []
     assert len(rep["errores"]) == 1
     assert "cambiar el N°" in rep["errores"][0]["error"]
+
+
+# ── el vínculo por id (mig 0247, dueña 10/09: "tienen que tener id único") ──
+
+_G_POR_ID = [
+    {"proveedor": "AVQ", "factura": "26-27/414", "fecha": "2026-09-09",
+     "kg": 22850, "importe_siva": 237883.30, "ids": [901, 902, 903]},
+]
+
+
+def _correr_con_vinculos(grupos, pc, vinculos, responde=True):
+    editadas, creadas, anuladas, vinculados = [], [], [], []
+
+    def _crear(**kw):
+        creadas.append(kw)
+        return {"id_compra": 999, "numero": 1}
+
+    with patch.object(fb.formulas_db, "disponible", return_value=True), \
+         patch.object(fb.formulas_db, "fetch_all", return_value=grupos), \
+         patch.object(fb.formulas_db, "fetch_one",
+                      return_value={"n": 1} if responde else None), \
+         patch.object(fb.db, "fetch_all", return_value=pc), \
+         patch.object(fb, "_vinculos", return_value=vinculos), \
+         patch.object(fb, "vincular",
+                      side_effect=lambda i, ids: vinculados.append((i, tuple(ids))) or len(ids)), \
+         patch("modules.compras.queries.editar",
+               side_effect=lambda i, **kw: editadas.append((i, kw)) or {}), \
+         patch("modules.compras.queries.crear", side_effect=_crear), \
+         patch("modules.compras.queries.anular",
+               side_effect=lambda i, **kw: anuladas.append(i) or 1), \
+         patch("modules.avisos.avisar", return_value=True):
+        rep = fb.sincronizar_mes(2026, 9)
+    return rep, editadas, creadas, anuladas, vinculados
+
+
+def test_al_crear_se_guardan_los_ids_de_formulas():
+    rep, _, creadas, _, vinculados = _correr_con_vinculos(_G_POR_ID, [], {})
+    assert len(creadas) == 1
+    assert vinculados == [(999, (901, 902, 903))]
+
+
+def test_por_id_reconoce_la_compra_aunque_cambien_numero_y_fecha():
+    """La compra 678 quedó cargada como '007-2026' del 9/9. En formulas le
+    cambiaron el número a '26-27/414' y la fecha al 10/9: por los ids sigue
+    siendo la misma → se renombra el concepto, no se carga otra."""
+    g = [dict(_G_POR_ID[0], fecha="2026-09-10")]
+    pc = [_pc_puente()]
+    vinc = {901: 678, 902: 678, 903: 678}
+    rep, editadas, creadas, anuladas, _ = _correr_con_vinculos(g, pc, vinc)
+    assert creadas == [] and anuladas == []
+    assert len(editadas) == 1
+    assert editadas[0][0] == 678
+    assert editadas[0][1]["concepto"].startswith("26-27/414")
+    assert rep["renombradas"][0]["factura_previa"] == "007-2026"
+
+
+def test_por_id_reconoce_el_cambio_de_producto_como_ajuste_de_importe():
+    """Se confundieron de producto y editaron el renglón: el total cambió.
+    Misma compra (por ids), importe corregido, nada duplicado."""
+    g = [dict(_G_POR_ID[0], importe_siva=200000.0)]   # c/IVA 230.000
+    pc = [_pc_puente(concepto="26-27/414     9")]
+    vinc = {901: 678, 902: 678, 903: 678}
+    rep, editadas, creadas, anuladas, _ = _correr_con_vinculos(g, pc, vinc)
+    assert creadas == [] and anuladas == []
+    assert len(editadas) == 1 and editadas[0][0] == 678
+    assert editadas[0][1]["importe"] == pytest.approx(230000.0)
+    assert rep["ajustadas"][0]["importe_previo"] == pytest.approx(273565.79)
+
+
+def test_compra_vieja_sin_vinculo_se_reconoce_por_numero_y_se_vincula():
+    pc = [_pc_puente(concepto="26-27/414     9")]
+    rep, editadas, creadas, _, vinculados = _correr_con_vinculos(_G_POR_ID, pc, {})
+    assert creadas == [] and editadas == []
+    assert vinculados == [(678, (901, 902, 903))]
+    assert rep["ya_cargadas"] == 1
+
+
+def test_huerfana_por_id_es_exacta_sus_renglones_ya_no_estan():
+    pc = [_pc_puente()]
+    vinc = {901: 678, 902: 678}
+    otra = [{"proveedor": "SEY", "factura": "3053", "fecha": "2026-09-09",
+             "kg": 1000, "importe_siva": 3200.0, "ids": [950]}]
+    rep, _, _, anuladas, _ = _correr_con_vinculos(otra, pc, vinc)
+    assert anuladas == [678]
+
+
+def test_si_algun_renglon_sigue_en_formulas_no_es_huerfana():
+    """Movieron dos de los tres renglones a otra factura: la compra 678 no
+    matchea (la nueva factura tiene más renglones nuevos), pero sus ids
+    siguen vivos → no se anula sola; queda para mirar."""
+    pc = [_pc_puente(), _pc_puente(id_compra=700, numero=10400,
+                                   concepto="500           9")]
+    g = [{"proveedor": "AVQ", "factura": "500", "fecha": "2026-09-09",
+          "kg": 100, "importe_siva": 100.0, "ids": [901, 902, 960, 961, 962]}]
+    vinc = {901: 678, 902: 678, 960: 700, 961: 700, 962: 700}
+    rep, _, creadas, anuladas, _ = _correr_con_vinculos(g, pc, vinc)
+    assert creadas == [] and anuladas == []
+
+
+def test_match_por_vinculo_gana_la_compra_con_mas_renglones():
+    por_id = {1: {"id_compra": 1}, 2: {"id_compra": 2}}
+    hit = fb._match_por_vinculo((10, 11, 12), {10: 1, 11: 2, 12: 2}, por_id, "X")
+    assert hit[1]["id_compra"] == 2 and hit[0].startswith("ids 2/3")
+    assert fb._match_por_vinculo((), {}, por_id, "X") is None
+    assert fb._match_por_vinculo((5,), {5: 9}, por_id, "X") is None  # 9 no está en el mes
+
+
+def test_vinculos_lee_la_tabla_y_tolera_filas_ajenas():
+    with patch.object(fb.db, "fetch_all",
+                      return_value=[{"formulas_id": 7, "id_compra": 3},
+                                    {"id_compra": 3, "importe": 1}]):
+        assert fb._vinculos([{"id_compra": 3}]) == {7: 3}
+    assert fb._vinculos([]) == {}
+
+
+def test_vincular_inserta_cada_id_y_nunca_levanta():
+    llamadas = []
+    with patch.object(fb.db, "execute",
+                      side_effect=lambda sql, p: llamadas.append(p) or 1):
+        assert fb.vincular(678, (901, 902)) == 2
+    assert llamadas == [(901, 678), (902, 678)]
+    with patch.object(fb.db, "execute", side_effect=RuntimeError("boom")):
+        assert fb.vincular(678, (901,)) == 0
