@@ -7,7 +7,7 @@ from auth import requiere_login, requiere_permiso, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import num_es, today_ec
-from parsers import parse_date, parse_monto
+from parsers import monto_rango, parse_date, parse_monto
 
 from . import queries
 
@@ -116,6 +116,13 @@ def lista():
         # pedir ESA fila y no hay nada que combinar. `codigo` ni se parsea:
         # escribe `cta` y `q`.
         desde = hasta = cta = q = None
+    # Filtro por MONTO en un solo campo, como en facturas (dueña 2026-09-10):
+    # entero "500" → el dólar entero 500,00–500,99; con centavos → exacto.
+    # Misma regla de la casa que facturas/cheques/bancos (`parsers.monto_rango`).
+    monto_raw = "" if id_dolares else (request.args.get("monto") or "").strip()
+    _rango = monto_rango(monto_raw)
+    monto_min = float(_rango[0]) if _rango else None
+    monto_max = float(_rango[1]) if _rango else None
     # Filtro por código en UN solo campo (atajo de la dueña 2026-07-10).
     # Búsqueda flexible: toma las letras (2-3) como CUENTA y los dígitos como
     # CONCEPTO, en cualquier orden y con o sin espacio. Acepta:
@@ -147,6 +154,7 @@ def lista():
         lambda: queries.lista(
             desde=desde, hasta=hasta, cta=cta, solo_vivos=solo_vivos, q=q,
             id_dolares=id_dolares, concepto_num=concepto_num,
+            monto_min=monto_min, monto_max=monto_max,
         ),
         [],
     )
@@ -281,6 +289,7 @@ def lista():
         filas=filas, cuentas=cuentas, resumen=res,
         desde=desde, hasta=hasta, cta=cta, q=q,
         codigo=codigo or None, recibido_mes=recibido_mes,
+        monto=monto_raw or None,
         anio_filtro=anio_filtro, n_sin_anio=n_sin_anio,
         solo_vivos=solo_vivos, error=error,
         id_dolares=id_dolares,

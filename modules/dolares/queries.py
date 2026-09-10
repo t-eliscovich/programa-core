@@ -19,6 +19,8 @@ def lista(
     q: str | None = None,
     id_dolares: int | None = None,
     concepto_num: int | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
 ) -> list[dict]:
     """Movimientos en scintela.dolares (anticipos USD).
 
@@ -49,6 +51,11 @@ def lista(
     grueso (todo número exacto contiene su propio dígito, así que nunca saca de
     más) y ahorra traerse la lista entera antes del LIMIT.
 
+    `monto_min` / `monto_max` (TMT 2026-09-10, dueña: *"agregar filtro para
+    monto en anticipos, como el de facturas"*): rango sobre `importe`, el mismo
+    que arma `parsers.monto_rango` en facturas, cheques y bancos — entero =
+    el dólar entero, con centavos = exacto.
+
     Saldo acumulado (TMT 2026-05-12): running balance POR CUENTA, calculado
     sobre el universo filtrado. Si filtrás por cuenta, ves su corrida; si
     no, cada fila muestra el saldo de SU cuenta hasta ese movimiento.
@@ -64,6 +71,9 @@ def lista(
           AND (%(cta)s IS NULL OR UPPER(d.cta) = UPPER(%(cta)s))
           AND (%(q)s IS NULL
                OR d.concepto ILIKE '%%' || %(q)s || '%%')
+          -- Filtro por monto USD (importe), misma semántica que facturas.
+          AND (%(monto_min)s::numeric IS NULL OR COALESCE(d.importe, 0) >= %(monto_min)s::numeric)
+          AND (%(monto_max)s::numeric IS NULL OR COALESCE(d.importe, 0) <= %(monto_max)s::numeric)
           -- TMT 2026-08-07 — ESTA es la línea que hacía inútil el link del
           -- historial. La pantalla trae `solo_vivos` PRENDIDO por default
           -- (nadie lo pide) y este filtro esconde todo lo que tenga `st` no
@@ -84,6 +94,7 @@ def lista(
             "q": (q or "").strip() or None,
             "solo_vivos": bool(solo_vivos),
             "id_dolares": int(id_dolares) if id_dolares else None,
+            "monto_min": monto_min, "monto_max": monto_max,
             "limite": int(limite),
         },
     ) or []
