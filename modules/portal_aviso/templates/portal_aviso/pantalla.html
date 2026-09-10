@@ -62,6 +62,18 @@
     </div>
   </div>
 
+  {# --- A quién le llegan los mensajes del portal --- #}
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm mb-6">
+    <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1">Los mensajes que escriben los clientes en el portal</h2>
+    <p class="text-xs text-slate-500 mb-3">Lo que escriben en «Perfil › Escríbanos» aparece en Novedades y sale por mail a esta lista (correos separados por coma). Vacío: sólo Novedades.</p>
+    <form method="post" action="{{ url_for('portal_aviso.mensajes_a') }}" class="flex flex-wrap items-center gap-2">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="text" name="a" value="{{ mensajes_a }}" placeholder="correo@intela.com.ec, otro@…"
+             class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5 w-80">
+      <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Guardar</button>
+    </form>
+  </div>
+
   {# --- Los vendedores, como los ve el cliente --- #}
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm mb-6">
     <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-1">Los vendedores, como los ve el cliente</h2>

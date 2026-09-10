@@ -770,14 +770,15 @@ def mis_datos():
     if not cod:
         return _pedir_entrar()
     fic = acceso.ficha(cod) or {}
+    acc = acceso.acceso(cod) or {}
     if request.method == "POST":
         texto = (request.form.get("texto") or "").strip()
-        if mas_.pedir_correccion(cod, fic.get("nombre") or "", fic.get("vend") or "", texto):
-            flash("Le pasamos su pedido a la oficina. Lo corrigen y le avisan.", "ok")
+        if mas_.mensaje_del_cliente(cod, fic.get("nombre") or "", fic.get("vend") or "", texto,
+                                    correo=(acc.get("mail") or fic.get("correo") or "")):
+            flash("Recibimos su mensaje. Le contestamos a la brevedad.", "ok")
         else:
-            flash("Escriba qué hay que corregir.", "error")
+            flash("Escriba su mensaje.", "error")
         return redirect(url_for("portal.mis_datos"))
-    acc = acceso.acceso(cod) or {}
     return render_template("portal/mis_datos.html", codigo=cod, cli=fic,
                            varias_cuentas=len(session.get(CUENTAS) or []) > 1,
                            correo_portal=(acc.get("mail") or "").strip())

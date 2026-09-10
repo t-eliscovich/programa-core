@@ -21,16 +21,57 @@ _LOG = logging.getLogger("programa_core.portal")
 # Pedir que corrijan sus datos
 # ---------------------------------------------------------------------------
 
-def pedir_correccion(cod: str, nombre: str, vend: str, texto: str) -> bool:
-    """Un aviso a la campanita de la oficina (y a la del vendedor, que es la
-    misma campanita), con lo que el cliente escribió. NO toca la ficha."""
+CLAVE_MENSAJES_A = "portal_mensajes_a"
+
+
+def mensajes_a() -> list[str]:
+    """A quién le llegan por mail los mensajes del portal (mig 0248; se
+    edita en /portal-aviso). Lista separada por comas; vacía = sólo campanita."""
+    import db
+    try:
+        r = db.fetch_one("SELECT valor FROM scintela.nota_config WHERE clave = %s",
+                         (CLAVE_MENSAJES_A,))
+    except Exception as e:  # noqa: BLE001 -- sin la fila, sin mail
+        _LOG.warning("portal: no pude leer a quién van los mensajes (%s)", e)
+        return []
+    return [m.strip() for m in ((r or {}).get("valor") or "").split(",") if m.strip()]
+
+
+def guardar_mensajes_a(texto: str) -> None:
+    import db
+    limpio = ", ".join(m.strip() for m in (texto or "").split(",") if m.strip())
+    db.execute(
+        "INSERT INTO scintela.nota_config (clave, valor) VALUES (%s, %s) "
+        "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+        (CLAVE_MENSAJES_A, limpio[:500]))
+
+
+def mensaje_del_cliente(cod: str, nombre: str, vend: str, texto: str, correo: str = "") -> bool:
+    """Lo que el cliente escribe en "Perfil" (texto libre: "la dirección
+    cambió", "no me gusta el botón"…). Va a la campanita/Novedades de la
+    oficina y, si hay lista, por mail (dueña 10/09: "quiero que me llegue a mí
+    también"). NO toca la ficha."""
     from modules.avisos import queries as avisos
 
     texto = (texto or "").strip()[:600]
     if not texto:
         return False
-    return avisos.avisar(
+    quien = presentacion.nombre_lindo(nombre) or cod
+    ok = avisos.avisar(
         fuente="portal", nivel="ok",
-        titulo=f"{cod} pide corregir sus datos",
-        detalle=f"{presentacion.nombre_lindo(nombre)} (vendedor {vend or '—'}) escribió desde el portal:\n{texto}",
+        titulo=f"{cod} escribió desde el portal",
+        detalle=f"{quien} (vendedor {vend or '—'}) escribió desde el portal:\n{texto}",
         url=f"/clientes/{cod}/editar")
+    destinatarios = mensajes_a()
+    if destinatarios:
+        try:
+            from modules._lib import mailer
+            mailer.enviar(
+                f"Portal · {cod} escribió: {texto[:60]}",
+                f"{quien} ({cod}, vendedor {vend or '—'}) escribió desde el portal:\n\n{texto}\n\n"
+                f"Ficha: https://programa.intela.com.ec/clientes/{cod}/editar",
+                destinatarios, responder_a=(correo or "").strip())
+        except Exception as e:  # noqa: BLE001 -- el mail nunca tumba la pantalla
+            _LOG.warning("portal: no salió el mail del mensaje de %s (%s)", cod, e)
+    return bool(ok)
+

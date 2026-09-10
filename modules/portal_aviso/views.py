@@ -63,7 +63,25 @@ def pantalla():
         ejemplo=envio.texto_del_aviso(con_correo[0]["nombre"] if con_correo else "cliente"),
         mail_prueba=request.args.get("a", ""),
         vendedores=vendedores,
+        mensajes_a=", ".join(_mensajes_a()),
     )
+
+
+def _mensajes_a() -> list[str]:
+    from modules.portal import mas as portal_mas
+    return portal_mas.mensajes_a()
+
+
+@portal_aviso_bp.route("/portal-aviso/mensajes-a", methods=["POST"])
+@requiere_login
+@requiere_permiso(PERMISO)
+def mensajes_a():
+    """A quién le llegan por mail los mensajes que escriben los clientes en
+    el portal (mig 0248). Vacío = sólo la campanita."""
+    from modules.portal import mas as portal_mas
+    portal_mas.guardar_mensajes_a(request.form.get("a") or "")
+    flash("Guardado. Los mensajes del portal van a esa lista (y a Novedades).", "ok")
+    return redirect(url_for("portal_aviso.pantalla"))
 
 
 @portal_aviso_bp.route("/portal-aviso/prueba", methods=["POST"])

@@ -13,12 +13,14 @@
     {% if cli.canton or cli.provincia %}<small style="color:var(--ink3)">{{ cli.canton }}{% if cli.canton and cli.provincia %} · {% endif %}{{ cli.provincia }}</small>{% endif %}</div>
 </div>
 <div class="card" style="margin-top:12px">
-  <h2 style="margin:0 0 4px">¿Algo está mal?</h2>
-  <p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)">Cuéntenos qué hay que corregir y la oficina lo cambia.</p>
+  {# Texto libre (dueña 10/09): un dato mal, una queja, lo que sea. Va a la
+     oficina (campanita) y por mail a la lista de /portal-aviso. #}
+  <h2 style="margin:0 0 4px">Escríbanos</h2>
+  <p style="margin:0 0 8px;font-size:13.5px;color:var(--ink2)">Un dato que cambió, algo que no le cierra, lo que quiera decirnos.</p>
   <form method="post">
     {{ csrf_token_input | safe }}
     <div class="campo"><textarea name="texto" rows="3" required placeholder="Por ejemplo: la dirección de entrega ahora es…"></textarea></div>
-    <button class="btn ancho" style="margin-top:12px" type="submit">Pedir que lo corrijan</button>
+    <button class="btn ancho" style="margin-top:12px" type="submit">Enviar</button>
   </form>
 </div>
 <div class="menu" style="margin-top:12px">

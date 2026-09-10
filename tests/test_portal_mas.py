@@ -54,24 +54,9 @@ def _sesion(app):
 # ---------------------------------------------------------------------------
 
 
-def test_pedir_correccion_deja_un_aviso_y_no_toca_la_ficha(monkeypatch):
-    from modules.avisos import queries as avisos
-    dejados = []
-    monkeypatch.setattr(avisos, "avisar", lambda **kw: dejados.append(kw) or True)
-    assert mas.pedir_correccion("AJT", "TOTOY BUITRON", "EDG", "la dirección cambió") is True
-    assert dejados[0]["titulo"] == "AJT pide corregir sus datos"
-    assert "la dirección cambió" in dejados[0]["detalle"]
-    assert dejados[0]["url"] == "/clientes/AJT/editar"
-    assert mas.pedir_correccion("AJT", "X", "EDG", "   ") is False
+def test_el_mensaje_no_toca_la_ficha():
     fuente = (ROOT / "modules" / "portal" / "mas.py").read_text(encoding="utf-8")
     assert "UPDATE scintela.cliente" not in fuente
-
-
-# ---------------------------------------------------------------------------
-# Las pantallas
-# ---------------------------------------------------------------------------
-
-
 def test_perfil_es_la_ultima_pestana_y_tiene_salir():
     """Dueña 10/09: sin "Más" (se fueron pedidos y su año en kilos); la
     pestaña es "Perfil" = mis datos + cambiar de cuenta + salir."""
@@ -98,7 +83,7 @@ def test_mis_datos_muestra_la_ficha_y_el_pedido_de_correccion_deja_aviso(monkeyp
     try:
         _cliente(monkeypatch)
         dejados = []
-        monkeypatch.setattr(mas, "pedir_correccion", lambda cod, nombre, vend, texto: dejados.append(texto) or True)
+        monkeypatch.setattr(mas, "mensaje_del_cliente", lambda cod, nombre, vend, texto, correo="": dejados.append(texto) or True)
         c = _sesion(app)
         html = c.get("/mis-datos").get_data(as_text=True)
         assert "0997857539" in html and "teliscovich@gmail.com" in html and "Quito" in html.title() or "QUITO" in html
@@ -171,3 +156,37 @@ def test_mis_cuentas_no_dice_dos_cuando_hay_una():
         deshacer()
 
 
+
+
+def test_el_mensaje_del_cliente_va_a_novedades_y_por_mail_a_la_lista(monkeypatch):
+    """Dueña 10/09: "quiero que me llegue a mí también, está ok que vaya".
+    Texto libre: un dato mal o "no me gusta el botón" van por el mismo camino."""
+    from modules._lib import mailer
+    from modules.avisos import queries as avisos
+    dejados, salidos = [], []
+    monkeypatch.setattr(avisos, "avisar", lambda **kw: dejados.append(kw) or True)
+    monkeypatch.setattr(mailer, "enviar", lambda asunto, texto, dest, html="", responder_a="": salidos.append((asunto, texto, dest, responder_a)) or {"ok": True})
+    monkeypatch.setattr(mas, "mensajes_a", lambda: ["teliscovich@gmail.com"])
+    assert mas.mensaje_del_cliente("AJT", "TOTOY BUITRON", "EDG", "no me gusta el botón", correo="cliente@x.com") is True
+    assert dejados[0]["titulo"] == "AJT escribió desde el portal" and "no me gusta el botón" in dejados[0]["detalle"]
+    assert dejados[0]["url"] == "/clientes/AJT/editar"
+    asunto, texto, dest, responder_a = salidos[0]
+    assert dest == ["teliscovich@gmail.com"] and "no me gusta el botón" in texto and responder_a == "cliente@x.com"
+    assert "AJT" in asunto
+    # Sin lista, sólo Novedades; sin texto, nada.
+    salidos.clear()
+    monkeypatch.setattr(mas, "mensajes_a", lambda: [])
+    assert mas.mensaje_del_cliente("AJT", "X", "EDG", "hola") is True and salidos == []
+    assert mas.mensaje_del_cliente("AJT", "X", "EDG", "  ") is False
+
+
+def test_la_lista_de_mensajes_se_lee_y_se_guarda_limpia(monkeypatch):
+    import db
+    monkeypatch.setattr(db, "fetch_one", lambda sql, params: {"valor": " a@x.com ,b@y.com,, "})
+    assert mas.mensajes_a() == ["a@x.com", "b@y.com"]
+    escrito = []
+    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append(params))
+    mas.guardar_mensajes_a(" a@x.com , ,b@y.com ")
+    assert escrito[0] == (mas.CLAVE_MENSAJES_A, "a@x.com, b@y.com")
+    fuente = (ROOT / "migrations" / "0248_portal_mensajes_a.sql").read_text(encoding="utf8")
+    assert "('portal_mensajes_a', 'teliscovich@gmail.com')" in fuente
