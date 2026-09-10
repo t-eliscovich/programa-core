@@ -1,9 +1,9 @@
 {% extends "portal/_app.html" %}
 {% block titulo %}Mis datos — Intela{% endblock %}
-{% block seccion %}mas{% endblock %}
+{% block seccion %}perfil{% endblock %}
 {% block contenido %}
-<a class="volver" href="/mas">‹ Más</a>
-<h1 class="pag">Mis datos</h1>
+{# "Perfil" (dueña 10/09: sin "Más"; sus datos, cambiar de cuenta y salir). #}
+<h1 class="pag">Perfil</h1>
 <div class="card datos">
   <div><span class="lbl">Razón social</span><b>{{ cli.nombre|title }}</b></div>
   <div><span class="lbl">RUC</span><b>{{ cli.ruc or '—' }}</b></div>
@@ -20,5 +20,11 @@
     <div class="campo"><textarea name="texto" rows="3" required placeholder="Por ejemplo: la dirección de entrega ahora es…"></textarea></div>
     <button class="btn ancho" style="margin-top:12px" type="submit">Pedir que lo corrijan</button>
   </form>
+</div>
+<div class="menu" style="margin-top:12px">
+  {% if varias_cuentas %}
+  <a href="/mis-cuentas"><span class="ic"><svg viewBox="0 0 24 24"><path d="M7 7h14v10H7zM3 11h4M3 15h4"/></svg></span><span class="fl">Cambiar de cuenta<small>Su RUC tiene más de una cuenta con nosotros</small></span><span class="ch">›</span></a>
+  {% endif %}
+  <a href="/salir"><span class="ic"><svg viewBox="0 0 24 24"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l5 4-5 4M9 12h11"/></svg></span><span class="fl">Salir</span><span class="ch">›</span></a>
 </div>
 {% endblock %}

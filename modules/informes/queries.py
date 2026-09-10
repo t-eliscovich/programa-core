@@ -12370,25 +12370,3 @@ def aplicaciones_cliente(codigo_cli: str) -> list[dict]:
         (cod,),
     ) or []
 
-
-def compras_por_mes_cliente_anio(codigo_cli: str, anio: int) -> list[dict]:
-    """Como `compras_por_mes_cliente`, pero de UN año calendario (portal,
-    "Su año en kilos" con otros años — dueña 09/09/2026)."""
-    cod = (codigo_cli or "").strip().upper()
-    return db.fetch_all(
-        """
-        SELECT date_trunc('month', fecha)::date  AS mes,
-               COALESCE(SUM(kg), 0)               AS kg,
-               COALESCE(SUM(importe), 0)          AS importe,
-               COUNT(*)                           AS facturas
-          FROM scintela.factura
-         -- kg-fisico-incluye-todo: es lo que el cliente compró, no el balance
-         -- (mismo criterio que compras_por_mes_cliente).
-         WHERE UPPER(codigo_cli) = %s
-           AND (stat IS NULL OR stat <> 'X')
-           AND fecha >= make_date(%s, 1, 1) AND fecha < make_date(%s, 1, 1)
-         GROUP BY 1
-         ORDER BY 1
-        """,
-        (cod, int(anio), int(anio) + 1),
-    ) or []

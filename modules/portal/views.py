@@ -764,15 +764,6 @@ def _ctx(cod: str) -> dict:
     return {"codigo": cod, "cli": acceso.ficha(cod) or acceso.cliente(cod) or {}}
 
 
-@portal_bp.route("/mas", methods=["GET"])
-def mas():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    return render_template("portal/mas.html", **_ctx(cod),
-                           varias_cuentas=len(session.get(CUENTAS) or []) > 1)
-
-
 @portal_bp.route("/mis-datos", methods=["GET", "POST"])
 def mis_datos():
     cod = cliente_actual()
@@ -788,28 +779,8 @@ def mis_datos():
         return redirect(url_for("portal.mis_datos"))
     acc = acceso.acceso(cod) or {}
     return render_template("portal/mis_datos.html", codigo=cod, cli=fic,
+                           varias_cuentas=len(session.get(CUENTAS) or []) > 1,
                            correo_portal=(acc.get("mail") or "").strip())
-
-
-@portal_bp.route("/mi-anio", methods=["GET"])
-def mi_anio():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    anio = re.sub(r"\D", "", request.args.get("anio") or "")[:4]
-    anio = int(anio) if anio else today_ec().year
-    ctx = _ctx(cod)
-    compro = mas_.que_compro(cod, (ctx["cli"] or {}).get("ruc") or "", anio)
-    a = mas_.anio_en_kilos(cod, anio, asinfo_meses=compro.get("meses") if compro.get("estado") == "ok" else None)
-    return render_template("portal/mi_anio.html", **ctx, a=a, compro=compro)
-
-
-@portal_bp.route("/pedidos", methods=["GET"])
-def pedidos():
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-    return render_template("portal/pedidos.html", **_ctx(cod), p=mas_.pedidos_de(cod))
 
 
 @portal_bp.route("/", methods=["GET"])

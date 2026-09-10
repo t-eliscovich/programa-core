@@ -23,7 +23,8 @@ El plan vive en `docs/notas-de-sesion/PLAN_PORTAL_CLIENTE_2026_08_24.md`. El
 04/09 se rediseñó entero (armazón `_app.html`); el 09/09 el inicio pasó a ser
 la grilla del estado de cuenta de la oficina, las fechas van primero, "Más"
 quedó con pedidos, año en kilos y mis datos (se fueron avisar un pago, cómo
-pagar, actividad y facturas pagadas), y se cruzan cheques con facturas. Queda
+pagar, actividad y facturas pagadas), y se cruzan cheques con facturas; el 10/09 se fueron pedidos y su año en
+kilos, y "Más" pasó a ser "Perfil". Queda
 la tabla `scintela.portal_aviso_pago` (mig 0245) sin pantalla: borrarla en la
 próxima limpieza. Lo que queda:
 
