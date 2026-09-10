@@ -148,7 +148,10 @@ def test_pedido_editado_antes_del_envio_no_alerta_pero_se_anota():
 
 def test_una_edicion_ya_procesada_no_se_vuelve_a_mirar():
     enviado = datetime(2026, 9, 2, 15, 0, tzinfo=UTC)
-    detalle = dict(_foto_vieja(), asinfo_modificado="2026-09-04 14:51:44")
+    # acabado_v al día: si no, el sync le completaría el acabado (10/09) y
+    # eso sí es una actualización — silenciosa, pero actualización.
+    detalle = dict(_foto_vieja(), asinfo_modificado="2026-09-04 14:51:44",
+                   acabado_v=service.ACABADO_VERSION)
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=_fake_asinfo()), \
          patch.object(formulas_memos, "vivos", return_value=[_memo_vivo(enviado, detalle)]), \
          patch.object(formulas_memos, "actualizar") as act:
