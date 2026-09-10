@@ -37,7 +37,6 @@ KNOWN_FAILING_NODEIDS = {
     "tests/test_compras_anular.py::test_happy_path_anular_actualiza_stat_y_borra_posdat",
     "tests/test_compras_anular.py::test_motivo_solo_espacios_raisa_value_error",
     "tests/test_compras_anular.py::test_motivo_vacio_raisa_value_error",
-    "tests/test_compras_editar.py::test_crear_anticipo_dolares_inserta_dolares",
     "tests/test_compras_editar.py::test_crear_no_pagada_inserta_posdat",
     "tests/test_csv_upload.py::test_cargar_csv_requiere_permiso",
     "tests/test_diag_integraciones.py::test_diag_integraciones_sin_permiso_redirige",

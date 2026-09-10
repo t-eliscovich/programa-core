@@ -120,7 +120,7 @@ def crear(
           * cuenta='internacional'→ INSERT tx_bancarias DOC='CH' banco=2.
         El `id_transaccion`/`id_caja` resultante queda en `compra.id_transaccion`
         para enlace.
-      - Si `es_anticipo_dolares=True` y proveedor.tipo ∈ ('HIL','QUI') →
+      - Si `es_anticipo_dolares=True` y proveedor.tipo empieza con H/Q (hilado/químicos) →
         INSERT en `scintela.dolares` (paridad ALTAS.PRG L229-233).
       - `fechad` (vencimiento) por defecto = fecha + proveedor.plazo días
         (fallback 30).
@@ -350,7 +350,11 @@ def crear(
                 )
 
         # Anticipo USD si proveedor es HIL/QUI y flag activo
-        if es_anticipo_dolares and (prov_row.get("tipo_prov") or "").upper() in ("HIL", "QUI"):
+        # 10/09/2026: la ficha guarda UNA letra (H = hilado, Q = químicos —
+        # ej. C2 COLOURTEX es 'Q'); antes se comparaba contra 'HIL'/'QUI' y el
+        # tilde "anticipo USD" nunca disparaba. Miramos la inicial (cubre
+        # también 'HIL'/'QUI' si alguna ficha vieja lo tuviera así).
+        if es_anticipo_dolares and (prov_row.get("tipo_prov") or "").strip().upper()[:1] in ("H", "Q"):
             dol_row = (
                 db.execute_returning(
                     """

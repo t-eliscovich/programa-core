@@ -247,12 +247,32 @@ def test_crear_anticipo_dolares_inserta_dolares(monkeypatch):
         es_anticipo_dolares=True,
         usuario="tmt",
     )
-    sqls = _executes_sql(fake.executes)
+    sqls = _returnings_sql(fake.execute_returnings)
+    assert "insert into scintela.dolares" in sqls
+
+
+def test_crear_anticipo_dolares_proveedor_tipo_q_una_letra_inserta(monkeypatch):
+    """La ficha guarda UNA letra (C2 COLOURTEX = 'Q'): el tilde tiene que
+    disparar igual. Antes se comparaba contra 'HIL'/'QUI' y nunca entraba."""
+    import db as db_mod
+    from modules.compras import queries
+
+    fake = _CompraDB(proveedor={"id_proveedor": 5, "tipo_prov": "Q"})
+    fake.apply_to(monkeypatch, db_mod)
+
+    queries.crear(
+        fecha=date(2026, 4, 30),
+        codigo_prov="C2",
+        importe=1000, tipo="A",
+        es_anticipo_dolares=True,
+        usuario="tmt",
+    )
+    sqls = _returnings_sql(fake.execute_returnings)
     assert "insert into scintela.dolares" in sqls
 
 
 def test_crear_anticipo_dolares_proveedor_no_hil_no_inserta(monkeypatch):
-    """Si el proveedor NO es HIL/QUI, el flag es no-op."""
+    """Si el proveedor NO es hilado/químicos (H/Q), el flag es no-op."""
     import db as db_mod
     from modules.compras import queries
 
@@ -266,7 +286,7 @@ def test_crear_anticipo_dolares_proveedor_no_hil_no_inserta(monkeypatch):
         es_anticipo_dolares=True,
         usuario="tmt",
     )
-    sqls = _executes_sql(fake.executes)
+    sqls = _returnings_sql(fake.execute_returnings)
     assert "insert into scintela.dolares" not in sqls
 
 
