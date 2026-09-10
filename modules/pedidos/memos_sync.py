@@ -209,20 +209,26 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
 
 
 def _completar_acabado(m: dict, res: dict) -> None:
-    """Memos mandados ANTES de que la foto llevara `acabado` (09/09): se les
-    completa una vez, en silencio (no es un cambio del pedido, no hay alerta).
-    Si Asinfo no da el acabado, no se toca nada y se reintenta en la próxima
-    pasada."""
+    """Memos mandados con la regla VIEJA del acabado (o sin acabado): se les
+    pisa el acabado de cada línea con el de la LÍNEA del pedido en Asinfo,
+    en silencio (no es un cambio del pedido, no hay alerta). Si el pedido ya
+    no está entre los pendientes o Asinfo no contesta, no se toca nada y se
+    reintenta en la próxima pasada."""
     from modules.pedidos import service
     viejo = m.get("detalle") or {}
     lineas = viejo.get("lineas") or []
-    if not lineas or all("acabado" in ln for ln in lineas):
-        return
-    nuevas = service.lineas_con_acabado(lineas)
-    if not any(ln.get("acabado") for ln in nuevas):
+    if not lineas or viejo.get("acabado_v") == service.ACABADO_VERSION:
         return
     numero = str(m["numero"]).strip().upper()
-    ok_upd, _ = formulas_memos.actualizar(numero, dict(viejo, lineas=nuevas), None, "")
+    nuevo = service.armar_memo(numero)
+    if nuevo is None:
+        return
+    por_producto = {ln.get("producto"): ln.get("acabado", "")
+                    for ln in nuevo.get("lineas") or []}
+    nuevas = [dict(ln, acabado=por_producto.get(ln.get("producto"), ln.get("acabado", "")))
+              for ln in lineas]
+    ok_upd, _ = formulas_memos.actualizar(
+        numero, dict(viejo, lineas=nuevas, acabado_v=service.ACABADO_VERSION), None, "")
     if ok_upd:
         res["silenciosos"].append(numero)
 

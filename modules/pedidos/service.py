@@ -861,14 +861,51 @@ def marcar_acabado(filas: list[dict]) -> list[dict]:
 # (verificado 27/08: `dproducto` cargó 22 pedidos pendientes con agente PPR).
 # El agente 951 es "Cía. Ltda. Intela": pedidos de la casa, sin vendedor.
 
+# ⭐ El ACABADO (TUB / ABI) es de la LÍNEA del pedido, no del producto
+# (Jonathan 10/09: el PDCL-31577 pide Jersey 3.5 ABIERTO y Rib TUBULAR, y
+# el mismo JE35 tiene lotes tubulares en bodega — resolverlo por producto lo
+# mostraba todo TUB). Vive en `detalle_pedido_cliente` como pares
+# `id_atributo_N` / `id_valor_atributo_N` (verificado 10/09: el atributo 1
+# cae en el slot 3 en 200.105 de 200.107 líneas), y acá se busca por el
+# NÚMERO del atributo, no por el slot. La vista de saldos no trae el id de
+# la línea, así que se une por (pedido, producto): si un pedido pide el
+# mismo producto en los dos acabados (5 casos en 120 días) se muestra
+# "ABI/TUB".
+_SQL_ACABADO_LINEA = """
+aca AS (
+    SELECT d.id_pedido_cliente, d.id_producto,
+           MIN(va.codigo) AS aca_min, MAX(va.codigo) AS aca_max
+      FROM detalle_pedido_cliente d
+      JOIN valor_atributo va ON va.id_valor_atributo = CASE
+               WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
+               WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
+               WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
+               WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
+               WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
+               WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
+               WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
+               WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
+               WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
+               WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
+           END
+     WHERE d.id_pedido_cliente IN (
+               SELECT pc.id_pedido_cliente FROM pedido_cliente pc
+                WHERE DATEDIFF(day, pc.fecha, {ahora}) <= {dias})
+     GROUP BY d.id_pedido_cliente, d.id_producto
+)"""
+
 _SQL_POR_PEDIDO = """
+WITH """ + _SQL_ACABADO_LINEA + """
 SELECT v.numero, v.fecha, v.cliente,
        ISNULL(e.nombre_comercial, '')           AS codigo_cliente,
        p.id_agente_comercial                    AS agente_id,
        ISNULL(vd.nombre_vendedor, '')           AS agente_nombre,
        ISNULL(p.descripcion, '')                AS descripcion,
        pr.codigo, {color} AS color, ISNULL(sub.nombre, 'Sin tela') AS tela,
-       v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad
+       v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad,
+       CASE WHEN a.aca_min IS NULL THEN ''
+            WHEN a.aca_min = a.aca_max THEN a.aca_min
+            ELSE a.aca_min + '/' + a.aca_max END AS acabado
   FROM v_saldos_comprometidos_detallado v
   JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
   JOIN producto pr ON pr.id_producto = v.id_producto
@@ -876,6 +913,8 @@ SELECT v.numero, v.fecha, v.cliente,
          ON sub.id_subcategoria_producto = pr.id_subcategoria_producto
   LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
   LEFT JOIN v_vendedor vd ON vd.id_vendedor = p.id_agente_comercial
+  LEFT JOIN aca a ON a.id_pedido_cliente = v.id_pedido_cliente
+                 AND a.id_producto = v.id_producto
  WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias}
  ORDER BY v.fecha DESC, v.numero, pr.codigo
 """
@@ -970,6 +1009,8 @@ def _linea_pedido(row: dict) -> dict:
         "cantidad": round(cantidad, 1),
         "unidad": _ETIQUETA_UNIDAD.get(unidad, ""),
         "kg": kg,
+        # De la LÍNEA del pedido (TUB / ABI / 'ABI/TUB'), '' si no lo trae.
+        "acabado": str(row.get("acabado") or "").strip().upper(),
     }
 
 
@@ -1023,9 +1064,6 @@ def por_pedido() -> tuple[list[dict], bool]:
     for p in pedidos:
         p["total_kg"] = round(p["total_kg"])
         p["n_lineas"] = len(p["lineas"])
-        # El acabado (TUB / ABI) de cada línea — dueña 09/09: se ve en
-        # /pedidos, en el portal del vendedor y viaja en el memo.
-        p["lineas"] = lineas_con_acabado(p["lineas"])
     pedidos.sort(key=lambda p: (p["fecha"], p["numero"]), reverse=True)
     return pedidos, True
 
@@ -1049,18 +1087,13 @@ def armar_memo(numero: str) -> dict | None:
         "descripcion": p["descripcion"],
         "lineas": p["lineas"],
         "total_kg": p["total_kg"] if p["kg_completo"] else None,
+        "acabado_v": ACABADO_VERSION,
     }
 
 
-def lineas_con_acabado(lineas: list[dict]) -> list[dict]:
-    """Las líneas con su `acabado` (TUB / ABI) por producto — dueña 09/09:
-    se ve en /pedidos, en /mi-cartera y en el memo de la fábrica. Sale del
-    mismo atributo del producto terminado que el corte por color
-    (`acabados_por_producto`, fail-soft: '' si Asinfo no lo da). Copia las
-    líneas, no las pisa."""
-    m = acabados_por_producto()
-    return [dict(ln, acabado=m.get(ln.get("producto") or "", ""))
-            for ln in lineas]
+#: Versión de la regla del acabado que viaja en el memo. 1 = por producto
+#: (09/09, estaba mal: mostraba todo TUB); 2 = por LÍNEA del pedido (10/09).
+ACABADO_VERSION = 2
 
 
 def etiqueta_dueno(dueno: dict) -> str:

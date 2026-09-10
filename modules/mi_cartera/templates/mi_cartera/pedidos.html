@@ -115,7 +115,7 @@
         <li>
           <span class="c">{{ l.color }}</span>
           {# Acabado del producto (TUB / AB), dueña 09/09. Hermano con flex:0 0 auto: nunca adentro de un span con ellipsis. #}
-          {% if l.acabado %}<span class="aca {{ 'tub' if l.acabado == 'TUB' else ('abi' if l.acabado == 'ABI' else 'otro') }}">{{ 'AB' if l.acabado == 'ABI' else l.acabado }}</span>{% endif %}
+          {% if l.acabado %}<span class="aca {{ 'tub' if l.acabado == 'TUB' else ('abi' if l.acabado == 'ABI' else 'otro') }}">{{ l.acabado|replace('ABI', 'AB') }}</span>{% endif %}
           {# El estado POR RENGLÓN (dueña 27/08): en tintura y terminado son
              de cada línea; "enviado" es del pedido entero y no se repite. #}
           {# En 320 px con la letra agrandada, el rótulo largo + el acabado se salen

@@ -580,58 +580,72 @@ def test_un_pedido_terminado_muestra_terminado(app, fake_db):
     assert 'class="btnmemo"' in body   # el otro pedido sigue con su botón
 
 
-# ── acabado en el memo (2026-09-09) ─────────────────────────────────────────
+# ── acabado en el memo: de la LÍNEA del pedido (2026-09-10) ──────────────────
 
-def test_el_memo_lleva_el_acabado_de_cada_linea():
+def test_el_acabado_sale_de_la_linea_del_pedido_no_del_producto():
+    """Jonathan 10/09: el PDCL-31577 pide JE35 ABIERTO y Rib TUBULAR; el
+    producto JE35 tiene lotes TUB — por producto salía todo TUB."""
+    filas = [dict(_FILAS[2], acabado="ABI"), dict(_FILAS[2], codigo="RINEG", acabado="TUB")]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(service, "acabados_por_producto", return_value={"PI28NEG": "TUB"}):
+        m = service.armar_memo("PDCL-26401")
+    assert [ln["acabado"] for ln in m["lineas"]] == ["ABI", "TUB"]
+    assert m["acabado_v"] == service.ACABADO_VERSION
+
+
+def test_sin_acabado_en_la_linea_el_memo_igual_sale_con_vacio():
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS, True)), \
-         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
-         patch.object(service, "acabados_por_producto",
-                      return_value={"PI28NEG": "TUB"}):
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
         m = service.armar_memo("PDCL-26401")
-    assert m["lineas"][0]["acabado"] == "TUB"
-    # Un producto sin acabado en Asinfo viaja con '' — nunca sin la clave.
-    assert all("acabado" in ln for ln in m["lineas"])
+    assert m is not None and all(ln["acabado"] == "" for ln in m["lineas"])
 
 
-def test_sin_acabado_de_asinfo_el_memo_igual_sale():
-    with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=(_FILAS, True)), \
-         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
-         patch.object(service, "acabados_por_producto", return_value={}):
-        m = service.armar_memo("PDCL-26401")
-    assert m is not None and m["lineas"][0]["acabado"] == ""
+def test_la_sql_busca_el_acabado_por_numero_de_atributo_no_por_slot():
+    sql = service._SQL_POR_PEDIDO
+    assert "detalle_pedido_cliente" in sql
+    for n in range(1, 11):
+        assert f"d.id_atributo_{n}" in sql and f"d.id_valor_atributo_{n}" in sql
 
 
-def test_el_sync_completa_el_acabado_de_los_memos_viejos_en_silencio():
+def test_el_sync_pisa_el_acabado_viejo_con_el_de_la_linea_en_silencio():
     from modules.pedidos import memos_sync
-    memo = {"numero": "PDCL-1", "detalle": {"lineas": [{"producto": "JE35ACU", "cantidad": 5}]}}
+    memo = {"numero": "PDCL-1", "detalle": {"acabado_v": 1, "lineas": [
+        {"producto": "JE35NEG", "cantidad": 6, "acabado": "TUB"},
+        {"producto": "RINEG", "cantidad": 2.5, "acabado": "TUB"}]}}
+    nuevo = {"lineas": [{"producto": "JE35NEG", "acabado": "ABI"},
+                        {"producto": "RINEG", "acabado": "TUB"}]}
     res = {"silenciosos": []}
-    with patch.object(service, "acabados_por_producto", return_value={"JE35ACU": "ABI"}), \
+    with patch.object(service, "armar_memo", return_value=nuevo), \
          patch.object(memos_sync.formulas_memos, "actualizar",
                       return_value=(True, "")) as act:
         memos_sync._completar_acabado(memo, res)
-    assert act.call_args.args[1]["lineas"][0]["acabado"] == "ABI"
+    det = act.call_args.args[1]
+    assert [ln["acabado"] for ln in det["lineas"]] == ["ABI", "TUB"]
+    assert det["acabado_v"] == service.ACABADO_VERSION
+    assert det["lineas"][0]["cantidad"] == 6  # la foto no se pisa, sólo el acabado
     assert act.call_args.args[2] is None  # sin alerta
     assert res["silenciosos"] == ["PDCL-1"]
 
 
-def test_el_sync_no_toca_un_memo_que_ya_tiene_acabado_ni_uno_sin_dato():
+def test_el_sync_no_toca_un_memo_ya_al_dia_ni_uno_cuyo_pedido_ya_no_esta():
     from modules.pedidos import memos_sync
-    ya = {"numero": "PDCL-2", "detalle": {"lineas": [{"producto": "X", "acabado": ""}]}}
-    sin = {"numero": "PDCL-3", "detalle": {"lineas": [{"producto": "X"}]}}
-    with patch.object(service, "acabados_por_producto", return_value={}), \
+    al_dia = {"numero": "PDCL-2", "detalle": {"acabado_v": service.ACABADO_VERSION,
+                                             "lineas": [{"producto": "X", "acabado": "TUB"}]}}
+    sin_pedido = {"numero": "PDCL-3", "detalle": {"lineas": [{"producto": "X"}]}}
+    with patch.object(service, "armar_memo", return_value=None), \
          patch.object(memos_sync.formulas_memos, "actualizar") as act:
-        memos_sync._completar_acabado(ya, {"silenciosos": []})
-        memos_sync._completar_acabado(sin, {"silenciosos": []})
+        memos_sync._completar_acabado(al_dia, {"silenciosos": []})
+        memos_sync._completar_acabado(sin_pedido, {"silenciosos": []})
     assert not act.called
 
 
 def test_por_pedido_trae_el_acabado_de_cada_linea():
+    filas = [dict(_FILAS[2], acabado="abi")]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=(_FILAS, True)), \
-         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
-         patch.object(service, "acabados_por_producto", return_value={"PI28NEG": "ABI"}):
+                      return_value=(filas, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
         pedidos, _ = service.por_pedido()
-    p = next(x for x in pedidos if x["numero"] == "PDCL-26401")
-    assert p["lineas"][0]["acabado"] == "ABI"
+    assert pedidos[0]["lineas"][0]["acabado"] == "ABI"
