@@ -270,24 +270,26 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 
 ## Deuda conocida
 
-### [M] `scintela.factura` tiene la historia rota de enero a junio 2026 (medido 11/09)
+### [S] `scintela.factura`: junio 2026 sin cargar + ~90 notas de entrega duplicadas (medido 11/09)
 Se vio al armar "Ventas por mes" del cliente (que por eso lee de Asinfo, no de
-la tabla). Dos problemas, medidos con `/facturas/admin/backfill-asinfo?dry_run=1`
-(no toca nada) y cruzando BED/EEU/CLR:
-- **Faltan documentos**: ene 132 · feb 141 · mar 510 · abr 820 · **may 1.099**
-  (EEU y CLR con mayo en cero) · jun 591; jul 29 (sólo NC) · ago 0. Son las
-  cobradas que el dBase purgó después del backfill del 10/06 y el sync se
-  llevó. Mayo: cierre 295.688 kg, tabla 179.000.
-- **Duplicados**: filas del backfill con `numf = 0` que no matchearon con la
-  fila real (misma fecha e importe): ~33/mes en mar–abr, 71 en may (BED mayo:
-  44 filas, +13.158 kg).
-Afecta al ranking del mes (`/informes/ventas`) y a "Ventas multi-año" para
-esos meses (además excluyen backfill, así que subestiman). NO afecta cartera
-ni balance (esas filas son T con saldo 0). Decisión dueña 11/09: *"no
-deberíamos correr nada más"* — nada se corrió. Cuando se decida: (1) medir de
-nuevo con el dry_run; (2) hace falta una PANTALLA para dar de baja las
-duplicadas (`numf = 0` + misma fecha/importe que otra del cliente), hoy no
-hay; (3) recién después completar con el backfill ene–jun.
+la tabla). Verificado factura por factura el 11/09:
+- **Enero–mayo 2026 incompletos: NO es pendiente.** Decisión de la dueña del
+  30/06 (*"ya no importan las de mayo, dejá de hacer el match para atrás de
+  junio"*): `/facturas/desde-asinfo` tiene piso fijo en el 01/06. Se deja.
+- **Junio 2026: 499 documentos en Asinfo que no están en PC** ($512.320,
+  58.720 kg) según `/facturas/desde-asinfo?desde=2026-06-01&hasta=2026-06-30`
+  (alias-aware). Comprobado: la 001-099-000178565 de WOM (30/06) no existe en
+  PC bajo ningún número/fecha/cliente. Julio y agosto: 0 faltantes. Se carga
+  con el botón "Cargar seleccionadas" de esa misma pantalla — sin script.
+- **~90 duplicados sin número** (`(sin N°)`, tipo N=66 · NCNT=12 · —=12; 67 en
+  mayo, 20 en abril, 3 en junio): el backfill insertó NTEN/NCNT con `numf=0`
+  y no matcheó la fila real. Caso testigo BED: NTEN-10464 (id 32506) y
+  "Factura N° 0" (id 275408), mismo día/kg/importe. Todas T con saldo 0: no
+  tocan cartera ni balance, sólo inflan kg del ranking de abril–mayo. Anular
+  desde la ficha una por una, o hacer una pantalla que las liste y anule en
+  lote con confirmación.
+Ojo: el ranking del mes y "Ventas multi-año" excluyen backfill, así que para
+meses viejos no coinciden con la pantalla del cliente (Asinfo). Aceptado.
 
 ### [S] `/stock/fabricacion-tc` arma el balance entero para un pie de página
 Medido el 02/09 (Tamara: *"¿páginas lentas?"*): la pantalla tarda lo que el
