@@ -7888,7 +7888,12 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
             for ap in (sc.get("aplicaciones") or []):
                 idf = int(ap["id_factura"])
                 imp = round(float(ap.get("importe") or 0), 2)
-                if imp <= 0:
+                # TMT 2026-09-11 (caso CJM): las aplicaciones NEGATIVAS también
+                # se re-aplican. Un cheque que absorbió devoluciones (notas de
+                # crédito) tiene filas con importe < 0 en el snapshot; saltearlas
+                # dejaba las devoluciones abiertas y el cheque sobre-aplicado
+                # (5.372,12 sobre un cheque de 3.411). Sólo se saltea el cero.
+                if abs(imp) < 0.005:
                     continue
                 ya = db.fetch_one(
                     "SELECT 1 FROM scintela.chequesxfact "
