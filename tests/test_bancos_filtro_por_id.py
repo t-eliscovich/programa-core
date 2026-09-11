@@ -110,7 +110,7 @@ def test_pedir_por_id_apaga_los_filtros_que_esconderian_la_fila(cap):
         "%(id_transaccion)s::int IS NOT NULL OR %(hasta)s::date IS NULL",
         "%(id_transaccion)s::int IS NOT NULL OR %(monto_min)s::numeric IS NULL",
         "%(id_transaccion)s::int IS NOT NULL OR %(doc_like)s IS NULL",
-        "%(id_transaccion)s::int IS NOT NULL OR %(cliente_like)s IS NULL",
+        "%(id_transaccion)s::int IS NOT NULL OR (%(cliente_cod)s IS NULL AND %(cliente_like)s IS NULL)",
     ):
         assert apagado in sql, f"no se apaga: {apagado}"
 
@@ -315,3 +315,21 @@ def test_sin_id_la_pantalla_se_comporta_igual_que_siempre(pantalla):
     assert "id_tx" not in params_agg
     assert "t.fecha >= %(desde)s::date" in sql_agg
     assert ctx["saldo_banco"] == SALDO_DEL_BANCO
+
+
+# TMT 2026-09-11 (dueña: "solo el código de che ALI es código ALI"): "ali"
+# traía a ROBALINO, NATALIA y GONZALINA por substring en el nombre.
+def test_filtro_cliente_corto_es_codigo_exacto_y_largo_busca_nombre():
+    assert bq.filtro_cliente("ali") == ("ALI", None)
+    assert bq.filtro_cliente(" vga ") == ("VGA", None)
+    assert bq.filtro_cliente("textinort") == (None, "%TEXTINORT%")
+    assert bq.filtro_cliente("") == (None, None)
+    assert bq.filtro_cliente(None) == (None, None)
+
+
+def test_movimientos_con_codigo_manda_igualdad_no_like(cap):
+    bq.movimientos(NO_BANCO, cliente="ali")
+    sql, params = cap.principal()
+    assert params["cliente_cod"] == "ALI"
+    assert params["cliente_like"] is None
+    assert "UPPER(TRIM(COALESCE(c.codigo_cli,''))) = %(cliente_cod)s" in sql

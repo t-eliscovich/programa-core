@@ -428,6 +428,26 @@ def bancos_operativos() -> list[dict]:
     ) or []
 
 
+# TMT 2026-09-11 (dueña): filtro "Cliente (cheque)" de /bancos. Hasta 3
+# letras = CÓDIGO exacto; más largo = substring en el nombre. Compartido
+# entre queries.movimientos y el AGG de views.movimientos para que la lista
+# y el "Total filtrado" cuenten lo mismo.
+CLIENTE_MATCH_SQL = (
+    "((%(cliente_cod)s IS NOT NULL AND UPPER(TRIM(COALESCE(c.codigo_cli,''))) = %(cliente_cod)s)"
+    " OR (%(cliente_like)s IS NOT NULL AND UPPER(COALESCE(cli.nombre,'')) LIKE %(cliente_like)s))"
+)
+
+
+def filtro_cliente(texto: str | None) -> tuple[str | None, str | None]:
+    """(codigo_exacto, nombre_like) a partir de lo que se tipeó en el filtro."""
+    t = (texto or "").strip().upper()
+    if not t:
+        return None, None
+    if len(t) <= 3:
+        return t, None
+    return None, f"%{t}%"
+
+
 # TMT 2026-08-14 — El signo de un movimiento NO está en la columna. `importe`
 # viene POSITIVO por convención (y a veces negativo en las filas legacy del
 # dBase, donde un "ND −44.091" es un reverso que SUBE el saldo); el que decide
@@ -490,7 +510,12 @@ def movimientos(
     `no_banco` NO se apaga: si el id pedido es de OTRO banco la lista sale
     vacía, que es la verdad. Mostrar la fila igual sería mentirle a la URL.
     """
-    cliente_like = f"%{(cliente or '').strip().upper()}%" if cliente else None
+    # TMT 2026-09-11 (dueña: "solo el código de che ALI es código ALI"): un
+    # texto de hasta 3 letras es un CÓDIGO y matchea exacto — "ali" ya no
+    # trae a ROBALINO, NATALIA ni GONZALINA. Más de 3 letras busca en el
+    # nombre del cliente (substring), que es lo que uno quiere al tipear
+    # "textinort".
+    cliente_cod, cliente_like = filtro_cliente(cliente)
     doc_like = f"%{(doc_num or '').strip().upper()}%" if doc_num else None
     id_tx = int(id_transaccion) if id_transaccion else None
     rows = db.fetch_all(
@@ -554,19 +579,18 @@ def movimientos(
                OR %(doc_like)s IS NULL OR
                UPPER(COALESCE(NULLIF(TRIM(t.numreferencia_manual),''), t.numreferencia::text, '')) LIKE %(doc_like)s)
           AND (%(id_transaccion)s::int IS NOT NULL
-               OR %(cliente_like)s IS NULL
+               OR (%(cliente_cod)s IS NULL AND %(cliente_like)s IS NULL)
                -- TMT 2026-07-22 (dueña): el código Proveedor/Cliente que se
                -- carga a mano en un movimiento (columna prov, ej "CG3") ahora
                -- también matchea el filtro — antes solo encontraba cheques.
-               OR UPPER(COALESCE(t.prov,'')) LIKE %(cliente_like)s
+               OR (%(cliente_cod)s IS NOT NULL AND UPPER(TRIM(COALESCE(t.prov,''))) = %(cliente_cod)s)
                OR EXISTS (
                 SELECT 1
                   FROM scintela.chequextransaccion cxt
                   JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque
                   LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli
                  WHERE cxt.id_transaccion = t.id_transaccion
-                   AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cliente_like)s
-                        OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cliente_like)s)
+                   AND """ + CLIENTE_MATCH_SQL + """
           ))
         ORDER BY t.fecha DESC, t.id_transaccion DESC
         LIMIT %(limite)s
@@ -581,6 +605,7 @@ def movimientos(
             "monto_neg": bool(monto_negativo),
             "doc_like": doc_like,
             "cliente_like": cliente_like,
+            "cliente_cod": cliente_cod,
             "id_transaccion": id_tx,
         },
     )

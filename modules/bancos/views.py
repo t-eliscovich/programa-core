@@ -1108,15 +1108,18 @@ def movimientos(no_banco):
                 )
                 params["doc_like"] = f"%{doc_num_filtro.upper()}%"
             if cliente_filtro:
+                # Misma regla que queries.movimientos (código exacto / nombre).
+                _cod, _like = queries.filtro_cliente(cliente_filtro)
                 where_filt.append(
-                    "EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt "
+                    "((%(cliente_cod)s IS NOT NULL AND UPPER(TRIM(COALESCE(t.prov,''))) = %(cliente_cod)s) "
+                    "OR EXISTS (SELECT 1 FROM scintela.chequextransaccion cxt "
                     "JOIN scintela.cheque c ON c.id_cheque = cxt.id_cheque "
                     "LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli "
                     "WHERE cxt.id_transaccion = t.id_transaccion "
-                    "AND (UPPER(COALESCE(cli.nombre,'')) LIKE %(cli_like)s "
-                    "OR UPPER(COALESCE(c.codigo_cli,'')) LIKE %(cli_like)s))"
+                    "AND " + queries.CLIENTE_MATCH_SQL + "))"
                 )
-                params["cli_like"] = f"%{cliente_filtro.upper()}%"
+                params["cliente_cod"] = _cod
+                params["cliente_like"] = _like
             if conciliado_filtro == "no":
                 # Excluir conciliados PC + conciliados dBase (stat='*')
                 where_filt.append("TRIM(COALESCE(t.stat,'')) <> '*'")
