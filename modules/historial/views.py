@@ -1735,6 +1735,79 @@ _PERMISO_REVERSO_BATCH = {
 }
 
 
+# Filas del lote que cuelgan de UN cheque (origen_id = id_cheque en las tres).
+_TIPOS_DE_CHEQUE = {"cheque_creado", "cheque_aplicado_a_factura", "cheque_anticipo_espejo"}
+
+
+def _cheques_del_batch(rows: list[dict]) -> list[dict]:
+    """Los cheques del lote, uno por `cheque_creado`, con lo que se anula
+    junto con cada uno (aplicaciones a facturas, espejo de anticipo) y el
+    cliente/importe/doc banco del cheque. Best-effort: si la lectura del
+    cheque falla, la fila sale igual con lo que dice el mov_doble.
+    TMT 2026-09-11."""
+    creados = [r for r in rows if r.get("tipo") == "cheque_creado"]
+    if not creados:
+        return []
+    ids = [int(r["origen_id"]) for r in creados if r.get("origen_id")]
+    info: dict[int, dict] = {}
+    try:
+        if ids:
+            ph = ", ".join(["%s"] * len(ids))
+            for c in db.fetch_all(
+                f"SELECT c.id_cheque, c.codigo_cli, c.no_cheque, c.importe, "
+                f"c.doc_banco, c.stat, cli.nombre AS cliente_nombre "
+                f"FROM scintela.cheque c "
+                f"LEFT JOIN scintela.cliente cli ON cli.codigo_cli = c.codigo_cli "
+                f"WHERE c.id_cheque IN ({ph})",
+                tuple(ids),
+            ) or []:
+                info[int(c["id_cheque"])] = c
+    except Exception:  # noqa: BLE001
+        pass
+    out = []
+    for r in creados:
+        idc = int(r.get("origen_id") or 0)
+        c = info.get(idc) or {}
+        aplic = [
+            x for x in rows
+            if x.get("tipo") == "cheque_aplicado_a_factura"
+            and int(x.get("origen_id") or 0) == idc
+        ]
+        espejo = any(
+            x.get("tipo") == "cheque_anticipo_espejo"
+            and int(x.get("origen_id") or 0) == idc
+            for x in rows
+        )
+        out.append({
+            "id_cheque": idc,
+            "codigo_cli": (c.get("codigo_cli") or "").strip(),
+            "cliente_nombre": (c.get("cliente_nombre") or "").strip(),
+            "no_cheque": (c.get("no_cheque") or "").strip(),
+            "doc_banco": (c.get("doc_banco") or "").strip(),
+            "importe": float(c.get("importe") if c.get("importe") is not None else (r.get("importe") or 0)),
+            "concepto": r.get("concepto") or "",
+            "n_aplicaciones": len(aplic),
+            "es_anticipo": espejo,
+        })
+    return out
+
+
+def _cheques_elegidos(rows: list[dict], form) -> set[int] | None:
+    """Ids de cheque tildados en la confirmación. None = el formulario no
+    trae el campo (lote sin cheques, o cliente viejo): se reversa todo."""
+    if not any(r.get("tipo") == "cheque_creado" for r in rows):
+        return None
+    if "ch" not in form:
+        return None
+    out: set[int] = set()
+    for v in form.getlist("ch"):
+        try:
+            out.add(int(v))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
 @historial_bp.route("/historial/batch/<batch_id>/reverso", methods=["GET", "POST"])
 @requiere_login
 def reversar_batch(batch_id: str):
@@ -1814,6 +1887,7 @@ def reversar_batch(batch_id: str):
             "historial/batch_reverso_confirmar.html",
             batch_id=batch_id,
             rows=rows,
+            cheques=_cheques_del_batch(rows),
             total=sum(float(r.get("importe") or 0) for r in rows),
         )
 
@@ -1821,6 +1895,25 @@ def reversar_batch(batch_id: str):
     motivo = (request.form.get("motivo") or "").strip()
     # TMT 2026-05-21 dueña: motivo opcional sin minlen — antes pedía 10+
     # caracteres obligatorios.
+
+    # TMT 2026-09-11 (dueña, caso VGA del 10/09): Alex cargó DOS anticipos de
+    # VGA en el mismo formulario (4.871,54 y 2.162,30), quiso deshacer el de
+    # 2.162,30 y el reverso del lote se llevó los dos — el de 4.871,54 nunca
+    # se repuso y el banco lo tiene pendiente. Ahora la confirmación lista
+    # los cheques del lote con un tilde cada uno y acá se anulan SOLO los
+    # elegidos (sus aplicaciones y su espejo van con cada cheque). Sin el
+    # campo `ch` (lotes sin cheques, o un POST viejo) se reversa todo, como
+    # siempre.
+    elegidos = _cheques_elegidos(rows, request.form)
+    if elegidos is not None:
+        if not elegidos:
+            flash("No marcaste ningún cheque para anular.", "warn")
+            return redirect(url_for("historial.reversar_batch", batch_id=batch_id))
+        rows = [
+            r for r in rows
+            if r.get("tipo") not in _TIPOS_DE_CHEQUE
+            or int(r.get("origen_id") or 0) in elegidos
+        ]
 
     usuario = (g.user or {}).get("username", "web")
 
@@ -1871,10 +1964,18 @@ def reversar_batch(batch_id: str):
                         conn=conn,
                     )
 
-            flash(
-                f"Batch reversado: {len(rows)} movimientos anulados juntos.",
-                "ok",
-            )
+            n_ch = sum(1 for r in rows if r.get("tipo") == "cheque_creado")
+            if n_ch and elegidos is not None:
+                flash(
+                    f"Anulado{'s' if n_ch != 1 else ''}: {n_ch} cheque{'s' if n_ch != 1 else ''} "
+                    f"del lote ({len(rows)} movimientos).",
+                    "ok",
+                )
+            else:
+                flash(
+                    f"Batch reversado: {len(rows)} movimientos anulados juntos.",
+                    "ok",
+                )
     except Exception as e:
         flash_exc("No pude reversar el batch (rollback total)", e)
 

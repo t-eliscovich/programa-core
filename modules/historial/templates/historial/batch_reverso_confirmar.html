@@ -47,6 +47,7 @@
   .rv-go{background:#e11d48;color:#fff;border:none;border-radius:9px;padding:9px 16px;
          font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:6px;}
   .rv-go:hover{background:#be123c;}
+  .rv-go:disabled{background:#cbd5e1;cursor:not-allowed;}
 </style>
 
 {% set ns = namespace(act=none) %}
@@ -117,6 +118,59 @@
     {% endif %}
   </div>
 
+  {% elif cheques %}
+  {# ---------- Lote de cheques: se elige cuáles anular ----------
+     TMT 2026-09-11 (dueña, caso VGA 10/09): dos cheques cargados juntos, el
+     reverso del lote se llevaba los dos. Ahora cada cheque tiene su tilde. #}
+  <div class="rv-h">Anular cheques cargados juntos</div>
+  <div class="rv-sub">
+    Este lote tiene {{ cheques | length }} cheque{{ '' if cheques|length == 1 else 's' }}. Destildá el que quieras
+    conservar: se anulan sólo los tildados, con sus aplicaciones a facturas y su
+    espejo de anticipo. Todo junto, en una sola transacción.
+  </div>
+  <div class="rv-card">
+    <div class="rv-grp">
+      <div class="rv-blist" style="max-height:none;">
+        {% for c in cheques %}
+        <label class="rv-item" style="cursor:pointer;">
+          <input type="checkbox" name="ch" value="{{ c.id_cheque }}" form="rv-form" checked
+                 class="rv-ch" data-importe="{{ '%.2f'|format(c.importe) }}"
+                 style="flex:none;width:15px;height:15px;accent-color:#e11d48;transform:translateY(2px);">
+          <span class="rv-txt" style="white-space:normal;">
+            <span class="tag">{{ c.codigo_cli or '—' }}</span>
+            {% if c.cliente_nombre %}{{ c.cliente_nombre }}{% else %}{{ c.concepto | cleanstr }}{% endif %}
+            <span class="m">
+              {% if c.es_anticipo %}· anticipo{% endif %}
+              {% if c.no_cheque %}· ch {{ c.no_cheque }}{% endif %}
+              {% if c.doc_banco %}· doc banco {{ c.doc_banco }}{% endif %}
+              {% if c.n_aplicaciones %}· {{ c.n_aplicaciones }} factura{{ '' if c.n_aplicaciones == 1 else 's' }} se desaplican{% endif %}
+            </span>
+          </span>
+          <span class="rv-amt">$ {{ c.importe | num_es }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="rv-grp" style="display:flex;justify-content:space-between;font-size:12.5px;color:#64748b;">
+      <span>Se anulan <strong id="rv-n">{{ cheques | length }}</strong> de {{ cheques | length }}</span>
+      <span>total <strong id="rv-tot">$ {{ (cheques | sum(attribute='importe')) | num_es }}</strong></span>
+    </div>
+  </div>
+  <script>
+    (function(){
+      var cbs = document.querySelectorAll('.rv-ch');
+      function fmt(n){ return '$ ' + n.toLocaleString('de-DE',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+      function upd(){
+        var n=0, t=0;
+        cbs.forEach(function(cb){ if(cb.checked){ n++; t+=parseFloat(cb.dataset.importe)||0; } });
+        document.getElementById('rv-n').textContent = n;
+        document.getElementById('rv-tot').textContent = fmt(t);
+        var go = document.getElementById('rv-go'); if (go) go.disabled = (n===0);
+      }
+      cbs.forEach(function(cb){ cb.addEventListener('change', upd); });
+    })();
+  </script>
+
   {% else %}
   {# ---------- Vista genérica: batch de varios movimientos ---------- #}
   <div class="rv-h">Reversar operación</div>
@@ -145,7 +199,7 @@
   </div>
   {% endif %}
 
-  <form method="post" style="margin-top:14px;">
+  <form method="post" style="margin-top:14px;" id="rv-form">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label style="display:block;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#94a3b8;margin-bottom:5px;">
       Motivo <span style="text-transform:none;font-weight:400;">(opcional)</span>
@@ -154,7 +208,7 @@
               placeholder="Opcional — queda en el historial si lo escribís."></textarea>
     <div class="rv-foot">
       <a href="{{ url_for('historial.lista') }}" class="rv-cancel">← Cancelar</a>
-      <button type="submit" class="rv-go">↺ Deshacer{% if ns.act %} activación{% endif %}</button>
+      <button type="submit" class="rv-go" id="rv-go">↺ {% if ns.act %}Deshacer activación{% elif cheques %}Anular los tildados{% else %}Deshacer{% endif %}</button>
     </div>
   </form>
 </div>
