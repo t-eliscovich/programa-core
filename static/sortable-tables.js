@@ -68,18 +68,26 @@
   function parseDate(raw) {
     if (!raw) return NaN;
     const s = String(raw).trim();
+    // TMT 2026-09-11: la HORA también cuenta. Antes se leía sólo el día y
+    // "31/08/2026 19:00" y "31/08/2026 08:46" empataban: dentro del mismo
+    // día las filas quedaban en cualquier orden (Novedades, Historial…).
+    // Acepta "dd/mm/yyyy", "dd/mm/yyyy HH:MM", "dd/mm/yyyy HH:MM:SS",
+    // "yyyy-mm-dd" y "yyyy-mm-dd HH:MM[:SS]" (con T o espacio).
+    const HORA = /(?:[ T](\d{1,2}):(\d{2})(?::(\d{2}))?)?/;
     // dd/mm/yyyy
-    let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    let m = s.match(new RegExp('^(\\d{1,2})\\/(\\d{1,2})\\/(\\d{4})' + HORA.source));
     if (m) {
       return new Date(
-        Number(m[3]), Number(m[2]) - 1, Number(m[1])
+        Number(m[3]), Number(m[2]) - 1, Number(m[1]),
+        Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0)
       ).getTime();
     }
     // yyyy-mm-dd
-    m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
+    m = s.match(new RegExp('^(\\d{4})-(\\d{1,2})-(\\d{1,2})' + HORA.source));
     if (m) {
       return new Date(
-        Number(m[1]), Number(m[2]) - 1, Number(m[3])
+        Number(m[1]), Number(m[2]) - 1, Number(m[3]),
+        Number(m[4] || 0), Number(m[5] || 0), Number(m[6] || 0)
       ).getTime();
     }
     return NaN;
