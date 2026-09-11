@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% from "_informes_design.html" import informes_styles, informes_page, informes_kpi_row %}
+{# TMT 2026-09-11 — pedido de Andrés: ventas por mes de UN cliente, kilos y
+   dólares, último año. Misma hoja que "Ventas del año" (ventas_anio.html)
+   pero filtrada por cliente y con la ventana corriendo hacia atrás desde el
+   mes en curso. Las barras son la misma idea que el gráfico del flujo:
+   un vistazo dice qué meses pesan. #}
+{% set _cli = data.cliente or {} %}
+{% block title %}Ventas por mes · {{ codigo_cli }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <a href="{{ url_for('informes.estado_cuenta', codigo_cli=codigo_cli) }}" class="hover:underline text-slate-500">{{ codigo_cli }}</a> / <strong>Ventas por mes</strong>{% endblock %}
+
+{% block head_extra %}{{ informes_styles() }}
+<style>
+  .vc-bar { position: relative; height: 10px; min-width: 60px; background: rgb(241 245 249); border-radius: 3px; overflow: hidden; }
+  .vc-bar > span { position: absolute; inset: 0 auto 0 0; background: rgb(37 99 235); border-radius: 3px; }
+  .vc-bar.kg > span { background: rgb(15 118 110); }
+  .vc-cero td { color: rgb(148 163 184); }
+  .vc-cambiar { display: flex; align-items: center; gap: .4rem; }
+  .vc-cambiar input { width: 5.5rem; font-family: ui-monospace, monospace; text-transform: uppercase; }
+  @media print { .vc-bar { display: none; } }
+</style>
+{% endblock %}
+
+{% block content %}
+{% set _actions %}
+  <a href="{{ url_for('informes.estado_cuenta', codigo_cli=codigo_cli) }}"
+     class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100"
+     title="Estado de cuenta del cliente">← Estado de cuenta</a>
+  {% if meses == 12 %}
+    <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli, meses=24) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver 24 meses</a>
+  {% else %}
+    <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver 12 meses</a>
+  {% endif %}
+  <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli, meses=meses, export='csv') }}"
+     class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
+  <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
+{% endset %}
+
+{% call informes_page(
+    titulo=codigo_cli ~ " · " ~ (_cli.nombre or ""),
+    descripcion="Ventas por mes de los últimos " ~ meses ~ " meses (" ~ (data.desde or "") ~ " a " ~ (data.hasta or "") ~ ") · kilos, precio promedio U$/kg, importe y acumulado. Facturas vivas, sin anuladas.",
+    actions_safe=_actions,
+) %}
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      <strong>Error:</strong> <code class="font-mono">{{ error }}</code>
+    </div>
+  {% endif %}
+
+  {{ informes_kpi_row([
+    {"label": "Kg (" ~ meses ~ " meses)", "value": data.total_kg | num_es(0)},
+    {"label": "Precio promedio", "value": (data.precio_prom | num_es(2)) ~ ' U$/kg'},
+    {"label": "Importe total", "value": data.total_importe | money_es, "primary": true},
+    {"label": "Meses con venta", "value": (data.meses_con_venta or 0) ~ " de " ~ meses},
+  ]) }}
+
+  {% set _max_kg = data.filas | map(attribute='kg') | max if data.filas else 0 %}
+  {% set _max_imp = data.filas | map(attribute='importe') | max if data.filas else 0 %}
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
+        <tr>
+          <th>Mes</th>
+          <th class="num">Kg</th>
+          <th class="no-print" style="width: 14%;" data-no-sort></th>
+          <th class="num">Precio U$/kg</th>
+          <th class="num">Importe</th>
+          <th class="no-print" style="width: 14%;" data-no-sort></th>
+          <th class="num" data-no-sort>Acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in data.filas %}
+        <tr class="{{ 'vc-cero' if not r.kg and not r.importe else '' }}">
+          <td>
+            <a href="{{ url_for('informes.ventas', anio=r.anio, mes=r.mes_num) }}"
+               class="hover:text-blue-600 hover:underline"
+               title="Ranking de clientes de {{ r.mes_nombre }} {{ r.anio }}">{{ r.mes_nombre }} {{ r.anio }}</a>
+          </td>
+          <td class="num">{{ r.kg | num_es(0) }}</td>
+          <td class="no-print"><div class="vc-bar kg"><span style="width: {{ ((r.kg / _max_kg * 100) if _max_kg else 0) | round(1) }}%;"></span></div></td>
+          <td class="num muted">{{ r.precio | num_es(2) if r.kg else '—' }}</td>
+          <td class="num">{{ r.importe | money_es }}</td>
+          <td class="no-print"><div class="vc-bar"><span style="width: {{ ((r.importe / _max_imp * 100) if _max_imp and r.importe > 0 else 0) | round(1) }}%;"></span></div></td>
+          <td class="num" style="font-weight: 600;">{{ r.acum | money_es }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="7" class="info-empty">Sin datos.</td></tr>
+        {% endfor %}
+        {% if data.filas %}
+        <tr class="total no-sort">
+          <td>TOTAL</td>
+          <td class="num">{{ data.total_kg | num_es(0) }}</td>
+          <td class="no-print"></td>
+          <td class="num">{{ data.precio_prom | num_es(2) }}</td>
+          <td class="num">{{ data.total_importe | money_es }}</td>
+          <td class="no-print"></td>
+          <td class="num"></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  {# Cambiar de cliente sin volver atrás: código → Enter. #}
+  <form class="vc-cambiar mt-4 text-sm text-slate-600 no-print" method="get"
+        action="{{ url_for('informes.ventas_cliente_landing') }}">
+    <label for="vc-otro">Otro cliente:</label>
+    <input id="vc-otro" name="codigo" class="border border-slate-300 rounded px-2 py-1"
+           placeholder="Código" maxlength="6" autocomplete="off">
+    <input type="hidden" name="meses" value="{{ meses }}">
+    <button type="submit" class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">Ver</button>
+  </form>
+
+{% endcall %}
+{% endblock %}

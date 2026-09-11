@@ -11133,6 +11133,114 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
     }
 
 
+def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
+    """Ventas de UN cliente, mes a mes, los últimos `meses` meses (kg + US$).
+
+    TMT 2026-09-11 — pedido de Andrés por WhatsApp: *"me gustaría poder ver
+    las ventas por mes del último año de un cliente — kilos y dólares"*.
+
+    Misma fuente y MISMO filtro que el ranking del mes (`ventas_clientes_del_mes`):
+    `scintela.factura` viva (stat <> 'X') y sin el backfill de Asinfo, así el
+    renglón de un mes acá coincide con la fila del cliente en el ranking de ese
+    mes. Los meses sin ventas salen en cero (la grilla siempre tiene `meses`
+    filas, del más viejo al más nuevo, terminando en el mes en curso).
+
+    Devuelve {} si el código no existe. Si existe:
+        {
+          "cliente": {"codigo_cli", "nombre"},
+          "desde": "mm/aaaa", "hasta": "mm/aaaa",
+          "filas": [{"anio", "mes_num", "mes_nombre", "kg", "importe",
+                     "precio", "acum"}...],
+          "total_kg", "total_importe", "precio_prom", "meses_con_venta",
+        }
+    """
+
+    from modules.iniciales.queries import MESES_ES
+
+    cod = (codigo_cli or "").strip().upper()
+    if not cod:
+        return {}
+    meses = max(1, min(int(meses or 12), 60))
+
+    cliente = db.fetch_one(
+        """
+        SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli,
+               COALESCE(NULLIF(TRIM(nombre), ''), UPPER(TRIM(codigo_cli))) AS nombre
+          FROM scintela.cliente
+         WHERE UPPER(TRIM(codigo_cli)) = %s
+         LIMIT 1
+        """,
+        (cod,),
+    )
+    if not cliente:
+        return {}
+
+    hoy = today_ec()
+    # Primer día del mes más viejo de la ventana (mes en curso incluido).
+    idx_fin = hoy.year * 12 + (hoy.month - 1)
+    idx_ini = idx_fin - (meses - 1)
+    desde = date(idx_ini // 12, idx_ini % 12 + 1, 1)
+
+    rows = (
+        db.fetch_all(
+            """
+        SELECT EXTRACT(YEAR  FROM f.fecha)::int AS anio,
+               EXTRACT(MONTH FROM f.fecha)::int AS mes_num,
+               COALESCE(SUM(f.kg), 0)           AS kg,
+               COALESCE(SUM(f.importe), 0)      AS importe
+          FROM scintela.factura f
+         WHERE UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %s
+           AND f.fecha >= %s
+           AND COALESCE(f.stat, '') <> 'X'
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+         GROUP BY 1, 2
+        """,
+            (cod, desde),
+        )
+        or []
+    )
+    por_mes = {(int(r["anio"]), int(r["mes_num"])): r for r in rows}
+
+    filas: list[dict] = []
+    acum = 0.0
+    total_kg = 0.0
+    total_importe = 0.0
+    meses_con_venta = 0
+    for idx in range(idx_ini, idx_fin + 1):
+        yy, mm = idx // 12, idx % 12 + 1
+        r = por_mes.get((yy, mm)) or {}
+        kg = float(r.get("kg") or 0)
+        importe = float(r.get("importe") or 0)
+        if kg or importe:
+            meses_con_venta += 1
+        acum += importe
+        total_kg += kg
+        total_importe += importe
+        filas.append(
+            {
+                "anio": yy,
+                "mes_num": mm,
+                "mes_nombre": MESES_ES[mm - 1],
+                "kg": kg,
+                "importe": importe,
+                "precio": (importe / kg) if kg > 0 else 0.0,
+                "acum": acum,
+            }
+        )
+
+    return {
+        "cliente": {"codigo_cli": cliente["codigo_cli"], "nombre": cliente["nombre"]},
+        "meses": meses,
+        "desde": "%02d/%d" % (desde.month, desde.year),
+        "hasta": "%02d/%d" % (hoy.month, hoy.year),
+        "filas": filas,
+        "total_kg": total_kg,
+        "total_importe": total_importe,
+        "precio_prom": (total_importe / total_kg) if total_kg > 0 else 0.0,
+        "meses_con_venta": meses_con_venta,
+    }
+
+
 # ---------------------------------------------------------------------------
 # TOTALIZAR estado de cuenta — re-liquidación FIFO de la cuenta de un cliente
 # ---------------------------------------------------------------------------

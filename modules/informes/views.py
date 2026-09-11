@@ -2750,6 +2750,73 @@ def ventas():
     )
 
 
+@informes_bp.route("/ventas/cliente")
+@requiere_login
+@requiere_permiso("informes.ver")
+def ventas_cliente_landing():
+    """Sin código en la URL: ?codigo=XYZ redirige a la pantalla del cliente."""
+    codigo = (request.args.get("codigo") or "").strip().upper()
+    if codigo:
+        return redirect(
+            url_for(
+                "informes.ventas_cliente",
+                codigo_cli=codigo,
+                meses=request.args.get("meses") or None,
+            )
+        )
+    return redirect(url_for("informes.estado_cuenta_landing"))
+
+
+@informes_bp.route("/ventas/cliente/<codigo_cli>")
+@requiere_login
+@requiere_permiso("informes.ver")
+def ventas_cliente(codigo_cli):
+    """Ventas por mes de UN cliente — kilos y dólares, últimos 12 meses.
+
+    TMT 2026-09-11 — pedido de Andrés: *"ver las ventas por mes del último año
+    de un cliente, kilos y dólares"*. Se llega desde el estado de cuenta del
+    cliente y desde el código en el ranking del mes. `?meses=24` estira la
+    ventana; `?export=csv` baja la grilla.
+    """
+    codigo_up = (codigo_cli or "").strip().upper()
+    try:
+        meses = int(request.args.get("meses") or 12)
+    except (TypeError, ValueError):
+        meses = 12
+    meses = max(1, min(meses, 60))
+    data, error = _safe(lambda: queries.ventas_cliente_por_mes(codigo_up, meses), {})
+    if not error and not data:
+        abort(404)
+    if request.args.get("export") == "csv" and data:
+        return csv_response(
+            [
+                {
+                    "mes": "%02d/%d" % (r["mes_num"], r["anio"]),
+                    "kg": r["kg"],
+                    "precio": r["precio"],
+                    "importe": r["importe"],
+                    "acum": r["acum"],
+                }
+                for r in data["filas"]
+            ],
+            columnas=[
+                ("mes", "Mes"),
+                ("kg", "Kg"),
+                ("precio", "Precio U$/kg"),
+                ("importe", "Importe"),
+                ("acum", "Acumulado"),
+            ],
+            filename=f"ventas_{codigo_up}.csv",
+        )
+    return render_template(
+        "informes/ventas_cliente.html",
+        data=data or {},
+        codigo_cli=codigo_up,
+        meses=meses,
+        error=error,
+    )
+
+
 # TMT 2026-05-19 v8 — pantalla multi-mes eliminada (pedido dueña).
 # La query `ventas_mensuales` y el template `informes/ventas.html`
 # quedan en el repo por si se necesitan más adelante, pero ya no hay

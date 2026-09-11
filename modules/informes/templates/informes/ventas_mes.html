@@ -127,7 +127,7 @@
             {% for f in col %}
               <tr>
                 <td class="ord">{{ f.orden }}</td>
-                <td class="cli">{{ f.codigo_cli }}</td>
+                <td class="cli"><a href="{{ url_for('informes.ventas_cliente', codigo_cli=f.codigo_cli) }}" class="hover:underline" title="Ventas por mes de {{ f.codigo_cli }}">{{ f.codigo_cli }}</a></td>
                 <td class="num">{{ f.kg | num_es(0) }}</td>
                 <td class="num">{{ f.monto | num_es(0) }}</td>
                 <td class="num">{{ '%.1f' % f.pct }}</td>

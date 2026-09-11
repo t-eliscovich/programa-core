@@ -509,6 +509,15 @@
         {% include "informes/_ec_boton_whatsapp.html" %}
       {% endwith %}
 
+      {# TMT 2026-09-11 — pedido de Andrés: las ventas por mes del cliente
+         (kilos y dólares, último año). Sólo lee, así que va con los botones
+         neutros, antes del separador que abre las acciones que escriben. #}
+      {% if tiene_permiso('informes.ver') %}
+      <a class="ec-btn"
+         href="{{ url_for('informes.ventas_cliente', codigo_cli=data.cliente.codigo_cli) }}"
+         title="Kilos y dólares facturados por mes, últimos 12 meses">Ventas por mes</a>
+      {% endif %}
+
       <span class="ec-sep"></span>
 
       {# TMT 2026-07-06 (dueña): TOTALIZAR — re-liquidación FIFO de la cuenta
