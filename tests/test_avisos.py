@@ -600,3 +600,13 @@ def test_archivar_sigue_siendo_global_a_proposito():
         avisos.queries.archivar(7, "tamara")
     assert "UPDATE scintela.aviso" in e.call_args[0][0]
     assert "aviso_leido" not in e.call_args[0][0]
+
+
+def test_la_lista_ordena_por_la_fecha_real_no_por_el_texto_dd_mm():
+    # El SELECT exporta TO_CHAR(...) AS creado_en; un ORDER BY creado_en pelado
+    # ordena por ese texto (31/08 > 31/07 > 11/09). Tiene que ir calificado.
+    with patch.object(avisos.queries.db, "fetch_all", return_value=[]) as f:
+        avisos.queries.listar(solo_no_leidos=False, limite=5)
+    sql = f.call_args[0][0]
+    assert "ORDER BY aviso.creado_en DESC" in sql
+    assert "ORDER BY creado_en DESC" not in sql

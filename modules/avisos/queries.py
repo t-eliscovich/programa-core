@@ -228,7 +228,12 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
                          ON al.id_aviso = aviso.id_aviso
                         AND al.usuario = %s''' if usr else ""}
              {("WHERE " + " AND ".join(where)) if where else ""}
-             ORDER BY creado_en DESC, {col_id} DESC
+             -- "aviso.creado_en" CALIFICADO, no "creado_en": arriba se
+             -- exporta un TO_CHAR ... AS creado_en, y Postgres resuelve el
+             -- ORDER BY por el alias de salida (texto 'DD/MM/YYYY HH:MI').
+             -- Así ordenaba por el DÍA del mes como texto: 31/08 arriba,
+             -- después 31/07, y lo del 11/09 quedaba enterrado (Tamara 11/09).
+             ORDER BY aviso.creado_en DESC, {col_id} DESC
              LIMIT %s
             """,
             tuple(params),
