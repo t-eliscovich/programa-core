@@ -11199,7 +11199,8 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
          WHERE UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %s
            AND f.fecha >= %s
            AND COALESCE(f.stat, '') <> 'X'
-           -- SIN excluir asinfo-backfill: acá es historia, no un delta live.
+           -- historia-del-cliente-incluye-backfill: acá es historia, no un
+           -- delta live (ver whitelist en test_no_backfill_filter_balance).
          GROUP BY 1, 2
         """,
             (cod, desde),
