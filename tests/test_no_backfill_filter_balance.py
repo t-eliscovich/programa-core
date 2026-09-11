@@ -68,11 +68,6 @@ def test_balance_queries_use_no_backfill_filter():
         # propósito (kg físicas reales para stock). Contract test espejo:
         # test_ventas_mes_corriente_kg_fisico_NO_filtra_backfill.
         "kg-fisico-incluye-todo",
-        # ventas_cliente_por_mes(): la HISTORIA de un cliente, mes a mes. Las
-        # filas asinfo-backfill son la única historia anterior a mediados de
-        # 2026 (el dBase purgaba las cobradas); excluirlas dejaba oct/2025–
-        # may/2026 en cero (Tamara, 11/09). No entra al balance ni a un delta.
-        "historia-del-cliente-incluye-backfill",
     )
 
     failures: list[str] = []

@@ -11139,29 +11139,39 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     TMT 2026-09-11 — pedido de Andrés por WhatsApp: *"me gustaría poder ver
     las ventas por mes del último año de un cliente — kilos y dólares"*.
 
-    Fuente: `scintela.factura`, todo lo que no esté ANULADO (stat <> 'X') —
-    las totalizadas (T) SÍ entran: son ventas cobradas, y un año de historia
-    es casi todo eso. Y a diferencia de los agregados "live" (ranking del mes,
-    stock, flujo), acá NO se excluye `usuario_crea = 'asinfo-backfill'`: esas
-    filas son las facturas históricas recuperadas de Asinfo (el dBase purgaba
-    las cobradas), o sea la ÚNICA historia que hay antes de mediados de 2026.
-    Excluirlas dejaba oct/2025–may/2026 en cero (Tamara, 11/09: *"me suena
-    que los datos están mal… por ahí borraste las totalizadas"*). El backfill
-    se insertó deduplicando contra lo que ya estaba (numf_completo o
-    numf+cliente+fecha), así que sumar todo no cuenta dos veces.
+    ⭐ La fuente es ASINFO (la card de facturas, vía `facturas_periodo`), no
+    `scintela.factura`. Se probó primero con la tabla propia y la historia
+    salía rota de dos maneras: faltan facturas de enero a junio de 2026 (las
+    que el dBase purgó al cobrarse y el sync se llevó — mayo tiene el 60 %) y
+    hay ~100 filas duplicadas del backfill sin número (BED, mayo: 44). Tamara,
+    11/09: *"no deberíamos correr nada más… necesito algo fácil"*. Asinfo no
+    purga, no duplica y es de donde salen las facturas del programa: es la
+    historia completa sin arreglar nada.
+
+    Mismos documentos y mismo signo que el resto de la app (factura +, NC y
+    devolución −, sin IVA). El cliente se busca por TODOS sus códigos de Asinfo
+    (`aliases.to_asinfo`: CLR también es CL2) y las sucursales ya vienen
+    resueltas en `cliente_codigo`. El rango pedido a Asinfo es el MISMO que
+    calienta el warmup (2025-01-01 → fin del mes en curso) para pegarle al
+    caché: en frío tarda ~5 s, después es instantáneo.
+
     Los meses sin ventas salen en cero (la grilla siempre tiene `meses` filas,
     del más viejo al más nuevo, terminando en el mes en curso).
 
-    Devuelve {} si el código no existe. Si existe:
+    Devuelve {} si el código no existe en el maestro de clientes. Si existe:
         {
           "cliente": {"codigo_cli", "nombre"},
           "desde": "mm/aaaa", "hasta": "mm/aaaa",
           "filas": [{"anio", "mes_num", "mes_nombre", "kg", "importe",
                      "precio", "acum"}...],
           "total_kg", "total_importe", "precio_prom", "meses_con_venta",
+          "n_documentos", "fuente_caida" (True si Asinfo no contestó),
         }
     """
+    import calendar as _cal
 
+    from modules.asinfo import aliases as _aliases
+    from modules.asinfo import service as _asinfo
     from modules.iniciales.queries import MESES_ES
 
     cod = (codigo_cli or "").strip().upper()
@@ -11187,27 +11197,37 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     idx_fin = hoy.year * 12 + (hoy.month - 1)
     idx_ini = idx_fin - (meses - 1)
     desde = date(idx_ini // 12, idx_ini % 12 + 1, 1)
+    fin_mes = date(hoy.year, hoy.month, _cal.monthrange(hoy.year, hoy.month)[1])
 
-    rows = (
-        db.fetch_all(
-            """
-        SELECT EXTRACT(YEAR  FROM f.fecha)::int AS anio,
-               EXTRACT(MONTH FROM f.fecha)::int AS mes_num,
-               COALESCE(SUM(f.kg), 0)           AS kg,
-               COALESCE(SUM(f.importe), 0)      AS importe
-          FROM scintela.factura f
-         WHERE UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %s
-           AND f.fecha >= %s
-           AND COALESCE(f.stat, '') <> 'X'
-           -- historia-del-cliente-incluye-backfill: acá es historia, no un
-           -- delta live (ver whitelist en test_no_backfill_filter_balance).
-         GROUP BY 1, 2
-        """,
-            (cod, desde),
-        )
-        or []
-    )
-    por_mes = {(int(r["anio"]), int(r["mes_num"])): r for r in rows}
+    # El rango ANCHO del warmup (ver modules/_lib/warmup.py, "facturas_rango_ancho").
+    # Pedir el mismo rango = misma clave de caché = respuesta instantánea.
+    desde_asinfo = min(desde, date(2025, 1, 1))
+    rows = _asinfo.facturas_periodo(desde_asinfo, fin_mes) or []
+    fuente_caida = not rows
+
+    codigos = {c.strip().upper() for c in _aliases.to_asinfo(cod) if c}
+    codigos.add(cod)
+
+    por_mes: dict[tuple[int, int], dict] = {}
+    n_documentos = 0
+    for r in rows:
+        if (r.get("cliente_codigo") or "").strip().upper() not in codigos:
+            continue
+        f = r.get("fecha")
+        if hasattr(f, "date") and not isinstance(f, date):
+            f = f.date()
+        elif isinstance(f, str):
+            try:
+                f = date.fromisoformat(f[:10])
+            except ValueError:
+                continue
+        if not isinstance(f, date) or f < desde:
+            continue
+        clave = (f.year, f.month)
+        acc = por_mes.setdefault(clave, {"kg": 0.0, "importe": 0.0})
+        acc["kg"] += float(r.get("kg") or 0)
+        acc["importe"] += float(r.get("usd") or 0)
+        n_documentos += 1
 
     filas: list[dict] = []
     acum = 0.0
@@ -11246,6 +11266,8 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
         "total_importe": total_importe,
         "precio_prom": (total_importe / total_kg) if total_kg > 0 else 0.0,
         "meses_con_venta": meses_con_venta,
+        "n_documentos": n_documentos,
+        "fuente_caida": fuente_caida,
     }
 
 
