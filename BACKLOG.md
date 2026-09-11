@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-09-04._
+_Última actualización: 2026-09-11._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -269,6 +269,25 @@ pantalla cerrada y hay que cambiarle el ejemplo.
 ---
 
 ## Deuda conocida
+
+### [M] `scintela.factura` tiene la historia rota de enero a junio 2026 (medido 11/09)
+Se vio al armar "Ventas por mes" del cliente (que por eso lee de Asinfo, no de
+la tabla). Dos problemas, medidos con `/facturas/admin/backfill-asinfo?dry_run=1`
+(no toca nada) y cruzando BED/EEU/CLR:
+- **Faltan documentos**: ene 132 · feb 141 · mar 510 · abr 820 · **may 1.099**
+  (EEU y CLR con mayo en cero) · jun 591; jul 29 (sólo NC) · ago 0. Son las
+  cobradas que el dBase purgó después del backfill del 10/06 y el sync se
+  llevó. Mayo: cierre 295.688 kg, tabla 179.000.
+- **Duplicados**: filas del backfill con `numf = 0` que no matchearon con la
+  fila real (misma fecha e importe): ~33/mes en mar–abr, 71 en may (BED mayo:
+  44 filas, +13.158 kg).
+Afecta al ranking del mes (`/informes/ventas`) y a "Ventas multi-año" para
+esos meses (además excluyen backfill, así que subestiman). NO afecta cartera
+ni balance (esas filas son T con saldo 0). Decisión dueña 11/09: *"no
+deberíamos correr nada más"* — nada se corrió. Cuando se decida: (1) medir de
+nuevo con el dry_run; (2) hace falta una PANTALLA para dar de baja las
+duplicadas (`numf = 0` + misma fecha/importe que otra del cliente), hoy no
+hay; (3) recién después completar con el backfill ene–jun.
 
 ### [S] `/stock/fabricacion-tc` arma el balance entero para un pie de página
 Medido el 02/09 (Tamara: *"¿páginas lentas?"*): la pantalla tarda lo que el
