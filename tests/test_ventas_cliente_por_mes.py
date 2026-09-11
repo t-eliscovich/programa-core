@@ -8,9 +8,10 @@ Lo que estos tests protegen:
 · La ventana son SIEMPRE `meses` filas terminando en el mes en curso, con los
   meses sin venta en cero (que un cliente no compre en marzo se tiene que VER,
   no desaparecer de la grilla).
-· El filtro es el MISMO que el ranking del mes (`ventas_clientes_del_mes`):
-  facturas vivas (stat <> 'X') y sin el backfill de Asinfo — si divergen, el
-  renglón de un mes acá no cuadra con la fila del cliente en el ranking.
+· Entra TODO lo no anulado (stat <> 'X'), totalizadas incluidas, y SIN excluir
+  el backfill de Asinfo: esas filas son la historia (el dBase purgaba las
+  cobradas). La primera versión las excluía y el cliente aparecía con
+  oct/2025–may/2026 en cero (Tamara, 11/09: "me suena que los datos están mal").
 · Un código que no existe da 404, no una pantalla vacía.
 """
 from __future__ import annotations
@@ -76,14 +77,16 @@ def test_doce_filas_terminando_en_el_mes_en_curso_con_ceros(monkeypatch):
     assert cap["params"] == ("ABC", date(2025, 10, 1))
 
 
-def test_mismo_filtro_que_el_ranking_del_mes(monkeypatch):
+def test_entra_la_historia_completa_solo_sin_anuladas(monkeypatch):
     cap = _db_fake(monkeypatch, [])
     with patch.object(queries, "today_ec", return_value=HOY):
         queries.ventas_cliente_por_mes("ABC")
     sql = cap["sql"]
     assert "scintela.factura" in sql
     assert "<> 'X'" in sql
-    assert "asinfo-backfill" in sql
+    # Las totalizadas y las históricas de Asinfo SÍ cuentan.
+    assert "'T'" not in sql
+    assert "<> 'asinfo-backfill'" not in sql
 
 
 def test_ventana_de_24_meses_y_tope(monkeypatch):

@@ -40,7 +40,7 @@
 
 {% call informes_page(
     titulo=codigo_cli ~ " · " ~ (_cli.nombre or ""),
-    descripcion="Ventas por mes de los últimos " ~ meses ~ " meses (" ~ (data.desde or "") ~ " a " ~ (data.hasta or "") ~ ") · kilos, precio promedio U$/kg, importe y acumulado. Facturas vivas, sin anuladas.",
+    descripcion="Ventas por mes de los últimos " ~ meses ~ " meses (" ~ (data.desde or "") ~ " a " ~ (data.hasta or "") ~ ") · kilos, precio promedio U$/kg, importe y acumulado. Todas las facturas menos las anuladas.",
     actions_safe=_actions,
 ) %}
 

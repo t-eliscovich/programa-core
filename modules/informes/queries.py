@@ -11139,11 +11139,18 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     TMT 2026-09-11 — pedido de Andrés por WhatsApp: *"me gustaría poder ver
     las ventas por mes del último año de un cliente — kilos y dólares"*.
 
-    Misma fuente y MISMO filtro que el ranking del mes (`ventas_clientes_del_mes`):
-    `scintela.factura` viva (stat <> 'X') y sin el backfill de Asinfo, así el
-    renglón de un mes acá coincide con la fila del cliente en el ranking de ese
-    mes. Los meses sin ventas salen en cero (la grilla siempre tiene `meses`
-    filas, del más viejo al más nuevo, terminando en el mes en curso).
+    Fuente: `scintela.factura`, todo lo que no esté ANULADO (stat <> 'X') —
+    las totalizadas (T) SÍ entran: son ventas cobradas, y un año de historia
+    es casi todo eso. Y a diferencia de los agregados "live" (ranking del mes,
+    stock, flujo), acá NO se excluye `usuario_crea = 'asinfo-backfill'`: esas
+    filas son las facturas históricas recuperadas de Asinfo (el dBase purgaba
+    las cobradas), o sea la ÚNICA historia que hay antes de mediados de 2026.
+    Excluirlas dejaba oct/2025–may/2026 en cero (Tamara, 11/09: *"me suena
+    que los datos están mal… por ahí borraste las totalizadas"*). El backfill
+    se insertó deduplicando contra lo que ya estaba (numf_completo o
+    numf+cliente+fecha), así que sumar todo no cuenta dos veces.
+    Los meses sin ventas salen en cero (la grilla siempre tiene `meses` filas,
+    del más viejo al más nuevo, terminando en el mes en curso).
 
     Devuelve {} si el código no existe. Si existe:
         {
@@ -11192,7 +11199,7 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
          WHERE UPPER(TRIM(COALESCE(f.codigo_cli, ''))) = %s
            AND f.fecha >= %s
            AND COALESCE(f.stat, '') <> 'X'
-           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+           -- SIN excluir asinfo-backfill: acá es historia, no un delta live.
          GROUP BY 1, 2
         """,
             (cod, desde),
