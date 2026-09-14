@@ -11133,6 +11133,74 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
     }
 
 
+def ventas_por_dia(anio: int | None = None, mes: int | None = None) -> dict:
+    """Ventas de la EMPRESA día por día de un mes — no por cliente.
+
+    TMT 2026-09-14 — Tamara sobre /informes/ventas: al lado del ranking por
+    cliente del mes, un tab "día por día" con el total de la empresa por
+    día del mes, como un calendario.
+
+    Misma fuente y mismos filtros que `ventas_clientes_del_mes` (scintela.
+    factura, excluye anuladas y el backfill de asinfo) para que los dos
+    tabs sumen exactamente lo mismo. Los días sin venta salen en cero (la
+    grilla siempre tiene un renglón por cada día del mes).
+
+    Devuelve:
+        {"anio": int, "mes": int,
+         "filas": [{"dia": 1, "kg": int, "monto": float}, ...],
+         "total_kg": int, "total_monto": float, "dias_con_venta": int}
+    """
+    import calendar as _cal
+
+    hoy = today_ec()
+    yy = int(anio) if anio else hoy.year
+    mm = int(mes) if mes else hoy.month
+
+    rows = (
+        db.fetch_all(
+            """
+        SELECT
+            EXTRACT(DAY FROM f.fecha)::int             AS dia,
+            COALESCE(SUM(f.kg), 0)::int                 AS kg,
+            COALESCE(SUM(f.importe), 0)::numeric        AS monto
+          FROM scintela.factura f
+         WHERE EXTRACT(YEAR  FROM f.fecha) = %s
+           AND EXTRACT(MONTH FROM f.fecha) = %s
+           AND COALESCE(f.stat, '') <> 'X'
+           AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+         GROUP BY 1
+        """,
+            (yy, mm),
+        )
+        or []
+    )
+    por_dia = {int(r["dia"]): r for r in rows}
+    ultimo_dia = _cal.monthrange(yy, mm)[1]
+
+    filas = []
+    total_kg = 0
+    total_monto = 0.0
+    dias_con_venta = 0
+    for d in range(1, ultimo_dia + 1):
+        r = por_dia.get(d)
+        kg = int(r["kg"] or 0) if r else 0
+        monto = float(r["monto"] or 0) if r else 0.0
+        if kg or monto:
+            dias_con_venta += 1
+        total_kg += kg
+        total_monto += monto
+        filas.append({"dia": d, "kg": kg, "monto": monto})
+
+    return {
+        "anio": yy,
+        "mes": mm,
+        "filas": filas,
+        "total_kg": total_kg,
+        "total_monto": total_monto,
+        "dias_con_venta": dias_con_venta,
+    }
+
+
 def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     """Ventas de UN cliente, mes a mes, los últimos `meses` meses (kg + US$).
 

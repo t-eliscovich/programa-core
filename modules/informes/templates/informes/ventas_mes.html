@@ -52,20 +52,52 @@
     .vm-totales { display: flex !important; gap: 20px !important; }
     .vm-totales .vm-totales-valor { font-size: 13px !important; }
   }
+
+  /* Pestañas Por mes / Día por día — mismo patrón visual que /uso. */
+  .vm-tabs { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+  .vm-tab { padding: 6px 14px; border-radius: 9999px; font-size: 13px; font-weight: 500; text-decoration: none; }
+  .vm-tab.activa { background: rgb(15 23 42); color: white; }
+  .vm-tab:not(.activa) { background: rgb(241 245 249); color: rgb(71 85 105); }
+  .vm-tab:not(.activa):hover { background: rgb(226 232 240); }
+  @media print { .vm-tabs { display: none !important; } }
+
+  /* Día por día: una sola tabla, cabe entera — orden fijo por día. */
+  .vm-dia table { border-collapse: collapse; width: 100%; font-size: 13px; }
+  .vm-dia th { text-align: right; padding: 6px 10px; color: rgb(100 116 139); font-size: 11px; text-transform: uppercase; border-bottom: 1px solid rgb(203 213 225); }
+  .vm-dia th.dia { text-align: left; }
+  .vm-dia td { text-align: right; padding: 5px 10px; border-bottom: 1px dotted rgb(226 232 240); font-feature-settings: "tnum" 1; }
+  .vm-dia td.dia { text-align: left; color: rgb(51 65 85); }
+  .vm-dia tr.vm-cero td { color: rgb(148 163 184); }
+  .vm-dia tfoot td { padding: 8px 10px; border-top: 2px solid rgb(15 23 42); font-weight: 700; }
 </style>
 {% endblock %}
 
 {% block content %}
 {# TMT 2026-05-20 PASADA 2 cierre. #}
 <div class="max-w-full">
-  <div class="flex items-start justify-between mb-6 no-print flex-wrap gap-4">
+  <div class="mb-4 no-print">
     {{ page_hero(
         'Ventas del mes',
-        'Ranking por cliente · ' ~ ('%02d/%d' % (mes, anio)) ~ ' · ordenado por monto descendente.'
+        ('Ranking por cliente · ' if tab == 'mes' else 'Total de la empresa por día · ') ~ ('%02d/%d' % (mes, anio)) ~ (' · ordenado por monto descendente.' if tab == 'mes' else '.')
     ) }}
+  </div>
+
+  {# TMT 2026-09-14 v2 — Tamara: "imprimir y resultados estan mas arriba
+     que el resto de botones". Antes Año/Mes/Resultados/Imprimir vivían en
+     una fila propia junto al título, y las pestañas quedaban en una fila
+     aparte más abajo -- dos alturas distintas. Ahora todo en UNA sola
+     fila: pestañas a la izquierda, resto de los controles a la derecha. #}
+  <div class="flex items-center justify-between flex-wrap gap-3 mb-6 no-print">
+    <div class="vm-tabs" style="margin-bottom: 0;">
+      <a href="{{ url_for('informes.ventas', tab='mes', anio=anio, mes=mes) }}"
+         class="vm-tab {{ 'activa' if tab == 'mes' else '' }}">Por cliente</a>
+      <a href="{{ url_for('informes.ventas', tab='dia', anio=anio, mes=mes) }}"
+         class="vm-tab {{ 'activa' if tab == 'dia' else '' }}">Día por día</a>
+    </div>
     <div class="flex items-center gap-2">
-      {# Selector año / mes — viaja a la misma vista #}
+      {# Selector año / mes — viaja a la misma vista, con la pestaña activa #}
       <form method="get" class="flex items-end gap-2">
+        <input type="hidden" name="tab" value="{{ tab }}">
         <label class="flex flex-col text-xs text-slate-500">
           Año
           <input type="number" name="anio" value="{{ anio }}" min="2000" max="2099"
@@ -99,17 +131,23 @@
     </div>
   {% endif %}
 
+  {% if tab == 'mes' %}
   {% if data and data.filas %}
   {# 3 columnas de N filas cada una — replica el layout TINT.BAT.
      Repartimos las filas con round-up para que la 1ra columna tenga
-     siempre las más grandes (orden ASC sigue por monto DESC). #}
+     siempre las más grandes (orden ASC sigue por monto DESC).
+     TMT 2026-09-14 — data-no-sort-table: es un ranking de orden FIJO
+     (ya viene ordenado por monto, partido en 3 columnas correlativas);
+     el sortable-tables.js global le agregaba flechitas de orden a cada
+     columna de cada uno de los 3 cuadros, y ordenar una sola rompía la
+     numeración 1..N corrida entre las 3. #}
   {% set total = data.filas | length %}
   {% set per_col = ((total + 2) // 3) %}
   {% set col1 = data.filas[0:per_col] %}
   {% set col2 = data.filas[per_col:per_col*2] %}
   {% set col3 = data.filas[per_col*2:] %}
 
-  <div class="vm-grid bg-white border border-slate-300 rounded p-3">
+  <div class="vm-grid bg-white border border-slate-300 rounded p-3" data-no-sort-table>
     <div class="text-sm font-bold uppercase tracking-wider text-red-700 mb-2 pl-2">Ventas del mes</div>
     <div class="vm-cols3">
       {% for col in [col1, col2, col3] %}
@@ -165,5 +203,48 @@
     Fuente: scintela.factura del mes seleccionado, excluyendo stat='X' (eliminadas).
     Equivalente a la pantalla VENTAS DEL MES del dBase legacy (TINT.BAT).
   </p>
+  {% endif %}
+
+  {% if tab == 'dia' %}
+  {% if data and data.filas %}
+  <div class="vm-dia bg-white border border-slate-300 rounded p-3" data-no-sort-table>
+    <div class="text-sm font-bold uppercase tracking-wider text-red-700 mb-2 pl-2">Día por día</div>
+    <table>
+      <thead>
+        <tr>
+          <th class="dia">Día</th>
+          <th>Kg</th>
+          <th>Monto</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for f in data.filas %}
+        <tr class="{{ 'vm-cero' if not f.kg and not f.monto else '' }}">
+          <td class="dia">{{ '%02d' % f.dia }}/{{ '%02d' % mes }}</td>
+          <td>{{ f.kg | num_es(0) }}</td>
+          <td>{{ f.monto | num_es(0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+      <tfoot>
+        <tr>
+          <td class="dia">TOTAL ({{ data.dias_con_venta }} de {{ data.filas | length }} días)</td>
+          <td>{{ data.total_kg | num_es(0) }}</td>
+          <td>{{ data.total_monto | num_es(0) }}</td>
+        </tr>
+      </tfoot>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white border border-slate-300 rounded p-8 text-center text-slate-500">
+    Sin facturas en {{ '%02d/%d' % (mes, anio) }} (excluyendo anuladas).
+  </div>
+  {% endif %}
+
+  <p class="mt-3 text-xs text-slate-500 no-print">
+    Fuente: scintela.factura del mes seleccionado, excluyendo stat='X' (eliminadas).
+    Mismo total que la pestaña "Por cliente" — acá repartido por día en vez de por cliente.
+  </p>
+  {% endif %}
 </div>
 {% endblock %}

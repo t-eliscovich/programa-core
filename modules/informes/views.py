@@ -2726,6 +2726,10 @@ def ventas():
     # la pantalla TINT.BAT del dBase (ranking clientes del mes). Por default
     # ahora redirigimos al ranking del mes; el listado multi-mes vive en
     # ventas_multianual (link sigue disponible desde ahí).
+    #
+    # TMT 2026-09-14 — Tamara pidió un tab "día por día" al lado del ranking
+    # por cliente: mismo patrón de pestañas que /uso (?tab=, arma sólo la
+    # data de la pestaña activa).
 
     hoy = today_ec()
     try:
@@ -2737,15 +2741,22 @@ def ventas():
     except (TypeError, ValueError):
         mes = hoy.month
     mes = max(1, min(mes, 12))
-    data, error = _safe(
-        lambda: queries.ventas_clientes_del_mes(anio=anio, mes=mes),
-        {},
-    )
+    tab = request.args.get("tab") or "mes"
+    if tab not in ("mes", "dia"):
+        tab = "mes"
+    if tab == "dia":
+        data, error = _safe(lambda: queries.ventas_por_dia(anio, mes), {})
+    else:
+        data, error = _safe(
+            lambda: queries.ventas_clientes_del_mes(anio=anio, mes=mes),
+            {},
+        )
     return render_template(
         "informes/ventas_mes.html",
         data=data,
         anio=anio,
         mes=mes,
+        tab=tab,
         error=error,
     )
 
