@@ -11936,15 +11936,23 @@ def facturas_totalizadas_cliente(codigo_cli: str, limite: int = 300) -> list[dic
     listan aparte porque el estado de cuenta oculta las T.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
+    # TMT 2026-09-14: se traen las `limite` MAS RECIENTES (DESC) pero se
+    # devuelven en el mismo orden ASC que la lista viva de arriba ("de la
+    # mas antigua a la mas actual") — el bug reportado era que el bloque de
+    # totalizadas quedaba en DESC, al reves que las facturas vivas.
     return db.fetch_all(
         """
         SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion, saldo, stat
-          FROM scintela.factura
-         WHERE codigo_cli = %s
-           AND COALESCE(stat, '') = 'T'
-           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-         ORDER BY fecha DESC, numf DESC
-         LIMIT %s
+          FROM (
+            SELECT id_factura, numf, numf_completo, fecha, importe, abono, retencion, saldo, stat
+              FROM scintela.factura
+             WHERE codigo_cli = %s
+               AND COALESCE(stat, '') = 'T'
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+             ORDER BY fecha DESC, numf DESC
+             LIMIT %s
+          ) mas_recientes
+         ORDER BY fecha ASC, numf ASC
         """,
         (codigo_cli, limite),
     )
