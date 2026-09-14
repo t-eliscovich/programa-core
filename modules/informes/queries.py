@@ -11151,9 +11151,10 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     Mismos documentos y mismo signo que el resto de la app (factura +, NC y
     devolución −, sin IVA). El cliente se busca por TODOS sus códigos de Asinfo
     (`aliases.to_asinfo`: CLR también es CL2) y las sucursales ya vienen
-    resueltas en `cliente_codigo`. El rango pedido a Asinfo es el MISMO que
-    calienta el warmup (2025-01-01 → fin del mes en curso) para pegarle al
-    caché: en frío tarda ~5 s, después es instantáneo.
+    resueltas en `cliente_codigo`. El rango pedido a Asinfo es el MISMO rango
+    ANCHO que calienta el warmup (`asinfo.service.rango_ancho_desde` → fin del
+    mes en curso) para pegarle al caché: en frío tarda ~5-30 s, después es
+    instantáneo.
 
     Los meses sin ventas salen en cero (la grilla siempre tiene `meses` filas,
     del más viejo al más nuevo, terminando en el mes en curso).
@@ -11199,9 +11200,13 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
     desde = date(idx_ini // 12, idx_ini % 12 + 1, 1)
     fin_mes = date(hoy.year, hoy.month, _cal.monthrange(hoy.year, hoy.month)[1])
 
-    # El rango ANCHO del warmup (ver modules/_lib/warmup.py, "facturas_rango_ancho").
-    # Pedir el mismo rango = misma clave de caché = respuesta instantánea.
-    desde_asinfo = min(desde, date(2025, 1, 1))
+    # El rango ANCHO del warmup (ver modules/_lib/warmup.py, "facturas_rango_ancho"
+    # y modules/asinfo/service.py, "rango_ancho_desde"). Pedir el MISMO rango =
+    # misma clave de caché = respuesta instantánea.
+    # TMT 2026-09-14: antes era un `date(2025, 1, 1)` fijo acá — "Ver 24 meses"
+    # pedía un `desde` más viejo que eso, la clave de caché no coincidía con la
+    # que el warmup mantiene caliente, y caía en un fetch en frío de 10-30s.
+    desde_asinfo = min(desde, _asinfo.rango_ancho_desde(hoy))
     rows = _asinfo.facturas_periodo(desde_asinfo, fin_mes) or []
     fuente_caida = not rows
 
@@ -11266,6 +11271,152 @@ def ventas_cliente_por_mes(codigo_cli: str, meses: int = 12) -> dict:
         "total_importe": total_importe,
         "precio_prom": (total_importe / total_kg) if total_kg > 0 else 0.0,
         "meses_con_venta": meses_con_venta,
+        "n_documentos": n_documentos,
+        "fuente_caida": fuente_caida,
+    }
+
+
+def ventas_cliente_por_anio(codigo_cli: str, n_anios: int = 3) -> dict:
+    """Ventas de UN cliente por AÑO CALENDARIO completo, últimos `n_anios` años.
+
+    TMT 2026-09-14 — pedido de Tamara sobre `/informes/ventas/cliente/<cod>`:
+    *"hacer de los utimos 3 anos. 24, 25 y 26 total, promedio por mes, para
+    kg y $. algo simple y facil de digerir. abajo que se pueda ir viendo los
+    meses"*. Es la vista por DEFECTO de la pantalla; `ventas_cliente_por_mes`
+    (12/24 meses corridos) se mantiene aparte para el CSV y el toggle viejo.
+
+    Misma fuente que `ventas_cliente_por_mes` — Asinfo vía `facturas_periodo`,
+    NUNCA `scintela.factura` (ver esa función para el porqué: la tabla propia
+    tiene ene-jun 2026 rota y duplicados del backfill) — y el mismo piso
+    ancho de caché (`asinfo.service.rango_ancho_desde`), así que esta pantalla
+    y el "Ver 24 meses" de al lado pegan en el MISMO caché caliente del
+    warmup. Función self-contained a propósito (no comparte código con
+    `ventas_cliente_por_mes`): mantiene a las dos simples de auditar por
+    separado en vez de armar un helper compartido más frágil.
+
+    El año EN CURSO es parcial: el promedio por mes se divide por los meses
+    ya transcurridos (incluido el actual), no por 12 — si no, un año recién
+    empezado se vería como si vendiera una fracción de lo real.
+
+    Devuelve {} si el código no existe en el maestro de clientes. Si existe:
+        {
+          "cliente": {"codigo_cli", "nombre"},
+          "anios": [{"anio", "meses_transcurridos", "es_parcial",
+                      "total_kg", "promedio_kg_mes",
+                      "total_importe", "promedio_importe_mes",
+                      "precio_prom", "meses_con_venta",
+                      "filas": [{"mes_num", "mes_nombre", "kg", "importe",
+                                 "precio"}, ...]}, ...]   (más viejo primero),
+          "total_kg", "total_importe", "n_documentos",
+          "fuente_caida" (True si Asinfo no contestó),
+        }
+    """
+    import calendar as _cal
+
+    from modules.asinfo import aliases as _aliases
+    from modules.asinfo import service as _asinfo
+    from modules.iniciales.queries import MESES_ES
+
+    cod = (codigo_cli or "").strip().upper()
+    if not cod:
+        return {}
+    n_anios = max(1, min(int(n_anios or 3), 10))
+
+    cliente = db.fetch_one(
+        """
+        SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli,
+               COALESCE(NULLIF(TRIM(nombre), ''), UPPER(TRIM(codigo_cli))) AS nombre
+          FROM scintela.cliente
+         WHERE UPPER(TRIM(codigo_cli)) = %s
+         LIMIT 1
+        """,
+        (cod,),
+    )
+    if not cliente:
+        return {}
+
+    hoy = today_ec()
+    anio_ini = hoy.year - (n_anios - 1)
+    desde = date(anio_ini, 1, 1)
+    fin_mes = date(hoy.year, hoy.month, _cal.monthrange(hoy.year, hoy.month)[1])
+
+    # Mismo piso ancho que ventas_cliente_por_mes (ver ahí el porqué).
+    desde_asinfo = min(desde, _asinfo.rango_ancho_desde(hoy))
+    rows = _asinfo.facturas_periodo(desde_asinfo, fin_mes) or []
+    fuente_caida = not rows
+
+    codigos = {c.strip().upper() for c in _aliases.to_asinfo(cod) if c}
+    codigos.add(cod)
+
+    por_mes: dict[tuple[int, int], dict] = {}
+    n_documentos = 0
+    for r in rows:
+        if (r.get("cliente_codigo") or "").strip().upper() not in codigos:
+            continue
+        f = r.get("fecha")
+        if hasattr(f, "date") and not isinstance(f, date):
+            f = f.date()
+        elif isinstance(f, str):
+            try:
+                f = date.fromisoformat(f[:10])
+            except ValueError:
+                continue
+        if not isinstance(f, date) or f < desde:
+            continue
+        clave = (f.year, f.month)
+        acc = por_mes.setdefault(clave, {"kg": 0.0, "importe": 0.0})
+        acc["kg"] += float(r.get("kg") or 0)
+        acc["importe"] += float(r.get("usd") or 0)
+        n_documentos += 1
+
+    anios: list[dict] = []
+    total_kg = 0.0
+    total_importe = 0.0
+    for yy in range(anio_ini, hoy.year + 1):
+        ultimo_mes = hoy.month if yy == hoy.year else 12
+        filas: list[dict] = []
+        anio_kg = 0.0
+        anio_importe = 0.0
+        meses_con_venta = 0
+        for mm in range(1, ultimo_mes + 1):
+            r = por_mes.get((yy, mm)) or {}
+            kg = float(r.get("kg") or 0)
+            importe = float(r.get("importe") or 0)
+            if kg or importe:
+                meses_con_venta += 1
+            anio_kg += kg
+            anio_importe += importe
+            filas.append(
+                {
+                    "mes_num": mm,
+                    "mes_nombre": MESES_ES[mm - 1],
+                    "kg": kg,
+                    "importe": importe,
+                    "precio": (importe / kg) if kg > 0 else 0.0,
+                }
+            )
+        anios.append(
+            {
+                "anio": yy,
+                "meses_transcurridos": ultimo_mes,
+                "es_parcial": yy == hoy.year,
+                "total_kg": anio_kg,
+                "promedio_kg_mes": (anio_kg / ultimo_mes) if ultimo_mes else 0.0,
+                "total_importe": anio_importe,
+                "promedio_importe_mes": (anio_importe / ultimo_mes) if ultimo_mes else 0.0,
+                "precio_prom": (anio_importe / anio_kg) if anio_kg > 0 else 0.0,
+                "meses_con_venta": meses_con_venta,
+                "filas": filas,
+            }
+        )
+        total_kg += anio_kg
+        total_importe += anio_importe
+
+    return {
+        "cliente": {"codigo_cli": cliente["codigo_cli"], "nombre": cliente["nombre"]},
+        "anios": anios,
+        "total_kg": total_kg,
+        "total_importe": total_importe,
         "n_documentos": n_documentos,
         "fuente_caida": fuente_caida,
     }

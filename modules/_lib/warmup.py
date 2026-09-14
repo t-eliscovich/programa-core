@@ -112,13 +112,17 @@ def _warm_once() -> None:
         # la carga entera. Se calientan por la función de la PANTALLA y no por
         # cada consulta suelta: si mañana la pantalla pide una más, se calienta
         # sola.
-        # El rango ANCHO que usa /facturas cuando se filtra por cliente:
-        # 2025-01-01 → fin del mes en curso (ver facturas/views.py, el
-        # redondeo a meses enteros). Sin esto, el primero que filtra un
-        # cliente después de que vence el cache espera 5 segundos.
+        # El rango ANCHO compartido (ver asinfo.service.rango_ancho_desde,
+        # TMT 2026-09-14): últimos RANGO_ANCHO_ANIOS años calendario → fin
+        # del mes en curso. Antes era una fecha fija de 2025-01-01 acá adentro
+        # y otro, independiente, en ventas_cliente_por_mes — cuando ese otro
+        # pedía un rango más ancho (ej. "Ver 24 meses"), la clave de cache no
+        # coincidía con esta y caía en un fetch en frío de 10-30s. Ahora los
+        # dos llaman a la MISMA función, así que siempre calientan la MISMA
+        # clave.
         ("facturas_rango_ancho",
          lambda: asvc.facturas_periodo(
-             date(2025, 1, 1),
+             asvc.rango_ancho_desde(hoy),
              date(yy, mm, _cal_mod.monthrange(yy, mm)[1]))),
         # TMT 2026-08-25 (dueña): *"el que se llevó carga lento"*. El detalle
         # de una factura cuesta 650 ms fijos de puente, así que se traen las de

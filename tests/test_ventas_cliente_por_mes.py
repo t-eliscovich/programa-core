@@ -1,9 +1,13 @@
-"""Ventas por mes de UN cliente (kilos y dólares) — /informes/ventas/cliente/<cod>.
+"""ventas_cliente_por_mes — ventana corrida de N meses (kilos y dólares).
 
 TMT 2026-09-11 — pedido de Andrés por WhatsApp: *"me gustaría poder ver las
 ventas por mes del último año de un cliente — kilos y dólares"*.
 
-Lo que estos tests protegen:
+TMT 2026-09-14: la pantalla `/informes/ventas/cliente/<cod>` pasó a mostrar
+por DEFECTO `ventas_cliente_por_anio` (ver tests/test_ventas_cliente_por_anio.py,
+que también cubre la vista y el CSV) — esta función sigue viva porque el CSV
+la sigue usando (necesita el acumulado corrido) y porque el 24-meses corrido
+puede volver a exponerse. Estos tests protegen la función en sí:
 
 · La ventana son SIEMPRE `meses` filas terminando en el mes en curso, con los
   meses sin venta en cero (que un cliente no compre en marzo se tiene que VER,
@@ -12,9 +16,10 @@ Lo que estos tests protegen:
   propia tiene la historia rota (faltan facturas ene–jun 2026 y hay filas del
   backfill duplicadas), y Tamara (11/09) pidió no correr arreglos de datos.
   El cliente se busca por todos sus códigos de Asinfo (aliases) y el rango
-  pedido es el del warmup, para pegarle al caché.
+  pedido a Asinfo tiene un piso ANCHO compartido con el warmup
+  (`asinfo.service.rango_ancho_desde`), para pegarle al caché.
 · Si Asinfo no contesta, `fuente_caida` avisa: cero filas NO es cero ventas.
-· Un código que no existe da 404, no una pantalla vacía.
+· Un código que no existe devuelve {} (la pantalla lo convierte en 404).
 """
 from __future__ import annotations
 
@@ -24,7 +29,6 @@ from unittest.mock import patch
 import pytest
 
 from modules.informes import queries
-from modules.iniciales.queries import MESES_ES
 
 HOY = date(2026, 9, 11)
 
@@ -73,8 +77,9 @@ def test_doce_filas_terminando_en_el_mes_en_curso_con_ceros(monkeypatch):
 
     assert data["cliente"] == {"codigo_cli": "ABC", "nombre": "ABC TEXTIL"}
     assert cap["cliente_params"] == ("ABC",)  # se normaliza a mayúsculas
-    # El rango pedido a Asinfo es el del warmup: 2025-01-01 → fin del mes en curso.
-    assert cap["rango"] == (date(2025, 1, 1), date(2026, 9, 30))
+    # El rango pedido a Asinfo es el piso ANCHO compartido con el warmup:
+    # HOY=2026 → 2024-01-01 (3 años: 2024, 2025, 2026) → fin del mes en curso.
+    assert cap["rango"] == (date(2024, 1, 1), date(2026, 9, 30))
     filas = data["filas"]
     assert len(filas) == 12
     assert (filas[0]["anio"], filas[0]["mes_num"]) == (2025, 10)
@@ -118,8 +123,11 @@ def test_ventana_de_24_meses_y_tope(monkeypatch):
     cap = _fakes(monkeypatch, [])
     with patch.object(queries, "today_ec", return_value=HOY):
         assert len(queries.ventas_cliente_por_mes("ABC", meses=24)["filas"]) == 24
-        # 24 meses arranca en 10/2024: el rango a Asinfo se estira hacia atrás.
-        assert cap["rango"][0] == date(2024, 10, 1)
+        # 24 meses arranca en 10/2024, MÁS ADENTRO que el piso ancho compartido
+        # (2024-01-01) — antes de este fix, cada uno tenía su propia fecha fija
+        # y esto era exactamente el caso que caía en cache MISS ("Ver 24 meses"
+        # tardaba 10-30s): ahora pega en la MISMA clave que calienta el warmup.
+        assert cap["rango"][0] == date(2024, 1, 1)
         assert len(queries.ventas_cliente_por_mes("ABC", meses=999)["filas"]) == 60
         assert len(queries.ventas_cliente_por_mes("ABC", meses=0)["filas"]) == 12
 
@@ -131,83 +139,7 @@ def test_cliente_inexistente_devuelve_vacio(monkeypatch):
     assert queries.ventas_cliente_por_mes("") == {}
 
 
-# ── la pantalla ──────────────────────────────────────────────────────────────
-
-def _login(app, fake_db, perms=("informes.ver",)):
-    rid = fake_db.add_role("Tester", list(perms))
-    uid = fake_db.add_user("test", b"$2b$12$fakehash", rid)
-    c = app.test_client()
-    with c.session_transaction() as s:
-        s["user_id"] = uid
-    return c
-
-
-def _data(meses=12):
-    filas = [
-        {"anio": 2026, "mes_num": m, "mes_nombre": MESES_ES[m - 1],
-         "kg": 100.0 * m, "importe": 550.0 * m, "precio": 5.5, "acum": 0.0}
-        for m in range(1, meses + 1)
-    ]
-    return {
-        "cliente": {"codigo_cli": "ABC", "nombre": "ABC TEXTIL"},
-        "meses": meses, "desde": "01/2026", "hasta": "12/2026",
-        "filas": filas, "total_kg": 100.0, "total_importe": 550.0,
-        "precio_prom": 5.5, "meses_con_venta": meses,
-        "n_documentos": meses, "fuente_caida": False,
-    }
-
-
-def test_pantalla_renderiza_kilos_dolares_y_links(app, fake_db):
-    c = _login(app, fake_db)
-    with patch.object(queries, "ventas_cliente_por_mes", return_value=_data()) as m:
-        r = c.get("/informes/ventas/cliente/abc")
-    assert r.status_code == 200
-    assert m.call_args[0] == ("ABC", 12)
-    html = r.get_data(as_text=True)
-    assert "ABC TEXTIL" in html
-    assert "Ventas por mes" in html
-    assert "Kg" in html and "U$/kg" in html
-    # Cada mes linkea al ranking de ese mes; hay CSV y ventana de 24 meses.
-    assert "/informes/ventas?anio=2026&amp;mes=3" in html
-    assert "meses=24" in html
-    assert "export=csv" in html
-
-
-def test_pantalla_404_si_el_cliente_no_existe(app, fake_db):
-    c = _login(app, fake_db)
-    with patch.object(queries, "ventas_cliente_por_mes", return_value={}):
-        assert c.get("/informes/ventas/cliente/ZZZ").status_code == 404
-
-
-def test_pantalla_404_sin_permiso(app, fake_db):
-    c = _login(app, fake_db, perms=("cheques.ver",))
-    with patch.object(queries, "ventas_cliente_por_mes", return_value=_data()):
-        assert c.get("/informes/ventas/cliente/ABC").status_code == 404
-
-
-def test_csv_baja_la_grilla(app, fake_db):
-    c = _login(app, fake_db)
-    with patch.object(queries, "ventas_cliente_por_mes", return_value=_data()):
-        r = c.get("/informes/ventas/cliente/ABC?export=csv&meses=24")
-    assert r.status_code == 200
-    assert "ventas_ABC.csv" in r.headers.get("Content-Disposition", "")
-    cuerpo = r.get_data(as_text=True)
-    assert "Mes" in cuerpo and "01/2026" in cuerpo
-
-
-def test_landing_redirige_al_codigo(app, fake_db):
-    c = _login(app, fake_db)
-    r = c.get("/informes/ventas/cliente?codigo=abc&meses=24")
-    assert r.status_code == 302
-    assert r.headers["Location"].endswith("/informes/ventas/cliente/ABC?meses=24")
-    r = c.get("/informes/ventas/cliente")
-    assert r.status_code == 302 and "estado-cuenta" in r.headers["Location"]
-
-
-def test_los_links_de_entrada_existen():
-    """El estado de cuenta y el ranking del mes llevan a la pantalla nueva."""
-    from pathlib import Path
-
-    base = Path(__file__).resolve().parent.parent / "modules/informes/templates/informes"
-    assert "informes.ventas_cliente" in (base / "estado_cuenta.html").read_text(encoding="utf-8")
-    assert "informes.ventas_cliente" in (base / "ventas_mes.html").read_text(encoding="utf-8")
+# La pantalla /informes/ventas/cliente/<cod> (vista, CSV, landing, 404,
+# links de entrada) se testea en tests/test_ventas_cliente_por_anio.py —
+# desde el rediseño del 2026-09-14 usa ventas_cliente_por_anio como función
+# por defecto y esta función sólo queda por detrás del CSV.

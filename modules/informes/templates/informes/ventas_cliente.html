@@ -1,23 +1,69 @@
 {% extends "base.html" %}
 {% from "_informes_design.html" import informes_styles, informes_page, informes_kpi_row %}
 {# TMT 2026-09-11 — pedido de Andrés: ventas por mes de UN cliente, kilos y
-   dólares, último año. Misma hoja que "Ventas del año" (ventas_anio.html)
-   pero filtrada por cliente y con la ventana corriendo hacia atrás desde el
-   mes en curso. Las barras son la misma idea que el gráfico del flujo:
-   un vistazo dice qué meses pesan. #}
+   dólares. TMT 2026-09-14 — rediseño a pedido de Tamara: por defecto
+   muestra los últimos 3 AÑOS calendario (total y promedio/mes, kg y $,
+   "simple y fácil de digerir"), con el detalle mes a mes plegado por año
+   (<details>) para "ir viendo los meses" sin abrumar de entrada. Los KPIs
+   de arriba van más chicos (.vc-compact) — override sólo en esta página,
+   sin tocar _informes_design.html (~30 pantallas más lo usan). #}
 {% set _cli = data.cliente or {} %}
-{% block title %}Ventas por mes · {{ codigo_cli }}{% endblock %}
-{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <a href="{{ url_for('informes.estado_cuenta', codigo_cli=codigo_cli) }}" class="hover:underline text-slate-500">{{ codigo_cli }}</a> / <strong>Ventas por mes</strong>{% endblock %}
+{% set _anios = data.anios or [] %}
+{% block title %}Ventas por año · {{ codigo_cli }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.balance') }}" class="hover:underline text-slate-500">Resultados</a> / <a href="{{ url_for('informes.estado_cuenta', codigo_cli=codigo_cli) }}" class="hover:underline text-slate-500">{{ codigo_cli }}</a> / <strong>Ventas por año</strong>{% endblock %}
 
 {% block head_extra %}{{ informes_styles() }}
 <style>
+  /* KPIs más chicos SOLO en esta pantalla — pisa .info-kpi por especificidad
+     (dos clases > una), sin tocar el macro compartido. */
+  .vc-compact.info-kpi-row { gap: 8px; margin-bottom: 20px; }
+  .vc-compact .info-kpi { padding: 7px 12px; }
+  .vc-compact .info-kpi-label { font-size: 9.5px; }
+  .vc-compact .info-kpi-val { font-size: 15px; margin-top: 2px; }
+
+  /* Tarjetas de año: total + promedio/mes, kg y $ */
+  .vc-anios {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .vc-anio-card {
+    background: white;
+    border: 1px solid rgb(226 232 240);
+    border-radius: 8px;
+    padding: 14px 16px;
+  }
+  .vc-anio-card.actual { border-color: rgb(147 197 253); background: rgb(239 246 255); }
+  .vc-anio-head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .vc-anio-head .anio { font-size: 18px; font-weight: 700; color: rgb(15 23 42); }
+  .vc-anio-head .parcial { font-size: 11px; color: rgb(100 116 139); }
+  .vc-anio-fila { display: flex; justify-content: space-between; align-items: baseline; padding: 3px 0; font-size: 13px; }
+  .vc-anio-fila .lbl { color: rgb(100 116 139); }
+  .vc-anio-fila .val { font-weight: 600; color: rgb(15 23 42); font-feature-settings: "tnum" 1; }
+  .vc-anio-fila.total .val { font-size: 15px; }
+  .vc-anio-fila + .vc-anio-fila.grupo { margin-top: 6px; padding-top: 8px; border-top: 1px dashed rgb(226 232 240); }
+
+  /* Detalle mensual plegado */
+  details.vc-detalle { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px; margin-bottom: 10px; overflow: hidden; }
+  details.vc-detalle > summary { cursor: pointer; padding: 10px 16px; font-size: 13px; font-weight: 600; color: rgb(51 65 85); list-style: none; display: flex; justify-content: space-between; align-items: center; }
+  details.vc-detalle > summary::-webkit-details-marker { display: none; }
+  details.vc-detalle > summary::after { content: "▸"; color: rgb(148 163 184); transition: transform .15s; }
+  details.vc-detalle[open] > summary::after { transform: rotate(90deg); }
+  details.vc-detalle > summary:hover { background: rgb(248 250 252); }
+  details.vc-detalle .info-table { border-top: 1px solid rgb(226 232 240); }
+
   .vc-bar { position: relative; height: 10px; min-width: 60px; background: rgb(241 245 249); border-radius: 3px; overflow: hidden; }
   .vc-bar > span { position: absolute; inset: 0 auto 0 0; background: rgb(37 99 235); border-radius: 3px; }
   .vc-bar.kg > span { background: rgb(15 118 110); }
   .vc-cero td { color: rgb(148 163 184); }
   .vc-cambiar { display: flex; align-items: center; gap: .4rem; }
   .vc-cambiar input { width: 5.5rem; font-family: ui-monospace, monospace; text-transform: uppercase; }
-  @media print { .vc-bar { display: none; } }
+  @media print {
+    .vc-bar { display: none; }
+    details.vc-detalle { display: block !important; }
+    details.vc-detalle > summary { display: none; }
+  }
 </style>
 {% endblock %}
 
@@ -26,21 +72,14 @@
   <a href="{{ url_for('informes.estado_cuenta', codigo_cli=codigo_cli) }}"
      class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100"
      title="Estado de cuenta del cliente">← Estado de cuenta</a>
-  {% if meses == 12 %}
-    <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli, meses=24) }}"
-       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver 24 meses</a>
-  {% else %}
-    <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli) }}"
-       class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Ver 12 meses</a>
-  {% endif %}
-  <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli, meses=meses, export='csv') }}"
+  <a href="{{ url_for('informes.ventas_cliente', codigo_cli=codigo_cli, export='csv') }}"
      class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
   <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">Imprimir</button>
 {% endset %}
 
 {% call informes_page(
     titulo=codigo_cli ~ " · " ~ (_cli.nombre or ""),
-    descripcion="Ventas por mes de los últimos " ~ meses ~ " meses (" ~ (data.desde or "") ~ " a " ~ (data.hasta or "") ~ ") · kilos, precio promedio U$/kg, importe y acumulado. Facturas, devoluciones y notas de crédito, sin IVA, leídas de Asinfo.",
+    descripcion="Ventas de los últimos " ~ (_anios | length) ~ " años (" ~ (_anios[0].anio if _anios else "") ~ "–" ~ (_anios[-1].anio if _anios else "") ~ ") · total y promedio por mes, kg e importe. Facturas, devoluciones y notas de crédito, sin IVA, leídas de Asinfo.",
     actions_safe=_actions,
 ) %}
 
@@ -55,61 +94,93 @@
     </div>
   {% endif %}
 
-  {{ informes_kpi_row([
-    {"label": "Kg (" ~ meses ~ " meses)", "value": data.total_kg | num_es(0)},
-    {"label": "Precio promedio", "value": (data.precio_prom | num_es(2)) ~ ' U$/kg'},
-    {"label": "Importe total", "value": data.total_importe | money_es, "primary": true},
-    {"label": "Meses con venta", "value": (data.meses_con_venta or 0) ~ " de " ~ meses},
-  ]) }}
-
-  {% set _max_kg = data.filas | map(attribute='kg') | max if data.filas else 0 %}
-  {% set _max_imp = data.filas | map(attribute='importe') | max if data.filas else 0 %}
-
-  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
-    <table class="info-table">
-      <thead>
-        <tr>
-          <th>Mes</th>
-          <th class="num">Kg</th>
-          <th class="no-print" style="width: 14%;" data-no-sort></th>
-          <th class="num">Precio U$/kg</th>
-          <th class="num">Importe</th>
-          <th class="no-print" style="width: 14%;" data-no-sort></th>
-          <th class="num" data-no-sort>Acumulado</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for r in data.filas %}
-        <tr class="{{ 'vc-cero' if not r.kg and not r.importe else '' }}">
-          <td>
-            <a href="{{ url_for('informes.ventas', anio=r.anio, mes=r.mes_num) }}"
-               class="hover:text-blue-600 hover:underline"
-               title="Ranking de clientes de {{ r.mes_nombre }} {{ r.anio }}">{{ r.mes_nombre }} {{ r.anio }}</a>
-          </td>
-          <td class="num">{{ r.kg | num_es(0) }}</td>
-          <td class="no-print"><div class="vc-bar kg"><span style="width: {{ ((r.kg / _max_kg * 100) if _max_kg else 0) | round(1) }}%;"></span></div></td>
-          <td class="num muted">{{ r.precio | num_es(2) if r.kg else '—' }}</td>
-          <td class="num">{{ r.importe | money_es }}</td>
-          <td class="no-print"><div class="vc-bar"><span style="width: {{ ((r.importe / _max_imp * 100) if _max_imp and r.importe > 0 else 0) | round(1) }}%;"></span></div></td>
-          <td class="num" style="font-weight: 600;">{{ r.acum | money_es }}</td>
-        </tr>
-        {% else %}
-        <tr><td colspan="7" class="info-empty">Sin datos.</td></tr>
-        {% endfor %}
-        {% if data.filas %}
-        <tr class="total no-sort">
-          <td>TOTAL</td>
-          <td class="num">{{ data.total_kg | num_es(0) }}</td>
-          <td class="no-print"></td>
-          <td class="num">{{ data.precio_prom | num_es(2) }}</td>
-          <td class="num">{{ data.total_importe | money_es }}</td>
-          <td class="no-print"></td>
-          <td class="num"></td>
-        </tr>
-        {% endif %}
-      </tbody>
-    </table>
+  <div class="vc-compact info-kpi-row">
+    {{ informes_kpi_row([
+      {"label": "Kg total (" ~ (_anios | length) ~ " años)", "value": data.total_kg | num_es(0)},
+      {"label": "Precio promedio", "value": ((data.total_importe / data.total_kg) if data.total_kg else 0) | num_es(2) ~ ' U$/kg'},
+      {"label": "Importe total", "value": data.total_importe | money_es, "primary": true},
+    ]) }}
   </div>
+
+  <div class="vc-anios">
+    {% for a in _anios %}
+      <div class="vc-anio-card {{ 'actual' if a.es_parcial else '' }}">
+        <div class="vc-anio-head">
+          <span class="anio">{{ a.anio }}</span>
+          {% if a.es_parcial %}<span class="parcial">{{ a.meses_transcurridos }} de 12 meses</span>{% endif %}
+        </div>
+        <div class="vc-anio-fila total">
+          <span class="lbl">Kg total</span>
+          <span class="val">{{ a.total_kg | num_es(0) }}</span>
+        </div>
+        <div class="vc-anio-fila">
+          <span class="lbl">Promedio / mes</span>
+          <span class="val">{{ a.promedio_kg_mes | num_es(0) }} kg</span>
+        </div>
+        <div class="vc-anio-fila total grupo">
+          <span class="lbl">Importe total</span>
+          <span class="val">{{ a.total_importe | money_es }}</span>
+        </div>
+        <div class="vc-anio-fila">
+          <span class="lbl">Promedio / mes</span>
+          <span class="val">{{ a.promedio_importe_mes | money_es }}</span>
+        </div>
+      </div>
+    {% else %}
+      <div class="info-empty">Sin datos.</div>
+    {% endfor %}
+  </div>
+
+  {% for a in _anios | reverse %}
+    {% set _max_kg = a.filas | map(attribute='kg') | max if a.filas else 0 %}
+    {% set _max_imp = a.filas | map(attribute='importe') | max if a.filas else 0 %}
+    <details class="vc-detalle no-print-collapse" {{ 'open' if a.es_parcial else '' }}>
+      <summary>
+        <span>Meses de {{ a.anio }}</span>
+        <span class="text-xs font-normal text-slate-500">{{ a.meses_con_venta }} de {{ a.meses_transcurridos }} con venta</span>
+      </summary>
+      <table class="info-table">
+        <thead>
+          <tr>
+            <th>Mes</th>
+            <th class="num">Kg</th>
+            <th class="no-print" style="width: 14%;" data-no-sort></th>
+            <th class="num">Precio U$/kg</th>
+            <th class="num">Importe</th>
+            <th class="no-print" style="width: 14%;" data-no-sort></th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in a.filas %}
+          <tr class="{{ 'vc-cero' if not r.kg and not r.importe else '' }}">
+            <td>
+              <a href="{{ url_for('informes.ventas', anio=a.anio, mes=r.mes_num) }}"
+                 class="hover:text-blue-600 hover:underline"
+                 title="Ranking de clientes de {{ r.mes_nombre }} {{ a.anio }}">{{ r.mes_nombre }}</a>
+            </td>
+            <td class="num">{{ r.kg | num_es(0) }}</td>
+            <td class="no-print"><div class="vc-bar kg"><span style="width: {{ ((r.kg / _max_kg * 100) if _max_kg else 0) | round(1) }}%;"></span></div></td>
+            <td class="num muted">{{ r.precio | num_es(2) if r.kg else '—' }}</td>
+            <td class="num">{{ r.importe | money_es }}</td>
+            <td class="no-print"><div class="vc-bar"><span style="width: {{ ((r.importe / _max_imp * 100) if _max_imp and r.importe > 0 else 0) | round(1) }}%;"></span></div></td>
+          </tr>
+          {% else %}
+          <tr><td colspan="6" class="info-empty">Sin datos.</td></tr>
+          {% endfor %}
+          {% if a.filas %}
+          <tr class="total no-sort">
+            <td>TOTAL {{ a.anio }}</td>
+            <td class="num">{{ a.total_kg | num_es(0) }}</td>
+            <td class="no-print"></td>
+            <td class="num">{{ a.precio_prom | num_es(2) }}</td>
+            <td class="num">{{ a.total_importe | money_es }}</td>
+            <td class="no-print"></td>
+          </tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </details>
+  {% endfor %}
 
   {# Cambiar de cliente sin volver atrás: código → Enter. #}
   <form class="vc-cambiar mt-4 text-sm text-slate-600 no-print" method="get"
@@ -117,7 +188,6 @@
     <label for="vc-otro">Otro cliente:</label>
     <input id="vc-otro" name="codigo" class="border border-slate-300 rounded px-2 py-1"
            placeholder="Código" maxlength="6" autocomplete="off">
-    <input type="hidden" name="meses" value="{{ meses }}">
     <button type="submit" class="px-3 py-1 rounded border border-slate-300 hover:bg-slate-100">Ver</button>
   </form>
 

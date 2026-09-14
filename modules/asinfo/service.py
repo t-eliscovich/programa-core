@@ -37,6 +37,7 @@ import logging
 import os
 import threading as _threading
 import time as _time
+from datetime import date as _date
 
 from modules._lib import metabase_client
 
@@ -129,6 +130,33 @@ def ventas_cliente_kg(vendedor: str | None = None) -> list[dict]:
 
 _FACTURAS_CACHE: dict[tuple[str, str], tuple[float, list[dict]]] = {}
 _FACTURAS_TTL_SECS = 300  # 5 minutos
+
+# TMT 2026-09-14: piso ANCHO compartido para "quiero data de varios años".
+# `warmup.py` mantiene UN solo rango caliente en _FACTURAS_CACHE (ver paso
+# "facturas_rango_ancho"); cualquier consumidor que pida ese MISMO rango
+# (desde, hasta) pega en cache y responde al instante. Antes cada lugar
+# hardcodeaba su propio `date(2025, 1, 1)` — cuando uno pedía un rango más
+# ancho (ej. "ver 24 meses"), la clave no coincidía con la del warmup y caía
+# en un fetch en frío de 10-30s a Metabase. RANGO_ANCHO_ANIOS define cuántos
+# años calendario completos hacia atrás cubre el piso (3 = año en curso +
+# los 2 anteriores completos).
+RANGO_ANCHO_ANIOS = 3
+
+
+def rango_ancho_desde(hoy: _date | None = None) -> _date:
+    """1° de enero de hace `RANGO_ANCHO_ANIOS - 1` años (piso ancho compartido).
+
+    Única fuente de verdad para el "desde" del rango que el warmup mantiene
+    caliente en `_FACTURAS_CACHE`. Cualquier función que necesite varios años
+    de facturas de Asinfo debe pedir `max(su propio desde, rango_ancho_desde())`
+    para pegarle a la MISMA clave de cache que calienta el warmup, en vez de
+    hardcodear su propia fecha (eso fue lo que causó que "Ver 24 meses"
+    tardara 10-30s en vez de responder al instante).
+    """
+    if hoy is None:
+        hoy = _date.today()
+    return _date(hoy.year - (RANGO_ANCHO_ANIOS - 1), 1, 1)
+
 
 # ---------------------------------------------------------------------------
 # SUCURSALES — cómo Asinfo distingue AJO de AJ2 (TMT 2026-07-30)

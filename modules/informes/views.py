@@ -2771,48 +2771,61 @@ def ventas_cliente_landing():
 @requiere_login
 @requiere_permiso("informes.ver")
 def ventas_cliente(codigo_cli):
-    """Ventas por mes de UN cliente — kilos y dólares, últimos 12 meses.
+    """Ventas de UN cliente — últimos 3 años calendario, kilos y dólares.
 
     TMT 2026-09-11 — pedido de Andrés: *"ver las ventas por mes del último año
     de un cliente, kilos y dólares"*. Se llega desde el estado de cuenta del
-    cliente y desde el código en el ranking del mes. `?meses=24` estira la
-    ventana; `?export=csv` baja la grilla.
+    cliente y desde el código en el ranking del mes.
+
+    TMT 2026-09-14 — rediseño a pedido de Tamara: la pantalla por defecto
+    ahora es *"los ultimos 3 anos... total, promedio por mes, para kg y $...
+    simple y facil de digerir"* (`ventas_cliente_por_anio`), con el detalle
+    mensual plegado por año (`<details>`) para "ir viendo los meses" sin
+    abrumar de entrada. El export CSV sigue siendo el corrido mes a mes
+    (`ventas_cliente_por_mes`, con acumulado) — `?meses=` lo controla igual
+    que antes, ahora sobre una ventana de 36 meses por defecto para cubrir
+    los mismos 3 años que ve la pantalla.
     """
     codigo_up = (codigo_cli or "").strip().upper()
-    try:
-        meses = int(request.args.get("meses") or 12)
-    except (TypeError, ValueError):
-        meses = 12
-    meses = max(1, min(meses, 60))
-    data, error = _safe(lambda: queries.ventas_cliente_por_mes(codigo_up, meses), {})
+
+    if request.args.get("export") == "csv":
+        try:
+            meses = int(request.args.get("meses") or 36)
+        except (TypeError, ValueError):
+            meses = 36
+        meses = max(1, min(meses, 60))
+        data_csv, error = _safe(lambda: queries.ventas_cliente_por_mes(codigo_up, meses), {})
+        if not error and not data_csv:
+            abort(404)
+        if data_csv:
+            return csv_response(
+                [
+                    {
+                        "mes": "%02d/%d" % (r["mes_num"], r["anio"]),
+                        "kg": r["kg"],
+                        "precio": r["precio"],
+                        "importe": r["importe"],
+                        "acum": r["acum"],
+                    }
+                    for r in data_csv["filas"]
+                ],
+                columnas=[
+                    ("mes", "Mes"),
+                    ("kg", "Kg"),
+                    ("precio", "Precio U$/kg"),
+                    ("importe", "Importe"),
+                    ("acum", "Acumulado"),
+                ],
+                filename=f"ventas_{codigo_up}.csv",
+            )
+
+    data, error = _safe(lambda: queries.ventas_cliente_por_anio(codigo_up, 3), {})
     if not error and not data:
         abort(404)
-    if request.args.get("export") == "csv" and data:
-        return csv_response(
-            [
-                {
-                    "mes": "%02d/%d" % (r["mes_num"], r["anio"]),
-                    "kg": r["kg"],
-                    "precio": r["precio"],
-                    "importe": r["importe"],
-                    "acum": r["acum"],
-                }
-                for r in data["filas"]
-            ],
-            columnas=[
-                ("mes", "Mes"),
-                ("kg", "Kg"),
-                ("precio", "Precio U$/kg"),
-                ("importe", "Importe"),
-                ("acum", "Acumulado"),
-            ],
-            filename=f"ventas_{codigo_up}.csv",
-        )
     return render_template(
         "informes/ventas_cliente.html",
         data=data or {},
         codigo_cli=codigo_up,
-        meses=meses,
         error=error,
     )
 

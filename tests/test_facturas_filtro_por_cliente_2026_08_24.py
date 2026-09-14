@@ -14,8 +14,9 @@ rango salía de las fechas EXACTAS de las facturas de ese cliente, cada filtro
 estrenaba su propia clave y volvía a pagar los ~20 meses de Asinfo.
 
 Ahora el rango se redondea a meses enteros, así que casi todos los filtros
-caen en la misma clave —2025-01-01 → fin del mes en curso— que además el
-warmup mantiene caliente.
+caen en la misma clave —el piso ANCHO compartido (`asinfo.service.
+rango_ancho_desde`, ver TMT 2026-09-14) → fin del mes en curso— que además
+el warmup mantiene caliente.
 """
 from __future__ import annotations
 
@@ -48,12 +49,20 @@ def test_el_rango_se_redondea_a_meses_enteros():
 
 
 def test_el_calentador_deja_listo_el_rango_ancho():
-    """El primero que filtre un cliente no tiene por qué pagarlo él."""
+    """El primero que filtre un cliente no tiene por qué pagarlo él.
+
+    TMT 2026-09-14: el piso ya NO es un `date(2025, 1, 1)` fijo acá adentro
+    (eso fue lo que causó que "Ver 24 meses" de /informes/ventas/cliente
+    cayera en un cache MISS: pedía un rango más ancho que este fijo) — ahora
+    viene de `asinfo.service.rango_ancho_desde()`, la MISMA función que usa
+    ese consumidor, así que los dos calientan y pegan en la MISMA clave.
+    """
     from modules._lib import warmup
 
     src = inspect.getsource(warmup._warm_once)
     assert "facturas_rango_ancho" in src
-    assert "date(2025, 1, 1)" in src
+    assert "rango_ancho_desde" in src
+    assert "date(2025, 1, 1)" not in src
 
 
 def test_le_sigue_preguntando_a_asinfo():
