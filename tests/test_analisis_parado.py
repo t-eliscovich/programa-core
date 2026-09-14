@@ -4725,10 +4725,20 @@ def test_el_click_en_el_dia_no_abre_tambien_la_fila():
 
 
 def test_lo_vendido_guarda_el_numero_completo():
-    """De nada sirve el link si la columna no está."""
+    """De nada sirve el link si la columna no está.
+
+    ⚠ 14/09/2026: `vendido_detalle()` (la que alimenta `/analisis/competencia`)
+    es la hermana de `vendidos()` (la de `/analisis/parado`) y NO traía
+    `numero` — el link de competencia.html nunca mandaba `?doc=` y un numf
+    repetido (11027) caía siempre en el picker de `/facturas?q=…` en vez de
+    abrir la factura. Por eso las DOS consultas se chequean acá: el próximo
+    link que se escriba de este tipo tiene que traer su `numero` o este test
+    lo agarra, no solo el que ella pisó."""
     import inspect as _i
-    fuente = _i.getsource(queries.vendidos)
-    assert "v.numero" in fuente, "la consulta no trae el número completo"
+    for fn in (queries.vendidos, queries.vendido_detalle):
+        fuente = _i.getsource(fn)
+        assert "v.numero" in fuente, (
+            f"{fn.__name__}: la consulta no trae el número completo")
     from pathlib import Path
     mig = (Path(__file__).resolve().parent.parent / "migrations" /
            "0233_parado_venta_numero_completo.sql").read_text(encoding="utf-8")

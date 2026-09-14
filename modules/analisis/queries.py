@@ -1647,11 +1647,26 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
     ⚠ Consecuencia asumida: el que facturó una tela de la lista y no la ve acá
     va a preguntar. La respuesta es la regla de `cuenta_el_kilo` — eran kilos de
     PRIMERA de un ítem que entró sólo por su segunda.
+
+    ⚠ 14/09/2026: trae `numero` (numf_completo) con el mismo par de LATERAL
+    que `vendidos()` — sin él, el link de competencia.html no puede mandar
+    `?doc=` y un numf repetido abre el picker de facturas en vez de la
+    factura.
     """
     filas = db.fetch_all(
         """SELECT v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
                   v.fecha, v.numf, SUM(v.kg) AS kg,
                   SUM(v.kg * COALESCE(p.puntos, 1)) AS puntos,
+                  -- ⭐ El NÚMERO COMPLETO, igual que en `vendidos()` — SIN esto
+                  -- el link de competencia.html nunca manda `?doc=` y un numf
+                  -- repetido (11027: factura BED del 14/09 y NC de CLR del
+                  -- 15/06) cae siempre en el picker de `/facturas?q=…` en vez
+                  -- de abrir la factura. Reportado 14/09/2026 (Tamara: "sigue
+                  -- habiendo este problema") — el link YA se había arreglado
+                  -- una vez (26/08) pero solo en `vendidos()`; a esta consulta
+                  -- hermana, que alimenta Competencia, nunca se le copió.
+                  COALESCE(v.numero, dia.numf_completo,
+                           uno.numf_completo)         AS numero,
                   -- ⭐ El color con su nombre y la FORMA, para que el detalle
                   -- que se abre tenga las mismas columnas que la lista de
                   -- saldos (dueña 25/08/2026: "color, forma, categoría, kg
@@ -1668,6 +1683,19 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   -- no la fecha de ESTA venta puntual (esa ya la tiene "Día").
                   MAX(f.ultima_venta) AS ultima_venta
              FROM scintela.parado_venta v
+             -- ⭐ Primero por NÚMERO + DÍA (desempata de verdad), y si el día
+             -- no alcanza, por el número solo cuando tiene UN documento —el
+             -- mismo par de LATERAL de `vendidos()`; ver el comentario ahí.
+             LEFT JOIN LATERAL (
+                 SELECT MIN(fa.numf_completo) AS numf_completo
+                   FROM scintela.factura fa
+                  WHERE fa.numf = v.numf AND fa.fecha = v.fecha
+                 HAVING COUNT(*) = 1) dia ON TRUE
+             LEFT JOIN LATERAL (
+                 SELECT MIN(fa.numf_completo) AS numf_completo
+                   FROM scintela.factura fa
+                  WHERE fa.numf = v.numf
+                 HAVING COUNT(*) = 1) uno ON TRUE
              LEFT JOIN scintela.parado_punto p ON p.subcategoria = v.subcategoria
              LEFT JOIN scintela.parado_foto f
                     ON f.subcategoria = v.subcategoria AND f.color = v.color
@@ -1679,7 +1707,8 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   LIMIT 1) nom ON TRUE
             WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
-                     v.fecha, v.numf, nom.n
+                     v.fecha, v.numf, v.numero, dia.numf_completo,
+                     uno.numf_completo, nom.n
             ORDER BY SUM(v.kg) DESC""", (desde,)) or []
     out: dict[str, list[dict]] = defaultdict(list)
     for f in filas:
