@@ -214,7 +214,10 @@ def test_pantalla_renderiza_anios_y_links(app, fake_db):
     assert "ABC TEXTIL" in html
     assert "Ventas por año" in html
     assert "2024" in html and "2025" in html and "2026" in html
-    assert "Promedio / mes" in html
+    assert "/mes" in html  # total y promedio por mes, en la misma línea
+    # El año más reciente aparece PRIMERO (Tamara, 14/09): tanto en las
+    # tarjetas como en el detalle plegado.
+    assert html.index(">2026<") < html.index(">2025<") < html.index(">2024<")
     # Cada mes del detalle plegado linkea al ranking de ese mes; hay CSV.
     assert "/informes/ventas?anio=2026&amp;mes=3" in html
     assert "export=csv" in html
