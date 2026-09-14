@@ -235,6 +235,22 @@ def _loop() -> None:
                 _ventas.correr_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("ventas del día (fondo): %s", e)
+            # TMT 2026-09-14 (dueña): *"el mail de estado de cuenta va a ser
+            # cada dos semanas los lunes salvo que sea feriado en ecuador"*.
+            # El recordatorio del portal, cada 2 semanas (puntero en base,
+            # siempre cae lunes), salteando feriados EC/Quito. Apagado por
+            # default (interruptor de pantalla) — PORTAL_AVISO_EC_AUTO=0 lo
+            # apaga también por env. Freno propio de 1h.
+            try:
+                from modules.portal_aviso import recordatorio as _rec_ec
+                rc = _rec_ec.correr_si_toca()
+                if rc.get("corrio"):
+                    _LOG.info(
+                        "recordatorio estado de cuenta (fondo): %s enviados, %s fallidos",
+                        rc.get("enviados", 0), rc.get("fallidos", 0),
+                    )
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("recordatorio estado de cuenta (fondo): %s", e)
             # TMT 2026-07-31 (dueña): "guardá la data y fijate en un rato
             # también". La grabadora: una foto del balance con TODOS sus
             # componentes cada 5 minutos, para que un salto de las 09:16 a las

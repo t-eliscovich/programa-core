@@ -82,15 +82,52 @@ def html_del_aviso(nombre: str) -> str:
     )
 
 
+def texto_recordatorio(nombre: str) -> str:
+    return (
+        f"Hola {nombre_lindo(nombre)},\n\n"
+        f"Le recordamos que puede consultar su estado de cuenta actualizado "
+        f"en el portal de Intela.\n"
+        f"Para entrar: {PORTAL_URL}\n"
+        f"Le va a pedir su RUC.\n"
+        f"Intela · Industria Textil Latinoamericana C. Ltda."
+    )
+
+
+def html_recordatorio(nombre: str) -> str:
+    return (
+        '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
+        'color:#1e293b;max-width:520px;margin:0 auto;padding:24px 16px">'
+        f'<p>Hola {nombre_lindo(nombre)},</p>'
+        '<p>Le recordamos que puede consultar su estado de cuenta '
+        'actualizado en el portal de Intela.</p>'
+        f'<p style="margin:28px 0"><a href="{PORTAL_URL}" '
+        'style="background:#b91c1c;color:#fff;text-decoration:none;'
+        'padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block">'
+        'Ver mi estado de cuenta</a></p>'
+        '<p>Le va a pedir su RUC.</p>'
+        '<p style="font-size:12px;color:#64748b">Intela · Industria Textil '
+        'Latinoamericana C. Ltda.</p>'
+        '</div>'
+    )
+
+
 def mandar(filas: list[dict], quien: str, tipo: str = "cliente",
-           a: str = "") -> dict:
+           a: str = "", contenido: str = "lanzamiento") -> dict:
     """Manda el aviso a cada fila (`codigo_cli`, `nombre`, `vend`, `correo`).
 
     `a`: si viene, TODOS van a esa casilla en vez de a la del cliente (la
-    prueba). Cada envío queda anotado en `scintela.portal_aviso`, salga o no.
+    prueba). `contenido`: "lanzamiento" (el anuncio de portal nuevo, TMT
+    04-14/09/2026) o "recordatorio" (TMT 14/09/2026: el mail quincenal de
+    "su estado de cuenta está en el portal", sin la novedad de "nuevo").
+    Cada envío queda anotado en `scintela.portal_aviso`, salga o no.
     Devuelve ``{"enviados": int, "fallidos": int, "sin_correo": int}``.
     """
     from modules._lib import mailer
+
+    texto_fn, html_fn = (
+        (texto_recordatorio, html_recordatorio) if contenido == "recordatorio"
+        else (texto_del_aviso, html_del_aviso)
+    )
 
     res = {"enviados": 0, "fallidos": 0, "sin_correo": 0}
     for f in filas:
@@ -100,8 +137,8 @@ def mandar(filas: list[dict], quien: str, tipo: str = "cliente",
             continue
         nombre = f.get("nombre") or f.get("codigo_cli") or ""
         env = mailer.enviar(
-            ASUNTO, texto_del_aviso(nombre), [correo],
-            html=html_del_aviso(nombre),
+            ASUNTO, texto_fn(nombre), [correo],
+            html=html_fn(nombre),
             responder_a=queries.correo_del_vendedor(f.get("vend") or ""))
         ok = bool(env.get("ok"))
         res["enviados" if ok else "fallidos"] += 1

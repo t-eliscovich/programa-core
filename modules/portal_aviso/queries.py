@@ -18,6 +18,8 @@ a otro, el cliente no entiende nada.
 """
 from __future__ import annotations
 
+from datetime import date
+
 import db
 
 #: La clave de `scintela.nota_config` que dice si el envío a clientes está
@@ -43,6 +45,50 @@ def encender_a_clientes(prendido: bool) -> None:
         "INSERT INTO scintela.nota_config (clave, valor) VALUES (%s, %s) "
         "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
         (CLAVE_INTERRUPTOR, "1" if prendido else "0"))
+
+
+#: La clave que prende/apaga el RECORDATORIO automático (cada 2 semanas,
+#: TMT 14/09/2026). Nace apagada — mismo patrón que CLAVE_INTERRUPTOR.
+CLAVE_INTERRUPTOR_EC = "portal_aviso_ec_auto"
+
+#: La fecha (ISO, YYYY-MM-DD) de la PRÓXIMA corrida del recordatorio. Se
+#: guarda como un puntero en vez de calcularse por aritmética de semana
+#: par/impar: cada corrida (mande o se salte por feriado) empuja este
+#: puntero 14 días, y como 14 es múltiplo de 7 siempre cae lunes.
+CLAVE_PROXIMA_EC = "portal_aviso_ec_proxima"
+
+
+def ec_auto_encendido() -> bool:
+    try:
+        r = db.fetch_one("SELECT valor FROM scintela.nota_config WHERE clave = %s",
+                         (CLAVE_INTERRUPTOR_EC,))
+        return bool(r) and (r.get("valor") or "").strip() == "1"
+    except Exception:  # noqa: BLE001 -- sin la fila, apagado
+        return False
+
+
+def encender_ec_auto(prendido: bool) -> None:
+    db.execute(
+        "INSERT INTO scintela.nota_config (clave, valor) VALUES (%s, %s) "
+        "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+        (CLAVE_INTERRUPTOR_EC, "1" if prendido else "0"))
+
+
+def proxima_corrida_ec() -> date | None:
+    try:
+        r = db.fetch_one("SELECT valor FROM scintela.nota_config WHERE clave = %s",
+                         (CLAVE_PROXIMA_EC,))
+        v = ((r or {}).get("valor") or "").strip()
+        return date.fromisoformat(v) if v else None
+    except Exception:  # noqa: BLE001 -- sin fecha programada
+        return None
+
+
+def fijar_proxima_corrida_ec(d: date) -> None:
+    db.execute(
+        "INSERT INTO scintela.nota_config (clave, valor) VALUES (%s, %s) "
+        "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor",
+        (CLAVE_PROXIMA_EC, d.isoformat()))
 
 
 def lista() -> list[dict]:

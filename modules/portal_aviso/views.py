@@ -56,14 +56,19 @@ def pantalla():
     except Exception as e:  # noqa: BLE001 -- sin la columna (mig 0246), sin el bloque
         _LOG.warning("portal_aviso: no pude leer los vendedores (%s)", e)
         vendedores = []
+    ec_encendido = queries.ec_auto_encendido()
+    ec_proxima = queries.proxima_corrida_ec()
     return render_template(
         "portal_aviso/pantalla.html",
         filas=filas, con_correo=con_correo, sin_correo=sin_correo,
         historial=historial, encendido=encendido, error=error,
         ejemplo=envio.texto_del_aviso(con_correo[0]["nombre"] if con_correo else "cliente"),
+        ejemplo_recordatorio=envio.texto_recordatorio(con_correo[0]["nombre"] if con_correo else "cliente"),
         mail_prueba=request.args.get("a", ""),
         vendedores=vendedores,
         mensajes_a=", ".join(_mensajes_a()),
+        ec_encendido=ec_encendido,
+        ec_proxima=ec_proxima,
     )
 
 
@@ -132,6 +137,41 @@ def interruptor():
     queries.encender_a_clientes(prender)
     flash("El envío a clientes quedó PRENDIDO." if prender
           else "El envío a clientes quedó apagado.", "ok")
+    return redirect(url_for("portal_aviso.pantalla"))
+
+
+@portal_aviso_bp.route("/portal-aviso/ec-interruptor", methods=["POST"])
+@requiere_login
+@requiere_permiso(PERMISO)
+def ec_interruptor():
+    """Prende/apaga el RECORDATORIO automático (cada 2 semanas, TMT
+    14/09/2026). Si se prende y todavía no hay una próxima corrida
+    programada, no manda nada hasta que se fije una fecha abajo."""
+    prender = (request.form.get("prender") or "") == "1"
+    queries.encender_ec_auto(prender)
+    flash("El recordatorio automático quedó PRENDIDO." if prender
+          else "El recordatorio automático quedó apagado.", "ok")
+    return redirect(url_for("portal_aviso.pantalla"))
+
+
+@portal_aviso_bp.route("/portal-aviso/ec-proxima", methods=["POST"])
+@requiere_login
+@requiere_permiso(PERMISO)
+def ec_proxima():
+    """Fija (o corrige) la fecha de la próxima corrida del recordatorio."""
+    from datetime import date as _date
+
+    valor = (request.form.get("fecha") or "").strip()
+    try:
+        fecha = _date.fromisoformat(valor)
+    except ValueError:
+        flash(f"«{valor}» no es una fecha válida (AAAA-MM-DD).", "error")
+        return redirect(url_for("portal_aviso.pantalla"))
+    if fecha.weekday() != 0:
+        flash(f"{fecha.isoformat()} no es lunes. Elegí un lunes.", "error")
+        return redirect(url_for("portal_aviso.pantalla"))
+    queries.fijar_proxima_corrida_ec(fecha)
+    flash(f"Próxima corrida del recordatorio: {fecha.isoformat()}.", "ok")
     return redirect(url_for("portal_aviso.pantalla"))
 
 
