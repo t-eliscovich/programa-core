@@ -18,9 +18,6 @@ from __future__ import annotations
 
 import logging
 import threading
-from datetime import date
-
-from filters import today_ec
 
 from . import queries
 
@@ -28,37 +25,57 @@ _LOG = logging.getLogger("programa_core.portal_aviso")
 
 PORTAL_URL = "https://portal.intela.com.ec/"
 
-ASUNTO = "Intela · su estado de cuenta"
+ASUNTO = "Portal Intela - Estado de cuenta"
 
 
 def nombre_lindo(nombre: str) -> str:
-    """'TOTOY BUITRON ANDRES JULIO' → 'Totoy Buitron Andres Julio'."""
-    return " ".join(p.capitalize() for p in (nombre or "").split()) or "cliente"
+    """'TOTOY BUITRON ANDRES JULIO' → 'Andres Julio Totoy Buitron'.
+
+    OJO (TMT 14/09/2026, dry run contra 503 clientes reales exportados):
+    `cliente.nombre` es texto libre que vino de Asinfo, y el orden está
+    MEZCLADO — de los que tienen 4 palabras, la mayoría es Nombre Nombre
+    Apellido Apellido pero ~1 de cada 5 es al revés (Apellido Apellido
+    Nombre Nombre), sin campo separado para distinguirlos.
+
+    Decisión de la dueña (14/09): reordenar igual cuando son 4 palabras,
+    asumiendo el orden de cédula (apellido apellido nombre nombre) y
+    armando nombre nombre apellido apellido. Mejora ~80% de esos casos y
+    empeora ~20% — es una apuesta consciente, no un algoritmo infalible.
+    Con 1, 2, 3, 5+ palabras no hay ni siquiera esa apuesta posible: se
+    deja como está.
+    """
+    palabras = [p.capitalize() for p in (nombre or "").split()]
+    if not palabras:
+        return "cliente"
+    if len(palabras) == 4:
+        palabras = palabras[2:] + palabras[:2]
+    return " ".join(palabras)
 
 
-def texto_del_aviso(nombre: str, fecha: date | None = None) -> str:
-    fecha = fecha or today_ec()
+def texto_del_aviso(nombre: str) -> str:
     return (
-        f"Hola {nombre_lindo(nombre)}: le dejamos su estado de cuenta de Intela "
-        f"al {fecha.strftime('%d/%m/%Y')}.\n\n"
-        f"Para verlo entre acá: {PORTAL_URL}\n"
-        f"Le va a pedir su RUC.\n\n"
+        f"Hola {nombre_lindo(nombre)},\n\n"
+        f"Intela tiene un portal nuevo para clientes.\n"
+        f"Desde ahora puede consultar en línea su estado de cuenta, pagos y despachos.\n"
+        f"Para entrar: {PORTAL_URL}\n"
+        f"Le va a pedir su RUC.\n"
         f"Intela · Industria Textil Latinoamericana C. Ltda."
     )
 
 
-def html_del_aviso(nombre: str, fecha: date | None = None) -> str:
-    fecha = fecha or today_ec()
+def html_del_aviso(nombre: str) -> str:
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
         'color:#1e293b;max-width:520px;margin:0 auto;padding:24px 16px">'
-        f'<p>Hola {nombre_lindo(nombre)}: le dejamos su estado de cuenta de '
-        f'Intela al <strong>{fecha.strftime("%d/%m/%Y")}</strong>.</p>'
-        '<p>Para verlo, toque el botón. Le va a pedir su RUC.</p>'
+        f'<p>Hola {nombre_lindo(nombre)},</p>'
+        '<p>Intela tiene un portal nuevo para clientes.<br>'
+        'Desde ahora puede consultar en línea su estado de cuenta, pagos y '
+        'despachos.</p>'
         f'<p style="margin:28px 0"><a href="{PORTAL_URL}" '
         'style="background:#b91c1c;color:#fff;text-decoration:none;'
         'padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block">'
-        'Ver mi estado de cuenta</a></p>'
+        'Entrar al portal</a></p>'
+        '<p>Le va a pedir su RUC.</p>'
         '<p style="font-size:12px;color:#64748b">Intela · Industria Textil '
         'Latinoamericana C. Ltda.</p>'
         '</div>'
@@ -76,7 +93,6 @@ def mandar(filas: list[dict], quien: str, tipo: str = "cliente",
     from modules._lib import mailer
 
     res = {"enviados": 0, "fallidos": 0, "sin_correo": 0}
-    hoy = today_ec()
     for f in filas:
         correo = (a or f.get("correo") or "").strip()
         if not correo:
@@ -84,8 +100,8 @@ def mandar(filas: list[dict], quien: str, tipo: str = "cliente",
             continue
         nombre = f.get("nombre") or f.get("codigo_cli") or ""
         env = mailer.enviar(
-            ASUNTO, texto_del_aviso(nombre, hoy), [correo],
-            html=html_del_aviso(nombre, hoy),
+            ASUNTO, texto_del_aviso(nombre), [correo],
+            html=html_del_aviso(nombre),
             responder_a=queries.correo_del_vendedor(f.get("vend") or ""))
         ok = bool(env.get("ok"))
         res["enviados" if ok else "fallidos"] += 1

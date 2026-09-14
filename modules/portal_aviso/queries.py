@@ -5,6 +5,11 @@ estado_cuenta_clientes_saldos` —la MISMA que imprime los estados de cuenta por
 grupos— para que "a todos los que tienen saldo" signifique lo mismo acá que en
 el resto del programa.
 
+TMT 14/09/2026: además de tener saldo, tiene que haber comprado en los
+últimos `MESES_ULTIMA_COMPRA` meses (`_ultima_compra`) — a un cliente que
+dejó de comprar hace años no le mandamos un aviso de un portal nuevo, le
+mandaríamos un cobro disfrazado.
+
 El correo de cada uno se resuelve en el MISMO orden que el portal cuando manda
 el código de 6 números (`modules/portal/acceso.pedir_codigo`): el que el
 cliente confirmó en el portal → el cargado a mano en la ficha → el del
@@ -18,6 +23,10 @@ import db
 #: La clave de `scintela.nota_config` que dice si el envío a clientes está
 #: prendido. Nace en '0' (mig 0242): "hasta no testear no mandamos nada".
 CLAVE_INTERRUPTOR = "portal_aviso_a_clientes"
+
+#: Sólo entran al aviso los clientes que compraron (facturas no anuladas)
+#: dentro de esta cantidad de meses. TMT 14/09/2026.
+MESES_ULTIMA_COMPRA = 6
 
 
 def a_clientes_encendido() -> bool:
@@ -37,12 +46,13 @@ def encender_a_clientes(prendido: bool) -> None:
 
 
 def lista() -> list[dict]:
-    """Una fila por cliente con saldo a favor nuestro (saldo > 0).
+    """Una fila por cliente con saldo a favor nuestro (saldo > 0) Y que
+    compró (factura no anulada) en los últimos `MESES_ULTIMA_COMPRA` meses.
 
     Cada fila trae: codigo_cli, nombre, vend, saldo, vencido, correo (el
     resuelto), de_donde ('portal' | 'ficha' | 'asinfo' | ''), entro (bool: ya
     eligió clave en el portal), ultimo_aviso (timestamptz | None),
-    ultimo_aviso_ok (bool | None).
+    ultimo_aviso_ok (bool | None), ultima_compra (date).
     """
     from modules.informes.queries import estado_cuenta_clientes_saldos
 
@@ -52,9 +62,13 @@ def lista() -> list[dict]:
         return []
     codigos = sorted({(f["codigo_cli"] or "").strip().upper() for f in con_saldo})
     extra = {r["codigo_cli"]: r for r in _correos_y_portal(codigos)}
+    compraron = _ultima_compra(codigos)
     filas = []
     for f in con_saldo:
         cod = (f["codigo_cli"] or "").strip().upper()
+        ultima_compra = compraron.get(cod)
+        if not ultima_compra:
+            continue  # no compró en los últimos MESES_ULTIMA_COMPRA meses
         e = extra.get(cod) or {}
         correo, de_donde = _resolver(e)
         filas.append({
@@ -68,9 +82,33 @@ def lista() -> list[dict]:
             "entro": bool(e.get("eligio_clave")),
             "ultimo_aviso": e.get("ultimo_aviso"),
             "ultimo_aviso_ok": e.get("ultimo_aviso_ok"),
+            "ultima_compra": ultima_compra,
         })
     filas.sort(key=lambda x: x["codigo_cli"])
     return filas
+
+
+def _ultima_compra(codigos: list[str]) -> dict:
+    """`{codigo_cli: fecha}` de los que tienen al menos una factura NO
+    anulada (stat fuera de X/T, igual criterio que `facturas.queries.
+    STATS_ANULADAS`) con fecha dentro de `MESES_ULTIMA_COMPRA` meses.
+
+    El filtro de fecha va en el HAVING, en Postgres: evita reinventar la
+    aritmética de "hace 6 meses" en Python."""
+    return {
+        r["codigo_cli"]: r["ultima_compra"]
+        for r in db.fetch_all(
+            """
+            SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli, MAX(fecha) AS ultima_compra
+              FROM scintela.factura
+             WHERE UPPER(TRIM(codigo_cli)) = ANY(%(codigos)s)
+               AND (stat IS NULL OR stat NOT IN ('X', 'T'))
+             GROUP BY UPPER(TRIM(codigo_cli))
+            HAVING MAX(fecha) >= CURRENT_DATE - (%(meses)s || ' months')::interval
+            """,
+            {"codigos": codigos, "meses": MESES_ULTIMA_COMPRA},
+        )
+    }
 
 
 def _resolver(e: dict) -> tuple[str, str]:

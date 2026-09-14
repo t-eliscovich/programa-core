@@ -61,17 +61,27 @@ def _mailer_falso(monkeypatch):
 
 
 def test_el_nombre_sale_como_persona_y_no_a_los_gritos():
-    assert envio.nombre_lindo("TOTOY BUITRON ANDRES JULIO") == "Totoy Buitron Andres Julio"
+    # 4 palabras: se reordena (apellido apellido nombre nombre -> al revés).
+    assert envio.nombre_lindo("TOTOY BUITRON ANDRES JULIO") == "Andres Julio Totoy Buitron"
     assert envio.nombre_lindo("") == "cliente"
+
+
+def test_el_nombre_solo_se_reordena_con_4_palabras():
+    """Con otra cantidad de palabras no hay apuesta posible: se deja como
+    está (sólo capitalizado)."""
+    assert envio.nombre_lindo("MARCO MARROQUIN") == "Marco Marroquin"
+    assert envio.nombre_lindo("ANA GUACHAMIN C") == "Ana Guachamin C"
+    assert envio.nombre_lindo("MARUJA DE JESUS MOROCHO NAULA") == "Maruja De Jesus Morocho Naula"
+    assert envio.nombre_lindo("ALMACENES LIRA CIA LTDA") == "Cia Ltda Almacenes Lira"
 
 
 def test_el_mail_no_lleva_el_monto_y_lleva_la_puerta():
     """Quien lo reciba por error se entera de que es cliente de Intela, y
     nada más. Y el botón va a la puerta del portal, que le pide el RUC."""
-    for cuerpo in (envio.texto_del_aviso(AJT["nombre"], date(2026, 9, 7)),
-                   envio.html_del_aviso(AJT["nombre"], date(2026, 9, 7))):
+    for cuerpo in (envio.texto_del_aviso(AJT["nombre"]),
+                   envio.html_del_aviso(AJT["nombre"])):
         assert "Totoy Buitron" in cuerpo
-        assert "07/09/2026" in cuerpo
+        assert "portal nuevo" in cuerpo
         assert "portal.intela.com.ec" in cuerpo
         assert "RUC" in cuerpo
         assert "10.225" not in cuerpo and "$" not in cuerpo
@@ -139,9 +149,29 @@ def test_la_lista_es_la_de_los_estados_de_cuenta_con_saldo_a_favor_nuestro(monke
     monkeypatch.setattr(queries, "_correos_y_portal", lambda codigos: [
         {"codigo_cli": "AJT", "correo_ficha": "", "mail_portal": "", "mail_asinfo": "a@x",
          "eligio_clave": True, "ultimo_aviso": None, "ultimo_aviso_ok": None}])
+    monkeypatch.setattr(queries, "_ultima_compra", lambda codigos: {"AJT": date(2026, 9, 1)})
     filas = queries.lista()
     assert [f["codigo_cli"] for f in filas] == ["AJT"]
     assert filas[0]["correo"] == "a@x" and filas[0]["entro"] is True
+    assert filas[0]["ultima_compra"] == date(2026, 9, 1)
+
+
+def test_al_que_no_compro_hace_6_meses_no_le_llega_aunque_tenga_saldo(monkeypatch):
+    """TMT 14/09/2026: el aviso no es un cobro disfrazado a cartera vieja."""
+    from modules.informes import queries as iq
+    monkeypatch.setattr(iq, "estado_cuenta_clientes_saldos", lambda: [
+        {"codigo_cli": "AJT", "nombre": "TOTOY", "vend": "EDG", "saldo": 100, "vencido": 0},
+        {"codigo_cli": "VIE", "nombre": "VIEJO", "vend": "EDG", "saldo": 200, "vencido": 200},
+    ])
+    monkeypatch.setattr(queries, "_correos_y_portal", lambda codigos: [
+        {"codigo_cli": "AJT", "correo_ficha": "a@x", "mail_portal": "", "mail_asinfo": "",
+         "eligio_clave": False, "ultimo_aviso": None, "ultimo_aviso_ok": None},
+        {"codigo_cli": "VIE", "correo_ficha": "v@x", "mail_portal": "", "mail_asinfo": "",
+         "eligio_clave": False, "ultimo_aviso": None, "ultimo_aviso_ok": None}])
+    # VIE no aparece: no compró hace menos de 6 meses (HAVING lo saca en SQL).
+    monkeypatch.setattr(queries, "_ultima_compra", lambda codigos: {"AJT": date(2026, 9, 1)})
+    filas = queries.lista()
+    assert [f["codigo_cli"] for f in filas] == ["AJT"]
 
 
 # ---------------------------------------------------------------------------

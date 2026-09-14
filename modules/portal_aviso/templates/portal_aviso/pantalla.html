@@ -5,7 +5,7 @@
 {% block content %}
 <div class="max-w-7xl">
   {{ page_hero('Aviso del portal a los clientes',
-               descripcion='El mail que les dice que su estado de cuenta está en el portal. A todos los que tienen saldo.') }}
+               descripcion='El mail que les dice que su estado de cuenta está en el portal. A los que tienen saldo y compraron en los últimos 6 meses.') }}
 
   {% if error %}
     <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -140,6 +140,7 @@
             <th class="px-3 py-2">Cliente</th>
             <th class="px-3 py-2">Vendedor</th>
             <th class="px-3 py-2 text-right">Saldo</th>
+            <th class="px-3 py-2">Compró</th>
             <th class="px-3 py-2">Correo</th>
             <th class="px-3 py-2">Portal</th>
             <th class="px-3 py-2">Último aviso</th>
@@ -158,6 +159,7 @@
             </td>
             <td class="px-3 py-2">{{ f.vend or '—' }}</td>
             <td class="px-3 py-2 text-right tabular-nums">{{ f.saldo | money_es }}</td>
+            <td class="px-3 py-2 text-slate-500">{% if f.ultima_compra %}{{ f.ultima_compra | fecha_es }}{% else %}—{% endif %}</td>
             <td class="px-3 py-2">
               {% if f.correo %}
                 {{ f.correo }}
@@ -177,7 +179,7 @@
             </td>
           </tr>
           {% else %}
-            {{ empty_row(7, 'No hay clientes con saldo.') }}
+            {{ empty_row(8, 'No hay clientes con saldo que hayan comprado en los últimos 6 meses.') }}
           {% endfor %}
         </tbody>
       </table>
