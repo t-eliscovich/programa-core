@@ -1,12 +1,19 @@
-"""Medir cuánto usa cada vendedor la app, y qué hace adentro.
+"""Medir cuánto usa la app cada vendedor, cada cliente y cada quien en
+Intela (la oficina), y qué hace adentro.
 
 TMT 2026-08-26 (dueña): *"¿podríamos medir cuánto usa cada vendedor la
-aplicación? ¿y qué movimientos hace?"*.
+aplicación? ¿y qué movimientos hace?"*. TMT 2026-09-14: *"hace que uso haya
+tabs, vendedores, clientes, intela. hace un buen trabajo de medición"* — la
+oficina se suma como tercer mundo.
 
 Lo que protegen estos tests:
 
-* que se registre lo que un VENDEDOR mira, y **sólo** eso — ni la oficina, ni
-  los 404, ni los estáticos, ni el preview de la dueña;
+* que se registre lo que mira CUALQUIERA que entró logueado — vendedor u
+  oficina —, y también el cliente del portal; pero no los 404, ni los
+  estáticos;
+* que los tres mundos (vendedor / oficina / portal) nunca se lean mezclados:
+  `queries.resumen` exige `vend`, `queries.resumen_intela` exige que NO lo
+  tenga, y `queries.pantallas(..., ambito=)` arma la condición según cuál sea;
 * que medir no pueda tumbar una pantalla (si el INSERT falla, el request sigue);
 * que la pantalla de uso no la vea quien no puede ver la bitácora, y que un
   vendedor no la vea nunca;
@@ -134,6 +141,49 @@ def test_se_registra_lo_que_mira_un_vendedor(app, monkeypatch):
     assert aparato == "celular"
 
 
+def test_se_registra_lo_que_mira_alguien_de_intela(app, monkeypatch):
+    """TMT 2026-09-14: *"hace un buen trabajo de medición"* — la oficina se
+    mide igual que un vendedor, sólo que con `vend` vacío: es lo que separa
+    los dos mundos en `queries.resumen` / `queries.resumen_intela`."""
+    from flask import g
+
+    import db
+
+    escrito = []
+    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append((sql, params)))
+
+    with app.test_request_context("/mi-cartera"):
+        g.user = OFICINA
+        registro.registrar_uso_after_request(_ok(app))
+
+    assert len(escrito) == 1
+    sql, params = escrito[0]
+    assert "scintela.uso_pantalla" in sql
+    usuario, vend, ruta, pantalla, codigo_cli, aparato, _ip = params
+    assert (usuario, vend) == ("maribel", None)
+    assert ruta == "/mi-cartera"
+
+
+def test_el_preview_de_la_duena_se_anota_a_su_propio_nombre(app, monkeypatch):
+    """`?vend=PPR` es la dueña (o cualquiera de oficina) mirando la cartera
+    de PPR: cuenta como SU visita, nunca como una visita de PPR — si contara
+    para PPR le ensuciaría los números (`resumen()` exige `vend` PROPIO)."""
+    from flask import g
+
+    import db
+
+    escrito = []
+    monkeypatch.setattr(db, "execute", lambda sql, params=None, conn=None: escrito.append(params))
+
+    with app.test_request_context("/mi-cartera?vend=PPR"):
+        g.user = OFICINA
+        registro.registrar_uso_after_request(_ok(app))
+
+    assert len(escrito) == 1
+    usuario, vend, *_resto = escrito[0]
+    assert (usuario, vend) == ("maribel", None)
+
+
 def test_se_registra_lo_que_mira_un_cliente_en_el_portal():
     """TMT 04/09/2026: "así vemos qué hacen una vez que lancemos". Misma
     tabla, `usuario` con prefijo para que nunca se confunda con alguien de la
@@ -193,7 +243,8 @@ def test_en_el_portal_sin_cliente_logueado_no_se_registra():
 
 def test_en_la_oficina_la_llave_del_portal_no_cuenta(app, monkeypatch):
     """Una sesión de la oficina con la llave del portal puesta (no debería
-    pasar, pero) no se anota como cliente: el modo manda."""
+    pasar, pero) se anota como SU visita, nunca como el cliente: el modo
+    manda, no una llave de sesión que quedó pegada de otra pestaña."""
     import db
 
     escrito = []
@@ -203,18 +254,16 @@ def test_en_la_oficina_la_llave_del_portal_no_cuenta(app, monkeypatch):
         session["portal_cliente"] = "AJT"
         g.user = OFICINA
         registro.registrar_uso_after_request(_ok(app))
-    assert escrito == []
+    assert len(escrito) == 1
+    usuario, vend, *_resto = escrito[0]
+    assert usuario == "maribel"
+    assert vend is None
 
 
 @pytest.mark.parametrize(
     ("ruta", "metodo", "estado", "user"),
     [
-        # La oficina no se mide: se preguntó por los vendedores.
-        ("/mi-cartera", "GET", 200, OFICINA),
-        # El preview de la dueña (?vend=PPR) tampoco: quien lo abre no tiene
-        # `vend` propio, así que no le ensucia los números al vendedor.
-        ("/mi-cartera?vend=PPR", "GET", 200, OFICINA),
-        # Nadie logueado.
+        # Nadie logueado — ni vendedor, ni oficina, ni portal.
         ("/mi-cartera", "GET", 200, None),
         # Una escritura ya la guarda la bitácora — no se cuenta dos veces.
         ("/mi-cartera/cliente/tdv/portal", "POST", 200, VENDEDOR),
@@ -288,18 +337,15 @@ def test_la_pantalla_de_uso_pide_el_permiso_de_la_bitacora(app, monkeypatch):
 
 
 def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
+    """La pestaña por default es vendedores — no trae de arriba la data de
+    clientes ni de Intela, cada pestaña pide sólo lo suyo."""
     _login(app, OFICINA, {"bitacora.ver"})
     monkeypatch.setattr(queries, "resumen", lambda d, h: [
         {"usuario": "ppr", "vend": "PPR", "rol": "Vendedor", "activo": True,
          "visitas": 40, "dias": 5, "entradas": 9, "clientes": 12, "cartera": 43,
          "papeles": 3, "celular": 38, "movimientos": 1, "ultima": None},
     ])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
-    monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [
-        {"codigo_cli": "AJT", "nombre": "TEXTILES TOTOY", "vend": "EDG",
-         "visitas": 9, "dias": 2, "entradas": 3, "papeles": 1, "celular": 9,
-         "ultima": datetime(2026, 9, 4, 10, 30)},
-    ])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     r = app.test_client().get("/uso")
     assert r.status_code == 200
     cuerpo = r.get_data(as_text=True)
@@ -307,7 +353,21 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
     assert "Veces que entró" in cuerpo
     # Los clientes se leen contra la cartera: 12 solos no dicen nada.
     assert "12" in cuerpo and "de 43" in cuerpo
-    # Y la grilla de los clientes del portal, con el cliente por CÓDIGO.
+    assert "Clientes en el portal" not in cuerpo
+
+
+def test_la_pestana_de_clientes_muestra_quien_entro(app, monkeypatch):
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
+    monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [
+        {"codigo_cli": "AJT", "nombre": "TEXTILES TOTOY", "vend": "EDG",
+         "visitas": 9, "dias": 2, "entradas": 3, "papeles": 1, "celular": 9,
+         "ultima": datetime(2026, 9, 4, 10, 30)},
+    ])
+    r = app.test_client().get("/uso?tab=clientes")
+    assert r.status_code == 200
+    cuerpo = r.get_data(as_text=True)
+    # La grilla de los clientes del portal, con el cliente por CÓDIGO.
     assert "Clientes en el portal" in cuerpo
     assert "AJT" in cuerpo and "TEXTILES TOTOY" in cuerpo
     assert "04/09/2026 10:30" in cuerpo
@@ -315,11 +375,63 @@ def test_la_pantalla_de_uso_abre_con_el_permiso(app, monkeypatch):
 
 def test_sin_clientes_en_el_portal_la_grilla_lo_dice(app, monkeypatch):
     _login(app, OFICINA, {"bitacora.ver"})
-    monkeypatch.setattr(queries, "resumen", lambda d, h: [])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [])
-    cuerpo = app.test_client().get("/uso").get_data(as_text=True)
+    cuerpo = app.test_client().get("/uso?tab=clientes").get_data(as_text=True)
     assert "Ningún cliente entró al portal" in cuerpo
+
+
+def test_la_pestana_de_intela_muestra_a_la_oficina(app, monkeypatch):
+    """TMT 2026-09-14: *"hace que uso haya tabs, vendedores, clientes,
+    intela"* — el tercer mundo, con su propia grilla."""
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
+    monkeypatch.setattr(queries, "resumen_intela", lambda d, h: [
+        {"usuario": "maribel", "rol": "INT", "activo": True,
+         "visitas": 20, "dias": 4, "entradas": 6, "fichas": 15,
+         "movimientos": 3, "celular": 2, "ultima": datetime(2026, 9, 14, 9, 5)},
+    ])
+    r = app.test_client().get("/uso?tab=intela")
+    assert r.status_code == 200
+    cuerpo = r.get_data(as_text=True)
+    assert "maribel" in cuerpo
+    assert "Fichas de cliente" in cuerpo
+    assert "14/09/2026 09:05" in cuerpo
+
+
+def test_sin_nadie_de_intela_la_grilla_lo_dice(app, monkeypatch):
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
+    monkeypatch.setattr(queries, "resumen_intela", lambda d, h: [])
+    cuerpo = app.test_client().get("/uso?tab=intela").get_data(as_text=True)
+    assert "Todavía no hay nadie de Intela cargado." in cuerpo
+
+
+def test_tab_invalida_cae_en_vendedores(app, monkeypatch):
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "resumen", lambda d, h: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
+    r = app.test_client().get("/uso?tab=lo-que-sea")
+    assert r.status_code == 200
+    cuerpo = r.get_data(as_text=True)
+    assert "Clientes en el portal" not in cuerpo
+    assert "Todavía no hay vendedores cargados." in cuerpo
+
+
+def test_el_csv_respeta_la_pestana(app, monkeypatch):
+    """El CSV de la pestaña de clientes no es el de vendedores."""
+    _login(app, OFICINA, {"bitacora.ver"})
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
+    monkeypatch.setattr(queries, "resumen_clientes", lambda d, h: [
+        {"codigo_cli": "AJT", "nombre": "TEXTILES TOTOY", "vend": "EDG",
+         "dias": 2, "entradas": 3, "visitas": 9, "papeles": 1, "celular": 9,
+         "ultima": datetime(2026, 9, 4, 10, 30)},
+    ])
+    r = app.test_client().get("/uso?tab=clientes&export=csv")
+    assert r.status_code == 200
+    cuerpo = r.get_data(as_text=True)
+    assert "AJT" in cuerpo and "TEXTILES TOTOY" in cuerpo
+    assert "04/09/2026 10:30" in cuerpo
 
 
 def test_las_pantallas_mas_abiertas_no_mezclan_al_portal(monkeypatch):
@@ -331,6 +443,52 @@ def test_las_pantallas_mas_abiertas_no_mezclan_al_portal(monkeypatch):
     monkeypatch.setattr(db, "fetch_all", lambda sql, params=None, **k: visto.update(sql=sql, params=params) or [])
     queries.pantallas(date(2026, 9, 1), date(2026, 9, 4))
     assert "NOT LIKE %(prefijo)s" in visto["sql"]
+    assert visto["params"]["prefijo"] == "portal:%"
+
+
+@pytest.mark.parametrize(
+    ("ambito", "fragmento"),
+    [
+        ("vendedor", "vend IS NOT NULL AND TRIM(vend) <> ''"),
+        ("clientes", "usuario LIKE %(prefijo)s"),
+        ("intela", "vend IS NULL OR TRIM(vend) = ''"),
+    ],
+)
+def test_pantallas_separa_los_tres_mundos(monkeypatch, ambito, fragmento):
+    """Vendedor, clientes e Intela arman cada uno su propia condición —
+    nunca se leen mezclados entre sí (ver `queries._AMBITOS`)."""
+    import db
+
+    visto = {}
+    monkeypatch.setattr(db, "fetch_all", lambda sql, params=None, **k: visto.update(sql=sql, params=params) or [])
+    queries.pantallas(date(2026, 9, 1), date(2026, 9, 14), ambito=ambito)
+    assert fragmento in visto["sql"]
+
+
+def test_pantallas_con_usuario_puntual_no_filtra_por_ambito(monkeypatch):
+    """Con `usuario` ya alcanza: esa persona es de un solo mundo. Si se le
+    dejara puesto el filtro de vendedor por default, el detalle de alguien
+    de Intela (`vend` vacío) saldría siempre vacío."""
+    import db
+
+    visto = {}
+    monkeypatch.setattr(db, "fetch_all", lambda sql, params=None, **k: visto.update(sql=sql, params=params) or [])
+    queries.pantallas(date(2026, 9, 1), date(2026, 9, 14), usuario="maribel")
+    assert "TRUE" in visto["sql"]
+    assert "vend IS NOT NULL" not in visto["sql"]
+    assert visto["params"]["usuario"] == "maribel"
+
+
+def test_resumen_intela_arma_la_consulta(monkeypatch):
+    """No hay «cartera» en Intela: la condición es sólo `vend` vacío, y
+    nunca entra un `usuario` del portal."""
+    import db
+
+    visto = {}
+    monkeypatch.setattr(db, "fetch_all", lambda sql, params=None, **k: visto.update(sql=sql, params=params) or [])
+    queries.resumen_intela(date(2026, 9, 1), date(2026, 9, 14))
+    assert "vend IS NULL OR TRIM(u.vend) = ''" in visto["sql"]
+    assert "usuario NOT LIKE %(prefijo)s" in visto["sql"]
     assert visto["params"]["prefijo"] == "portal:%"
 
 
@@ -365,7 +523,7 @@ def test_el_csv_del_resumen_lleva_la_hora(app, monkeypatch):
          "celular": 38, "movimientos": 1,
          "ultima": datetime(2026, 8, 26, 10, 53)},
     ])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     r = app.test_client().get("/uso?export=csv")
     assert r.status_code == 200
     cuerpo = r.get_data(as_text=True)
@@ -378,7 +536,7 @@ def test_el_detalle_junta_lo_que_miro_con_lo_que_cambio(app, monkeypatch):
     _login(app, OFICINA, {"bitacora.ver"})
     monkeypatch.setattr(queries, "por_dia", lambda u, d, h: [])
     monkeypatch.setattr(queries, "clientes", lambda u, d, h: [])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     monkeypatch.setattr(queries, "vend_de", lambda u: "PPR")
     monkeypatch.setattr(queries, "no_abiertos", lambda v, u, d, h: [])
     monkeypatch.setattr(queries, "movimientos", lambda u, d, h: [
@@ -403,7 +561,7 @@ def test_los_que_no_abrio_salen_con_lo_que_deben(app, monkeypatch):
     _login(app, OFICINA, {"bitacora.ver"})
     monkeypatch.setattr(queries, "por_dia", lambda u, d, h: [])
     monkeypatch.setattr(queries, "clientes", lambda u, d, h: [])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     monkeypatch.setattr(queries, "movimientos", lambda u, d, h: [])
     monkeypatch.setattr(queries, "vend_de", lambda u: "PPR")
     monkeypatch.setattr(queries, "no_abiertos", lambda v, u, d, h: [
@@ -422,7 +580,7 @@ def test_un_usuario_sin_vendedor_no_muestra_el_bloque(app, monkeypatch):
     _login(app, OFICINA, {"bitacora.ver"})
     for nombre in ("por_dia", "clientes", "movimientos"):
         monkeypatch.setattr(queries, nombre, lambda *a, **k: [])
-    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None: [])
+    monkeypatch.setattr(queries, "pantallas", lambda d, h, usuario=None, ambito=None: [])
     monkeypatch.setattr(queries, "vend_de", lambda u: "")
 
     def no_deberia(*a, **k):  # pragma: no cover - el test falla si se llama

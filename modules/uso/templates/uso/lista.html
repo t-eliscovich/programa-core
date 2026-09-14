@@ -8,7 +8,7 @@
    `fecha_hora_ec`: ese filtro les restaría cinco horas de nuevo. #}
 <div class="max-w-7xl">
   {{ page_hero('Uso de la app',
-               descripcion='Cuánto entra cada vendedor, qué mira y qué cambia; y qué clientes entran al portal. ' ~ dias ~ ' días.') }}
+               descripcion='Cuánto entra cada vendedor, cada cliente y cada quien en Intela, y qué mira. ' ~ dias ~ ' días.') }}
 
   {% if error %}
     <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
@@ -16,9 +16,25 @@
     </div>
   {% endif %}
 
-  {% set boton_csv %}<a href="{{ url_for('uso.lista', desde=desde, hasta=hasta, export='csv') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>{% endset %}
+  {# ─────────────────────────── Pestañas ─────────────────────────────── #}
+  <div class="flex flex-wrap gap-2 mb-4">
+    {% for t, etiqueta in (('vendedores', 'Vendedores'), ('clientes', 'Clientes'), ('intela', 'Intela')) %}
+      <a href="{{ url_for('uso.lista', tab=t, desde=desde, hasta=hasta) }}"
+         class="px-3 py-1.5 rounded-full text-sm font-medium
+                {% if tab == t %}bg-slate-900 text-white dark:bg-slate-100 dark:text-slate-900
+                {% else %}bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700{% endif %}">
+        {{ etiqueta }}
+      </a>
+    {% endfor %}
+  </div>
+
+  {% set boton_csv %}<a href="{{ url_for('uso.lista', tab=tab, desde=desde, hasta=hasta, export='csv') }}" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">CSV</a>
+  <input type="hidden" name="tab" value="{{ tab }}">{% endset %}
   {{ filtros_fecha(q=none, desde=desde, hasta=hasta, extras_html=boton_csv) }}
 
+  {# ═══════════════════════════ VENDEDORES ═══════════════════════════ #}
+  {% if tab == 'vendedores' %}
+  <h2 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Vendedores</h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
@@ -66,15 +82,19 @@
       </tbody>
     </table>
   </div>
-
   <div class="mt-3 text-xs text-slate-500">
     <strong>Veces que entró</strong>: cada vez que abrió la app después de
     media hora sin tocarla. <strong>Clientes</strong>: a cuántos les abrió la
     ficha, sobre los que tiene asignados. <strong>Cambios</strong>: lo que
     guardó, sale de la bitácora. Las visitas se anotan desde el 26/08/2026 — antes no hay nada.
   </div>
+  {% set top_activo = top %}
+  {% set etiqueta_top = 'Vendedores' %}
+  {% endif %}
 
-  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Clientes en el portal</h2>
+  {# ══════════════════════════ CLIENTES ═══════════════════════════ #}
+  {% if tab == 'clientes' %}
+  <h2 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Clientes en el portal</h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
@@ -116,20 +136,81 @@
   <div class="mt-3 text-xs text-slate-500">
     Las visitas de los clientes se anotan desde el 04/09/2026 — antes no hay nada.
   </div>
+  {% set top_activo = top_clientes %}
+  {% set etiqueta_top = 'Clientes' %}
+  {% endif %}
 
-  {% if top %}
-  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Las pantallas más abiertas</h2>
+  {# ══════════════════════════ INTELA ═══════════════════════════ #}
+  {% if tab == 'intela' %}
+  <h2 class="mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Intela</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Usuario</th>
+          <th class="px-3 py-2">Rol</th>
+          <th class="px-3 py-2 text-right">Días</th>
+          <th class="px-3 py-2 text-right">Veces que entró</th>
+          <th class="px-3 py-2 text-right">Pantallas</th>
+          <th class="px-3 py-2 text-right">Fichas de cliente</th>
+          <th class="px-3 py-2 text-right">Cambios</th>
+          <th class="px-3 py-2 text-right">Del teléfono</th>
+          <th class="px-3 py-2">Última vez</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for i in intela %}
+        <tr class="hover:bg-slate-50 dark:hover:bg-slate-800/50 {% if not i.activo %}opacity-50{% endif %}">
+          <td class="px-3 py-2">
+            <a class="font-semibold text-slate-900 dark:text-slate-100 hover:underline"
+               href="{{ url_for('uso.detalle', usuario=i.usuario, desde=desde, hasta=hasta) }}">{{ i.usuario }}</a>
+            {% if not i.activo %}<div class="text-xs text-slate-500">inactivo</div>{% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500">{{ i.rol }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ i.dias }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ i.entradas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ i.visitas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ i.fichas }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ i.movimientos }}</td>
+          <td class="px-3 py-2 text-right tabular-nums text-slate-500">
+            {% if i.visitas %}{{ (100 * i.celular / i.visitas) | round | int }}%{% else %}—{% endif %}
+          </td>
+          <td class="px-3 py-2 text-slate-500">
+            {% if i.ultima %}{{ i.ultima | fecha_hora_es }}{% else %}
+              <span class="text-amber-600 dark:text-amber-400">no entró</span>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+          {{ empty_row(9, 'Todavía no hay nadie de Intela cargado.',
+                       'Un usuario cuenta como Intela cuando NO tiene código de vendedor en la ficha.') }}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-3 text-xs text-slate-500">
+    <strong>Fichas de cliente</strong>: a cuántos códigos de cliente distintos
+    les abrió la ficha — sin «de cuántos», porque en Intela nadie tiene una
+    cartera fija. <strong>Cambios</strong>: lo que guardó, sale de la
+    bitácora. Se empezó a medir el 14/09/2026 — antes no hay nada.
+  </div>
+  {% set top_activo = top_intela %}
+  {% set etiqueta_top = 'Intela' %}
+  {% endif %}
+
+  {% if top_activo %}
+  <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Las pantallas más abiertas — {{ etiqueta_top }}</h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
     <table class="min-w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
         <tr>
           <th class="px-3 py-2">Pantalla</th>
           <th class="px-3 py-2 text-right">Veces</th>
-          <th class="px-3 py-2 text-right">Vendedores</th>
+          <th class="px-3 py-2 text-right">Usuarios</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
-        {% for p in top %}
+        {% for p in top_activo %}
         <tr>
           <td class="px-3 py-2">{{ nombre_de(p.pantalla) }}</td>
           <td class="px-3 py-2 text-right tabular-nums">{{ p.visitas }}</td>

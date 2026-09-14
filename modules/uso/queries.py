@@ -143,6 +143,72 @@ def resumen(desde: date, hasta: date) -> list[dict]:
     )
 
 
+def resumen_intela(desde: date, hasta: date) -> list[dict]:
+    """Una fila por persona de la casa que NO es vendedor: Accionista,
+    Administrador, cobranza, contabilidad. Salen TODOS, también los que no
+    entraron en el rango — igual que `resumen()`.
+
+    TMT 2026-09-14: *"hace un buen trabajo de medición"* — un tercer mundo al
+    lado de vendedores y clientes. Sin `cartera`: acá no hay «de cuántos
+    clientes» porque nadie de oficina tiene una cartera asignada — cada
+    quien mira lo que el trabajo del día le pida. `fichas` es simplemente
+    cuántos códigos de cliente distintos tocó, sin denominador.
+    """
+    params = ventana(desde, hasta)
+    params["prefijo"] = PORTAL + "%"
+    return db.fetch_all(
+        f"""
+        WITH visitas AS (
+            SELECT u.usuario, u.ts, u.codigo_cli, u.dispositivo,
+                   lag(u.ts) OVER (PARTITION BY u.usuario ORDER BY u.ts) AS anterior
+              FROM scintela.uso_pantalla u
+             WHERE u.usuario NOT LIKE %(prefijo)s
+               AND (u.vend IS NULL OR TRIM(u.vend) = '')
+               AND u.ts >= (%(desde)s AT TIME ZONE 'UTC')
+               AND u.ts <  (%(hasta)s AT TIME ZONE 'UTC')
+        ),
+        uso AS (
+            SELECT usuario,
+                   count(*)                                   AS visitas,
+                   count(DISTINCT {_TS_USO}::date)            AS dias,
+                   count(*) FILTER (
+                       WHERE anterior IS NULL
+                          OR ts - anterior > INTERVAL '{CORTE_ENTRADA}')  AS entradas,
+                   count(DISTINCT codigo_cli)                  AS fichas,
+                   count(*) FILTER (WHERE dispositivo = 'celular')        AS celular,
+                   max({_TS_USO})                             AS ultima
+              FROM visitas
+             GROUP BY usuario
+        ),
+        movs AS (
+            SELECT usuario, count(*) AS movimientos
+              FROM scintela.bitacora_acciones
+             WHERE ts >= %(desde)s - INTERVAL '1 day'
+               AND {_TSTZ_BITA} >= (%(desde)s AT TIME ZONE 'UTC')
+               AND {_TSTZ_BITA} <  (%(hasta)s AT TIME ZONE 'UTC')
+             GROUP BY usuario
+        )
+        SELECT u.username            AS usuario,
+               r.nombre_rol          AS rol,
+               u.activo,
+               COALESCE(x.visitas, 0)     AS visitas,
+               COALESCE(x.dias, 0)        AS dias,
+               COALESCE(x.entradas, 0)    AS entradas,
+               COALESCE(x.fichas, 0)      AS fichas,
+               COALESCE(x.celular, 0)     AS celular,
+               COALESCE(m.movimientos, 0) AS movimientos,
+               x.ultima
+          FROM seguridad.usuario u
+          JOIN seguridad.rol r USING (id_rol)
+          LEFT JOIN uso  x ON x.usuario = u.username
+          LEFT JOIN movs m ON m.usuario = u.username
+         WHERE (u.vend IS NULL OR TRIM(u.vend) = '')
+         ORDER BY u.activo DESC, COALESCE(x.visitas, 0) DESC, u.username
+        """,
+        params,
+    )
+
+
 def resumen_clientes(desde: date, hasta: date) -> list[dict]:
     """Una fila por cliente que entró al portal: cuánto entró y qué miró.
 
@@ -189,13 +255,33 @@ def resumen_clientes(desde: date, hasta: date) -> list[dict]:
     )
 
 
-def pantallas(desde: date, hasta: date, usuario: str | None = None) -> list[dict]:
-    """Qué pantallas se abrieron y cuántas veces, de la más usada a la menos."""
+#: Cómo separar el ámbito en `pantallas()` cuando no hay un `usuario` puntual
+#: que ya lo determine solo. Los tres nunca se leen mezclados: un vendedor y
+#: un cliente abriendo el mismo endpoint no pueden sumar en la misma fila.
+_AMBITOS: dict[str, str] = {
+    "vendedor": "usuario NOT LIKE %(prefijo)s AND vend IS NOT NULL AND TRIM(vend) <> ''",
+    "clientes": "usuario LIKE %(prefijo)s",
+    "intela":   "usuario NOT LIKE %(prefijo)s AND (vend IS NULL OR TRIM(vend) = '')",
+}
+
+
+def pantallas(desde: date, hasta: date, usuario: str | None = None,
+              ambito: str = "vendedor") -> list[dict]:
+    """Qué pantallas se abrieron y cuántas veces, de la más usada a la menos.
+
+    Sin `usuario` hace falta `ambito` («vendedor», «clientes» o «intela») para
+    no mezclar los tres mundos. Con `usuario` ya alcanza solo: esa persona es
+    de un único mundo y no hace falta filtrar de nuevo — así un vendedor o
+    alguien de oficina pueden pedir el detalle de SU propia pantalla con la
+    misma llamada, sin que el caller tenga que saber a cuál de los tres
+    pertenece.
+    """
     params = ventana(desde, hasta)
     params["usuario"] = usuario or None
     params["prefijo"] = PORTAL + "%"
+    condicion_ambito = "TRUE" if usuario else _AMBITOS.get(ambito, _AMBITOS["vendedor"])
     return db.fetch_all(
-        """
+        f"""
         SELECT pantalla,
                count(*)                  AS visitas,
                count(DISTINCT usuario)   AS usuarios
@@ -203,7 +289,7 @@ def pantallas(desde: date, hasta: date, usuario: str | None = None) -> list[dict
          WHERE ts >= (%(desde)s AT TIME ZONE 'UTC')
            AND ts <  (%(hasta)s AT TIME ZONE 'UTC')
            AND (%(usuario)s IS NULL OR usuario = %(usuario)s)
-           AND usuario NOT LIKE %(prefijo)s
+           AND {condicion_ambito}
          GROUP BY pantalla
          ORDER BY visitas DESC, pantalla
         """,

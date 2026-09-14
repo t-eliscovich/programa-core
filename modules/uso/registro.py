@@ -1,29 +1,34 @@
-"""Las VISITAS de los vendedores: qué pantalla abrió cada uno, y cuándo.
+"""Las VISITAS de todo el mundo: qué pantalla abrió cada uno, y cuándo.
 
 TMT 2026-08-26 (dueña): *"¿podríamos medir cuánto usa cada vendedor la
-aplicación? ¿y qué movimientos hace?"*.
+aplicación? ¿y qué movimientos hace?"*. TMT 2026-09-14: *"hace un buen
+trabajo de medición"* — sumar a la oficina (Intela) como un tercer mundo,
+al lado de vendedores y clientes.
 
 La segunda mitad ya estaba: todo lo que un usuario CAMBIA queda en
 `scintela.bitacora_acciones` desde la migración 0004. La primera no, y para un
 vendedor es casi todo lo que hace — mirar su cartera, abrir la ficha de un
 cliente, imprimir un estado de cuenta. Son GET, y la bitácora audita sólo
-escrituras a propósito (`auth._should_audit`): mezclarle las visitas de toda la
-oficina la volvería inútil como auditoría.
+escrituras a propósito (`auth._should_audit`): la bitácora sigue siendo SÓLO
+escrituras, esto es aparte.
 
 Por eso las visitas van a una tabla propia (`scintela.uso_pantalla`, migración
 0232) y este hook las escribe.
 
 Qué se registra
 ---------------
-Sólo los usuarios con `vend` cargado, o sea los vendedores. Y desde el
-04/09/2026 (TMT: *"así vemos qué hacen una vez que lancemos"*) también los
-CLIENTES en el portal: la misma tabla, con `usuario = 'portal:<código>'` para
-que no se mezclen jamás con un username de la oficina, `vend` vacío y
-`codigo_cli` con el cliente. Las consultas de los vendedores no los ven porque
-JOINean contra `seguridad.usuario`; las del portal filtran por el prefijo. Es lo que se
-preguntó, y acota el volumen a ~6 personas. Para incluir a la oficina alcanza
-con sacar el chequeo de `vendedor_de()` en `hay_que_registrar()` — pero
-pensarlo antes: son ~20 personas con pantallas mucho más pesadas.
+Todo el que entró logueado — vendedor u oficina (Accionista, Administrador,
+cobranza, contabilidad) — y, desde el 04/09/2026 (TMT: *"así vemos qué hacen
+una vez que lancemos"*), los CLIENTES en el portal: la misma tabla, con
+`usuario = 'portal:<código>'` para que no se mezclen jamás con un username de
+la oficina, `vend` vacío y `codigo_cli` con el cliente.
+
+Los tres mundos (vendedor / oficina / portal) nunca se leen juntos: las
+consultas de vendedores exigen `vend` cargado, las de oficina lo exigen
+vacío, y las del portal filtran por el prefijo — ver `queries.pantallas(...,
+ambito=)`. Antes del 14/09/2026 la oficina no se medía (era sólo lo que se
+había preguntado); ahora si hace falta volver a excluirla alcanza con
+restaurar el chequeo de `vendedor_de()` en `hay_que_registrar()`.
 
 Y sólo los GET que terminaron en 200 con un endpoint real: un 404 no es una
 pantalla que alguien haya usado, y un redirect se cuenta en el destino.
@@ -146,8 +151,14 @@ def cliente_del_portal() -> str:
 
 
 def hay_que_registrar(response) -> bool:
-    """¿Esta respuesta es una pantalla que un vendedor (o un cliente en el
-    portal) abrió?"""
+    """¿Esta respuesta es una pantalla que alguien logueado (vendedor u
+    oficina) o un cliente en el portal abrió?
+
+    Antes sólo contaban los vendedores (`vendedor_de(...)`); desde el
+    14/09/2026 cuenta cualquiera con sesión — el chequeo de `vend` se movió a
+    las consultas (`queries.resumen` exige `vend`, `queries.resumen_intela`
+    exige que NO lo tenga), que es donde había que separarlos.
+    """
     if request.method != "GET" or response.status_code != 200:
         return False
     if not request.endpoint:            # 404: no es una pantalla
@@ -155,7 +166,7 @@ def hay_que_registrar(response) -> bool:
     ruta = request.path or ""
     if any(ruta.startswith(p) for p in RUTAS_QUE_NO_CUENTAN):
         return False
-    return bool(vendedor_de(g.get("user")) or cliente_del_portal())
+    return bool(g.get("user") or cliente_del_portal())
 
 
 def registrar_uso_after_request(response):
