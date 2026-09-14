@@ -145,8 +145,8 @@ def test_las_fechas_van_por_el_filtro_de_la_casa():
 
     Las fechas de las facturas viven en el parcial compartido, que ya las
     formatea así; acá se cuida que la pantalla del portal no meta las suyas."""
-    for pantalla in ("inicio", "facturas", "pagos", "despachos", "despacho", "factura",
-                     "_fila_factura", "_fila_pago", "_fila_despacho"):
+    for pantalla in ("inicio", "facturas", "pagos", "factura",
+                     "_fila_factura", "_fila_pago"):
         t = (TPL / f"{pantalla}.html").read_text(encoding="utf-8")
         assert "strftime" not in t, pantalla
         assert "'%.2f'|format" not in t, pantalla
@@ -276,7 +276,7 @@ def test_la_hoja_para_imprimir_sale_aunque_el_cliente_tenga_cheques(monkeypatch)
 # El rediseño del 04/09/2026
 # ---------------------------------------------------------------------------
 
-PANTALLAS_DE_ADENTRO = ("inicio", "facturas", "pagos", "despachos", "despacho", "factura")
+PANTALLAS_DE_ADENTRO = ("inicio", "facturas", "pagos", "factura")
 
 
 def test_todas_las_pantallas_de_adentro_usan_el_mismo_armazon():
@@ -288,7 +288,7 @@ def test_todas_las_pantallas_de_adentro_usan_el_mismo_armazon():
         assert '{% extends "portal/_app.html" %}' in t, pantalla
         assert "{% block seccion %}" in t, pantalla
     assert 'class="tabbar"' in APP and 'class="topnav"' in APP
-    for destino in ("/", "/facturas", "/mis-pagos", "/despachos"):
+    for destino in ("/", "/facturas", "/mis-pagos"):
         assert APP.count(f'href="{destino}"') >= 2, destino   # barra + menú
 
 

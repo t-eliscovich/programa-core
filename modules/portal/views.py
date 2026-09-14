@@ -653,58 +653,6 @@ def _que_es(c: dict) -> str:
     return "Cheque"
 
 
-@portal_bp.route("/despachos", methods=["GET"])
-def despachos():
-    """Qué le mandamos y cuándo. La mercadería, al lado de su saldo.
-
-    Los datos salen de Asinfo por el puente de siempre — Programa Core guarda
-    la plata de la factura, no la mercadería. Si Asinfo no contesta, la
-    pantalla lo dice y no se cae: ver `despachos_cliente`.
-    """
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-
-    from modules.asinfo import despachos_cliente
-
-    meses = despachos_cliente.MESES_DEFAULT
-    # ⭐ El RUC va con el código: hay `nombre_comercial` repetidos en dos
-    # empresas que son contribuyentes DISTINTOS (PRE, MCS). Ver la auditoría
-    # del 26/08 en `despachos_cliente`.
-    fic = acceso.cliente(cod) or {}
-    d = despachos_cliente.de_cliente(cod, fic.get("ruc") or "", meses)
-    # Dueña 09/09/2026: sólo los que todavía no tienen factura; el resto se
-    # ve en la factura. Sin el filtro de meses: lo pendiente es poco.
-    guias = [g for g in (d.get("guias") or []) if not (g.get("factura") or "").strip()]
-    guias = presentacion.ordenar_por_fecha(guias, "dia")
-    return render_template("portal/despachos.html", codigo=cod, cli=fic, d=d,
-                           pendientes=guias)
-
-
-@portal_bp.route("/despacho/<numero>", methods=["GET"])
-def despacho(numero: str):
-    """Los rollos de UNA guía suya, agrupados por tela.
-
-    ⚠ El código del cliente va adentro de la consulta, no se chequea después:
-    los números de guía van uno atrás del otro, así que cambiarle un dígito a
-    la URL tiene que dar 404 y no el despacho del vecino.
-    """
-    from flask import abort
-
-    cod = cliente_actual()
-    if not cod:
-        return _pedir_entrar()
-
-    from modules.asinfo import despachos_cliente
-
-    ruc = (acceso.cliente(cod) or {}).get("ruc") or ""
-    g = despachos_cliente.guia(cod, ruc, numero)
-    if g["ok"] and not g["existe"]:
-        abort(404)
-    return render_template("portal/despacho.html", g=g, codigo=cod,
-                           cli=acceso.cliente(cod) or {})
-
-
 @portal_bp.route("/estado-de-cuenta/imprimir", methods=["GET"])
 def estado_cuenta_imprimir():
     """La hoja para imprimir — la MISMA que sale de la oficina.

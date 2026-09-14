@@ -56,7 +56,7 @@ def texto_del_aviso(nombre: str) -> str:
     return (
         f"Hola {nombre_lindo(nombre)},\n\n"
         f"Intela tiene un portal nuevo para clientes.\n"
-        f"Desde ahora puede consultar en línea su estado de cuenta, pagos y despachos.\n"
+        f"Desde ahora puede consultar en línea su estado de cuenta y sus pagos.\n"
         f"Para entrar: {PORTAL_URL}\n"
         f"Le va a pedir su RUC.\n"
         f"Intela · Industria Textil Latinoamericana C. Ltda."
@@ -69,8 +69,8 @@ def html_del_aviso(nombre: str) -> str:
         'color:#1e293b;max-width:520px;margin:0 auto;padding:24px 16px">'
         f'<p>Hola {nombre_lindo(nombre)},</p>'
         '<p>Intela tiene un portal nuevo para clientes.<br>'
-        'Desde ahora puede consultar en línea su estado de cuenta, pagos y '
-        'despachos.</p>'
+        'Desde ahora puede consultar en línea su estado de cuenta y sus '
+        'pagos.</p>'
         f'<p style="margin:28px 0"><a href="{PORTAL_URL}" '
         'style="background:#b91c1c;color:#fff;text-decoration:none;'
         'padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block">'

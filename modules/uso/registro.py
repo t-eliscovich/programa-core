@@ -85,8 +85,6 @@ NOMBRES: dict[str, str] = {
     "portal.factura": "Una factura",
     "portal.factura_papel_cliente": "Factura para imprimir",
     "portal.mis_pagos": "Sus pagos",
-    "portal.despachos": "Sus despachos",
-    "portal.despacho": "Un despacho",
     "portal.estado_cuenta_imprimir": "Estado de cuenta para imprimir",
     "portal.estado_cuenta_pdf_": "Estado de cuenta en PDF",
     "portal.mis_cuentas": "Elegir la cuenta",
