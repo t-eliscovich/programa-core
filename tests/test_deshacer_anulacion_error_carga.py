@@ -182,3 +182,37 @@ def test_anulacion_vieja_avisa_lo_que_no_puede_reaplicar(_run):
     assert res["aplicaciones_reaplicadas"] == 0
     assert res["aplicaciones_pendientes"] == 3
     assert aplic == [], "no inventa aplicaciones"
+
+
+def test_vuelve_fuera_de_cartera_no_pierde_el_fechaout(_run):
+    """TMT 2026-09-14/15 — caso real: 103080/103707/104430. `stat_previo='B'`
+    (depositado, fuera de cartera) es lo que trae un cheque que nació ya
+    depositado y se anuló por error de carga. El viejo UPDATE limpiaba
+    `fechaout` sin mirar a qué estado vuelve: el cheque quedaba "depositado"
+    otra vez pero SIN fecha de salida, rompiendo el invariante que vigila
+    /admin/health/deposito-sin-fechaout (y apareciendo como pendiente
+    fantasma en conciliación bancaria). Tiene que quedar con `fechaout` =
+    hoy, no NULL."""
+    q, fake = _run(_mov(stat_previo="B"), _ch())
+    q.deshacer_anulacion_error_carga(900, usuario="tamara")
+    upd = fake.escribio("update scintela.cheque")
+    assert len(upd) == 1
+    stat_escrito, fechaout_escrito = upd[0][1][0], upd[0][1][1]
+    assert stat_escrito == "B"
+    assert fechaout_escrito == date(2026, 7, 30), (
+        "un cheque que vuelve fuera de cartera entró y salió el mismo día "
+        "que volvió — no puede quedar sin fechaout")
+
+
+def test_vuelve_a_cartera_si_limpia_el_fechaout(_run):
+    """El otro lado del mismo if: si el cheque vuelve a un estado QUE SÍ está
+    en cartera (p.ej. 'Z', porque se había cargado como cheque físico normal
+    antes del error), no tiene que quedar con una fecha de salida mintiendo
+    que sigue afuera."""
+    q, fake = _run(_mov(stat_previo="Z"), _ch())
+    q.deshacer_anulacion_error_carga(900, usuario="tamara")
+    upd = fake.escribio("update scintela.cheque")
+    assert len(upd) == 1
+    stat_escrito, fechaout_escrito = upd[0][1][0], upd[0][1][1]
+    assert stat_escrito == "Z"
+    assert fechaout_escrito is None

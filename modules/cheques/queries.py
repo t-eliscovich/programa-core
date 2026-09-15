@@ -8142,14 +8142,31 @@ def deshacer_anulacion_error_carga(
         importe = float(ch.get("importe") or 0)
 
         # 1. el cheque vuelve
+        #
+        # TMT 2026-09-14/15 — el mismo bug de familia que `crear()` (ver más
+        # arriba, "LA TERCERA RUTA DE DEPÓSITO"), en una cuarta ruta: acá
+        # también un cheque puede volver a un `stat_destino` que YA NO está
+        # en cartera (nació 'B' depositado directo, se anuló por error de
+        # carga, y esto lo revive — a 'B' de nuevo, no a 'Z'). El UPDATE viejo
+        # limpiaba `fechaout` sin mirar a qué estado vuelve, así que un
+        # cheque que vuelve fuera de cartera quedaba con el invariante roto
+        # ("depositado ⇒ tiene fechaout") — exactamente lo que
+        # /admin/health/deposito-sin-fechaout vigila. Pasó en producción el
+        # 14/09: tres cheques (103080, 103707, 104430) se anularon bien por
+        # error de carga y un "deshacer" de más los revivió a 'B' con
+        # `fechaout=NULL`, apareciendo como pendientes fantasma en
+        # conciliación bancaria (dos de ellos ya duplicaban un reemplazo que
+        # sí estaba bien cargado). Misma regla que en `crear()`: un cheque
+        # que vuelve fuera de cartera ENTRÓ Y SALIÓ el mismo día que volvió.
         db.execute(
             "UPDATE scintela.cheque "
-            "   SET stat=%s, fechaout=NULL, "
+            "   SET stat=%s, fechaout=%s, "
             "       observacion = RIGHT("
             "           COALESCE(observacion || ' | ', '') || %s, 200), "
             "       usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
             " WHERE id_cheque=%s",
             (stat_destino,
+             (None if stat_destino in STATS_EN_CARTERA else fecha),
              ("[R] anulación por error de carga deshecha"
               + (f": {motivo[:60]}" if motivo else "")),
              usuario, id_cheque),
