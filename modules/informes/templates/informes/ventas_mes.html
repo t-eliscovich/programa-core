@@ -1,12 +1,14 @@
 {% extends "base.html" %}
 {% from "_ui.html" import page_hero %}
-{% block title %}Ventas del mes {{ '%02d/%d' % (mes, anio) }}{% endblock %}
+{% from "_informes_design.html" import informes_styles, informes_kpi_row %}
+{% block title %}{% if tab == 'anio' %}Ventas {{ anio }}{% else %}Ventas del mes {{ '%02d/%d' % (mes, anio) }}{% endif %}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('informes.balance') }}" class="hover:underline">Resultados</a> /
-  <strong>Ventas del mes</strong>
+  <strong>{% if tab == 'anio' %}Ventas del año{% else %}Ventas del mes{% endif %}</strong>
 {% endblock %}
 
 {% block head_extra %}
+{{ informes_styles() }}
 <style>
   /* TMT 2026-05-19 v8 — replica visual del screen TINT.BAT dBase.
      Ranking por cliente del mes en 3 columnas. */
@@ -76,10 +78,14 @@
 {# TMT 2026-05-20 PASADA 2 cierre. #}
 <div class="max-w-full">
   <div class="mb-4 no-print">
+    {% if tab == 'anio' %}
+    {{ page_hero('Ventas del año ' ~ anio, 'Mes a mes desde enero · facturación con kg, precio promedio U$/kg, importe y acumulado.') }}
+    {% else %}
     {{ page_hero(
         'Ventas del mes',
         ('Ranking por cliente · ' if tab == 'mes' else 'Total de la empresa por día · ') ~ ('%02d/%d' % (mes, anio)) ~ (' · ordenado por monto descendente.' if tab == 'mes' else '.')
     ) }}
+    {% endif %}
   </div>
 
   {# TMT 2026-09-14 v2 — Tamara: "imprimir y resultados estan mas arriba
@@ -93,9 +99,14 @@
          class="vm-tab {{ 'activa' if tab == 'mes' else '' }}">Por cliente</a>
       <a href="{{ url_for('informes.ventas', tab='dia', anio=anio, mes=mes) }}"
          class="vm-tab {{ 'activa' if tab == 'dia' else '' }}">Día por día</a>
+      <a href="{{ url_for('informes.ventas', tab='anio') }}"
+         class="vm-tab {{ 'activa' if tab == 'anio' else '' }}">Año</a>
     </div>
     <div class="flex items-end gap-2">
+      {% if tab != 'anio' %}
       {# Selector año / mes — viaja a la misma vista, con la pestaña activa.
+         No aplica al tab Año: esa vista es siempre el año en curso, mes a
+         mes (igual que la ex /informes/ventas-anio).
          TMT 2026-09-15 — Tamara: "ves que esta a desnivel?": el <form> de
          Año/Mes tiene labels arriba de los inputs (más alto que un botón
          suelto), así que alineando este contenedor por `items-center` el
@@ -119,6 +130,12 @@
         </label>
         <button class="text-sm px-3 py-1.5 rounded bg-slate-900 text-white">Ver</button>
       </form>
+      {% else %}
+      <a href="{{ url_for('informes.ventas', tab='anio', export='csv') }}"
+         class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">
+        CSV
+      </a>
+      {% endif %}
       {# TMT 2026-05-19 v8 — dueña: sacar pantalla multi-mes (el botón
          "Multi-mes" se quitó; el listado N-mensual ya no se ofrece). #}
       <a href="{{ url_for('informes.balance') }}"
@@ -251,6 +268,58 @@
     Fuente: scintela.factura del mes seleccionado, excluyendo stat='X' (eliminadas).
     Mismo total que la pestaña "Por cliente" — acá repartido por día en vez de por cliente.
   </p>
+  {% endif %}
+
+  {% if tab == 'anio' %}
+  {# TMT 2026-09-15 — ex /informes/ventas-anio, fusionada acá como tercer
+     tab. Mismo diseño de tabla/KPI que el resto de /informes/* (informes_page
+     design system), a diferencia de "Por cliente"/"Día por día" que calcan
+     la pantalla TINT.BAT del dBase legacy — son dos estilos porque son dos
+     pantallas de origen distinto, ahora una al lado de la otra. #}
+  {{ informes_kpi_row([
+    {"label": "Kg totales", "value": total_kg | num_es(0)},
+    {"label": "Precio promedio", "value": (precio_prom | num_es(2)) ~ ' U$/kg'},
+    {"label": "Importe total", "value": total_importe | money_es, "primary": true},
+  ]) }}
+
+  <div class="rounded-lg border border-slate-200 bg-white overflow-hidden">
+    <table class="info-table">
+      <thead>
+        <tr>
+          <th>Mes</th>
+          <th class="num">Kg</th>
+          <th class="num">Precio U$/kg</th>
+          <th class="num">Importe</th>
+          <th class="num">Acumulado</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r in filas %}
+        <tr>
+          <td>
+            <a href="{{ url_for('informes.ventas', tab='mes', anio=anio, mes=r.mes_num) }}"
+               class="hover:text-blue-600 hover:underline">{{ r.mes_nombre }}</a>
+          </td>
+          <td class="num">{{ r.kg | num_es(0) }}</td>
+          <td class="num muted">{{ r.precio | num_es(2) }}</td>
+          <td class="num">{{ r.importe | money_es }}</td>
+          <td class="num" style="font-weight: 600;">{{ r.acum | money_es }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="5" class="info-empty">Sin ventas registradas en {{ anio }}.</td></tr>
+        {% endfor %}
+        {% if filas %}
+        <tr class="total">
+          <td>TOTAL</td>
+          <td class="num">{{ total_kg | num_es(0) }}</td>
+          <td class="num">{{ precio_prom | num_es(2) }}</td>
+          <td class="num">{{ total_importe | money_es }}</td>
+          <td class="num"></td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
   {% endif %}
 </div>
 {% endblock %}

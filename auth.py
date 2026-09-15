@@ -273,6 +273,40 @@ def requiere_permiso(nombre_opcion: str):
     return decorator
 
 
+def requiere_permiso_any(*nombres_opcion: str):
+    """Como requiere_permiso, pero alcanza con UNO cualquiera de los permisos.
+
+    TMT 2026-09-15 — /informes/ventas y /informes/ventas-anio (mes/año de la
+    dueña, ambos linkeados desde el balance) pedían cada uno un permiso
+    distinto por separado; al unificarlos en una sola pantalla con tabs, la
+    dueña confirmó que no hace falta separar por tab ("pueden ver ventas, eso
+    lo verían igual con facturas"): alcanza con cualquiera de los permisos
+    de antes para ver todos los tabs.
+
+    `_permiso` queda anotado como TUPLA (en vez de un string) — mismo
+    mecanismo que `requiere_permiso`, pero `modules/usuarios/accesos.py`
+    sabe iterarla: la ruta aparece en la matriz de /usuarios/accesos bajo
+    CADA UNO de los permisos, no bajo ninguno (que la mostraría como
+    "sin candado", falso) ni bajo uno solo inventado (que escondería a
+    quien entra por el otro).
+    """
+
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            if not g.get("user"):
+                return redirect(url_for("auth.login", next=request.path))
+            if "*" not in g.permisos and not any(n in g.permisos for n in nombres_opcion):
+                return render_template("404.html"), 404
+            return view(*args, **kwargs)
+
+        wrapped._permiso = tuple(nombres_opcion)  # noqa: SLF001
+
+        return wrapped
+
+    return decorator
+
+
 def tiene_permiso(nombre_opcion: str) -> bool:
     """Jinja helper — used as `{{ tiene_permiso('x.y') }}`."""
     return nombre_opcion in g.get("permisos", set()) or "*" in g.get("permisos", set())

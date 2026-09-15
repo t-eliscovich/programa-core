@@ -22,7 +22,7 @@ from flask import (
 )
 
 import db
-from auth import requiere_login, requiere_permiso, tiene_permiso
+from auth import requiere_login, requiere_permiso, requiere_permiso_any, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
 from filters import today_ec
@@ -2720,7 +2720,7 @@ def ventas_multianual():
 
 @informes_bp.route("/ventas")
 @requiere_login
-@requiere_permiso("informes.ver")
+@requiere_permiso_any("informes.ver", "ventas.ver")
 def ventas():
     # TMT 2026-05-19 v8 — dueña: al clickear "Ventas" del balance quiere ver
     # la pantalla TINT.BAT del dBase (ranking clientes del mes). Por default
@@ -2730,6 +2730,15 @@ def ventas():
     # TMT 2026-09-14 — Tamara pidió un tab "día por día" al lado del ranking
     # por cliente: mismo patrón de pestañas que /uso (?tab=, arma sólo la
     # data de la pestaña activa).
+    #
+    # TMT 2026-09-15 — se suma un tercer tab "año" (ex /informes/ventas-anio,
+    # que quedó como alias/redirect más abajo): "Ventas" y "Ventas del año"
+    # del balance llevaban a dos pantallas sueltas sin conexión entre sí.
+    # Antes de esto pedían permisos distintos por separado (informes.ver /
+    # ventas.ver) — INT tenía uno y no el otro, Cobranzas al revés. La dueña
+    # confirmó que no hace falta gatear por tab ("pueden ver ventas, eso lo
+    # verían igual con facturas"): alcanza con cualquiera de los dos de antes
+    # para ver los tres tabs.
 
     hoy = today_ec()
     try:
@@ -2742,8 +2751,38 @@ def ventas():
         mes = hoy.month
     mes = max(1, min(mes, 12))
     tab = request.args.get("tab") or "mes"
-    if tab not in ("mes", "dia"):
+    if tab not in ("mes", "dia", "anio"):
         tab = "mes"
+
+    if tab == "anio":
+        filas, error = _safe(queries.ventas_mes_a_mes_anio_actual, [])
+        total_kg = sum(float(r.get("kg") or 0) for r in filas)
+        total_importe = sum(float(r.get("importe") or 0) for r in filas)
+        precio_prom = (total_importe / total_kg) if total_kg > 0 else 0.0
+        if request.args.get("export") == "csv":
+            return csv_response(
+                filas,
+                columnas=[
+                    ("mes_nombre", "Mes"),
+                    ("kg", "Kg"),
+                    ("precio", "Precio U$/kg"),
+                    ("importe", "Importe"),
+                    ("acum", "Acumulado"),
+                ],
+                filename="ventas_anio.csv",
+            )
+        return render_template(
+            "informes/ventas_mes.html",
+            tab=tab,
+            anio=today_ec().year,
+            mes=mes,
+            filas=filas,
+            total_kg=total_kg,
+            total_importe=total_importe,
+            precio_prom=precio_prom,
+            error=error,
+        )
+
     if tab == "dia":
         data, error = _safe(lambda: queries.ventas_por_dia(anio, mes), {})
     else:
@@ -2848,41 +2887,14 @@ def ventas_cliente(codigo_cli):
 
 
 @informes_bp.route("/ventas-anio")
-@requiere_login
-@requiere_permiso("ventas.ver")
 def ventas_anio():
-    """Ventas del año en curso — mes a mes con acumulado.
-
-    TMT 2026-05-20 — pedido dueña: pantalla simple desde
-    /informes/balance al click 'Ventas del año'. Columnas:
-    mes · kg · precio (U$/kg) · importe · acum.
-    """
-    filas, error = _safe(queries.ventas_mes_a_mes_anio_actual, [])
-    total_kg = sum(float(r.get("kg") or 0) for r in filas)
-    total_importe = sum(float(r.get("importe") or 0) for r in filas)
-    precio_prom = (total_importe / total_kg) if total_kg > 0 else 0.0
-    if request.args.get("export") == "csv":
-        return csv_response(
-            filas,
-            columnas=[
-                ("mes_nombre", "Mes"),
-                ("kg", "Kg"),
-                ("precio", "Precio U$/kg"),
-                ("importe", "Importe"),
-                ("acum", "Acumulado"),
-            ],
-            filename="ventas_anio.csv",
-        )
-
-    return render_template(
-        "informes/ventas_anio.html",
-        filas=filas,
-        total_kg=total_kg,
-        total_importe=total_importe,
-        precio_prom=precio_prom,
-        anio=today_ec().year,
-        error=error,
-    )
+    """Alias — TMT 2026-09-15 unificó esta URL dentro de /ventas?tab=anio
+    (un solo destino con tabs Mes/Día/Año, ver `ventas()`). Redirect simple
+    para no romper links/bookmarks viejos; el permiso lo valida la vista de
+    destino."""
+    args = request.args.to_dict(flat=True)
+    args["tab"] = "anio"
+    return redirect(url_for("informes.ventas", **args))
 
 
 def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):

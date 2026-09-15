@@ -246,7 +246,13 @@ def mapa(app) -> dict:
         vista = app.view_functions.get(regla.endpoint)
         permiso = getattr(vista, "_permiso", None)
         if permiso:
-            por_permiso[permiso].add(str(regla.rule))
+            # TMT 2026-09-15 — requiere_permiso_any deja `_permiso` como
+            # TUPLA (alcanza con cualquiera de varios permisos, ver
+            # informes.ventas). La ruta entra en la matriz bajo CADA UNO:
+            # bajo ninguno la mostraría como "sin candado" (falso), y bajo
+            # uno solo inventado escondería a quien entra por el otro.
+            for p in (permiso if isinstance(permiso, tuple) else (permiso,)):
+                por_permiso[p].add(str(regla.rule))
             continue
         señal = _control_interno(vista)
         if señal == "redirect":
