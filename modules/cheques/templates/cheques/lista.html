@@ -647,9 +647,16 @@
              estados depositables (Z cartera, P postdatado/postergado).
              Para el resto, queda vacío (sin checkbox) — no se puede
              depositar algo ya depositado o anulado. #}
+          {# TMT 2026-09-15 (dueña, filtro cliente=RUS: total $0 con 2
+             devueltos + 2 "Saldo a favor" ANTICIPO). El 98 (espejo del
+             saldo a favor, SIEMPRE negativo) también cae en stat='P' pero no
+             es un cheque depositable — es la contrapartida de un anticipo ya
+             aplicado. Dejarlo marcable sumaba su importe negativo a la barra
+             de "Depositar lote" y neteaba el total contra los cheques reales
+             seleccionados. #}
           {% if tiene_permiso('cheques.aplicar') %}
             <td class="px-2 py-2 text-center no-print" data-stop="1">
-              {% if stat_u in ('Z', 'P', '1', '2') %}
+              {% if stat_u in ('Z', 'P', '1', '2') and (c.no_banco or 0)|int != 98 %}
                 <input type="checkbox" class="cheque-pick" value="{{ c.id_cheque }}"
                        data-importe="{{ c.importe or 0 }}"
                        data-no="{{ c.no_cheque or '' }}"
