@@ -6750,16 +6750,6 @@ def total_buscar(
           AND (%(monto_max)s::numeric IS NULL OR COALESCE(c.importe, 0) <= %(monto_max)s)
           -- Excluir reversados del total. Pedido TMT 2026-05-14.
           AND COALESCE(c.stat, '') <> 'X'
-          -- TMT 2026-09-15 (dueña, filtro cliente=RUS: "Falta el valor en el
-          -- total" / "el de abajo no dice nada" — 2 devueltos +$400 c/u y 2
-          -- "Saldo a favor" ANTICIPO -$400 c/u, total $0). El 98 es el espejo
-          -- NEGATIVO de un anticipo (ver `etiqueta_cobro`): no es plata nueva
-          -- que se cobra, es la contrapartida contable de un anticipo YA
-          -- aplicado. Sumarlo acá netea contra los cheques reales y el total
-          -- deja de decir nada — se ve $0 aunque haya $800 de verdad
-          -- devueltos. Se excluye del total (la fila sigue viéndose en el
-          -- listado, sólo no entra en la suma).
-          AND COALESCE(c.no_banco, 0) <> 98
         """.replace("__NOMBRE_CLI__", _nom_cli or "FALSE")
              .replace(
                  "__COND_MEDIO__",

@@ -952,6 +952,31 @@
         {{ empty_row((13 if tiene_permiso('cheques.aplicar') else 12), 'Sin cheques en el filtro actual.', 'Cambiá el estado o el rango de fechas.') }}
         {% endfor %}
       </tbody>
+      {# TMT 2026-09-15 (dueña: "lo unico que queria es que el total de
+         abajo tenga tambien el numero de total" — y después: "ponelo debajo
+         de importe, no en cualquier lado"). El único total que había era el
+         de arriba (`_hero_total`) — en una lista de 500 filas por página hay
+         que scrollear hasta el tope para volver a verlo. Este renglón repite
+         EL MISMO número al pie de la tabla, en la columna IMPORTE — no es un
+         total nuevo, es el de arriba, alineado bajo la misma columna que
+         suma. `_cols_antes_importe` cuenta las columnas que van ANTES de
+         Importe (checkbox según permiso · Cargado · Cliente+Vend según haya
+         filtro de cliente · N° · F. dep. · Postergada · Depositado) para que
+         el colspan no se desalinee si el permiso o el filtro cambian qué
+         columnas se muestran. #}
+      {% if filas %}
+      {% set _cols_antes_importe = (1 if tiene_permiso('cheques.aplicar') else 0) + 5 + (0 if cliente else 2) %}
+      <tfoot>
+        <tr class="border-t-2 border-slate-300 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 font-semibold">
+          {% if _cols_antes_importe > 1 %}
+            <td colspan="{{ _cols_antes_importe - 1 }}"></td>
+          {% endif %}
+          <td class="px-2 py-1.5 text-right text-[10px] uppercase tracking-wider text-slate-500">Total</td>
+          <td class="px-1.5 py-1.5 text-right text-mono tabular-nums">$ {{ _hero_total | num_es(0) }}</td>
+          <td colspan="4" class="px-2 py-1.5 text-xs text-slate-500 font-normal">{{ _hero_n }} cheque{{ '' if _hero_n == 1 else 's' }}</td>
+        </tr>
+      </tfoot>
+      {% endif %}
     </table>
   </div>
 
