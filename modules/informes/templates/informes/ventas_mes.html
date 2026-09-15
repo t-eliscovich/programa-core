@@ -94,8 +94,14 @@
       <a href="{{ url_for('informes.ventas', tab='dia', anio=anio, mes=mes) }}"
          class="vm-tab {{ 'activa' if tab == 'dia' else '' }}">Día por día</a>
     </div>
-    <div class="flex items-center gap-2">
-      {# Selector año / mes — viaja a la misma vista, con la pestaña activa #}
+    <div class="flex items-end gap-2">
+      {# Selector año / mes — viaja a la misma vista, con la pestaña activa.
+         TMT 2026-09-15 — Tamara: "ves que esta a desnivel?": el <form> de
+         Año/Mes tiene labels arriba de los inputs (más alto que un botón
+         suelto), así que alineando este contenedor por `items-center` el
+         botón "Ver" (pegado abajo del form) quedaba más bajo que
+         "← Resultados"/"Imprimir". `items-end` alinea todo por el mismo
+         renglón de abajo. #}
       <form method="get" class="flex items-end gap-2">
         <input type="hidden" name="tab" value="{{ tab }}">
         <label class="flex flex-col text-xs text-slate-500">
