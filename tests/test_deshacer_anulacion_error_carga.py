@@ -216,3 +216,31 @@ def test_vuelve_a_cartera_si_limpia_el_fechaout(_run):
     stat_escrito, fechaout_escrito = upd[0][1][0], upd[0][1][1]
     assert stat_escrito == "Z"
     assert fechaout_escrito is None
+
+
+def test_no_inventa_compensacion_si_el_deposito_se_borro_de_verdad(_run):
+    """TMT 2026-09-15 — mismo caso real 103080/103707/104430, segundo bug.
+    Esos 3 se habían anulado desde `eliminar_error_carga` (pantalla del
+    movimiento bancario): el depósito se BORRA de verdad, no deja ND —
+    `compensacion` queda `{"tipo": "banco", "id": None, "omitida": True}`.
+    El código viejo miraba sólo `tipo` y metía una NC igual, compensando una
+    ND que nunca existió: 3 notas de crédito fantasma de $4.174,03 sueltas en
+    el banco el 14/09. Con `omitida`, no hay que insertar nada — el depósito
+    de verdad sigue borrado y no se restaura solo."""
+    bank: list[dict] = []
+    q, _ = _run(_mov(comp={"tipo": "banco", "id": None, "omitida": True}),
+                _ch(), bank=bank)
+    res = q.deshacer_anulacion_error_carga(900, usuario="tamara")
+    assert bank == [], "no inventa una NC para una ND que nunca existió"
+    assert res["compensacion"] is None
+    assert res["deposito_no_restaurable"] is True
+
+
+def test_si_compensa_de_verdad_no_marca_deposito_no_restaurable(_run):
+    """El otro lado: cuando SÍ hubo ND (omitida ausente/False), la compensa
+    como siempre y no prende la bandera nueva."""
+    bank: list[dict] = []
+    q, _ = _run(_mov(comp={"tipo": "banco", "id": 42}), _ch(), bank=bank)
+    res = q.deshacer_anulacion_error_carga(900, usuario="tamara")
+    assert len(bank) == 1
+    assert res["deposito_no_restaurable"] is False

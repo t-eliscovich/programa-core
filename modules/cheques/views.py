@@ -4151,6 +4151,11 @@ def deshacer_anulacion_error_carga(id_mov_doble: int):
                 msg += (f" Se compensó el movimiento de "
                         f"{res['compensacion']['tipo']} que había dejado la "
                         f"anulación.")
+            elif res.get("deposito_no_restaurable"):
+                msg += (" OJO: esa anulación había BORRADO el depósito de "
+                         "verdad (no dejó ND) — el cheque vuelve pero ese "
+                         "depósito sigue sin estar. Si hace falta, "
+                         "restauralo a mano desde Bancos → Papelera.")
             flash(msg, "ok")
         except ValueError as e:
             flash(str(e), "warn")
@@ -4181,7 +4186,11 @@ def deshacer_anulacion_error_carga(id_mov_doble: int):
                   else "ninguna")
         ),
         "Compensación a revertir": (
-            f"{_comp.get('tipo')} #{_comp.get('id')}" if _comp.get("tipo")
+            "no hay — esa anulación BORRÓ el depósito de verdad, no dejó ND "
+            "(el cheque vuelve pero el depósito sigue sin estar; restauralo "
+            "a mano desde Bancos → Papelera si hace falta)"
+            if _comp.get("omitida")
+            else f"{_comp.get('tipo')} #{_comp.get('id')}" if _comp.get("tipo")
             else "no hubo (el cheque estaba en cartera)"
         ),
         "Motivo de la anulación": (meta.get("motivo") or "—"),

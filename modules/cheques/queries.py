@@ -8083,6 +8083,22 @@ def deshacer_anulacion_error_carga(
     punta, que es el mismo desbalance que la cascada vino a arreglar, con el
     signo al revés. Si el espejo ya no está en 'X' (alguien lo movió), NO se
     deshace nada: mejor un error claro que medio cheque restaurado.
+
+    ⚠ NO compensa si la anulación fue `sin_compensacion_bancaria` (TMT
+    2026-09-15, caso MSS/TNZ 103080/103707/104430). `eliminar_error_carga`
+    (pantalla del movimiento bancario, "el cheque nació como depósito directo
+    y no existió nunca") anula el cheque y BORRA el depósito de verdad — no
+    deja ND, para no hablar dos veces de una plata que ya no está. Su
+    metadata queda `compensacion={"tipo": "banco", "id": None, "omitida":
+    True}` — el `tipo` sigue diciendo "banco" (para que la pantalla lo
+    muestre), pero no hay nada que compensar. El código viejo miraba sólo
+    `tipo` y le metía una "NC" iguales de todos modos: una nota de crédito
+    fantasma, compensando una ND que nunca existió. Pasó el 14/09: 3 NC por
+    $4.174,03 quedaron sueltas en el banco, sin cheque ni mov_doble que las
+    sostenga — exactamente el tipo de pendiente fantasma que este mismo
+    dispatcher existe para evitar. Si `omitida` es true, no se inserta nada:
+    el cheque vuelve, pero el depósito real sigue borrado (recuperable desde
+    Bancos → Papelera si hace falta, a mano).
     """
     import json as _json
 
@@ -8176,7 +8192,14 @@ def deshacer_anulacion_error_carga(
         # 2. la compensación, al revés
         comp = meta.get("compensacion") or {}
         compensacion_nueva = None
-        if comp.get("tipo") == "banco" and importe:
+        deposito_no_restaurable = bool(comp.get("omitida"))
+        if deposito_no_restaurable:
+            # La anulación no dejó ND — el depósito se borró de verdad
+            # (`eliminar_error_carga`, `sin_compensacion_bancaria`). No hay
+            # nada que compensar: inventar una NC acá sería una fantasma,
+            # igual que la que este `if` viene a evitar (ver docstring).
+            pass
+        elif comp.get("tipo") == "banco" and importe:
             import bank_helpers
             _banco = int(ch.get("no_banco") or 10)
             _CONCEPTO_A_REAL = {90: 10, 91: 32, 95: 10, 97: 10, 98: 10, 99: 10}
@@ -8312,6 +8335,7 @@ def deshacer_anulacion_error_carga(
                     int(meta.get("n_aplicaciones_reversadas") or 0)
                     if sin_snapshot_aplic else 0),
                 "compensacion": compensacion_nueva,
+                "deposito_no_restaurable": deposito_no_restaurable,
                 "espejos_revividos": espejos_revividos,
                 "motivo": motivo or "",
             },
@@ -8328,6 +8352,7 @@ def deshacer_anulacion_error_carga(
             int(meta.get("n_aplicaciones_reversadas") or 0)
             if sin_snapshot_aplic else 0),
         "compensacion": compensacion_nueva,
+        "deposito_no_restaurable": deposito_no_restaurable,
     }
 
 # ═══════════════════════════════════════════════════════════════════════════
