@@ -411,3 +411,198 @@ def test_fila_anterior_al_corte_se_marca_como_historica():
     assert f["pre_corte"] is True
     (g,) = _con_cruce()          # 2026-07-20, posterior al corte
     assert g["pre_corte"] is False
+
+
+# ---------------------------------------------------------------------------
+# El disparador es la RECEPCIÓN, no la factura (TMT 2026-09-16)
+#
+# Medido en /admin/debug-hilo-local: entre el BOD y su factura pasan ~21 h de
+# mediana y hasta 5 días, y en esa ventana el hilo ya está en el stock del
+# programa sin su pasivo. Estos tests fijan las tres piezas que lo evitan.
+# ---------------------------------------------------------------------------
+def test_el_bod_queda_estampado_en_el_comprobante():
+    """Sin esto, la corrida siguiente no reconoce la entrega y la duplica."""
+    from modules.compras import queries as compras_queries
+
+    creadas = []
+
+    def _crear(**kw):
+        creadas.append(kw)
+        return {"numero": 10365}
+
+    with patch.object(svc, "compras_locales_con_cruce",
+                      return_value=[_fila(bod="BOD-000002374")]), \
+         patch.object(compras_queries, "crear", _crear), \
+         patch.object(svc, "_avisar_carga", return_value=0), \
+         patch.object(asinfo_service, "reset_locales_cache", lambda: None):
+        res = svc.cargar_pendientes()
+
+    assert res["creadas"] == 1
+    assert creadas[0]["comprobante"] == "BOD-000002374"
+    # y el concepto sigue siendo el nº de factura: la llave vieja no cambia
+    assert creadas[0]["concepto"] == "37711"
+
+
+def test_dos_entregas_de_la_misma_factura_son_dos_pasivos():
+    """El caso que el cruce por nº de factura se comía.
+
+    Asinfo parte una factura en N recepciones. Cruzando por (proveedor, nº de
+    factura), la segunda entrega se ve como «ya tiene compra» y su plata no
+    entra nunca. Cruzando por BOD, cada entrega es su propia fila.
+    """
+    cruda_a = {**CRUDA, "bod": "BOD-000002374", "kg": 300.0}
+    cruda_b = {**CRUDA, "bod": "BOD-000002375", "kg": 199.14}
+    # En PC ya está cargada SÓLO la primera entrega.
+    ya_cargada = {"BOD-000002374": [_compra(1000.0, saldo=1000.0)]}
+    with patch.object(asinfo_service, "compras_locales_asinfo",
+                      return_value=[cruda_a, cruda_b]), \
+         patch.object(q, "proveedores_por_ruc", return_value=POR_RUC), \
+         patch.object(q, "listar_tarifas", return_value=TARIFA_HY), \
+         patch.object(svc, "_buscar_por_bod", return_value=ya_cargada), \
+         patch.object(svc, "_buscar_compras",
+                      return_value={("HY", 37649): [_compra(1000.0)]}):
+        filas = svc.compras_locales_con_cruce()
+
+    por_bod = {f["bod"]: f for f in filas}
+    assert por_bod["BOD-000002374"]["cruce_por"] == "bod"
+    # La segunda NO cruza por BOD; sin la llave nueva habría cruzado por
+    # factura y se habría dado por cargada.
+    assert por_bod["BOD-000002375"]["cruce_por"] == "factura"
+
+
+def test_recepcion_anulada_en_asinfo_no_se_carga():
+    res = _plan([_fila(bod="BOD-000002374", anulada=True)])
+    assert res["creadas"] == 0
+    assert "anulada en Asinfo" in res["detalle"][0]["motivo"]
+
+
+def test_entrega_que_crece_ajusta_el_importe():
+    """Tamara 2026-09-16: «con cada entrega, y se ajusta»."""
+    fila = _fila(
+        bod="BOD-000002374", kg=5002.5, importe_sugerido=16683.34,
+        cruce_por="bod",
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 9000.0}]},
+    )
+    res = _plan([fila])
+    assert res["creadas"] == 0
+    assert res["ajustadas"] == 1
+    d = res["detalle"][0]
+    assert d["ok"] is True and d["ajuste"] is True
+    assert d["importe_previo"] == 9000.0
+    assert d["importe"] == 16683.34
+
+
+def test_no_se_ajusta_lo_que_cruzo_por_numero_de_factura():
+    """Una compra tipeada a mano (o que cubre varias entregas) no se toca."""
+    fila = _fila(
+        bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="factura",
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 9000.0}]},
+    )
+    res = _plan([fila])
+    assert res["ajustadas"] == 0
+    assert res["detalle"][0]["motivo"] == "ya tiene compra"
+
+
+def test_no_se_ajusta_cuando_el_importe_no_cambio():
+    fila = _fila(
+        bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="bod",
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 16683.34}]},
+    )
+    res = _plan([fila])
+    assert res["ajustadas"] == 0
+
+
+def test_no_se_ajusta_cuando_el_bod_tiene_varias_compras():
+    """Repartir entre dos no es nuestro: eso va a la alarma de duplicados."""
+    fila = _fila(
+        bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="bod",
+        compra={"n": 2, "items": [{"id_compra": 720, "importe": 9000.0},
+                                  {"id_compra": 721, "importe": 7000.0}]},
+    )
+    res = _plan([fila])
+    assert res["ajustadas"] == 0
+
+
+# ---------------------------------------------------------------------------
+# La alarma: kilos en bodega sin su deuda (Tamara 2026-09-16)
+# ---------------------------------------------------------------------------
+def _recibida(**kw):
+    """Una fila de /importaciones ya cruzada, lista para `sin_pasivo`."""
+    base = {
+        "bod": "BOD-000002356", "prov": "QC", "proveedor": "QUIMICA COMERCIAL",
+        "producto": "QCLY40", "fact_num": 1773, "kg": 1012.32,
+        "fecha_recepcion": "2026-08-25", "recibida": True, "anulada": False,
+        "pre_corte": False, "tarifa": None, "importe_sugerido": None,
+        "compra": None, "pagada": False,
+    }
+    base.update(kw)
+    return base
+
+
+def test_sin_tarifa_queda_trabada_y_la_alarma_la_nombra():
+    """El caso real del 16/09: QC 1.012 kg de tres semanas, sin pasivo."""
+    (f,) = svc.sin_pasivo([_recibida()])
+    assert f["bod"] == "BOD-000002356"
+    assert f["kg"] == 1012.32
+    assert "falta la tarifa de QC" in f["motivo"]
+    assert f["dias"] >= 1
+
+
+def test_ruc_que_no_mapea_dice_que_el_problema_es_el_proveedor():
+    (f,) = svc.sin_pasivo([_recibida(prov=None, proveedor="COMERCIALIZADORA")])
+    assert "RUC de Asinfo no coincide" in f["motivo"]
+
+
+@pytest.mark.parametrize("cambio", [
+    {"compra": {"n": 1}},          # ya tiene su deuda
+    {"recibida": False},           # todavía no llegó
+    {"anulada": True},             # se anuló en Asinfo
+    {"kg": 0},                     # sin kilos
+    {"pre_corte": True},           # anterior al corte: el motor no la mira
+])
+def test_la_alarma_no_grita_por_lo_que_no_es_un_problema(cambio):
+    assert svc.sin_pasivo([_recibida(**cambio)]) == []
+
+
+def test_la_alarma_espera_las_horas_antes_de_gritar():
+    """Un ⚠ por la corrida que todavía no pasó entrena a ignorar el panel."""
+    from filters import today_ec
+    hoy = today_ec().isoformat()
+    assert svc.sin_pasivo([_recibida(fecha_recepcion=hoy)]) == []
+
+
+def test_health_marca_las_trabadas_con_los_kilos():
+    with patch.object(svc, "compras_locales_con_cruce",
+                      return_value=[_recibida()]), \
+         patch.object(svc, "duplicadas", return_value=[]):
+        h = svc.health()
+    assert h["ok"] is False
+    (a,) = h["alerts"]
+    assert a["category"] == "hilo_local_sin_pasivo"
+    # números como se leen acá: punto de miles, coma de decimales
+    assert "1.012,32 kg" in a["msg"]
+    assert "hace 22 días" in a["msg"]
+    assert len(h["stats"]["sin_pasivo"]) == 1
+
+
+def test_health_con_asinfo_mudo_no_se_pone_rojo():
+    """No poder mirar no es lo mismo que estar mal."""
+    with patch.object(svc, "compras_locales_con_cruce", return_value=[]):
+        h = svc.health()
+    assert h["ok"] is True
+    assert h["stats"]["sin_datos"]
+
+
+def test_health_avisa_la_entrega_anulada_que_sigue_debiendo():
+    fila = _recibida(anulada=True, compra={"n": 1, "ids": [720]},
+                     importe_programa=3078.0, pagada=False)
+    with patch.object(svc, "compras_locales_con_cruce", return_value=[fila]), \
+         patch.object(svc, "duplicadas", return_value=[]):
+        h = svc.health()
+    cats = {a["category"] for a in h["alerts"]}
+    assert "hilo_local_anulada_con_deuda" in cats
+
+
+def test_una_anulada_ya_pagada_no_es_alarma():
+    fila = _recibida(anulada=True, compra={"n": 1, "ids": [720]}, pagada=True)
+    assert svc.anuladas_con_compra([fila]) == []

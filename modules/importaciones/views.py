@@ -283,8 +283,21 @@ def lista():
         and r.get("recibida") and not r.get("compra")
         and float(r.get("kg") or 0) > 0
         and not _loc_svc._antes_del_corte(r.get("fecha_recepcion"))
+        # Una entrega anulada en Asinfo no es una pendiente: no hay nada que
+        # cargar. (Si además tiene deuda viva, eso lo canta el health.)
+        and not r.get("anulada")
     ]
     locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("tarifa"))
+    # Por qué está trabada cada una — antes la pantalla decía "falta tarifa"
+    # para TODAS, incluso para las que el problema era otro (el RUC que no
+    # mapea a ningún proveedor). Tamara 2026-09-16.
+    for r in pendientes_local:
+        if not r.get("prov"):
+            r["traba"] = "el RUC no coincide con ningún proveedor"
+        elif not r.get("tarifa"):
+            r["traba"] = "falta tarifa"
+        else:
+            r["traba"] = None
 
     return render_template(
         "importaciones/lista.html",

@@ -2644,6 +2644,26 @@ def deudas_desaparecidas():
 
 
 # ---------------------------------------------------------------------------
+# Hilo en bodega sin su deuda cargada
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-16: el motor de compras locales carga el pasivo junto con la
+# entrega, pero si una guarda lo frena (falta la tarifa del proveedor, el RUC
+# no mapea) los kilos entran al stock y la deuda no. Eso no lo miraba nadie:
+# el 16/09 había 1.882 kg de tres semanas atrás sin pasivo, y la única forma de
+# verlo era entrar a /importaciones y leer la columna. También vigila la vuelta
+# de tuerca: la misma entrega con DOS compras vivas (alguien la tipeó a mano
+# mientras el motor ya la había cargado).
+
+
+@bp.route("/hilo-local", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def hilo_local():
+    from modules.compras_locales import service as _loc
+    return jsonify(_loc.health())
+
+
+# ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
 
@@ -2679,6 +2699,9 @@ def health_all():
     resp24 = arranque_de_mes()
     # Tamara 2026-09-03: deudas que se borraron de posdat sin pagarse.
     resp25 = deudas_desaparecidas()
+    # Tamara 2026-09-16: hilo en bodega sin su deuda (guarda trabada), y la
+    # misma entrega cargada dos veces.
+    resp27 = hilo_local()
     # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
     # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
     from modules._lib import servidor as _srv
@@ -2759,6 +2782,7 @@ def health_all():
         "dia_captura": data23,
         "arranque_de_mes": data24,
         "deudas_desaparecidas": data25,
+        "hilo_local": json.loads(resp27.get_data(as_text=True)),
         "servidor": data26,
     })
 

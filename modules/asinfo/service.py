@@ -3518,27 +3518,49 @@ BODEGA_HILO = 51
 
 
 def compras_locales_asinfo(limite: int = 200) -> list[dict]:
-    """Compras LOCALES de hilo del ERP (factura sin importación, bodega 51).
+    """Compras LOCALES de hilo del ERP — **una fila por RECEPCIÓN** (bodega 51).
 
     Cada fila:
-        fp_numero       — número de la factura de proveedor en Asinfo (CMTR-…)
-        fecha           — fecha de la factura (YYYY-MM-DD)
-        fecha_recepcion — fecha de la 1ª recepción (YYYY-MM-DD o None)
+        bod             — número de la recepción en Asinfo ('BOD-000002374').
+                          **Es la identidad de la fila**: el hecho económico es
+                          la entrega, no la factura (una factura puede llegar
+                          en varias entregas parciales).
+        fp_numero       — número de la factura de proveedor (CMTR-…), o None si
+                          todavía no la cargaron. NO se usa para identificar.
+        fecha           — fecha de la factura, o la de la recepción si la
+                          factura todavía no está.
+        fecha_recepcion — fecha de la recepción (YYYY-MM-DD)
         recibida        — bool
-        bod             — documento de recepción (BOD-…)
-        numero_factura  — nº SRI completo del proveedor ('001-002-000037649')
+        numero_factura  — nº SRI del proveedor ('001-002-000037649')
         fact_num        — int con el nº de factura sin ceros ni guiones (37649)
-        total_asinfo    — total del ERP, SIN IVA (REFERENCIAL)
+        total_asinfo    — total del ERP, SIN IVA (REFERENCIAL), o 0 sin factura
         proveedor       — razón comercial/fiscal
         ruc             — empresa.codigo (para locales es el RUC)
         producto        — código de producto de la recepción
-        n_productos     — cuántos productos distintos trae la factura
+        n_productos     — cuántos productos distintos trae la recepción
         kg              — kg ingresados a la bodega 51
-        nota            — descripción libre de la factura
+        nota            — descripción libre (de la factura, o de la recepción)
+        anulada         — la recepción tiene fecha de anulación en Asinfo
+        bod_creada      — cuándo se creó la recepción (para medir demoras)
+
+    TMT 2026-09-16 — **por qué se parte de la recepción y no de la factura.**
+    Antes esta consulta arrancaba de `factura_proveedor`, así que hasta que
+    alguien no cargaba la factura en Asinfo el motor no veía nada: el hilo ya
+    estaba en bodega —y en el stock del programa— pero su pasivo no existía.
+    Medido sobre 15 recepciones (`/admin/debug-hilo-local`), la demora entre el
+    BOD y su factura tuvo **mediana de ~21 horas y picos de 5 días**, y en esa
+    ventana la utilidad del programa está alta por el valor del hilo.
+
+    Se puede partir de la recepción porque **`recepcion_proveedor` es
+    autosuficiente**: `id_empresa` (el proveedor) y `numero_factura` (el nº del
+    proveedor) son columnas PROPIAS y NOT NULL — Asinfo no deja crear un BOD
+    sin ellas. Verificado en 16 de 16 casos: el `numero_factura` de la
+    recepción es idéntico al de su factura. Así la compra nace con su número
+    puesto y la llave de cruce del motor no cambia.
 
     Returns:
-        Lista ordenada por factura más reciente primero. [] si Metabase no está
-        configurado o falla (fail-soft — la pantalla nunca se rompe por esto).
+        Lista ordenada por recepción más reciente primero. [] si Metabase no
+        está configurado o falla (fail-soft — la pantalla nunca se rompe).
     """
     import time as _time
     cache_key = f"l{int(limite)}"
@@ -3551,42 +3573,50 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
     # usaba `OUTER APPLY` y con TOP 200 se pasaba del timeout de Metabase (20 s)
     # → `fetch_dataset` devuelve [] fail-soft y la pantalla quedaba SIN las
     # locales, sin un solo error a la vista. Con TOP 3 andaba, así que el bug se
-    # escondía en cualquier prueba chica. Así tarda ~1,1 s.
+    # escondía en cualquier prueba chica.
     #
     # El piso de 24 meses es parte del arreglo: sin él, SQL Server tiene que
-    # recorrer la tabla entera de facturas para juntar TOP N.
+    # recorrer la tabla entera para juntar TOP N.
+    #
+    # ⚠ El filtro `fpi... IS NULL` (dejar afuera las IMPORTACIONES) se aplica
+    #   sobre la factura cuando la hay. Una recepción TODAVÍA SIN factura no
+    #   puede ser una importación: las importaciones nacen de un anticipo y su
+    #   `factura_proveedor_importacion` existe desde el principio.
     sql = f"""
         SELECT TOP {int(limite)}
-               fp.numero                                        AS fp_numero,
-               CONVERT(varchar, fp.fecha, 23)                   AS fecha,
-               fp.numero_factura                                AS numero_factura,
-               fp.total                                         AS total_asinfo,
+               rp.numero                                        AS bod,
+               CONVERT(varchar, rp.fecha, 23)                   AS fecha_recepcion,
+               CONVERT(varchar, rp.fecha_creacion, 120)         AS bod_creada,
+               CONVERT(varchar, rp.fecha_anulacion, 23)         AS bod_anulado,
+               rp.numero_factura                                AS numero_factura,
                COALESCE(e.nombre_comercial, e.nombre_fiscal, '') AS proveedor,
                e.codigo                                         AS ruc,
-               fp.descripcion                                   AS nota,
-               CONVERT(varchar, MIN(rp.fecha), 23)              AS fecha_recepcion,
-               MIN(rp.numero)                                   AS bod,
+               MIN(fp.numero)                                   AS fp_numero,
+               CONVERT(varchar, MIN(fp.fecha), 23)              AS fecha_factura,
+               COALESCE(MIN(fp.total), 0)                       AS total_asinfo,
+               COALESCE(MIN(fp.descripcion), MIN(rp.descripcion), '') AS nota,
                SUM(d.cantidad)                                  AS kg,
                MIN(p.codigo)                                    AS producto,
                COUNT(DISTINCT p.codigo)                         AS n_productos
-          FROM factura_proveedor fp
-          LEFT JOIN factura_proveedor_importacion fpi
-                 ON fpi.id_factura_proveedor = fp.id_factura_proveedor
-          LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
-          JOIN detalle_factura_proveedor dfp
-               ON dfp.id_factura_proveedor = fp.id_factura_proveedor
+          FROM recepcion_proveedor rp
           JOIN detalle_recepcion_proveedor d
-               ON d.id_detalle_factura_proveedor = dfp.id_detalle_factura_proveedor
-          JOIN recepcion_proveedor rp
-               ON rp.id_recepcion_proveedor = d.id_recepcion_proveedor
+               ON d.id_recepcion_proveedor = rp.id_recepcion_proveedor
+          LEFT JOIN empresa e ON e.id_empresa = rp.id_empresa
           LEFT JOIN producto p ON p.id_producto = d.id_producto
-         WHERE fpi.id_factura_proveedor IS NULL
-           AND d.id_bodega = {int(BODEGA_HILO)}
-           AND fp.fecha >= DATEADD(month, -24, GETDATE())
-         GROUP BY fp.id_factura_proveedor, fp.numero, fp.fecha, fp.numero_factura,
-                  fp.total, e.nombre_comercial, e.nombre_fiscal, e.codigo,
-                  fp.descripcion
-         ORDER BY fp.id_factura_proveedor DESC
+          LEFT JOIN detalle_factura_proveedor dfp
+               ON dfp.id_detalle_factura_proveedor
+                  = d.id_detalle_factura_proveedor
+          LEFT JOIN factura_proveedor fp
+               ON fp.id_factura_proveedor = dfp.id_factura_proveedor
+          LEFT JOIN factura_proveedor_importacion fpi
+               ON fpi.id_factura_proveedor = fp.id_factura_proveedor
+         WHERE d.id_bodega = {int(BODEGA_HILO)}
+           AND rp.fecha >= DATEADD(month, -24, GETDATE())
+         GROUP BY rp.id_recepcion_proveedor, rp.numero, rp.fecha,
+                  rp.fecha_creacion, rp.fecha_anulacion, rp.numero_factura,
+                  e.nombre_comercial, e.nombre_fiscal, e.codigo
+        HAVING MAX(CASE WHEN fpi.id_factura_proveedor IS NULL THEN 0 ELSE 1 END) = 0
+         ORDER BY rp.id_recepcion_proveedor DESC
     """
     # TMT 2026-08-30 — mismo gotcha que ingresos_fabricacion_mes: un timeout
     # dejaba [] cacheado 5 min como si "no hubiera locales". Con eso el
@@ -3600,12 +3630,18 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
         try:
             frec = str(r.get("fecha_recepcion") or "").strip() or None
             nf = str(r.get("numero_factura") or "").strip()
+            ffact = str(r.get("fecha_factura") or "").strip() or None
             out.append({
-                "fp_numero": str(r.get("fp_numero") or "").strip(),
-                "fecha": str(r.get("fecha") or "").strip() or None,
-                "fecha_recepcion": frec,
-                "recibida": frec is not None,
                 "bod": str(r.get("bod") or "").strip(),
+                "fp_numero": str(r.get("fp_numero") or "").strip() or None,
+                # La fecha con la que se crea la compra. Manda la de la
+                # FACTURA cuando existe (es la que venía usando el motor y la
+                # que fija el vencimiento); si todavía no está, la recepción.
+                "fecha": ffact or frec,
+                "fecha_recepcion": frec,
+                "bod_creada": str(r.get("bod_creada") or "").strip() or None,
+                "anulada": bool(str(r.get("bod_anulado") or "").strip()),
+                "recibida": frec is not None,
                 "numero_factura": nf,
                 "fact_num": numero_de_factura(nf),
                 "total_asinfo": float(r.get("total_asinfo") or 0),

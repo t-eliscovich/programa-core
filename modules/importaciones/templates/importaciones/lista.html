@@ -199,6 +199,11 @@
        y de su detalle quedan alineados en la misma columna. */
     .usd-gutter { display: inline-block; padding-right: 22px; }
     .usd-wrap { position: relative; display: inline-block; padding-right: 22px; }
+    .bod-chico { display: inline-block; margin-left: 5px; font-size: 10px;
+                 color: rgb(148 163 184); font-weight: 600; }
+    .tag-espera { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px;
+                  font-size: 10px; font-weight: 700; letter-spacing: .02em;
+                  background: rgb(254 249 195); color: rgb(133 77 14); }
     .tag-local { display: inline-block; margin-left: 4px; padding: 1px 5px; border-radius: 4px;
                  background: #ecfeff; color: #0e7490; font-size: 9px; font-weight: 800;
                  text-transform: uppercase; letter-spacing: .04em; vertical-align: middle; }
@@ -235,11 +240,22 @@
         {% for r in rows %}
           <tr>
             <td class="font-mono">
-              {{ r.im_numero }}
+              {# TMT 2026-09-16: desde que el pasivo nace con la RECEPCIÓN, una
+                 fila puede existir antes que su factura. Ahí se muestra el
+                 número de la entrega (el BOD), por sus últimos dígitos sin
+                 ceros — el entero va en el tooltip. #}
+              {% if r.im_numero %}{{ r.im_numero }}
+              {% elif r.bod %}<span title="{{ r.bod }}">BOD {{ r.bod.split('-')[-1].lstrip('0') }}</span>
+              {% endif %}
               {# TMT 2026-07-30 (dueña): la fila puede ser una IMPORTACIÓN
                  (IM-…, se paga con anticipos) o una COMPRA LOCAL (CMTR-…, sin
                  anticipo, nace el pasivo al recibirla). El badge dice cuál. #}
               {% if r.origen == 'compra' %}<span class="tag-local">local</span>{% endif %}
+              {% if r.origen == 'compra' and not r.im_numero %}<span class="tag-espera" title="La mercadería ya entró a bodega y su deuda ya está cargada. La factura del proveedor todavía no la cargaron en Asinfo.">esperando la factura</span>{% endif %}
+              {# La ENTREGA es la identidad de la fila desde el 16/09: una
+                 misma factura puede llegar en dos tandas y son dos filas con
+                 el mismo CMTR. Sin el BOD al lado no se distinguen. #}
+              {% if r.origen == 'compra' and r.im_numero and r.bod %}<span class="bod-chico" title="{{ r.bod }}">BOD {{ r.bod.split('-')[-1].lstrip('0') }}</span>{% endif %}
               {# TMT 2026-08-03 (dueña, AI 15): las dos mitades de una factura
                  partida se muestran COLAPSADAS en una fila, con los kg del grupo
                  y sus compras una sola vez — por eso queda UNA marca de pagada y
@@ -521,7 +537,7 @@
           <tbody>
             {% for p in pendientes_local %}
             <tr>
-              <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;color:rgb(100 116 139);">{{ p.im_numero }}</td>
+              <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;color:rgb(100 116 139);">{% if p.im_numero %}{{ p.im_numero }}{% elif p.bod %}<span title="{{ p.bod }}">BOD {{ p.bod.split('-')[-1].lstrip('0') }}</span>{% endif %}</td>
               <td style="padding:3px 8px;font-family:ui-monospace,Menlo,monospace;">{{ p.prov or '—' }}</td>
               <td style="padding:3px 8px;text-align:right;font-variant-numeric:tabular-nums;">{{ p.kg|num_es(2) }} kg</td>
               <td style="padding:3px 8px;text-align:right;">
@@ -529,7 +545,7 @@
                   <span style="font-variant-numeric:tabular-nums;font-weight:600;">$ {{ p.importe_sugerido|num_es(2) }}</span>
                   <span style="color:rgb(148 163 184);font-size:10.5px;">({{ p.kg|num_es(2) }} × {{ p.tarifa|num_es(4) }} × 1,15)</span>
                 {% else %}
-                  <span style="color:rgb(180 83 9);font-weight:700;font-size:10.5px;">falta tarifa</span>
+                  <span style="color:rgb(180 83 9);font-weight:700;font-size:10.5px;">{{ p.traba or 'falta tarifa' }}</span>
                 {% endif %}
               </td>
             </tr>

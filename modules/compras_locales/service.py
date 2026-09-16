@@ -13,6 +13,16 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
 
   * el disparador es la RECEPCIÓN (dueña: *"una vez que llegan se genera un
     pasivo"*), y la compra se fecha con la fecha de recepción;
+
+    TMT 2026-09-16 — hasta hoy eso era la INTENCIÓN pero no el mecanismo: la
+    consulta de Asinfo arrancaba de `factura_proveedor`, así que el motor no
+    veía la entrega hasta que alguien cargaba la factura. Medido sobre 15
+    recepciones (`/admin/debug-hilo-local`): entre el BOD y su factura pasaron
+    **~21 horas de mediana y hasta 5 días**, y en toda esa ventana el hilo ya
+    estaba en el stock del programa sin su pasivo — la utilidad del mes alta
+    por el valor de lo que entró. Ahora la consulta parte de la RECEPCIÓN, que
+    es autosuficiente: `id_empresa` y `numero_factura` son columnas propias y
+    NOT NULL en Asinfo, así que la compra nace con su número de factura puesto;
   * el importe sale de un TARIFARIO, no de Asinfo (dueña: *"asinfo nunca nos
     importa en plata... tomá el tarifario con montos de dbase"*);
   * la compra se crea impaga → `compras.queries.crear` le arma su `posdat`
@@ -28,8 +38,14 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
     ya están cargadas a mano o archivadas en el FoxPro.
  4. **Proveedor mapeado por RUC** o se saltea (nunca adivinamos el código).
  5. **Tarifa resuelta** o se saltea — nunca inventamos un precio.
- 6. **Ya cruzada** — si la factura ya tiene una compra en PC (match por
-    proveedor + nº de factura), no se vuelve a cargar. Idempotente.
+ 6. **Ya cruzada** — si la recepción ya tiene una compra en PC, no se vuelve
+    a cargar. Idempotente. El match va en DOS pasos, en este orden:
+      a. por **BOD** (`compra.comprobante`) — la identidad del hecho. Es lo que
+         permite que una factura entregada en dos tandas genere DOS pasivos:
+         cruzando sólo por nº de factura, la segunda entrega se vería como "ya
+         cargada" y su plata no entraría nunca.
+      b. por **(proveedor, nº de factura)** — la red para lo que no tiene BOD:
+         las compras tipeadas a mano y las históricas del dBase.
  7. **Topes por corrida** (cantidad e importe) — un cambio raro en Asinfo no
     puede generar 200 compras de golpe.
  8. **Switch de ambiente** `HILO_LOCAL_AUTO=0`.
@@ -206,6 +222,74 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
     return out
 
 
+def _buscar_por_bod(bods: set[str]) -> dict[str, list[dict]]:
+    """{BOD → [compras]} — el cruce por el DOCUMENTO de la entrega.
+
+    El BOD va en `compra.comprobante` desde 2026-09-16. Es la llave primaria
+    del match: identifica la ENTREGA, que es el hecho que crea el pasivo. El
+    cruce por nº de factura (`_buscar_compras`) queda como red para lo que no
+    tiene BOD — lo tipeado a mano y lo que trajo el sync del dBase.
+
+    Trae las mismas columnas de estado de pago que `_buscar_compras`, más los
+    `kg` y el `concepto` que ya tiene cargados, que es lo que mira el ajuste
+    cuando una entrega crece en Asinfo.
+
+    Una sola query. Fail-soft: {} si no hay bods o la DB falla.
+    """
+    if not bods:
+        return {}
+    lista = sorted({b.strip().upper() for b in bods if (b or "").strip()})
+    if not lista:
+        return {}
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT c.id_compra,
+                   UPPER(TRIM(COALESCE(c.comprobante, ''))) AS bod,
+                   UPPER(TRIM(c.codigo_prov)) AS codigo_prov,
+                   c.importe, c.kg, c.tipo, c.concepto,
+                   TO_CHAR(c.fecha, 'YYYY-MM-DD') AS fecha,
+                   COALESCE((
+                       SELECT SUM(pd.importe)
+                         FROM scintela.mov_doble md
+                         JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
+                        WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
+                          AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                          AND COALESCE(pd.banc, 0) = 0
+                          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                   ), 0) AS saldo_pasivo,
+                   EXISTS (
+                       SELECT 1
+                         FROM scintela.mov_doble md
+                         JOIN scintela.posdat pd ON pd.id_posdat = md.destino_id
+                        WHERE md.origen_table = 'compra' AND md.origen_id = c.id_compra
+                          AND md.destino_table = 'posdat' AND md.estado = 'activo'
+                          AND UPPER(TRIM(COALESCE(pd.prov, ''))) = UPPER(TRIM(COALESCE(c.codigo_prov, '')))
+                          AND (pd.anulada IS NOT TRUE OR pd.anulada IS NULL)
+                   ) AS tiene_posdat,
+                   -- Una compra creada por este motor SIEMPRE nace con su
+                   -- posdat, así que acá `pagada_legacy` no aplica: si no
+                   -- tiene posdat viva es porque se pagó.
+                   FALSE AS pagada_legacy
+              FROM scintela.compra c
+             WHERE UPPER(TRIM(COALESCE(c.comprobante, ''))) = ANY(%s)
+               AND COALESCE(c.stat, '') <> 'Y'
+            """,
+            (lista,),
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("compras_locales._buscar_por_bod falló: %s", e)
+        return {}
+
+    out: dict[str, list[dict]] = {}
+    for r in rows or []:
+        bod = (r.get("bod") or "").strip().upper()
+        if bod:
+            out.setdefault(bod, []).append(r)
+    return out
+
+
 def _estado_pago(hits: list[dict]) -> dict:
     """Estado de pago del conjunto de compras cruzadas contra una factura.
 
@@ -283,8 +367,10 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             "fecha": c.get("fecha"),
             "fecha_recepcion": c.get("fecha_recepcion"),
             "fecha_recepcion_pc": None,
-            "recibida": bool(c.get("recibida")),
             "bod": c.get("bod"),
+            "bod_creada": c.get("bod_creada"),
+            "anulada": bool(c.get("anulada")),
+            "recibida": bool(c.get("recibida")),
             "proveedor": c.get("proveedor"),
             "nota": c.get("nota"),
             "kg": kg,
@@ -321,9 +407,17 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
         })
 
     cruce = _buscar_compras(refs)
+    por_bod = _buscar_por_bod({str(f.get("bod") or "") for f in filas})
     for f in filas:
-        key = (f.get("prov"), f.get("fact_num"))
-        hits = cruce.get(key) if key[0] and key[1] is not None else None
+        # 1º por BOD (el documento de la entrega), 2º por nº de factura.
+        bod = str(f.get("bod") or "").strip().upper()
+        hits = por_bod.get(bod) if bod else None
+        f["cruce_por"] = "bod" if hits else None
+        if not hits:
+            key = (f.get("prov"), f.get("fact_num"))
+            hits = cruce.get(key) if key[0] and key[1] is not None else None
+            if hits:
+                f["cruce_por"] = "factura"
         if not hits:
             continue
         est = _estado_pago(hits)
@@ -472,6 +566,67 @@ def _antes_del_corte(fecha_recepcion: str | None) -> bool:
         return True  # sin fecha usable → no se carga
 
 
+def _ajustar_si_crecio(f: dict, base: dict, *, dry_run: bool,
+                       usuario: str) -> dict | None:
+    """Si la entrega creció en Asinfo, corrige el importe de su compra.
+
+    Tamara 2026-09-16, eligiendo cómo tratar las recepciones partidas: *"con
+    cada entrega, y se ajusta"*. Una recepción se sigue pistoleando después de
+    creada (`indicador_tiene_recepcion_parcial`), así que los kg del BOD suben
+    entre una corrida y la siguiente. El pasivo tiene que seguirlos: si no, la
+    deuda con el proveedor queda corta y la utilidad alta por la diferencia.
+
+    Mismo patrón que el puente de químicos: `compras.queries.editar` corrige el
+    importe y **propaga al posdat hermano** en la misma transacción.
+
+    Sólo ajusta:
+      · compras que creó ESTE motor y que cruzaron por BOD — una compra tipeada
+        a mano no se toca sola, y una que cruzó por nº de factura puede estar
+        cubriendo más de una entrega;
+      · cuando hay UNA sola compra de ese BOD (si hay varias, el reparto no es
+        nuestro: va a la alarma de duplicados);
+      · cuando el importe nuevo difiere en más de un centavo.
+
+    Devuelve la fila del detalle si ajustó (o ajustaría, en dry-run), o None.
+    """
+    from modules.compras import queries as _compras_q
+
+    if f.get("cruce_por") != "bod":
+        return None
+    hits = (f.get("compra") or {}).get("items") or []
+    if len(hits) != 1:
+        return None
+    importe_nuevo = f.get("importe_sugerido")
+    if not importe_nuevo:
+        return None
+    importe_viejo = float(hits[0].get("importe") or 0)
+    if abs(float(importe_nuevo) - importe_viejo) <= 0.01:
+        return None
+
+    fila = {**base, "ok": True, "ajuste": True,
+            "importe_previo": round(importe_viejo, 2),
+            "importe": round(float(importe_nuevo), 2)}
+    if dry_run:
+        return fila
+    try:
+        _compras_q.editar(
+            int(hits[0]["id_compra"]),
+            importe=float(importe_nuevo),
+            kg=round(float(f.get("kg") or 0), 2),
+            usuario=usuario,
+            observacion=(f"hilo local: la entrega {f.get('bod')} pasó de "
+                         f"${importe_viejo:.2f} a ${float(importe_nuevo):.2f} "
+                         f"en Asinfo"),
+        )
+    except Exception as e:  # noqa: BLE001 -- una no corta el lote
+        _LOG.warning("compras_locales: no pude ajustar %s: %s", f.get("bod"), e)
+        return {**base, "ok": False,
+                "motivo": f"no se pudo ajustar: {str(e)[:90]}"}
+    _LOG.info("hilo local: ajustada %s %.2f → %.2f", f.get("bod"),
+              importe_viejo, float(importe_nuevo))
+    return fila
+
+
 def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
                       dry_run: bool = False, limite: int = 200) -> dict:
     """Crea las compras tipo H de las locales recibidas que faltan.
@@ -486,18 +641,19 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
     from modules.compras import queries as _compras_q
 
     filas = compras_locales_con_cruce(limite=limite)
-    out: dict = {"dry_run": dry_run, "creadas": 0, "importe": 0.0,
-                 "salteadas": 0, "detalle": []}
+    out: dict = {"dry_run": dry_run, "creadas": 0, "ajustadas": 0,
+                 "importe": 0.0, "salteadas": 0, "detalle": []}
     if not filas:  # guarda 1 — Asinfo mudo
         return out
 
-    creadas, importe_total = 0, 0.0
+    creadas, importe_total, ajustadas = 0, 0.0, 0
     detalle: list[dict] = []
     # Más viejas primero: si el tope corta, se cargan las que llevan más tiempo.
     filas = sorted(filas, key=lambda f: str(f.get("fecha_recepcion") or ""))
     for f in filas:
         base = {
             "fp_numero": f.get("im_numero"),
+            "bod": f.get("bod"),
             "cod": f.get("prov"),
             "proveedor": f.get("proveedor"),
             "fact_num": f.get("fact_num"),
@@ -510,7 +666,16 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
         kg = float(f.get("kg") or 0)
 
         if f.get("compra"):                                    # guarda 6
-            detalle.append({**base, "ok": False, "motivo": "ya tiene compra"})
+            aj = _ajustar_si_crecio(f, base, dry_run=dry_run, usuario=usuario)
+            detalle.append(aj or {**base, "ok": False, "motivo": "ya tiene compra"})
+            if aj:
+                ajustadas += 1
+            continue
+        if f.get("anulada"):
+            # La recepción se anuló en Asinfo y nunca llegó a tener compra:
+            # no hay nada que crear (y nada que dar de baja).
+            detalle.append({**base, "ok": False,
+                            "motivo": "la recepción está anulada en Asinfo"})
             continue
         if not f.get("recibida") or kg <= 0:                   # guarda 2
             detalle.append({**base, "ok": False, "motivo": "todavía no recibida"})
@@ -552,6 +717,11 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
                 # proveedor. Es la clave con la que esta pantalla vuelve a
                 # encontrar la compra.
                 concepto=str(f["fact_num"]),
+                # El DOCUMENTO de la entrega, estampado (regla de tejeduría
+                # con el IFT): es lo que reconoce la corrida siguiente, lo que
+                # deja que dos entregas de la misma factura sean dos pasivos,
+                # y el hilo para rastrear cualquiera de las dos hacia Asinfo.
+                comprobante=str(f.get("bod") or "") or None,
                 clave=clave,
                 usuario=MARCADOR_CARGA,
             )
@@ -564,10 +734,11 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
         detalle.append({**base, "ok": True, "numero_compra": res.get("numero")})
 
     out["creadas"] = creadas
+    out["ajustadas"] = ajustadas
     out["importe"] = round(importe_total, 2)
     out["salteadas"] = sum(1 for d in detalle if not d["ok"])
     out["detalle"] = detalle
-    if creadas and not dry_run:
+    if (creadas or ajustadas) and not dry_run:
         asinfo_service.reset_locales_cache()
         _avisar_carga(out)
     return out
@@ -588,12 +759,27 @@ def _avisar_carga(res: dict) -> int:
             continue
         cod = (d.get("cod") or "?").upper()
         nombre = (d.get("proveedor") or cod).strip()
-        clave = f"hilo-local:{cod}:{d.get('fact_num')}"
+        # La clave lleva el BOD, no el nº de factura: dos entregas de la misma
+        # factura son dos avisos distintos, y con la clave vieja la segunda se
+        # perdía por idempotente. Las de antes del BOD caen al nº de factura.
+        marca = d.get("bod") or f"f{d.get('fact_num')}"
+        es_ajuste = bool(d.get("ajuste"))
+        clave = f"hilo-local:{cod}:{marca}" + (":aj" if es_ajuste else "")
+        if es_ajuste:
+            titulo = (f"{cod} {nombre} · factura {d.get('fact_num')} · "
+                      f"ahora $ {num_es(float(d.get('importe') or 0), 2)}")
+            detalle = (f"Llegó más mercadería de la misma entrega · antes "
+                       f"$ {num_es(float(d.get('importe_previo') or 0), 2)} · "
+                       f"{num_es(float(d.get('kg') or 0), 2)} kg")
+        else:
+            titulo = (f"{cod} {nombre} · factura {d.get('fact_num')} · "
+                      f"$ {num_es(float(d.get('importe') or 0), 2)}")
+            detalle = ("Se cargó a compras · "
+                       f"{num_es(float(d.get('kg') or 0), 2)} kg")
         puestos += bool(_avisar(
             fuente="hilo-local",
-            titulo=f"{cod} {nombre} · factura {d.get('fact_num')} · "
-                   f"$ {num_es(float(d.get('importe') or 0), 2)}",
-            detalle=f"Se cargó a compras · {num_es(float(d.get('kg') or 0), 2)} kg",
+            titulo=titulo,
+            detalle=detalle,
             importe=round(float(d.get("importe") or 0), 2),
             cantidad=1,
             url="/importaciones",
@@ -617,7 +803,256 @@ def correr_si_toca() -> dict:
         res["corrio"] = True
         carga = cargar_pendientes(usuario=MARCADOR_CARGA)
         res["creadas"] = carga.get("creadas") or 0
+        res["ajustadas"] = carga.get("ajustadas") or 0
         res["importe"] = carga.get("importe") or 0.0
+        # Y lo que quedó trabado por una guarda (falta tarifa, RUC sin
+        # proveedor): kilos en bodega sin su deuda. Fail-soft por su cuenta —
+        # que no se pueda avisar nunca frena la carga.
+        try:
+            res["avisadas"] = avisar_trabadas()
+        except Exception as e:  # noqa: BLE001
+            _LOG.warning("compras locales (aviso trabadas): %s", e)
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         _LOG.warning("compras locales (fondo): %s", e)
     return res
+
+
+# ---------------------------------------------------------------------------
+# Kilos en bodega sin su deuda — la alarma
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-16, mirando las dos recepciones trabadas desde agosto: *"igual
+# tiene que haber anuncios"*.
+#
+# Con el disparador en la recepción el pasivo nace junto con los kilos, así que
+# lo único que puede dejar una entrega sin deuda es una GUARDA: falta la tarifa
+# del proveedor, el RUC no mapea a ningún proveedor de PC, o Asinfo no contestó.
+# Eso antes no lo miraba nadie: había que entrar a /importaciones y leer la
+# columna. Medido el 16/09 había 1.882 kg de tres semanas atrás sin su pasivo.
+#
+# El umbral de 24 h es a propósito: por debajo de eso una entrega "sin compra"
+# es sólo la corrida que todavía no pasó, y un ⚠ diario por algo legítimo
+# entrena a ignorar el panel.
+HORAS_PARA_ALARMA = 24
+
+
+def _entregas(n: int, adjetivo: str = "") -> str:
+    """«1 entrega anulada» / «3 entregas anuladas».
+
+    Nada de «entrega(s)» ni «anulada(s)» en un texto que alguien lee: el
+    adjetivo se pasa en singular y concuerda solo.
+    """
+    palabra = "1 entrega" if n == 1 else f"{n} entregas"
+    if not adjetivo:
+        return palabra
+    return f"{palabra} {adjetivo}" if n == 1 else f"{palabra} {adjetivo}s"
+
+
+def _dias(n: int) -> str:
+    """«1 día» / «22 días»."""
+    return "1 día" if n == 1 else f"{n} días"
+
+
+def _horas_desde(fecha_iso: str | None) -> float | None:
+    """Horas entre `fecha_iso` (YYYY-MM-DD) y hoy, hora Ecuador. None si no parsea."""
+    from filters import today_ec
+
+    try:
+        d = date.fromisoformat(str(fecha_iso)[:10])
+    except (TypeError, ValueError):
+        return None
+    return (today_ec() - d).days * 24.0
+
+
+def sin_pasivo(filas: list[dict] | None = None) -> list[dict]:
+    """Entregas recibidas que NO tienen su compra en el programa, con el motivo.
+
+    Deja afuera lo que no es un problema: lo anterior al CORTE (que el motor no
+    mira nunca), lo anulado en Asinfo, y lo que todavía no cumplió las horas.
+    """
+    if filas is None:
+        try:
+            filas = compras_locales_con_cruce()
+        except Exception:  # noqa: BLE001 -- fail-soft
+            return []
+    out: list[dict] = []
+    for f in filas or []:
+        if f.get("compra") or not f.get("recibida") or f.get("anulada"):
+            continue
+        if float(f.get("kg") or 0) <= 0 or f.get("pre_corte"):
+            continue
+        horas = _horas_desde(f.get("fecha_recepcion"))
+        if horas is not None and horas < HORAS_PARA_ALARMA:
+            continue
+        if not f.get("prov"):
+            motivo = "el RUC de Asinfo no coincide con ningún proveedor del programa"
+        elif not f.get("tarifa"):
+            motivo = f"falta la tarifa de {f.get('prov')} para {f.get('producto') or '?'}"
+        else:
+            motivo = "la carga automática no llegó a crearla"
+        out.append({
+            "bod": f.get("bod"),
+            "fecha_recepcion": f.get("fecha_recepcion"),
+            "dias": int((horas or 0) // 24),
+            "prov": f.get("prov"),
+            "proveedor": f.get("proveedor"),
+            "producto": f.get("producto"),
+            "fact_num": f.get("fact_num"),
+            "kg": round(float(f.get("kg") or 0), 2),
+            "importe_sugerido": f.get("importe_sugerido"),
+            "motivo": motivo,
+        })
+    return sorted(out, key=lambda r: str(r.get("fecha_recepcion") or ""))
+
+
+def duplicadas() -> list[dict]:
+    """Entregas con MÁS DE UNA compra viva en el programa.
+
+    Pasa si alguien la tipea a mano mientras el motor ya la cargó. Dos pasivos
+    por la misma mercadería: el proveedor figura cobrando dos veces y la
+    utilidad queda baja por la diferencia.
+    """
+    try:
+        rows = db.fetch_all(
+            """
+            SELECT UPPER(TRIM(c.comprobante)) AS bod,
+                   COUNT(*) AS n,
+                   ROUND(SUM(c.importe), 2) AS importe,
+                   STRING_AGG(c.id_compra::text, ', '
+                              ORDER BY c.id_compra) AS ids
+              FROM scintela.compra c
+             WHERE c.tipo = 'H'
+               AND COALESCE(c.stat, '') <> 'Y'
+               AND COALESCE(TRIM(c.comprobante), '') <> ''
+             GROUP BY UPPER(TRIM(c.comprobante))
+            HAVING COUNT(*) > 1
+             ORDER BY 1
+            """,
+        ) or []
+    except Exception as e:  # noqa: BLE001 -- fail-soft
+        _LOG.warning("compras_locales.duplicadas falló: %s", e)
+        return []
+    return [{"bod": r.get("bod"), "n": int(r.get("n") or 0),
+             "importe": float(r.get("importe") or 0), "ids": r.get("ids")}
+            for r in rows]
+
+
+def anuladas_con_compra(filas: list[dict] | None = None) -> list[dict]:
+    """Entregas ANULADAS en Asinfo que siguen con su deuda viva en el programa.
+
+    El motor no da de baja nada solo: anular una compra mueve plata y tiene su
+    pantalla de confirmación. Lo que sí hace es no dejar que pase inadvertido —
+    si no, queda un pasivo con un proveedor por mercadería que nunca entró, y
+    la utilidad baja por ese monto hasta que alguien lo note.
+    """
+    if filas is None:
+        try:
+            filas = compras_locales_con_cruce()
+        except Exception:  # noqa: BLE001 -- fail-soft
+            return []
+    out = []
+    for f in filas or []:
+        if not f.get("anulada") or not f.get("compra"):
+            continue
+        if f.get("pagada"):        # ya se pagó: anularla es otra conversación
+            continue
+        out.append({
+            "bod": f.get("bod"),
+            "prov": f.get("prov"),
+            "proveedor": f.get("proveedor"),
+            "fact_num": f.get("fact_num"),
+            "kg": round(float(f.get("kg") or 0), 2),
+            "importe_programa": f.get("importe_programa"),
+            "ids": (f.get("compra") or {}).get("ids"),
+        })
+    return out
+
+
+def health() -> dict:
+    """{ok, alerts, stats} para /admin/health/all.
+
+    Si Asinfo no contesta, `ok` con `sin_datos`: no poder mirar no es lo mismo
+    que estar mal, y un health que se pone rojo cada vez que Metabase tose
+    deja de servir.
+    """
+    alerts: list[dict] = []
+    try:
+        filas = compras_locales_con_cruce()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": True, "alerts": [], "stats": {"sin_datos": str(e)[:120]}}
+    if not filas:
+        return {"ok": True, "alerts": [], "stats": {"sin_datos": "Asinfo no contestó"}}
+
+    faltan = sin_pasivo(filas)
+    dobles = duplicadas()
+    fantasmas = anuladas_con_compra(filas)
+    if faltan:
+        kg = sum(f["kg"] for f in faltan)
+        quienes = ", ".join(
+            f"{f['prov'] or f['proveedor'] or '?'} {f['bod']} "
+            f"(hace {_dias(f['dias'])})" for f in faltan[:4])
+        alerts.append({
+            "severity": "high",
+            "category": "hilo_local_sin_pasivo",
+            "msg": (
+                f"Hay {_entregas(len(faltan))} de hilo por {num_es(kg, 2)} "
+                f"kg en bodega sin su deuda cargada ({quienes}). Se resuelven "
+                f"en Ingreso de hilado."
+            ),
+        })
+    if dobles:
+        alerts.append({
+            "severity": "high",
+            "category": "hilo_local_duplicado",
+            "msg": (
+                f"Hay {_entregas(len(dobles))} de hilo con más de una compra "
+                f"viva ({', '.join(d['bod'] for d in dobles[:4])}). El "
+                f"proveedor figura cobrando dos veces."
+            ),
+        })
+    if fantasmas:
+        total = sum(float(f.get("importe_programa") or 0) for f in fantasmas)
+        alerts.append({
+            "severity": "high",
+            "category": "hilo_local_anulada_con_deuda",
+            "msg": (
+                f"Hay {_entregas(len(fantasmas), 'anulada')} en Asinfo con "
+                f"su deuda viva en el programa por $ {num_es(total, 2)} "
+                f"({', '.join(str(f.get('bod')) for f in fantasmas[:4])}). "
+                f"Se dan de baja por Compras."
+            ),
+        })
+    return {
+        "ok": not alerts,
+        "alerts": alerts,
+        "stats": {
+            "recepciones": len(filas),
+            "sin_pasivo": faltan,
+            "duplicadas": dobles,
+            "anuladas_con_deuda": fantasmas,
+            "horas_para_alarma": HORAS_PARA_ALARMA,
+        },
+    }
+
+
+def avisar_trabadas() -> int:
+    """Un aviso en la campanita por entrega trabada. Devuelve cuántos entraron.
+
+    Clave idempotente por BOD: mientras siga trabada no repite el aviso, y
+    cuando se resuelva simplemente deja de haber caso.
+    """
+    from modules.avisos import avisar as _avisar
+
+    puestos = 0
+    for f in sin_pasivo():
+        cod = (f.get("prov") or f.get("proveedor") or "?").strip()[:40]
+        puestos += bool(_avisar(
+            fuente="hilo-local",
+            titulo=(f"{cod} · {num_es(f['kg'], 2)} kg en bodega sin la deuda "
+                    f"cargada · hace {_dias(f['dias'])}"),
+            detalle=f["motivo"],
+            importe=round(float(f.get("importe_sugerido") or 0), 2),
+            cantidad=1,
+            url="/importaciones",
+            clave=f"hilo-local-trabada:{f.get('bod')}"[:400],
+        ))
+    return puestos
