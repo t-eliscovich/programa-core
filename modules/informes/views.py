@@ -4122,6 +4122,14 @@ def estado_cuenta(codigo_cli):
         # TMT 2026-07-06 (dueña): banner de éxito del TOTALIZAR (one-shot,
         # patrón cobranza_ok) + botón imprimir el resultado.
         totalizar_ok=session.pop("totalizar_ok", None),
+        # TMT 2026-09-16 (dueña): *"esta tablita la quiero ver en el estado de
+        # cuenta en algún lado"* — el antes y el después de cada totalizar de
+        # este cliente, que hasta hoy sólo vivía en el movimiento.
+        totalizares=(_safe(
+            lambda: __import__(
+                "modules._lib.vinculos_totalizar",
+                fromlist=["corridas_del_cliente"]
+            ).corridas_del_cliente(codigo_up), [])[0]),
         neteo_ok=session.pop("neteo_ok", None),
         # TMT 2026-07-21 (dueña): neteos DESHACIBLES del cliente (panel
         # "Deshacer neteo"). Best-effort: si falla, no rompe el estado de cuenta.

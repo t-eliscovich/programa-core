@@ -551,6 +551,74 @@
      — lapicito por factura para cambiar A↔T. El lote de impresión incluye el
      mismo partial SIN interactivo → sale igual que antes. #}
   {% set interactivo = true %}
+  {# ══════════════════════════════════════════════════════════════════════
+     CÓMO QUEDÓ LA CUENTA DESPUÉS DE CADA TOTALIZAR — TMT 2026-09-16 (dueña,
+     sobre la tabla que le armé a mano por chat): *"esta tablita que me mandás
+     la quiero ver en el estado de cuenta en algún lado, dónde se ve en el
+     programa"*. No se veía: el botón "Ver totalizadas" lista las T en gris y
+     la pantalla de deshacer sólo dice cuántas cambian. Esto es lo que el
+     propio totalizar guardó.
+
+     Va PLEGADO (una línea) y fuera del parcial impreso: la hoja del cliente y
+     el portal usan ese parcial, y esto es cocina de la oficina. #}
+  {% if totalizares %}
+  <div class="no-print mb-6">
+    {% for tz in totalizares %}
+    <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-2">
+      <summary class="cursor-pointer px-3 py-2 text-sm text-slate-700 dark:text-slate-300">
+        Se totalizó el <strong>{{ tz.fecha | fecha_es }}</strong>
+        — {{ tz.n_facturas }} factura{{ '' if tz.n_facturas == 1 else 's' }} re-liquidadas con
+        {{ tz.pool | money_es }} de abonos{% if tz.usuario %} · {{ tz.usuario }}{% endif %}
+        <span class="text-slate-400">· ver cómo quedó</span>
+      </summary>
+      {% if tz.facturas %}
+      <table class="w-full text-sm border-t border-slate-100 dark:border-slate-800">
+        <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+          <tr>
+            <th class="px-3 py-2 text-left font-medium">Factura</th>
+            <th class="px-3 py-2 text-right font-medium">Importe</th>
+            <th class="px-3 py-2 text-right font-medium">Abono antes</th>
+            <th class="px-3 py-2 text-right font-medium">Debía</th>
+            <th class="px-3 py-2 text-right font-medium">Abono después</th>
+            <th class="px-3 py-2 text-right font-medium">Debe</th>
+            <th class="px-3 py-2 text-left font-medium">Estado</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for f in tz.facturas %}
+          {# La que no cambió va en gris: lo que se mira acá es lo que se movió. #}
+          <tr class="border-t border-slate-100 dark:border-slate-800 {{ '' if f.cambio else 'text-slate-400' }}">
+            <td class="px-3 py-2 font-mono text-xs">
+              <a href="{{ url_for('facturas.detalle', id_factura=f.id_factura, id=f.id_factura) }}"
+                 class="text-blue-600 hover:underline">{{ f.numf or f.id_factura }}</a>
+              {% if f.cheques_sueltos %}
+              <span class="text-[10px] text-slate-400" title="Vínculos cheque↔factura que soltó esta corrida — se ven en la ficha de la factura">
+                · soltó {{ f.cheques_sueltos }} cheque{{ '' if f.cheques_sueltos == 1 else 's' }}
+              </span>
+              {% endif %}
+            </td>
+            <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.importe | money_es }}</td>
+            <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.abono_antes | money_es }}</td>
+            <td class="px-3 py-2 text-right text-mono text-slate-500">{{ f.saldo_antes | money_es }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ f.abono_despues | money_es }}</td>
+            <td class="px-3 py-2 text-right text-mono">{{ f.saldo_despues | money_es }}</td>
+            <td class="px-3 py-2 text-xs">
+              {{ f.stat_antes }} → <strong>{{ f.stat_despues }}</strong>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="px-3 py-2 text-xs text-slate-500 border-t border-slate-100 dark:border-slate-800">
+        De esta corrida no quedó guardado el detalle — es anterior al 19/08/2026.
+      </p>
+      {% endif %}
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+
   {% include "informes/_estado_cuenta_impreso.html" %}
 
   {# TMT 2026-06-23 (dueña): SALDO A FAVOR / anticipos del cliente.

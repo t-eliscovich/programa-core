@@ -11788,11 +11788,15 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 conn=conn,
             )
             n_upd += 1
-        # Vínculos cheque↔factura: se PIERDEN de la tabla viva (aceptado por
-        # la dueña, la confirmación lo avisa). El abono redistribuido ya no
-        # mapea 1-a-1 con los cheques originales, dejar los links sería
-        # mentir. Pero se GUARDAN en la metadata antes de borrarlos: es lo
-        # único que permite reponerlos si se deshace el totalizar.
+        # Vínculos cheque↔factura: salen de la tabla VIVA (el abono
+        # redistribuido ya no mapea 1-a-1 con los cheques originales, y
+        # dejarlos vivos movería el TOTF as-of y el health de sobre-aplicadas,
+        # que suman chequesxfact). Pero NO se pierden: van a la metadata —lo
+        # que permite reponerlos con el ↺— y a `chequesxfact_totalizado`, la
+        # tabla de sólo historia que muestran las fichas.
+        #
+        # 🚨 TMT 2026-09-16 (dueña): *"puede totalizarse, pero no que se pierda
+        # qué cheque/depósito/transferencia pagó qué factura"*.
         ids = [f["id_factura"] for f in facturas]
         links = db.fetch_all(
             "SELECT " + _COLS_LINK_TOTALIZAR
@@ -11813,7 +11817,7 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 sum(-float(f["importe"] or 0) for f in facturas
                     if float(f["importe"] or 0) < 0), 2)
         import mov_doble as _md
-        _md.registrar(
+        id_mov = _md.registrar(
             conn=conn,
             tipo="totalizar_estado_cuenta",
             origen_table="factura", origen_id=facturas[0]["id_factura"],
@@ -11855,6 +11859,18 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                 "links": [_link_a_json(x) for x in links],
             },
         )
+        # El historial del vínculo, en la misma transacción que el borrado.
+        if links and id_mov:
+            # El id sale de `registrar`, no de un "último id": dos totalizares
+            # a la vez colgarían el historial del movimiento equivocado.
+            from modules._lib import vinculos_totalizar as _vt
+            _vt.guardar(
+                conn,
+                id_mov_doble=int(id_mov),
+                fecha=today_ec(),
+                codigo_cli=codigo_cli,
+                links=[_link_a_json(x) for x in links],
+            )
         return {
             "codigo_cli": codigo_cli,
             "n_facturas": len(facturas),
@@ -12102,6 +12118,10 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
                 conn=conn,
             )
             n_links += 1
+        # Los vínculos volvieron a la tabla viva: el historial de ESTA corrida
+        # ya no es historia, es el presente. TMT 2026-09-16.
+        from modules._lib import vinculos_totalizar as _vt
+        _vt.olvidar_corrida(conn, id_mov_doble)
         import mov_doble as _md
         _md.registrar(
             conn=conn,
