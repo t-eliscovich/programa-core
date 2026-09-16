@@ -3837,7 +3837,7 @@ def ingresados_dia():
     INGRESO, ordena por IMPORTE DESCENDENTE y lista fechad / cliente /
     importe / banco / estado con el TOTAL neto al pie.
 
-    Es el complemento del *Depósitos ingresados del día*: aquél agrupa por
+    Es el complemento del *Depósitos y efectivo del día*: aquél agrupa por
     medio y muestra las facturas que paga cada cobro; éste es la lista plana
     que se lleva al banco, y sí incluye los posdatados que quedaron en
     cartera. Query params: `?fecha=YYYY-MM-DD` (default hoy) y
