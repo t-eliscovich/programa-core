@@ -199,6 +199,61 @@
     </table>
   </div>
 
+  {# TMT 2026-09-16 (dueña): *"no borres vínculos!!"* y después *"o sea
+     totalizamos pero si quiero puedo encontrar el vínculo"*. El TOTALIZAR
+     reparte de nuevo los abonos del cliente y suelta los cheques; acá están
+     los que pagaban ESTA factura antes de esa corrida. No es plata aparte:
+     ya está contada en el abono de arriba. Si no hubo totalizar, no aparece
+     nada — una ficha no se llena de bloques vacíos. #}
+  {% if vinculos_viejos %}
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
+    Cheques que soltó el totalizar ({{ vinculos_viejos | length }})
+  </h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-6">
+    <p class="px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800">
+      Estos cheques pagaban esta factura hasta que se totalizó la cuenta del cliente.
+      El totalizar repartió los abonos de nuevo y soltó el vínculo: la plata sigue contada en el abono.
+    </p>
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-3 text-left font-medium">Se totalizó</th>
+          <th class="px-3 py-3 text-left font-medium">Cheque</th>
+          <th class="px-3 py-3 text-left font-medium">Factura</th>
+          <th class="px-3 py-3 text-left font-medium">Banco</th>
+          <th class="px-3 py-3 text-right font-medium">Importe cheque</th>
+          <th class="px-3 py-3 text-right font-medium">Aplicaba</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for v in vinculos_viejos %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
+          <td class="px-3 py-2 text-xs" style="white-space: nowrap;">{{ v.fecha_totalizar | fecha_es }}</td>
+          {# TMT 2026-09-16 (dueña): *"debería haber el link de factura y cheque"*.
+             El vínculo tiene DOS puntas: se muestran las dos, las dos como link
+             —azul y subrayado— aunque una sea la ficha que estás mirando. Un
+             depósito no tiene número de papel: decir el id interno bajo el
+             rótulo "N° cheque" manda a buscarlo por un número que no existe
+             (pasó el 16/09), así que dice lo que es y el link hace el resto. #}
+          <td class="px-3 py-2 font-mono text-xs">
+            <a href="{{ url_for('cheques.detalle', id_cheque=v.id_cheque) }}"
+               class="text-blue-600 hover:underline"
+               title="Ficha del cobro #{{ v.id_cheque }}">{{ v.no_cheque or 'sin número' }}</a>
+          </td>
+          <td class="px-3 py-2 font-mono text-xs">
+            <a href="{{ url_for('facturas.detalle', id_factura=(v.numf or v.id_fact), doc=v.numf_completo or None, id=v.id_fact or None) }}"
+               class="text-blue-600 hover:underline">{{ v.numf_completo or v.numf or v.id_fact }}</a>
+          </td>
+          <td class="px-3 py-2 text-xs">{{ v.cheque_banco or '—' }}</td>
+          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ v.cheque_importe | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">{{ v.aplicado | money_es }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">
     Retenciones ({{ retenciones | length }} · total {{ total_retenido | money_es }})
   </h2>

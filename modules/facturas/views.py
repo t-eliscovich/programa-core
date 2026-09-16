@@ -952,6 +952,11 @@ def detalle(id_factura: int):
         except Exception as _e:  # noqa: BLE001 — fail-soft, como el puente
             from modules._lib.silencios import avisar
             avisar(__name__, "detalle_hora_emision", _e)
+    # Los cheques que pagaban esta factura hasta que corrió el TOTALIZAR.
+    # TMT 2026-09-16 (dueña, sobre la 177617 de MTM): *"no borres vínculos!!"*
+    # — el totalizar los borra a propósito, pero ahora se pueden encontrar.
+    from modules._lib import vinculos_totalizar
+    vinculos_viejos = vinculos_totalizar.de_la_factura(_id_real)
     return render_template(
         "facturas/detalle.html",
         fact=fact,
@@ -960,6 +965,7 @@ def detalle(id_factura: int):
         retenciones=retenciones,
         total_aplicado=total_aplicado,
         total_retenido=total_retenido,
+        vinculos_viejos=vinculos_viejos,
     )
 
 

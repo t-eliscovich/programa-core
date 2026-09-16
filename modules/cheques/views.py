@@ -2739,9 +2739,14 @@ def detalle(id_cheque: int):
             "recientes.registrar(cheque, %s) falló",
             id_cheque,
         )
+    # Las facturas que pagaba este cheque hasta que corrió el TOTALIZAR.
+    # TMT 2026-09-16 (dueña): *"no borres vínculos!!"*.
+    from modules._lib import vinculos_totalizar
+    vinculos_viejos = vinculos_totalizar.del_cheque(id_cheque)
     return render_template(
         "cheques/detalle.html",
         ch=ch,
+        vinculos_viejos=vinculos_viejos,
         aplicaciones=aplicaciones,
         depositos=depositos,
         total_aplicado=total_aplicado,
