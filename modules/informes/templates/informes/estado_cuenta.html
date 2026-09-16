@@ -563,6 +563,26 @@
      el portal usan ese parcial, y esto es cocina de la oficina. #}
   {% if totalizares %}
   <div class="no-print mb-6">
+    {# 🚨 TMT 2026-09-16 (dueña): *"no entiendo por qué pasó, arreglalo esta vez
+       como puedas pero no debería volver a pasar"*. El totalizar ya vuelve a
+       aplicar los cobros solo; esto es para las cuentas que quedaron sin
+       vínculos antes de ese arreglo. No mueve un peso: reparte los cobros que
+       el historial guardó sobre los abonos que las facturas tienen hoy. #}
+    {% if vinculos_por_reponer and tiene_permiso('estado_cuenta.totalizar') %}
+    <form method="post"
+          action="{{ url_for('informes.estado_cuenta_reponer_vinculos', codigo_cli=data.cliente.codigo_cli) }}"
+          class="mb-2 flex items-center justify-between gap-3 flex-wrap rounded border border-amber-300 bg-amber-50 dark:bg-amber-900/20 px-3 py-2">
+      <span class="text-sm text-amber-900 dark:text-amber-200">
+        {{ vinculos_por_reponer }} cobro{{ '' if vinculos_por_reponer == 1 else 's' }}
+        de esta cuenta quedaron sin su factura por un totalizar viejo.
+        Volver a ponerlos no cambia ningún abono ni saldo.
+      </span>
+      <button type="submit"
+              class="shrink-0 text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700">
+        Volver a ponerlos en sus facturas
+      </button>
+    </form>
+    {% endif %}
     {% for tz in totalizares %}
     <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-2">
       <summary class="cursor-pointer px-3 py-2 text-sm text-slate-700 dark:text-slate-300">

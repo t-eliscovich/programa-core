@@ -4125,6 +4125,13 @@ def estado_cuenta(codigo_cli):
         # TMT 2026-09-16 (dueña): *"esta tablita la quiero ver en el estado de
         # cuenta en algún lado"* — el antes y el después de cada totalizar de
         # este cliente, que hasta hoy sólo vivía en el movimiento.
+        # Cuántos cobros quedaron sin su factura por un totalizar viejo — si
+        # hay, el bloque ofrece volver a ponerlos. TMT 2026-09-16.
+        vinculos_por_reponer=(_safe(
+            lambda: __import__(
+                "modules._lib.vinculos_totalizar",
+                fromlist=["cuantos_por_reponer"]
+            ).cuantos_por_reponer(codigo_up), 0)[0]),
         totalizares=(_safe(
             lambda: __import__(
                 "modules._lib.vinculos_totalizar",
@@ -4559,6 +4566,43 @@ def estado_cuenta_neteo_deshacer(codigo_cli, id_evento):
         flash(str(e), "warn")
     except Exception as e:
         flash_exc("No pude deshacer el neteo", e)
+    return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+
+
+@informes_bp.route("/estado-cuenta/<codigo_cli>/reponer-vinculos",
+                   methods=["POST"])
+@requiere_login
+@requiere_permiso("clientes.ver")
+def estado_cuenta_reponer_vinculos(codigo_cli):
+    """Reconstruye los vínculos cheque↔factura de un cliente YA totalizado.
+
+    🚨 TMT 2026-09-16 (dueña, sobre la 177617 de MTM): *"no entiendo por qué
+    pasó, arreglalo esta vez como puedas pero no debería volver a pasar"*. El
+    "no vuelve a pasar" lo resuelve el totalizar, que ahora re-aplica solo;
+    esto es para las cuentas que ya quedaron sin vínculos.
+
+    NO mueve un peso: reparte los cobros que el historial guardó sobre los
+    abonos que las facturas tienen HOY. Abono, saldo y stat quedan iguales.
+
+    Mismo permiso que totalizar para ESCRIBIR: la ruta la ve quien ve la
+    cuenta, pero esto escribe en `chequesxfact`.
+    """
+    codigo_up = codigo_cli.upper()
+    if not tiene_permiso("estado_cuenta.totalizar"):
+        flash("No tenés permiso para reponer los vínculos.", "warn")
+        return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+    usuario = (g.user or {}).get("username", "web") if hasattr(g, "user") else "web"
+    try:
+        from modules._lib import vinculos_totalizar as _vt
+        res = _vt.reponer_cliente(codigo_up, usuario=usuario)
+    except Exception as e:
+        flash_exc("No pude reponer los vínculos", e)
+        return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
+    if res["vinculos"]:
+        flash(f"Listo: {res['vinculos']} cobro(s) volvieron a su factura. "
+              "No se movió ningún abono ni saldo.", "ok")
+    else:
+        flash("No había vínculos para reponer en esta cuenta.", "info")
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 

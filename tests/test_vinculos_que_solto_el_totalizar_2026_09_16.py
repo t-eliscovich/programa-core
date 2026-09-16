@@ -306,3 +306,97 @@ def test_guardar_no_toca_la_base_si_no_hay_vinculos(monkeypatch):
     monkeypatch.setattr(db, "execute", _no)
     assert vinculos_totalizar.guardar(None, id_mov_doble=1, fecha=None,
                                       codigo_cli="MTM", links=[]) == 0
+
+
+# ── "No debería volver a pasar": el totalizar re-aplica ─────────────────────
+# TMT 2026-09-16 (dueña): *"no entiendo por qué pasó, arreglalo esta vez como
+# puedas pero no debería volver a pasar"*.
+
+def test_reparte_el_cobro_a_la_factura_mas_vieja_primero():
+    """Mismo criterio que el totalizar: la plata vieja paga la deuda vieja."""
+    plan = vinculos_totalizar.repartir(
+        facturas=[{"id_fact": 1, "abono": 800.0}, {"id_fact": 2, "abono": 0.0}],
+        cobros=[{"id_cheque": 10, "importe": 200.0},
+                {"id_cheque": 11, "importe": 600.0}],
+    )
+    assert [(p["id_fact"], p["id_cheque"], p["importe"]) for p in plan] == [
+        (1, 10, 200.0), (1, 11, 600.0)]
+
+
+def test_un_cobro_se_parte_entre_dos_facturas():
+    """No es un invento nuevo: `aplicar_a_factura` ya guarda una fila por
+    aplicación, así que un cheque puede pagar dos facturas."""
+    plan = vinculos_totalizar.repartir(
+        facturas=[{"id_fact": 1, "abono": 100.0}, {"id_fact": 2, "abono": 400.0}],
+        cobros=[{"id_cheque": 10, "importe": 500.0}],
+    )
+    assert [(p["id_fact"], p["importe"]) for p in plan] == [(1, 100.0), (2, 400.0)]
+
+
+def test_nunca_aplica_mas_que_el_abono_ni_mas_que_el_cobro():
+    """El health de facturas sobre-aplicadas suma esta tabla: pasarse de
+    abono es prender una alarma real por un arreglo cosmético."""
+    plan = vinculos_totalizar.repartir(
+        facturas=[{"id_fact": 1, "abono": 50.0}],
+        cobros=[{"id_cheque": 10, "importe": 500.0},
+                {"id_cheque": 11, "importe": 300.0}],
+    )
+    assert sum(p["importe"] for p in plan) == 50.0
+    assert len(plan) == 1, "el segundo cobro no tenía dónde entrar"
+
+
+def test_el_abono_sin_cobro_queda_sin_vinculo():
+    """Abono del backfill histórico / dbf-import: inventarle un cheque sería
+    peor que dejarlo sin uno."""
+    plan = vinculos_totalizar.repartir(
+        facturas=[{"id_fact": 1, "abono": 900.0}],
+        cobros=[{"id_cheque": 10, "importe": 200.0}],
+    )
+    assert sum(p["importe"] for p in plan) == 200.0
+
+
+def test_el_totalizar_vuelve_a_aplicar_los_cobros():
+    fuente = inspect.getsource(_iq.totalizar_estado_cuenta_ejecutar)
+    assert "_vt.reaplicar(" in fuente
+    # Los cobros entran por fecha: el de julio paga la factura de mayo.
+    assert "fechaing" in fuente
+    assert "n_links_reaplicados" in fuente
+
+
+def test_no_le_repone_el_vinculo_a_un_cheque_anulado():
+    """La aplicación fantasma que describe el reverso del totalizar: el abono
+    deja de cuadrar y bloquea futuras anulaciones."""
+    fuente = inspect.getsource(vinculos_totalizar.reaplicar)
+    assert "COALESCE(stat, '') <> 'X'" in fuente
+
+
+def test_el_boton_de_reponer_solo_sale_si_hay_algo_que_reponer():
+    assert "{% if vinculos_por_reponer and tiene_permiso('estado_cuenta.totalizar') %}" in EC_PAGINA
+    assert "Volver a ponerlos en sus facturas" in EC_PAGINA
+    assert "no cambia ningún abono ni saldo" in EC_PAGINA
+
+
+def test_reponer_pide_el_permiso_de_totalizar():
+    """La ruta la ve quien ve la cuenta; escribir en chequesxfact no."""
+    import modules.informes.views as _v
+    fuente = inspect.getsource(_v.estado_cuenta_reponer_vinculos)
+    assert 'tiene_permiso("estado_cuenta.totalizar")' in fuente
+    assert "methods=[\"POST\"]" in inspect.getsource(_v).split(
+        "def estado_cuenta_reponer_vinculos")[0][-400:]
+
+
+def test_reponer_solo_mira_las_facturas_de_la_corrida():
+    """⚠ Repartir sobre TODAS las facturas del cliente mandaría los cobros de
+    agosto a las de 2022 del backfill de Asinfo —que arrastran abono sin
+    vínculo desde siempre— y la factura que perdió su cheque seguiría sin él."""
+    fuente = inspect.getsource(vinculos_totalizar.reponer_cliente)
+    assert "SELECT DISTINCT t.id_fact" in fuente
+    # Y sólo el abono que todavía no tiene vínculo vivo.
+    assert "SUM(x.importe) FROM scintela.chequesxfact x" in fuente
+
+
+def test_un_link_sin_fecha_no_voltea_la_reposicion():
+    """`chequesxfact.fechaing` es NOT NULL y hay links viejos sin fecha: sin el
+    respaldo, la reposición entera moría con un NotNullViolation (16/09)."""
+    fuente = inspect.getsource(vinculos_totalizar.reaplicar)
+    assert 'p.get("fechaing") or vivo.get("fechaing") or vivo.get("fecha")' in fuente

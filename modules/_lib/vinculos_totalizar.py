@@ -285,3 +285,187 @@ def corridas_del_cliente(codigo_cli: str) -> list[dict]:
             "facturas": facturas,
         })
     return out
+
+
+# ── Volver a aplicar los cobros al reparto nuevo ────────────────────────────
+#
+# 🚨 TMT 2026-09-16 (dueña, cuando entendió por qué la 177617 no mostraba
+# ningún cheque): *"no entiendo por qué pasó, arreglalo esta vez como puedas
+# pero no debería volver a pasar"*.
+#
+# Por qué pasaba: el totalizar reparte los abonos de nuevo, y como el vínculo
+# viejo ya no coincide con la factura que ese cheque paga, lo BORRABA. La
+# salida no era borrar: era volver a aplicarlo al reparto nuevo.
+#
+# El reparto es el mismo criterio que usa el totalizar —de la factura más
+# vieja a la más nueva— y los cobros entran por su fecha, del más viejo al más
+# nuevo: así el cheque de julio paga la factura de mayo, no la de agosto. Un
+# cobro puede quedar PARTIDO entre dos facturas; eso no es un invento nuevo,
+# `aplicar_a_factura` ya inserta una fila por aplicación.
+#
+# ⚠ Nunca se aplica más que el abono de la factura ni más que el importe del
+# cobro: el health de facturas sobre-aplicadas suma esta tabla.
+
+
+def repartir(facturas: list[dict], cobros: list[dict]) -> list[dict]:
+    """Decide qué pedazo de cada cobro va a cada factura. Sin tocar la base.
+
+    `facturas`: [{"id_fact", "abono"}] EN EL ORDEN del reparto (la más vieja
+    primero). `cobros`: [{"id_cheque", "importe", ...}] en orden de llegada.
+
+    Devuelve [{"id_fact", "id_cheque", "importe", ...}] — una fila por pedazo.
+
+    Lo que sobra de abono queda sin vínculo a propósito: es abono que no vino
+    de un cobro de Programa Core (el backfill histórico de Asinfo, el
+    dbf-import). Inventarle un cheque sería peor que dejarlo sin uno.
+    """
+    pendientes = [dict(c, _resto=round(float(c.get("importe") or 0), 2))
+                  for c in cobros
+                  if round(float(c.get("importe") or 0), 2) > 0]
+    salida = []
+    for f in facturas:
+        falta = round(float(f.get("abono") or 0), 2)
+        if falta <= 0:
+            continue
+        for c in pendientes:
+            if falta <= 0:
+                break
+            if c["_resto"] <= 0:
+                continue
+            pedazo = round(min(falta, c["_resto"]), 2)
+            if pedazo <= 0:
+                continue
+            c["_resto"] = round(c["_resto"] - pedazo, 2)
+            falta = round(falta - pedazo, 2)
+            salida.append({
+                "id_fact": f["id_fact"],
+                "id_cheque": c.get("id_cheque"),
+                "importe": pedazo,
+                "fechaing": c.get("fechaing"),
+                "codigo_cli": c.get("codigo_cli"),
+                "no_banco": c.get("no_banco"),
+                "tipo": c.get("tipo"),
+            })
+    return salida
+
+
+def reaplicar(conn, *, facturas: list[dict], cobros: list[dict],
+              usuario: str = "web") -> int:
+    """Escribe en `chequesxfact` el reparto que decide `repartir()`.
+
+    ⚠ Sólo cobros VIVOS: reponerle un vínculo a un cheque anulado es la
+    aplicación fantasma que describe el reverso del totalizar — el abono deja
+    de cuadrar y bloquea futuras anulaciones con un falso "cheque vivo".
+    """
+    plan = repartir(facturas, cobros)
+    n = 0
+    for p in plan:
+        vivo = db.fetch_one(
+            "SELECT importe, codigo_cli, no_banco, fecha, fechaing"
+            "  FROM scintela.cheque"
+            " WHERE id_cheque = %s AND COALESCE(stat, '') <> 'X'",
+            (p["id_cheque"],), conn=conn)
+        if not vivo:
+            continue
+        # Nunca dos veces el mismo pedazo: si ya está, no se repite.
+        ya = db.fetch_one(
+            "SELECT COUNT(*) AS n FROM scintela.chequesxfact"
+            " WHERE id_cheque = %s AND id_fact = %s AND importe = %s",
+            (p["id_cheque"], p["id_fact"], p["importe"]), conn=conn) or {}
+        if int(ya.get("n") or 0):
+            continue
+        fact = db.fetch_one(
+            "SELECT stat, abono, saldo, vencimiento FROM scintela.factura"
+            " WHERE id_factura = %s", (p["id_fact"],), conn=conn) or {}
+        db.execute(
+            "INSERT INTO scintela.chequesxfact"
+            "  (id_cheque, id_fact, fechaing, codigo_cli, importe, no_banco,"
+            "   tipo, stat_f, fecha_venci_f, abono_f, saldo_f, usuario_crea)"
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            # ⚠ `fechaing` es NOT NULL: un link viejo sin fecha —los hay—
+            # tiraba la reposición entera. Cae a la del cobro. 16/09/2026.
+            (p["id_cheque"], p["id_fact"],
+             p.get("fechaing") or vivo.get("fechaing") or vivo.get("fecha"),
+             p.get("codigo_cli") or vivo.get("codigo_cli"), p["importe"],
+             p.get("no_banco") or vivo.get("no_banco"), p.get("tipo"),
+             (fact.get("stat") or "").strip(), fact.get("vencimiento"),
+             fact.get("abono"), fact.get("saldo"), usuario),
+            conn=conn,
+        )
+        n += 1
+    return n
+
+
+def reponer_cliente(codigo_cli: str, usuario: str = "web") -> dict:
+    """Reconstruye los vínculos de un cliente YA totalizado, sin mover plata.
+
+    Para lo de atrás: toma los cobros que el historial guardó, los reparte
+    sobre los abonos de las facturas que ESE totalizar tocó y escribe los
+    vínculos. No toca abono, saldo ni stat de ninguna factura — sólo dice
+    quién pagó qué.
+
+    ⚠ Sólo las facturas de la corrida, y sólo el abono que NO tiene vínculo
+    vivo. Repartir sobre todas las facturas del cliente mandaría los cobros de
+    agosto a las facturas de 2022 del backfill de Asinfo —que arrastran abono
+    sin vínculo desde siempre— y la factura que perdió su cheque seguiría sin
+    él. Cazado antes de tocar producción, el 16/09/2026.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    asegurar_tabla()
+    with db.tx() as conn:
+        facturas = db.fetch_all(
+            f"""
+            SELECT f.id_factura AS id_fact,
+                   ROUND(COALESCE(f.abono, 0) - COALESCE((
+                       SELECT SUM(x.importe) FROM scintela.chequesxfact x
+                        WHERE x.id_fact = f.id_factura), 0), 2) AS abono
+              FROM scintela.factura f
+             WHERE f.codigo_cli = %s
+               AND f.id_factura IN (
+                     SELECT DISTINCT t.id_fact FROM {TABLA} t
+                      WHERE t.codigo_cli = %s)
+             ORDER BY f.fecha ASC, f.id_factura ASC
+            """,
+            (codigo_cli, codigo_cli), conn=conn) or []
+        cobros = db.fetch_all(
+            f"""
+            SELECT t.id_cheque, t.importe, t.fechaing, t.codigo_cli,
+                   t.no_banco, t.tipo
+              FROM {TABLA} t
+             WHERE t.codigo_cli = %s
+               AND NOT EXISTS (
+                     SELECT 1 FROM scintela.chequesxfact x
+                      WHERE x.id_cheque = t.id_cheque
+                        AND x.id_fact = t.id_fact)
+             ORDER BY t.fechaing NULLS LAST, t.id_cheque
+            """,
+            (codigo_cli,), conn=conn) or []
+        n = reaplicar(conn, facturas=facturas, cobros=cobros, usuario=usuario)
+    return {"codigo_cli": codigo_cli, "cobros": len(cobros), "vinculos": n}
+
+
+def cuantos_por_reponer(codigo_cli: str) -> int:
+    """Cobros de este cliente que el historial tiene y la tabla viva no.
+
+    Es lo que decide si el botón "volver a ponerlos en sus facturas" aparece:
+    en una cuenta sana no hay nada que reponer y el botón no tiene por qué
+    estar.
+    """
+    if not asegurar_tabla():
+        return 0
+    try:
+        fila = db.fetch_one(
+            f"""
+            SELECT COUNT(*) AS n FROM {TABLA} t
+             WHERE t.codigo_cli = %s
+               AND NOT EXISTS (
+                     SELECT 1 FROM scintela.chequesxfact x
+                      WHERE x.id_cheque = t.id_cheque
+                        AND x.id_fact = t.id_fact)
+            """,
+            ((codigo_cli or "").upper(),)) or {}
+        return int(fila.get("n") or 0)
+    except Exception as _e:                              # pragma: no cover
+        from modules._lib.silencios import avisar
+        avisar(__name__, "cuantos_por_reponer", _e)
+        return 0

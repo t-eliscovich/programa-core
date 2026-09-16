@@ -11860,16 +11860,33 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
             },
         )
         # El historial del vínculo, en la misma transacción que el borrado.
+        n_reaplicados = 0
         if links and id_mov:
             # El id sale de `registrar`, no de un "último id": dos totalizares
             # a la vez colgarían el historial del movimiento equivocado.
             from modules._lib import vinculos_totalizar as _vt
+            _links_json = [_link_a_json(x) for x in links]
             _vt.guardar(
                 conn,
                 id_mov_doble=int(id_mov),
                 fecha=today_ec(),
                 codigo_cli=codigo_cli,
-                links=[_link_a_json(x) for x in links],
+                links=_links_json,
+            )
+            # 🚨 TMT 2026-09-16 (dueña): *"no debería volver a pasar"*. El
+            # vínculo viejo ya no sirve —el abono se repartió—, pero la salida
+            # no es borrarlo: es volver a aplicar los MISMOS cobros al reparto
+            # nuevo, de la factura más vieja a la más nueva. Así ninguna
+            # factura queda cancelada sin decir quién la pagó.
+            n_reaplicados = _vt.reaplicar(
+                conn,
+                facturas=[{"id_fact": f["id_factura"], "abono": n["abono"]}
+                          for f, n in zip(facturas, calc["nuevos"], strict=True)],
+                cobros=sorted(
+                    _links_json,
+                    key=lambda c: (str(c.get("fechaing") or ""),
+                                   c.get("id_cheque") or 0)),
+                usuario=usuario,
             )
         return {
             "codigo_cli": codigo_cli,
@@ -11878,6 +11895,7 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
             "pool": calc["pool"],
             "n_T": calc["n_T"], "n_A": calc["n_A"], "n_Z": calc["n_Z"],
             "n_links_borrados": n_links,
+            "n_links_reaplicados": n_reaplicados,
             "saldo": calc["sum_saldo_despues"],
         }
 
