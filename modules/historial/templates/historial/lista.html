@@ -61,7 +61,7 @@
   <div class="flex items-start justify-between gap-4 mb-4 flex-wrap">
     {{ page_hero('Historial de movimientos') }}
     <div class="no-print flex items-center gap-2">
-      <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, mis_origenes='1' if mis_origenes else none, export='csv') }}"
+      <a href="{{ url_for('historial.lista', desde=desde, hasta=hasta, tipo=tipo, estado=estado, q=q, monto=monto or none, mis_origenes='1' if mis_origenes else none, export='csv') }}"
          class="text-sm px-3 py-1.5 rounded border border-slate-300 hover:bg-slate-100">CSV</a>
     </div>
   </div>
@@ -96,6 +96,16 @@
       <label class="block text-xs text-slate-500 mb-1">Buscar</label>
       <input type="text" name="q" value="{{ q }}" placeholder="concepto, tipo…"
              class="w-40 rounded border border-slate-300 px-2 py-1.5 text-sm">
+    </div>
+    {# TMT 2026-09-16 (dueña): *"acá quiero filtrar por monto también"*. Mismo
+       campo único que cheques y facturas: entero = el dólar entero
+       (500 → 500,00–500,99), con centavos = exacto. #}
+    <div>
+      <label class="block text-xs text-slate-500 mb-1">Monto USD</label>
+      <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
+             placeholder="500 ó 500,51" style="width:92px;"
+             title="Entero = el dólar entero (500 → 500,00–500,99). Con centavos = exacto (500,51)."
+             class="rounded border border-slate-300 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Desde</label>

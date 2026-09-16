@@ -193,6 +193,8 @@ def listar(
     tipo: str | None = None,
     estado: str | None = None,
     q: str | None = None,
+    monto_min: float | None = None,
+    monto_max: float | None = None,
     usuario: str | None = None,
     ids: list[int] | None = None,
     origenes_permitidos: list[str] | None = None,
@@ -320,6 +322,12 @@ def listar(
                 OR u.id_mov_doble = ANY(%(ids)s::bigint[]))
            AND (%(tipo)s IS NULL OR u.tipo = %(tipo)s OR u.tipo LIKE %(tipo_like)s)
            AND (%(estado)s IS NULL OR u.estado = %(estado)s)
+           -- TMT 2026-09-16 (dueña): *"acá quiero filtrar por monto también"*.
+           -- Mismo campo único que cheques y facturas: un entero trae el dólar
+           -- entero (500 → 500,00–500,99) y con centavos va exacto; el view
+           -- arma los dos bordes.
+           AND (%(monto_min)s::numeric IS NULL OR u.importe >= %(monto_min)s::numeric)
+           AND (%(monto_max)s::numeric IS NULL OR u.importe <= %(monto_max)s::numeric)
            AND (%(q)s IS NULL
                 OR UPPER(COALESCE(u.concepto, '')) LIKE UPPER(%(qlike)s)
                 OR UPPER(u.tipo) LIKE UPPER(%(qlike)s)
@@ -358,6 +366,7 @@ def listar(
             "tipo": tipo or None, "tipo_like": (tipo or "") + "%" if tipo else None,
             "estado": estado or None,
             "q": q or None, "qlike": f"%{q}%" if q else None,
+            "monto_min": monto_min, "monto_max": monto_max,
             "usuario": usuario or None,
             "ids": [int(i) for i in ids] if ids else None,
             "origenes_permitidos": list(origenes_permitidos) if origenes_permitidos else None,

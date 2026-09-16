@@ -24,6 +24,7 @@ from modules.cheques import queries as _cheques_q
 from modules.compras import queries as _compras_q
 from modules.gastos import queries as _gastos_q
 from modules.posdat import queries as _posdat_q
+from parsers import monto_rango
 
 from . import queries
 
@@ -140,6 +141,17 @@ def lista():
     tipo = request.args.get("tipo") or None
     estado = request.args.get("estado") or None
     q = (request.args.get("q") or "").strip() or None
+    # TMT 2026-09-16 (dueña): *"acá quiero filtrar por monto también"*. UN solo
+    # campo, con la semántica de la casa (`parsers.monto_rango`, la misma de
+    # facturas, cheques, bancos y dólares): "500" trae el dólar entero
+    # (500,00–500,99) y "500,51" va exacto. Acá el importe NUNCA trae signo
+    # (las tres ramas del UNION lo guardan en positivo), así que un "-500"
+    # tipeado busca igual que "500" en vez de no traer nada.
+    monto = (request.args.get("monto") or "").strip()
+    monto_min = monto_max = None
+    _rango = monto_rango(monto)
+    if _rango:
+        monto_min, monto_max = float(_rango[0]), float(_rango[1])
     mis_origenes = request.args.get("mis_origenes") == "1"
     # TMT 2026-08-11 (dueña): la traza manda los `id_mov_doble` exactos de un
     # renglón para que la pantalla muestre ESOS movimientos y no el día entero.
@@ -216,6 +228,8 @@ def lista():
             tipo=tipo,
             estado=estado,
             q=q,
+            monto_min=monto_min,
+            monto_max=monto_max,
             ids=ids or None,
             origenes_permitidos=origenes_permitidos,
             limite=limite + 1,
@@ -882,6 +896,7 @@ def lista():
         tipo=tipo,
         estado=estado,
         q=q or "",
+        monto=monto,
         error=error,
         limite=limite,
         # TMT 2026-07-11 (dueña): paginación con flechita al pie.
