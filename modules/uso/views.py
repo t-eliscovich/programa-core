@@ -150,24 +150,18 @@ def _tarjetas_vendedores(filas: list[dict]) -> list[dict]:
 
 def _tarjetas_clientes(clientes: list[dict], totales: dict) -> list[dict]:
     """TMT 2026-09-16 (dueña): *«podemos sumar arriba total clientes que
-    entraron»*. El número solo no se lee —¿58 es mucho?—, así que va con su
-    denominador: los clientes con factura viva, que son para los que el
-    portal existe."""
+    entraron»*. El número solo no se lee —¿60 es mucho?—, así que va con su
+    denominador y con los que NUNCA entraron, que es el que se mueve: todo el
+    que entra hoy entra por primera vez —el portal tiene tres semanas—, así
+    que una tarjeta de «primera vez» repetiría el mismo número."""
     visitas = _suma(clientes, "visitas")
     con_saldo = int(totales.get("con_saldo") or 0)
-    # Los que estrenaron el portal en el rango, pero contados sólo entre los
-    # que están en la tabla: si no, «por primera vez» puede dar MÁS que
-    # «clientes que entraron» y arriba se lee como un error (ver
-    # `queries.totales_clientes`).
-    estrenaron = totales.get("estrenaron") or set()
-    nuevos = sum(1 for c in clientes if (c.get("codigo_cli") or "") in estrenaron)
     return [
         {"label": "Clientes que entraron", "valor": len(clientes),
          "extra": (f"de {con_saldo} con saldo · "
-                   f"{_porcentaje(len(clientes), con_saldo)}") if con_saldo else "",
-         },
-        {"label": "Por primera vez", "valor": nuevos,
-         "extra": f"{totales.get('alguna_vez') or 0} entraron alguna vez"},
+                   f"{_porcentaje(len(clientes), con_saldo)}") if con_saldo else ""},
+        {"label": "Nunca entraron", "valor": int(totales.get("nunca") or 0),
+         "extra": "desde que arrancó el portal"},
         {"label": "Veces que entraron", "valor": _suma(clientes, "entradas")},
         {"label": "Pantallas", "valor": visitas,
          "extra": f"{_suma(clientes, 'papeles')} impresiones"},
@@ -208,7 +202,7 @@ def lista():
         if tab == "clientes":
             clientes = queries.resumen_clientes(desde, hasta)
             top_clientes = queries.pantallas(desde, hasta, ambito="clientes")
-            tarjetas = _tarjetas_clientes(clientes, queries.totales_clientes(desde, hasta))
+            tarjetas = _tarjetas_clientes(clientes, queries.totales_clientes())
         elif tab == "intela":
             intela = queries.resumen_intela(desde, hasta)
             top_intela = queries.pantallas(desde, hasta, ambito="intela")

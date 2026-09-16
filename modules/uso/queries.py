@@ -255,61 +255,41 @@ def resumen_clientes(desde: date, hasta: date) -> list[dict]:
     )
 
 
-def totales_clientes(desde: date, hasta: date) -> dict:
-    """Los dos números de arriba de la pestaña Clientes que no salen de la
-    tabla: de cuántos clientes estamos hablando, y cuántos entraron por
-    PRIMERA VEZ en el rango.
+def totales_clientes() -> dict:
+    """De cuántos clientes estamos hablando, y cuántos NUNCA entraron.
 
-    * `con_saldo` es el denominador: los clientes con factura viva, o sea
-      aquellos para los que el portal existe. Mismo criterio de factura viva
-      que `no_abiertos` y que la cartera de la oficina — si divergen, dos
-      pantallas cuentan clientes distintos.
-    * `estrenaron` son los códigos cuyo PRIMER ingreso bueno de la historia
-      cae en el rango. Sale de `portal_ingreso` y no de
-      `portal_acceso.primer_ingreso_en`: esa columna sólo se estampa cuando
-      el cliente entra CON SU CLAVE, así que el que entró por primera vez con
-      los 6 números del correo —justamente el que nos interesa— no queda
-      anotado ahí.
+    El universo es el mismo de siempre: los clientes con factura viva, que son
+    para los que el portal existe —mismo criterio que `no_abiertos` y que la
+    cartera de la oficina; si divergen, dos pantallas cuentan clientes
+    distintos—.
 
-    ⭐ Vuelve la LISTA de códigos y no el número, porque el número solo no se
-    puede mostrar al lado de «clientes que entraron»: los ingresos se anotan
-    desde el 24/08 y las pantallas del cliente desde el 04/09, así que hay
-    clientes que estrenaron el portal DENTRO del rango y no tienen ni una
-    pantalla anotada — y «por primera vez 63» arriba de «entraron 60» se lee
-    como un error. Quien llama se queda con los que además están en la tabla.
+    «Nunca entraron» se pregunta contra `portal_ingreso` (el ingreso que salió
+    bien) y no contra `portal_acceso.primer_ingreso_en`: esa columna sólo se
+    estampa cuando el cliente entra CON SU CLAVE, así que el que entró con los
+    6 números del correo no queda anotado ahí.
+
+    No depende del rango de fechas a propósito: es de toda la vida del portal.
     """
-    params = ventana(desde, hasta)
     fila = db.fetch_one(
         """
-        SELECT (SELECT count(*) FROM (
-                    SELECT UPPER(TRIM(codigo_cli))
-                      FROM scintela.portal_ingreso
-                     WHERE resultado = 'ok'
-                     GROUP BY 1) t)                              AS alguna_vez,
-               (SELECT count(DISTINCT c.codigo_cli)
-                  FROM scintela.cliente c
-                  JOIN scintela.factura f
-                    ON f.codigo_cli = c.codigo_cli
-                   AND COALESCE(f.saldo, 0) <> 0
-                   AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
-                   AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
-                                                                  AS con_saldo
+        SELECT count(*) FILTER (WHERE NOT entro) AS nunca,
+               count(*)                          AS con_saldo
+          FROM (
+            SELECT EXISTS (SELECT 1
+                             FROM scintela.portal_ingreso p
+                            WHERE UPPER(TRIM(p.codigo_cli)) = UPPER(TRIM(c.codigo_cli))
+                              AND p.resultado = 'ok') AS entro
+              FROM scintela.cliente c
+             WHERE EXISTS (SELECT 1
+                             FROM scintela.factura f
+                            WHERE f.codigo_cli = c.codigo_cli
+                              AND COALESCE(f.saldo, 0) <> 0
+                              AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
+          ) t
         """,
-        params,
     )
-    estrenaron = db.fetch_all(
-        """
-        SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli
-          FROM scintela.portal_ingreso
-         WHERE resultado = 'ok'
-         GROUP BY 1
-        HAVING min(creado_en) >= (%(desde)s AT TIME ZONE 'UTC')
-           AND min(creado_en) <  (%(hasta)s AT TIME ZONE 'UTC')
-        """,
-        params,
-    ) or []
-    return {**(fila or {"alguna_vez": 0, "con_saldo": 0}),
-            "estrenaron": {f["codigo_cli"] for f in estrenaron}}
+    return fila or {"nunca": 0, "con_saldo": 0}
 
 
 #: Cómo separar el ámbito en `pantallas()` cuando no hay un `usuario` puntual
