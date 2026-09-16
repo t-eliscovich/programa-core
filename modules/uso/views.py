@@ -118,6 +118,75 @@ _CSV_INTELA = [
 ]
 
 
+def _suma(filas: list[dict], campo: str) -> int:
+    """La columna sumada. Las tablas son de pocas decenas de filas: sumar acá
+    y no en la consulta deja el total y el detalle leyendo LA MISMA data —
+    si alguna vez no cierran, es que uno de los dos está mal."""
+    return sum(int(f.get(campo) or 0) for f in filas)
+
+
+def _porcentaje(parte: int, total: int) -> str:
+    """«12%» o «—» cuando no hay de qué sacarlo."""
+    return f"{round(100 * parte / total)}%" if total else "—"
+
+
+def _tarjetas_vendedores(filas: list[dict]) -> list[dict]:
+    entraron = sum(1 for f in filas if (f.get("visitas") or 0) > 0)
+    visitas = _suma(filas, "visitas")
+    return [
+        {"label": "Entraron", "valor": entraron,
+         "extra": f"de {len(filas)} vendedores"},
+        {"label": "Veces que entraron", "valor": _suma(filas, "entradas")},
+        {"label": "Pantallas", "valor": visitas,
+         "extra": f"{_suma(filas, 'papeles')} impresiones"},
+        {"label": "Clientes abiertos", "valor": _suma(filas, "clientes"),
+         "extra": f"de {_suma(filas, 'cartera')} de cartera"},
+        {"label": "Cambios", "valor": _suma(filas, "movimientos")},
+        {"label": "Del teléfono",
+         "valor": _porcentaje(_suma(filas, "celular"), visitas),
+         "extra": "de las pantallas"},
+    ]
+
+
+def _tarjetas_clientes(clientes: list[dict], totales: dict) -> list[dict]:
+    """TMT 2026-09-16 (dueña): *«podemos sumar arriba total clientes que
+    entraron»*. El número solo no se lee —¿58 es mucho?—, así que va con su
+    denominador: los clientes con factura viva, que son para los que el
+    portal existe."""
+    visitas = _suma(clientes, "visitas")
+    con_saldo = int(totales.get("con_saldo") or 0)
+    return [
+        {"label": "Clientes que entraron", "valor": len(clientes),
+         "extra": (f"de {con_saldo} con saldo · "
+                   f"{_porcentaje(len(clientes), con_saldo)}") if con_saldo else "",
+         },
+        {"label": "Por primera vez", "valor": int(totales.get("primera_vez") or 0),
+         "extra": f"{totales.get('alguna_vez') or 0} entraron alguna vez"},
+        {"label": "Veces que entraron", "valor": _suma(clientes, "entradas")},
+        {"label": "Pantallas", "valor": visitas,
+         "extra": f"{_suma(clientes, 'papeles')} impresiones"},
+        {"label": "Del teléfono",
+         "valor": _porcentaje(_suma(clientes, "celular"), visitas),
+         "extra": "de las pantallas"},
+    ]
+
+
+def _tarjetas_intela(intela: list[dict]) -> list[dict]:
+    entraron = sum(1 for i in intela if (i.get("visitas") or 0) > 0)
+    visitas = _suma(intela, "visitas")
+    return [
+        {"label": "Entraron", "valor": entraron,
+         "extra": f"de {len(intela)} personas"},
+        {"label": "Veces que entraron", "valor": _suma(intela, "entradas")},
+        {"label": "Pantallas", "valor": visitas},
+        {"label": "Fichas de cliente", "valor": _suma(intela, "fichas")},
+        {"label": "Cambios", "valor": _suma(intela, "movimientos")},
+        {"label": "Del teléfono",
+         "valor": _porcentaje(_suma(intela, "celular"), visitas),
+         "extra": "de las pantallas"},
+    ]
+
+
 @uso_bp.route("/uso")
 @requiere_login
 @requiere_permiso("bitacora.ver")
@@ -128,16 +197,20 @@ def lista():
     filas, top = [], []
     clientes, top_clientes = [], []
     intela, top_intela = [], []
+    tarjetas: list[dict] = []
     try:
         if tab == "clientes":
             clientes = queries.resumen_clientes(desde, hasta)
             top_clientes = queries.pantallas(desde, hasta, ambito="clientes")
+            tarjetas = _tarjetas_clientes(clientes, queries.totales_clientes(desde, hasta))
         elif tab == "intela":
             intela = queries.resumen_intela(desde, hasta)
             top_intela = queries.pantallas(desde, hasta, ambito="intela")
+            tarjetas = _tarjetas_intela(intela)
         else:
             filas = queries.resumen(desde, hasta)
             top = queries.pantallas(desde, hasta, ambito="vendedor")
+            tarjetas = _tarjetas_vendedores(filas)
     except Exception as e:  # noqa: BLE001 — la tabla puede no existir todavía
         _LOG.exception("uso.resumen() falló (tab=%s): %s", tab, e)
         error = str(e)
@@ -153,6 +226,7 @@ def lista():
     return render_template(
         "uso/lista.html",
         tab=tab,
+        tarjetas=tarjetas,
         filas=filas, top=top,
         clientes=clientes, top_clientes=top_clientes,
         intela=intela, top_intela=top_intela,

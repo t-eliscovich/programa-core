@@ -255,6 +255,49 @@ def resumen_clientes(desde: date, hasta: date) -> list[dict]:
     )
 
 
+def totales_clientes(desde: date, hasta: date) -> dict:
+    """Los dos números de arriba de la pestaña Clientes que no salen de la
+    tabla: de cuántos clientes estamos hablando, y cuántos entraron por
+    PRIMERA VEZ en el rango.
+
+    * `con_saldo` es el denominador: los clientes con factura viva, o sea
+      aquellos para los que el portal existe. Mismo criterio de factura viva
+      que `no_abiertos` y que la cartera de la oficina — si divergen, dos
+      pantallas cuentan clientes distintos.
+    * `primera_vez` sale de `portal_ingreso` (el ingreso que salió bien) y no
+      de `portal_acceso.primer_ingreso_en`: esa columna sólo se estampa
+      cuando el cliente entra CON SU CLAVE, así que el que entró por primera
+      vez con los 6 números del correo —justamente el que nos interesa— no
+      queda anotado ahí.
+    """
+    params = ventana(desde, hasta)
+    fila = db.fetch_one(
+        """
+        WITH primera AS (
+            SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli,
+                   min(creado_en)          AS cuando
+              FROM scintela.portal_ingreso
+             WHERE resultado = 'ok'
+             GROUP BY 1
+        )
+        SELECT (SELECT count(*) FROM primera
+                 WHERE cuando >= (%(desde)s AT TIME ZONE 'UTC')
+                   AND cuando <  (%(hasta)s AT TIME ZONE 'UTC'))  AS primera_vez,
+               (SELECT count(*) FROM primera)                     AS alguna_vez,
+               (SELECT count(DISTINCT c.codigo_cli)
+                  FROM scintela.cliente c
+                  JOIN scintela.factura f
+                    ON f.codigo_cli = c.codigo_cli
+                   AND COALESCE(f.saldo, 0) <> 0
+                   AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                   AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill')
+                                                                  AS con_saldo
+        """,
+        params,
+    )
+    return fila or {"primera_vez": 0, "alguna_vez": 0, "con_saldo": 0}
+
+
 #: Cómo separar el ámbito en `pantallas()` cuando no hay un `usuario` puntual
 #: que ya lo determine solo. Los tres nunca se leen mezclados: un vendedor y
 #: un cliente abriendo el mismo endpoint no pueden sumar en la misma fila.

@@ -75,7 +75,8 @@ def test_los_endpoints_con_nombre_existen(app):
     modo portal, abajo."""
     reales = {r.endpoint for r in app.url_map.iter_rules()}
     faltan = sorted(e for e in registro.NOMBRES
-                    if e not in reales and not e.startswith("portal."))
+                    if e not in reales and not e.startswith("portal.")
+                    and e not in registro.SACADAS)
     assert not faltan, f"endpoints que ya no existen: {faltan}"
 
 
@@ -86,8 +87,18 @@ def test_los_endpoints_del_portal_con_nombre_existen():
     finally:
         deshacer()
     faltan = sorted(e for e in registro.NOMBRES
-                    if e.startswith("portal.") and e not in reales)
+                    if e.startswith("portal.") and e not in reales
+                    and e not in registro.SACADAS)
     assert not faltan, f"endpoints del portal que ya no existen: {faltan}"
+    # Y al revés: si una pantalla sacada volvió, sale de la lista de sacadas.
+    volvieron = sorted(e for e in registro.SACADAS
+                       if e.startswith("portal.") and e in reales)
+    assert not volvieron, f"pantallas que volvieron y siguen en SACADAS: {volvieron}"
+
+
+def test_las_sacadas_tienen_nombre():
+    """Una pantalla sacada sin nombre no tiene por qué estar en la lista."""
+    assert not sorted(e for e in registro.SACADAS if e not in registro.NOMBRES)
 
 
 def test_los_papeles_tienen_nombre():

@@ -86,14 +86,50 @@ NOMBRES: dict[str, str] = {
     "analisis.saldos_imprimir_pdf": "Saldos en PDF",
     # El portal del cliente.
     "portal.inicio": "Entrada",
+    "portal.ingresar": "Pantalla de entrar",
+    "portal.elegir_clave": "Elegir la clave",
+    "portal.olvide_la_clave": "Olvidó la clave",
+    "portal.salir": "Salir",
     "portal.estado_cuenta": "Su estado de cuenta",
+    "portal.facturas": "Sus facturas",
     "portal.factura": "Una factura",
     "portal.factura_papel_cliente": "Factura para imprimir",
+    "portal.factura_pdf_cliente": "Factura en PDF",
     "portal.mis_pagos": "Sus pagos",
     "portal.estado_cuenta_imprimir": "Estado de cuenta para imprimir",
     "portal.estado_cuenta_pdf_": "Estado de cuenta en PDF",
     "portal.mis_cuentas": "Elegir la cuenta",
+    "portal.sus_datos": "Cargar sus datos",
+    "portal.mis_datos": "Perfil",
+    # Pantallas del portal que la dueña SACÓ el 09 y el 10/09/2026 (ver
+    # `SACADAS` acá abajo).
+    "portal.mas": "Más",
+    "portal.mi_anio": "Su año en kilos",
+    "portal.pedidos": "Sus pedidos",
+    "portal.despachos": "Sus despachos",
+    "portal.despacho": "Un despacho",
+    "portal.actividad": "Su actividad",
+    "portal.avisar_pago": "Avisar un pago",
+    "portal.como_pagar": "Cómo pagar",
+    "portal.facturas_pagadas": "Sus facturas pagadas",
 }
+
+#: Pantallas que YA NO EXISTEN pero siguen con nombre: la data vieja no se
+#: borra, así que un rango que empiece antes de que las sacaran las muestra
+#: igual, y una fila sin nombre es una fila que nadie puede leer. Van acá
+#: aparte para que el test que verifica que cada nombre apunta a una vista de
+#: verdad —el que agarra un renombre— no pierda los dientes con el resto.
+SACADAS: frozenset[str] = frozenset({
+    "portal.mas",
+    "portal.mi_anio",
+    "portal.pedidos",
+    "portal.despachos",
+    "portal.despacho",
+    "portal.actividad",
+    "portal.avisar_pago",
+    "portal.como_pagar",
+    "portal.facturas_pagadas",
+})
 
 #: Así empieza `usuario` cuando el que miró es un cliente en el portal.
 PORTAL = "portal:"
