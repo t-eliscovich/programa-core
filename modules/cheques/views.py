@@ -2743,10 +2743,12 @@ def detalle(id_cheque: int):
     # TMT 2026-09-16 (dueña): *"no borres vínculos!!"*.
     from modules._lib import vinculos_totalizar
     vinculos_viejos = vinculos_totalizar.del_cheque(id_cheque)
+    total_totalizado = sum(float(v["aplicado"] or 0) for v in vinculos_viejos)
     return render_template(
         "cheques/detalle.html",
         ch=ch,
         vinculos_viejos=vinculos_viejos,
+        total_totalizado=total_totalizado,
         aplicaciones=aplicaciones,
         depositos=depositos,
         total_aplicado=total_aplicado,

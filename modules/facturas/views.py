@@ -957,6 +957,9 @@ def detalle(id_factura: int):
     # — el totalizar los borra a propósito, pero ahora se pueden encontrar.
     from modules._lib import vinculos_totalizar
     vinculos_viejos = vinculos_totalizar.de_la_factura(_id_real)
+    # Suman en el total de la tabla: la pregunta que contesta ese número es
+    # cuánto de esta factura pagaron cheques, no cuántos vínculos quedan vivos.
+    total_totalizado = sum(float(v["aplicado"] or 0) for v in vinculos_viejos)
     return render_template(
         "facturas/detalle.html",
         fact=fact,
@@ -966,6 +969,7 @@ def detalle(id_factura: int):
         total_aplicado=total_aplicado,
         total_retenido=total_retenido,
         vinculos_viejos=vinculos_viejos,
+        total_totalizado=total_totalizado,
     )
 
 

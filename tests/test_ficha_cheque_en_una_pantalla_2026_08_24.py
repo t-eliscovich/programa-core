@@ -50,7 +50,10 @@ def test_la_observacion_no_dibuja_el_cuadro_de_texto_hasta_que_la_tocan():
 
 def test_las_tablas_solo_salen_cuando_tienen_filas():
     """Vacías eran 230 px para decir dos frases que ya están en la rejilla."""
-    assert "{% if aplicaciones %}" in FICHA
+    # TMT 2026-09-16: la tabla de facturas ahora también muestra las que soltó
+    # el totalizar (estado "Totalizada"), así que la condición las incluye —
+    # la regla es la misma: sale si tiene filas.
+    assert "{% if aplicaciones or vinculos_viejos | default([]) %}" in FICHA
     assert "{% if depositos %}" in FICHA
     assert "Cheque aún no aplicado a facturas." not in FICHA
     assert re.search(r"empty_row\(6", FICHA) is None
@@ -58,7 +61,8 @@ def test_las_tablas_solo_salen_cuando_tienen_filas():
 
 def test_no_quedaron_las_cajas_viejas():
     assert "Cliente que lo entregó" not in FICHA
-    assert "APLICADO A FACTURAS" not in FICHA.upper() or "{% if aplicaciones %}" in FICHA
+    assert ("APLICADO A FACTURAS" not in FICHA.upper()
+            or "{% if aplicaciones or vinculos_viejos | default([]) %}" in FICHA)
 
 
 def test_los_seis_cuadros_de_arriba_siguen_igual():

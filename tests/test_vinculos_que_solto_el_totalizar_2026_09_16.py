@@ -106,18 +106,38 @@ def test_las_dos_fichas_lo_mandan_al_template(modulo, funcion):
     assert "vinculos_viejos=vinculos_viejos" in fuente
 
 
-def test_el_bloque_solo_sale_cuando_hay_algo_que_mostrar():
-    """Una ficha no se llena de bloques vacíos (misma regla que las tablas)."""
-    assert "{% if vinculos_viejos %}" in FICHA_FACT
-    assert "{% if vinculos_viejos %}" in FICHA_CH
-    assert "Cheques que soltó el totalizar" in FICHA_FACT
-    assert "Facturas que soltó el totalizar" in FICHA_CH
+def test_las_totalizadas_van_EN_la_tabla_de_cheques_con_su_estado():
+    """TMT 2026-09-16 (dueña, sobre la 177617): *"pone como estado totalizada y
+    ponelo debajo de cheques"*. No es otra tabla: son los cheques que pagaron
+    esa factura, abajo de los vivos y marcados."""
+    for ficha in (FICHA_FACT, FICHA_CH):
+        assert "{% for v in vinculos_viejos | default([]) %}" in ficha
+        assert ">Totalizada</span>" in ficha
+    # Y ya no hay tabla aparte.
+    assert "Cheques que soltó el totalizar" not in FICHA_FACT
+    assert "Facturas que soltó el totalizar" not in FICHA_CH
 
 
-def test_el_bloque_aclara_que_la_plata_ya_esta_contada():
-    """Sin esa frase, el bloque se lee como un cobro que falta aplicar."""
-    assert "la plata sigue contada en el abono" in FICHA_FACT
-    assert "la plata sigue contada en el abono de cada factura" in FICHA_CH
+def test_las_totalizadas_cuentan_en_el_titulo_y_en_el_total():
+    """La pregunta que contesta ese número es "¿quién pagó esta factura?", no
+    "¿cuántos vínculos quedan vivos?"."""
+    assert ("aplicaciones | length + (vinculos_viejos | default([])) | length") in FICHA_FACT
+    assert ("total_aplicado + (total_totalizado | default(0))") in FICHA_FACT
+    assert ("aplicaciones | length + (vinculos_viejos | default([])) | length") in FICHA_CH
+    assert ("total_aplicado + (total_totalizado | default(0))") in FICHA_CH
+
+
+def test_el_vacio_solo_si_no_hay_ninguna():
+    """"Sin cheques aplicados" con dos filas totalizadas abajo era mentira."""
+    assert "{% if not aplicaciones and not vinculos_viejos | default([]) %}" in FICHA_FACT
+    assert "{% if aplicaciones or vinculos_viejos | default([]) %}" in FICHA_CH
+
+
+def test_la_fila_explica_por_que_esta_ahi():
+    """Sin la explicación, una fila gris "Totalizada" se lee como un cobro que
+    falta aplicar. Va en el title de la fila, sin ocupar pantalla."""
+    assert "La plata sigue contada en el abono." in FICHA_FACT
+    assert "La plata sigue contada en el abono de la factura." in FICHA_CH
 
 
 def test_el_cheque_no_dice_que_no_se_aplico_cuando_el_totalizar_lo_solto():
@@ -129,23 +149,18 @@ def test_el_cheque_no_dice_que_no_se_aplico_cuando_el_totalizar_lo_solto():
 def test_un_deposito_no_muestra_el_id_interno_como_numero_de_cheque():
     """16/09: buscó el 102222 en el campo "Cheque" y no aparecía — ese número
     es la PK interna y el depósito no tiene número de papel."""
-    bloque = FICHA_FACT[FICHA_FACT.index("Cheques que soltó el totalizar"):]
-    bloque = bloque[:bloque.index("</table>")]
-    assert "v.no_cheque or 'sin número'" in bloque
-    assert "v.no_cheque or v.id_cheque" not in bloque
+    bloque = FICHA_FACT[FICHA_FACT.index("{% for v in vinculos_viejos | default([]) %}"):]
+    bloque = bloque[:bloque.index("</tr>")]
+    assert "v.no_cheque or v.doc_banco or '—'" in bloque
+    assert "sin número" not in bloque, "un depósito tiene papeleta, no 'sin número'"
 
 
-def test_las_dos_puntas_del_vinculo_son_link():
-    """Dueña 16/09: *"debería haber el link de factura y cheque"*. El vínculo
-    tiene dos puntas y desde cualquiera de las dos fichas se salta a la otra."""
-    for ficha, titulo in ((FICHA_FACT, "Cheques que soltó el totalizar"),
-                          (FICHA_CH, "Facturas que soltó el totalizar")):
-        bloque = ficha[ficha.index(titulo):]
-        bloque = bloque[:bloque.index("</table>")]
-        assert "url_for('cheques.detalle', id_cheque=v.id_cheque)" in bloque
-        assert "url_for('facturas.detalle'" in bloque
-        # Un link que no se ve azul no se clickea.
-        assert bloque.count('class="text-blue-600 hover:underline"') >= 2
+def test_la_fila_totalizada_linkea_a_la_otra_punta():
+    """Dueña 16/09: *"debería haber el link de factura y cheque"*."""
+    bloque = FICHA_FACT[FICHA_FACT.index("{% for v in vinculos_viejos | default([]) %}"):]
+    assert "url_for('cheques.detalle', id_cheque=v.id_cheque)" in bloque[:bloque.index("</tr>")]
+    bloque_ch = FICHA_CH[FICHA_CH.index("{% for v in vinculos_viejos | default([]) %}"):]
+    assert "url_for('facturas.detalle'" in bloque_ch[:bloque_ch.index("</tr>")]
 
 
 # ── El antes/después del totalizar, en el estado de cuenta ──────────────────

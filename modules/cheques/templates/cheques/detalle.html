@@ -433,7 +433,7 @@
        sin aplicar — decir "todavía no se aplicó" era mentirle a quien lo
        busca. Si hay vínculos viejos, el renglón manda al bloque de abajo. #}
     <dd class="m-0 text-slate-500">
-      {% if vinculos_viejos %}
+      {% if vinculos_viejos | default([]) %}
         El totalizar de la cuenta soltó su factura — está más abajo.
       {% else %}
         Todavía no se aplicó a ninguna factura.
@@ -469,56 +469,12 @@
   </div>
   {% endif %}
 
-  {# TMT 2026-09-16 (dueña): *"no borres vínculos!!"* — el TOTALIZAR reparte
-     de nuevo los abonos del cliente y suelta los cheques. Acá están las
-     facturas que pagaba este cheque antes de esa corrida. #}
-  {% if vinculos_viejos %}
+  {# La tabla sólo cuando tiene filas: vacía, el renglón ya lo dice arriba.
+     TMT 2026-09-16 (dueña): las que soltó el totalizar van EN esta tabla, con
+     estado "Totalizada" — son facturas que este cheque pagó. #}
+  {% if aplicaciones or vinculos_viejos | default([]) %}
   <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
-    Facturas que soltó el totalizar ({{ vinculos_viejos | length }})
-  </h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-4">
-    <p class="px-3 py-2 text-xs text-slate-500 border-b border-slate-100 dark:border-slate-800">
-      Este cheque pagaba estas facturas hasta que se totalizó la cuenta del cliente.
-      El totalizar repartió los abonos de nuevo y soltó el vínculo: la plata sigue contada en el abono de cada factura.
-    </p>
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
-        <tr>
-          <th class="px-3 py-2 text-left font-medium">Se totalizó</th>
-          <th class="px-3 py-2 text-left font-medium">Cheque</th>
-          <th class="px-3 py-2 text-left font-medium">Factura</th>
-          <th class="px-3 py-2 text-right font-medium">Aplicaba</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for v in vinculos_viejos %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-2 text-xs" style="white-space: nowrap;">{{ v.fecha_totalizar | fecha_es }}</td>
-          {# TMT 2026-09-16 (dueña): *"debería haber el link de factura y cheque"* —
-             las dos puntas del vínculo, las dos clickeables, en las dos fichas. #}
-          <td class="px-3 py-2 font-mono text-xs">
-            <a href="{{ url_for('cheques.detalle', id_cheque=v.id_cheque) }}"
-               class="text-blue-600 hover:underline"
-               title="Ficha del cobro #{{ v.id_cheque }}">{{ v.no_cheque or 'sin número' }}</a>
-          </td>
-          <td class="px-3 py-2 font-mono text-xs">
-            {% if v.id_fact %}
-              <a href="{{ url_for('facturas.detalle', id_factura=(v.numf or v.id_fact), doc=v.numf_completo or None, id=v.id_fact or None) }}"
-                 class="text-blue-600 hover:underline">{{ v.numf_completo or v.numf or v.id_fact }}</a>
-            {% endif %}
-          </td>
-          <td class="px-3 py-2 text-right text-mono">{{ v.aplicado | money_es }}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-  {% endif %}
-
-  {# La tabla sólo cuando tiene filas: vacía, el renglón ya lo dice arriba. #}
-  {% if aplicaciones %}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
-    Aplicado a facturas ({{ aplicaciones | length }} · total aplicado {{ total_aplicado | money_es }})
+    Aplicado a facturas ({{ aplicaciones | length + (vinculos_viejos | default([])) | length }} · total aplicado {{ (total_aplicado + (total_totalizado | default(0))) | money_es }})
   </h2>
   <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-4">
     <table class="w-full text-sm">
@@ -580,6 +536,29 @@
             </a>
             {% endif %}
           </td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+        {% for v in vinculos_viejos | default([]) %}
+        <tr class="border-t border-slate-100 dark:border-slate-800 text-slate-500"
+            title="El totalizar del {{ v.fecha_totalizar | fecha_es }} repartió los abonos de nuevo y soltó este vínculo. La plata sigue contada en el abono de la factura.">
+          <td class="px-3 py-2">{{ v.fechaing | fecha_es }}</td>
+          <td class="px-3 py-2 font-mono text-xs">
+            {% if v.id_fact %}
+              <a href="{{ url_for('facturas.detalle', id_factura=(v.numf or v.id_fact), doc=v.numf_completo or None, id=v.id_fact or None) }}"
+                 class="text-blue-600 hover:underline">{{ v.numf_completo or v.numf or v.id_fact }}</a>
+            {% endif %}
+          </td>
+          <td class="px-3 py-2 text-right text-mono">—</td>
+          <td class="px-3 py-2 text-right text-mono">{{ v.aplicado | money_es }}</td>
+          <td class="px-3 py-2 text-right text-mono">—</td>
+          <td class="px-3 py-2 text-right text-mono">—</td>
+          <td class="px-3 py-2 text-xs">
+            <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
+                  title="Se totalizó el {{ v.fecha_totalizar | fecha_es }}">Totalizada</span>
+          </td>
+          {% if tiene_permiso('cheques.aplicar') %}
+          <td class="px-3 py-2 text-right no-print"></td>
           {% endif %}
         </tr>
         {% endfor %}
