@@ -398,6 +398,11 @@ def registrar(app: Flask) -> None:
     )
     from modules.admin_dbase.debug_fabricacion_wip_view import bp as debug_fab_wip_bp
 
+    # /admin/debug-hilo-local — qué llegó tarde en una compra local de hilo: la
+    # factura, la recepción o el vínculo (Tamara 2026-09-16: "¿por qué tardó
+    # tanto?? medilo"). Trae las fechas de CREACIÓN de Asinfo. SOLO LECTURA.
+    from modules.admin_dbase.debug_hilo_local_view import bp as debug_hilo_local_bp
+
     # /admin/debug-import-recepcion — kg facturados vs kg REALMENTE recibidos
     # por importación. Para medir el desfase anticipo↔stock (dueña 2026-07-31:
     # "están pistoleando hilo, todavía no cargó todo el stock"). SOLO LECTURA.
@@ -421,6 +426,7 @@ def registrar(app: Flask) -> None:
     app.register_blueprint(debug_fab_wip_bp)
     app.register_blueprint(debug_terminado_otros_bp)
     app.register_blueprint(debug_import_recep_bp)
+    app.register_blueprint(debug_hilo_local_bp)
     app.register_blueprint(debug_dbase_compras_bp)
     # /admin/debug-cruce-compras — a qué importación se le atribuye cada compra
     # de hilado, y si esa importación está recibida. Para contestar por qué la
