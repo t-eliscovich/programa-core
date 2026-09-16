@@ -400,3 +400,11 @@ def test_un_link_sin_fecha_no_voltea_la_reposicion():
     respaldo, la reposición entera moría con un NotNullViolation (16/09)."""
     fuente = inspect.getsource(vinculos_totalizar.reaplicar)
     assert 'p.get("fechaing") or vivo.get("fechaing") or vivo.get("fecha")' in fuente
+
+
+def test_el_form_de_reponer_lleva_su_csrf():
+    """Sin el token, el POST lo come el CSRF y no pasa NADA —ni error ni
+    aviso—: el botón parece roto. Apretado en producción el 16/09."""
+    bloque = EC_PAGINA[EC_PAGINA.index("estado_cuenta_reponer_vinculos"):]
+    bloque = bloque[:bloque.index("</form>")]
+    assert 'name="csrf_token"' in bloque
