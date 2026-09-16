@@ -95,6 +95,9 @@ def run():
             SELECT TOP 300
                    rp.numero                                  AS bod,
                    CONVERT(varchar, rp.fecha, 23)             AS fecha_bod,
+                   rp.numero_factura                          AS sri_en_el_bod,
+                   rp.estado                                  AS estado_bod,
+                   CONVERT(varchar, rp.fecha_anulacion, 23)   AS bod_anulado,
                    CONVERT(varchar, rp.fecha_creacion, 120)   AS bod_creada,
                    drp.id_detalle_recepcion_proveedor         AS id_det_rec,
                    drp.id_detalle_factura_proveedor           AS id_det_fact,
@@ -140,6 +143,12 @@ def run():
                CONVERT(varchar, MIN(rp.fecha_creacion), 120)     AS bod_creada,
                CONVERT(varchar, MAX(rp.fecha_modificacion), 120) AS bod_modificada,
                MIN(rp.numero)                             AS bod,
+               -- ⭐ el nº de factura que trae la RECEPCIÓN (columna propia,
+               -- NOT NULL). Si viene lleno desde que se crea el BOD, el motor
+               -- no necesita esperar a la factura para nada.
+               MIN(rp.numero_factura)                     AS sri_en_el_bod,
+               MIN(rp.usuario_creacion)                   AS bod_creada_por,
+               MAX(CAST(rp.id_empresa AS varchar))        AS id_empresa_bod,
                COUNT(DISTINCT rp.id_recepcion_proveedor)  AS n_recepciones,
                MAX(CAST(rp.indicador_tiene_recepcion_parcial AS int)) AS parcial,
                MIN(rp.estado)                             AS estado_rec,
