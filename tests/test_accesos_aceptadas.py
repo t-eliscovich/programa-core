@@ -167,16 +167,23 @@ def test_las_dos_pantallas_siguen_pidiendo_el_permiso(app):
         assert getattr(vista, "_permiso", None) == "bancos.editar", endpoint
 
 
-def test_los_botones_de_bancos_van_detras_del_permiso():
-    """Y el link también, porque un botón que da 404 es peor que no tenerlo.
+def test_los_botones_de_bancos_no_estan_sueltos_en_la_barra():
+    """TMT 2026-09-16 (dueña): los dos botones se fueron de /bancos — en cuatro
+    meses se usaron 2 y 1 vez, las tres tuyas y todas de la reparación del 3 y 4
+    de agosto. Las rutas siguen vivas y siguen pidiendo el permiso (el test de
+    arriba), que es lo que de verdad cierra la puerta.
 
-    A INT le desaparecen los dos botones en vez de recibir un 404 en la cara.
+    Si mañana el link vuelve, tiene que volver DETRÁS del permiso: un botón que
+    le da 404 en la cara a INT es peor que no tenerlo.
     """
     from pathlib import Path
 
     html = Path("modules/bancos/templates/bancos/lista.html").read_text()
-    i = html.index("tiene_permiso('bancos.editar')")
-    j = html.index("{% endif %}", i)
-    bloque = html[i:j]
-    assert "bancos.reencadenar_saldos" in bloque
-    assert "bancos.apertura_bancos" in bloque
+    for endpoint in ("bancos.reencadenar_saldos", "bancos.apertura_bancos"):
+        if f"url_for('{endpoint}'" not in html:
+            continue
+        i = html.index("tiene_permiso('bancos.editar')")
+        j = html.index("{% endif %}", i)
+        assert f"url_for('{endpoint}'" in html[i:j], (
+            f"{endpoint} volvió a la pantalla sin el permiso adelante"
+        )

@@ -184,15 +184,15 @@
         kpi_extra='· ' ~ (_hero_n | string) ~ ' ' ~ _hero_label
     ) }}
 
-    {# Acciones — sólo 2 primarias destacadas + dropdown "Más" con el resto. #}
+    {# Acciones — TMT 2026-09-16 (dueña): "Nuevo cheque" sale de acá (se entra
+       por Cobranza en el menú de la izquierda, que es por donde se carga todos
+       los días) y "Informes del día" sube del menú a botón propio.
+       Del menú "Más" se sacaron, medido el uso en producción: "Emitir cheque"
+       (se entra siempre desde Bancos), "Residuos de retención" (usada una vez,
+       el 30/07, y ya no quedan residuos: no se generan más) y "Corregir
+       devoluciones sin nota de débito" (usada una vez, el 23/07, sin casos
+       pendientes). Las tres rutas siguen vivas: sólo se sacan los accesos. #}
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if tiene_permiso('cheques.crear') %}
-        <a href="{{ url_for('cheques.nuevo') }}"
-           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          Nuevo cheque
-        </a>
-      {% endif %}
       {% if tiene_permiso('cheques.aplicar') %}
         <a href="{{ url_for('cheques.depositar_lote') }}"
            class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 font-medium shadow-sm transition"
@@ -201,6 +201,15 @@
           Depositar lote
         </a>
       {% endif %}
+      {# TMT 2026-08-03 (dueña: "uno solo, si no son muchas opciones"). Los
+         dos informes del día viven en UNA entrada; adentro se cambia con las
+         pestañas Resumen / Cheques ingresados. #}
+      <a href="{{ url_for('cheques.resumen_dia') }}"
+         class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition"
+         title="Resumen de cobranza y cheques ingresados del día — imprimibles">
+        <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3"/><path d="M8 3h8v4H8z"/><path d="M8 12h8M8 16h5"/></svg>
+        Informes del día
+      </a>
 
       <details class="relative">
         <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
@@ -208,16 +217,6 @@
           <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
         </summary>
         <div class="absolute right-0 mt-1 z-20 min-w-[240px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden text-sm">
-          {% if tiene_permiso('bancos.conciliar') %}
-            <a href="{{ url_for('bancos.emitir_cheque') }}"
-               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-              <div class="font-medium">Emitir cheque</div>
-              <div class="text-xs text-slate-500">Chequera para proveedor / retiro / gasto</div>
-            </a>
-          {% endif %}
-          {# TMT 2026-07-07 pedido dueña: removidos del menú "Conciliar",
-             "Cargar desde CSV…" y "Descargar plantilla CSV" (las rutas siguen
-             vivas, solo se sacan los accesos de acá). #}
           {# TMT 2026-06-23: arrastra todos los filtros activos (antes el CSV
              ignoraba cliente/monto/orden y el subtítulo "filas visibles" mentía). #}
           <a href="{{ url_for('cheques.lista', export='csv', **request.args.to_dict()) }}"
@@ -225,28 +224,6 @@
             <div class="font-medium">Exportar CSV</div>
             <div class="text-xs text-slate-500">Filas visibles según filtros</div>
           </a>
-          {# TMT 2026-08-03 (dueña: "uno solo, si no son muchas opciones"). Los
-             dos informes del día viven en UNA entrada del menú; adentro se
-             cambia con las pestañas Resumen / Cheques ingresados. #}
-          <a href="{{ url_for('cheques.resumen_dia') }}"
-             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-            <div class="font-medium">Informes del día</div>
-            <div class="text-xs text-slate-500">Resumen de cobranza · Cheques ingresados — imprimibles</div>
-          </a>
-          {# TMT 2026-07-30 (dueña): "los residuos de retenciones deberían
-             eliminarse". Los saldos a favor de monedas que el dBase no tiene. #}
-          <a href="{{ url_for('cheques.residuos_retencion') }}"
-             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-            <div class="font-medium">Residuos de retención</div>
-            <div class="text-xs text-slate-500">Saldos a favor de monedas para limpiar</div>
-          </a>
-          {% if tiene_permiso('cheques.transicionar') %}
-          <a href="{{ url_for('cheques.corregir_devoluciones_sin_nd') }}"
-             class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
-            <div class="font-medium">Corregir devoluciones sin nota de débito</div>
-            <div class="text-xs text-slate-500">Cheques devueltos que estaban depositados y no descontaron el banco</div>
-          </a>
-          {% endif %}
           <button onclick="window.print()"
                   class="w-full text-left block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
             <div class="font-medium">Imprimir</div>
