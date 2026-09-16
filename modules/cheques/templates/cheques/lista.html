@@ -186,7 +186,7 @@
 
     {# Acciones — TMT 2026-09-16 (dueña): "Nuevo cheque" sale de acá (se entra
        por Cobranza en el menú de la izquierda, que es por donde se carga todos
-       los días) y "Informes del día" sube del menú a botón propio.
+       los días) y "Cobranza del día" sube del menú a botón propio.
        Del menú "Más" se sacaron, medido el uso en producción: "Emitir cheque"
        (se entra siempre desde Bancos), "Residuos de retención" (usada una vez,
        el 30/07, y ya no quedan residuos: no se generan más) y "Corregir
@@ -206,9 +206,9 @@
          pestañas Resumen / Cheques ingresados. #}
       <a href="{{ url_for('cheques.resumen_dia') }}"
          class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800 font-medium transition"
-         title="Resumen de cobranza y cheques ingresados del día — imprimibles">
+         title="Depósitos ingresados y cheques ingresados del día — imprimibles">
         <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V5a2 2 0 0 0-2-2h-3"/><path d="M8 3h8v4H8z"/><path d="M8 12h8M8 16h5"/></svg>
-        Informes del día
+        Cobranza del día
       </a>
 
       <details class="relative">

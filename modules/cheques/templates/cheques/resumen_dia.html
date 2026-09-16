@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}Resumen de cobranza — {{ fecha | fecha_es }}{% endblock %}
+{% block title %}Depósitos ingresados — {{ fecha | fecha_es }}{% endblock %}
 
 {% block content %}
 <style>
@@ -100,7 +100,7 @@
 <div class="hoja ancho-informe">
   <div class="flex items-start justify-between mb-2 pb-3 border-b-2 border-slate-800">
     <div>
-      <div class="text-lg font-bold uppercase tracking-wide">Resumen de cobranza</div>
+      <div class="text-lg font-bold uppercase tracking-wide">Depósitos ingresados</div>
       <div class="text-sm text-slate-600">INTELA CIA. LTDA.</div>
     </div>
     <div class="text-right text-sm text-slate-600">{{ fecha | fecha_es }}</div>

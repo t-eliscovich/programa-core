@@ -7292,7 +7292,7 @@ def cheques_ingresados_dia(fecha) -> dict:
     negativos y restan — en la tirilla del 31/07 los dos RTO de −3.754 y
     −7.000 llevan el total a −374,82.
 
-    Se diferencia del *Resumen de cobranza del día* (`resumen_cobranza_dia`,
+    Se diferencia del *Depósitos ingresados del día* (`resumen_cobranza_dia`,
     réplica de FINAL en ALTAS.PRG) en que aquél agrupa por medio
     (cheques/depósitos/efectivo) y muestra las facturas que paga cada cobro;
     éste es la lista plana para llevar al banco. Los dos comparten
