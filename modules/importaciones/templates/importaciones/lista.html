@@ -251,7 +251,11 @@
                  (IM-…, se paga con anticipos) o una COMPRA LOCAL (CMTR-…, sin
                  anticipo, nace el pasivo al recibirla). El badge dice cuál. #}
               {% if r.origen == 'compra' %}<span class="tag-local">local</span>{% endif %}
-              {% if r.origen == 'compra' and not r.im_numero %}<span class="tag-espera" title="La mercadería ya entró a bodega y su deuda ya está cargada. La factura del proveedor todavía no la cargaron en Asinfo.">esperando la factura</span>{% endif %}
+              {# La etiqueta es para UN estado: la deuda ya está y la factura no.
+                 Sin las tres condiciones salía en 29 filas —casi todas
+                 anteriores al corte, que el motor no mira nunca— y un rótulo
+                 repetido que no quiere decir nada es peor que no tenerlo. #}
+              {% if r.origen == 'compra' and not r.im_numero and r.compra and not r.pre_corte %}<span class="tag-espera" title="La mercadería entró a bodega y su deuda ya está cargada. La factura del proveedor todavía no la cargaron en Asinfo.">esperando la factura</span>{% endif %}
               {# La ENTREGA es la identidad de la fila desde el 16/09: una
                  misma factura puede llegar en dos tandas y son dos filas con
                  el mismo CMTR. Sin el BOD al lado no se distinguen. #}
