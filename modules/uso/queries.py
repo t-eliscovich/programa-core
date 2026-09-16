@@ -264,26 +264,28 @@ def totales_clientes(desde: date, hasta: date) -> dict:
       aquellos para los que el portal existe. Mismo criterio de factura viva
       que `no_abiertos` y que la cartera de la oficina — si divergen, dos
       pantallas cuentan clientes distintos.
-    * `primera_vez` sale de `portal_ingreso` (el ingreso que salió bien) y no
-      de `portal_acceso.primer_ingreso_en`: esa columna sólo se estampa
-      cuando el cliente entra CON SU CLAVE, así que el que entró por primera
-      vez con los 6 números del correo —justamente el que nos interesa— no
-      queda anotado ahí.
+    * `estrenaron` son los códigos cuyo PRIMER ingreso bueno de la historia
+      cae en el rango. Sale de `portal_ingreso` y no de
+      `portal_acceso.primer_ingreso_en`: esa columna sólo se estampa cuando
+      el cliente entra CON SU CLAVE, así que el que entró por primera vez con
+      los 6 números del correo —justamente el que nos interesa— no queda
+      anotado ahí.
+
+    ⭐ Vuelve la LISTA de códigos y no el número, porque el número solo no se
+    puede mostrar al lado de «clientes que entraron»: los ingresos se anotan
+    desde el 24/08 y las pantallas del cliente desde el 04/09, así que hay
+    clientes que estrenaron el portal DENTRO del rango y no tienen ni una
+    pantalla anotada — y «por primera vez 63» arriba de «entraron 60» se lee
+    como un error. Quien llama se queda con los que además están en la tabla.
     """
     params = ventana(desde, hasta)
     fila = db.fetch_one(
         """
-        WITH primera AS (
-            SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli,
-                   min(creado_en)          AS cuando
-              FROM scintela.portal_ingreso
-             WHERE resultado = 'ok'
-             GROUP BY 1
-        )
-        SELECT (SELECT count(*) FROM primera
-                 WHERE cuando >= (%(desde)s AT TIME ZONE 'UTC')
-                   AND cuando <  (%(hasta)s AT TIME ZONE 'UTC'))  AS primera_vez,
-               (SELECT count(*) FROM primera)                     AS alguna_vez,
+        SELECT (SELECT count(*) FROM (
+                    SELECT UPPER(TRIM(codigo_cli))
+                      FROM scintela.portal_ingreso
+                     WHERE resultado = 'ok'
+                     GROUP BY 1) t)                              AS alguna_vez,
                (SELECT count(DISTINCT c.codigo_cli)
                   FROM scintela.cliente c
                   JOIN scintela.factura f
@@ -295,7 +297,19 @@ def totales_clientes(desde: date, hasta: date) -> dict:
         """,
         params,
     )
-    return fila or {"primera_vez": 0, "alguna_vez": 0, "con_saldo": 0}
+    estrenaron = db.fetch_all(
+        """
+        SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli
+          FROM scintela.portal_ingreso
+         WHERE resultado = 'ok'
+         GROUP BY 1
+        HAVING min(creado_en) >= (%(desde)s AT TIME ZONE 'UTC')
+           AND min(creado_en) <  (%(hasta)s AT TIME ZONE 'UTC')
+        """,
+        params,
+    ) or []
+    return {**(fila or {"alguna_vez": 0, "con_saldo": 0}),
+            "estrenaron": {f["codigo_cli"] for f in estrenaron}}
 
 
 #: Cómo separar el ámbito en `pantallas()` cuando no hay un `usuario` puntual

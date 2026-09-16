@@ -155,12 +155,18 @@ def _tarjetas_clientes(clientes: list[dict], totales: dict) -> list[dict]:
     portal existe."""
     visitas = _suma(clientes, "visitas")
     con_saldo = int(totales.get("con_saldo") or 0)
+    # Los que estrenaron el portal en el rango, pero contados sólo entre los
+    # que están en la tabla: si no, «por primera vez» puede dar MÁS que
+    # «clientes que entraron» y arriba se lee como un error (ver
+    # `queries.totales_clientes`).
+    estrenaron = totales.get("estrenaron") or set()
+    nuevos = sum(1 for c in clientes if (c.get("codigo_cli") or "") in estrenaron)
     return [
         {"label": "Clientes que entraron", "valor": len(clientes),
          "extra": (f"de {con_saldo} con saldo · "
                    f"{_porcentaje(len(clientes), con_saldo)}") if con_saldo else "",
          },
-        {"label": "Por primera vez", "valor": int(totales.get("primera_vez") or 0),
+        {"label": "Por primera vez", "valor": nuevos,
          "extra": f"{totales.get('alguna_vez') or 0} entraron alguna vez"},
         {"label": "Veces que entraron", "valor": _suma(clientes, "entradas")},
         {"label": "Pantallas", "valor": visitas,
