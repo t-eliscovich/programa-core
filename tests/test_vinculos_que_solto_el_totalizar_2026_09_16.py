@@ -372,7 +372,9 @@ def test_el_abono_sin_cobro_queda_sin_vinculo():
 
 def test_el_totalizar_vuelve_a_aplicar_los_cobros():
     fuente = inspect.getsource(_iq.totalizar_estado_cuenta_ejecutar)
-    assert "_vt.reaplicar(" in fuente
+    assert "_vt.reaplicar_ids(" in fuente
+    # Y deja anotado QUÉ escribió, para que el ↺ lo saque (17/09/2026).
+    assert '"ids_reaplicados"' in fuente
     # Los cobros entran por fecha: el de julio paga la factura de mayo.
     assert "fechaing" in fuente
     assert "n_links_reaplicados" in fuente
@@ -381,7 +383,7 @@ def test_el_totalizar_vuelve_a_aplicar_los_cobros():
 def test_no_le_repone_el_vinculo_a_un_cheque_anulado():
     """La aplicación fantasma que describe el reverso del totalizar: el abono
     deja de cuadrar y bloquea futuras anulaciones."""
-    fuente = inspect.getsource(vinculos_totalizar.reaplicar)
+    fuente = inspect.getsource(vinculos_totalizar.reaplicar_ids)
     assert "COALESCE(stat, '') <> 'X'" in fuente
 
 
@@ -404,16 +406,22 @@ def test_reponer_solo_mira_las_facturas_de_la_corrida():
     """⚠ Repartir sobre TODAS las facturas del cliente mandaría los cobros de
     agosto a las de 2022 del backfill de Asinfo —que arrastran abono sin
     vínculo desde siempre— y la factura que perdió su cheque seguiría sin él."""
-    fuente = inspect.getsource(vinculos_totalizar.reponer_cliente)
-    assert "SELECT DISTINCT t.id_fact" in fuente
+    fuente = inspect.getsource(vinculos_totalizar._plan_reponer)
+    # 17/09/2026: las facturas son las de la CORRIDA (el `antes` del
+    # mov_doble), no sólo las que tenían vínculo — la más vieja se lleva el
+    # abono y muchas veces nunca tuvo cheque (MTM 176310/176386).
+    assert "jsonb_array_elements(m.metadata -> 'antes')" in fuente
+    assert "f.id_factura = ANY(%s)" in fuente
     # Y sólo el abono que todavía no tiene vínculo vivo.
     assert "SUM(x.importe) FROM scintela.chequesxfact x" in fuente
+    # Un cobro por CHEQUE, con lo que le falta vincular (nunca más que su importe).
+    assert "LEAST(h.pagado, COALESCE(c.importe, 0))" in fuente
 
 
 def test_un_link_sin_fecha_no_voltea_la_reposicion():
     """`chequesxfact.fechaing` es NOT NULL y hay links viejos sin fecha: sin el
     respaldo, la reposición entera moría con un NotNullViolation (16/09)."""
-    fuente = inspect.getsource(vinculos_totalizar.reaplicar)
+    fuente = inspect.getsource(vinculos_totalizar.reaplicar_ids)
     assert 'p.get("fechaing") or vivo.get("fechaing") or vivo.get("fecha")' in fuente
 
 

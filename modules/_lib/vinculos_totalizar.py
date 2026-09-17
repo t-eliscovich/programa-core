@@ -80,6 +80,17 @@ def backfill_desde_metadata(conn=None) -> int:
     dos veces a la misma factura (parcial + resto) son DOS vínculos, y perder
     uno sería la misma pérdida que estamos arreglando.
     """
+    # Lo que entró antes del filtro de abajo (10 filas en producción el
+    # 17/09/2026, de dos corridas deshechas) se va: esos vínculos están vivos.
+    db.execute(
+        f"""
+        DELETE FROM {TABLA} t
+         USING scintela.mov_doble m
+         WHERE m.id_mov_doble = t.id_mov_doble
+           AND m.estado <> 'activo'
+        """,
+        conn=conn,
+    )
     return db.execute(
         f"""
         INSERT INTO {TABLA}
@@ -97,6 +108,10 @@ def backfill_desde_metadata(conn=None) -> int:
           FROM scintela.mov_doble m
           CROSS JOIN LATERAL jsonb_array_elements(m.metadata -> 'links') l
          WHERE m.tipo = 'totalizar_estado_cuenta'
+           -- 17/09/2026: un totalizar DESHECHO ya repuso sus vínculos vivos;
+           -- traerlo acá los mostraba como "soltados" y, peor, el botón de
+           -- reponer los contaba dos veces (MHC: 9 cheques en dos corridas).
+           AND m.estado = 'activo'
            AND m.metadata ? 'links'
            AND (l->>'id_cheque') IS NOT NULL
            AND (l->>'id_fact') IS NOT NULL
@@ -358,9 +373,24 @@ def reaplicar(conn, *, facturas: list[dict], cobros: list[dict],
     ⚠ Sólo cobros VIVOS: reponerle un vínculo a un cheque anulado es la
     aplicación fantasma que describe el reverso del totalizar — el abono deja
     de cuadrar y bloquea futuras anulaciones con un falso "cheque vivo".
+
+    Devuelve cuántos vínculos escribió; `reaplicar_ids` devuelve además cuáles.
+    """
+    return len(reaplicar_ids(conn, facturas=facturas, cobros=cobros,
+                             usuario=usuario))
+
+
+def reaplicar_ids(conn, *, facturas: list[dict], cobros: list[dict],
+                  usuario: str = "web") -> list[int]:
+    """Como `reaplicar`, pero devuelve los `id_chequexfact` que insertó.
+
+    🚨 17/09/2026: el ↺ del totalizar reponía los vínculos viejos SIN sacar
+    estos —no sabía que existían— y cada cheque quedaba aplicado dos veces
+    (probado en local: X 200 de 100, Y 100 de 50). Los ids van a la metadata
+    del totalizar para que el reverso sepa exactamente qué borrar.
     """
     plan = repartir(facturas, cobros)
-    n = 0
+    ids: list[int] = []
     for p in plan:
         vivo = db.fetch_one(
             "SELECT importe, codigo_cli, no_banco, fecha, fechaing"
@@ -379,11 +409,12 @@ def reaplicar(conn, *, facturas: list[dict], cobros: list[dict],
         fact = db.fetch_one(
             "SELECT stat, abono, saldo, vencimiento FROM scintela.factura"
             " WHERE id_factura = %s", (p["id_fact"],), conn=conn) or {}
-        db.execute(
+        fila = db.fetch_one(
             "INSERT INTO scintela.chequesxfact"
             "  (id_cheque, id_fact, fechaing, codigo_cli, importe, no_banco,"
             "   tipo, stat_f, fecha_venci_f, abono_f, saldo_f, usuario_crea)"
-            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+            " VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)"
+            " RETURNING id_chequexfact",
             # ⚠ `fechaing` es NOT NULL: un link viejo sin fecha —los hay—
             # tiraba la reposición entera. Cae a la del cobro. 16/09/2026.
             (p["id_cheque"], p["id_fact"],
@@ -393,80 +424,132 @@ def reaplicar(conn, *, facturas: list[dict], cobros: list[dict],
              (fact.get("stat") or "").strip(), fact.get("vencimiento"),
              fact.get("abono"), fact.get("saldo"), usuario),
             conn=conn,
-        )
-        n += 1
-    return n
+        ) or {}
+        ids.append(int(fila.get("id_chequexfact") or 0))
+    return ids
 
 
-def reponer_cliente(codigo_cli: str, usuario: str = "web") -> dict:
-    """Reconstruye los vínculos de un cliente YA totalizado, sin mover plata.
+def _plan_reponer(codigo_cli: str, conn=None) -> dict:
+    """Qué haría "volver a ponerlos en sus facturas" para este cliente.
 
-    Para lo de atrás: toma los cobros que el historial guardó, los reparte
-    sobre los abonos de las facturas que ESE totalizar tocó y escribe los
-    vínculos. No toca abono, saldo ni stat de ninguna factura — sólo dice
-    quién pagó qué.
+    Devuelve {"facturas", "cobros", "plan"}; no escribe nada.
 
-    ⚠ Sólo las facturas de la corrida, y sólo el abono que NO tiene vínculo
-    vivo. Repartir sobre todas las facturas del cliente mandaría los cobros de
-    agosto a las facturas de 2022 del backfill de Asinfo —que arrastran abono
-    sin vínculo desde siempre— y la factura que perdió su cheque seguiría sin
-    él. Cazado antes de tocar producción, el 16/09/2026.
+    🚨 17/09/2026, dos bugs medidos contra producción:
+
+    · Las facturas del reparto eran las que TENÍAN vínculo antes (las del
+      historial). Pero el totalizar muda el abono a las más viejas, que
+      muchas veces nunca tuvieron cheque: en MTM la 176310 y la 176386
+      quedaron T con 550 y 579 de abono y el botón no las alcanzaba (57
+      facturas, $118.604 en total). Ahora las facturas son las de la CORRIDA
+      (el `antes` del mov_doble), que es lo que el totalizar tocó.
+
+    · Los cobros se contaban por fila del historial: un cheque que figura en
+      dos corridas (MHC, 9 casos) entraba dos veces, y uno ya re-aplicado a
+      OTRA factura entraba entero de nuevo. Ahora es un cobro por cheque, y
+      lo que le queda por vincular es lo que el historial dice que pagó (sin
+      repetir un pedazo) menos lo que YA tiene vivo, nunca más que su importe.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
-    asegurar_tabla()
-    with db.tx() as conn:
+    ids_corrida = db.fetch_all(
+        """
+        SELECT DISTINCT (a->>'id')::bigint AS id_fact
+          FROM scintela.mov_doble m
+          CROSS JOIN LATERAL jsonb_array_elements(m.metadata -> 'antes') a
+         WHERE m.tipo = 'totalizar_estado_cuenta'
+           AND m.estado = 'activo'
+           AND m.metadata ->> 'codigo_cli' = %s
+        """,
+        (codigo_cli,), conn=conn) or []
+    ids = {int(r["id_fact"]) for r in ids_corrida if r.get("id_fact")}
+    # Corridas sin `antes` (anteriores al 07/08): al menos las facturas que
+    # el historial nombra.
+    for r in db.fetch_all(
+            f"SELECT DISTINCT id_fact FROM {TABLA} WHERE codigo_cli = %s",
+            (codigo_cli,), conn=conn) or []:
+        ids.add(int(r["id_fact"]))
+    facturas = []
+    if ids:
         facturas = db.fetch_all(
-            f"""
+            """
             SELECT f.id_factura AS id_fact,
                    ROUND(COALESCE(f.abono, 0) - COALESCE((
                        SELECT SUM(x.importe) FROM scintela.chequesxfact x
                         WHERE x.id_fact = f.id_factura), 0), 2) AS abono
               FROM scintela.factura f
              WHERE f.codigo_cli = %s
-               AND f.id_factura IN (
-                     SELECT DISTINCT t.id_fact FROM {TABLA} t
-                      WHERE t.codigo_cli = %s)
+               AND f.id_factura = ANY(%s)
+               AND COALESCE(f.importe, 0) > 0
              ORDER BY f.fecha ASC, f.id_factura ASC
             """,
-            (codigo_cli, codigo_cli), conn=conn) or []
-        cobros = db.fetch_all(
-            f"""
-            SELECT t.id_cheque, t.importe, t.fechaing, t.codigo_cli,
-                   t.no_banco, t.tipo
+            (codigo_cli, sorted(ids)), conn=conn) or []
+    cobros = db.fetch_all(
+        f"""
+        WITH pedazos AS (
+            SELECT DISTINCT t.id_cheque, t.id_fact, t.importe
               FROM {TABLA} t
              WHERE t.codigo_cli = %s
-               AND NOT EXISTS (
-                     SELECT 1 FROM scintela.chequesxfact x
-                      WHERE x.id_cheque = t.id_cheque
-                        AND x.id_fact = t.id_fact)
-             ORDER BY t.fechaing NULLS LAST, t.id_cheque
-            """,
-            (codigo_cli,), conn=conn) or []
-        n = reaplicar(conn, facturas=facturas, cobros=cobros, usuario=usuario)
-    return {"codigo_cli": codigo_cli, "cobros": len(cobros), "vinculos": n}
+        ),
+        hist AS (
+            SELECT id_cheque, SUM(importe) AS pagado
+              FROM pedazos GROUP BY id_cheque
+        )
+        SELECT h.id_cheque,
+               ROUND(LEAST(h.pagado, COALESCE(c.importe, 0))
+                     - COALESCE((SELECT SUM(x.importe)
+                                   FROM scintela.chequesxfact x
+                                  WHERE x.id_cheque = h.id_cheque), 0),
+                     2)                                        AS importe,
+               COALESCE(c.fechaing, c.fecha)                   AS fechaing,
+               c.codigo_cli, c.no_banco,
+               (SELECT MIN(t.tipo) FROM {TABLA} t
+                 WHERE t.id_cheque = h.id_cheque)              AS tipo
+          FROM hist h
+          JOIN scintela.cheque c ON c.id_cheque = h.id_cheque
+         WHERE COALESCE(c.stat, '') <> 'X'
+         ORDER BY COALESCE(c.fechaing, c.fecha) NULLS LAST, h.id_cheque
+        """,
+        (codigo_cli,), conn=conn) or []
+    cobros = [c for c in cobros if round(float(c.get("importe") or 0), 2) > 0]
+    return {"facturas": facturas, "cobros": cobros,
+            "plan": repartir(facturas, cobros)}
+
+
+def reponer_cliente(codigo_cli: str, usuario: str = "web") -> dict:
+    """Reconstruye los vínculos de un cliente YA totalizado, sin mover plata.
+
+    Para lo de atrás: toma los cobros que el historial guardó, los reparte
+    sobre los abonos sin vínculo de las facturas que el totalizar tocó y
+    escribe los vínculos. No toca abono, saldo ni stat de ninguna factura —
+    sólo dice quién pagó qué. El criterio está en `_plan_reponer`.
+    """
+    codigo_cli = (codigo_cli or "").strip().upper()
+    asegurar_tabla()
+    with db.tx() as conn:
+        # Las facturas de la corrida, lockeadas: que no entre una cobranza
+        # entre que se mira el abono sin vínculo y se escribe.
+        db.execute(
+            "SELECT id_factura FROM scintela.factura"
+            " WHERE codigo_cli = %s FOR UPDATE", (codigo_cli,), conn=conn)
+        p = _plan_reponer(codigo_cli, conn=conn)
+        n = reaplicar(conn, facturas=p["facturas"], cobros=p["cobros"],
+                      usuario=usuario)
+    return {"codigo_cli": codigo_cli, "cobros": len(p["cobros"]),
+            "vinculos": n}
 
 
 def cuantos_por_reponer(codigo_cli: str) -> int:
-    """Cobros de este cliente que el historial tiene y la tabla viva no.
+    """Cobros de este cliente que el botón "volver a ponerlos" vincularía.
 
-    Es lo que decide si el botón "volver a ponerlos en sus facturas" aparece:
-    en una cuenta sana no hay nada que reponer y el botón no tiene por qué
-    estar.
+    Es lo que decide si el botón aparece: en una cuenta sana no hay nada que
+    reponer y el botón no tiene por qué estar. 17/09/2026: se cuenta el PLAN
+    (lo que de verdad escribiría), no las filas del historial — con filas
+    viejas ya re-aplicadas a otra factura el botón quedaba para siempre.
     """
     if not asegurar_tabla():
         return 0
     try:
-        fila = db.fetch_one(
-            f"""
-            SELECT COUNT(*) AS n FROM {TABLA} t
-             WHERE t.codigo_cli = %s
-               AND NOT EXISTS (
-                     SELECT 1 FROM scintela.chequesxfact x
-                      WHERE x.id_cheque = t.id_cheque
-                        AND x.id_fact = t.id_fact)
-            """,
-            ((codigo_cli or "").upper(),)) or {}
-        return int(fila.get("n") or 0)
+        return len({p["id_cheque"] for p in
+                    _plan_reponer(codigo_cli)["plan"]})
     except Exception as _e:                              # pragma: no cover
         from modules._lib.silencios import avisar
         avisar(__name__, "cuantos_por_reponer", _e)

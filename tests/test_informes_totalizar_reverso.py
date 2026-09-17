@@ -482,3 +482,22 @@ def test_el_candado_se_relee_lockeado_adentro_de_la_transaccion(monkeypatch):
     _patch(monkeypatch, stub)
     q.totalizar_reverso_ejecutar(22176, usuario="tester")
     assert any("for update" in v for v in vistos), vistos
+
+
+def test_deshacer_saca_los_vinculos_que_el_totalizar_reaplico():
+    """17/09/2026: desde el 16/09 el totalizar vuelve a aplicar los cobros;
+    el ↺ reponía los viejos sin sacar ésos y cada cheque quedaba aplicado dos
+    veces. El ciclo entero se prueba contra Postgres en
+    test_db_totalizar_deshacer_y_reponer_2026_09_17.py; acá, que el código
+    lo haga y ANTES de reponer."""
+    import inspect
+
+    from modules.informes import queries as iq
+
+    fuente = inspect.getsource(iq.totalizar_reverso_ejecutar)
+    i_saca = fuente.index("DELETE FROM scintela.chequesxfact WHERE id_chequexfact = ANY(%s)")
+    i_saca_fact = fuente.index("DELETE FROM scintela.chequesxfact WHERE id_fact = ANY(%s)")
+    i_repone = fuente.index("INSERT INTO scintela.chequesxfact")
+    assert i_saca < i_repone and i_saca_fact < i_repone
+    assert '"ids_reaplicados"' in fuente
+    assert '"n_links_sacados": n_sacados' in fuente

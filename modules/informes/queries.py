@@ -24,6 +24,7 @@ Schema realities (verified against intela12042026.sql):
     - historia.stock = VSTO, historia.uqui = VQX, historia.patrimonio = PATANT
 """
 
+import json as _json
 from datetime import date
 from decimal import Decimal
 
@@ -11878,7 +11879,7 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
             # no es borrarlo: es volver a aplicar los MISMOS cobros al reparto
             # nuevo, de la factura más vieja a la más nueva. Así ninguna
             # factura queda cancelada sin decir quién la pagó.
-            n_reaplicados = _vt.reaplicar(
+            _ids_reaplicados = _vt.reaplicar_ids(
                 conn,
                 facturas=[{"id_fact": f["id_factura"], "abono": n["abono"]}
                           for f, n in zip(facturas, calc["nuevos"], strict=True)],
@@ -11887,6 +11888,19 @@ def totalizar_estado_cuenta_ejecutar(codigo_cli: str, usuario: str = "web",
                     key=lambda c: (str(c.get("fechaing") or ""),
                                    c.get("id_cheque") or 0)),
                 usuario=usuario,
+            )
+            n_reaplicados = len(_ids_reaplicados)
+            # 🚨 17/09/2026: el ↺ tiene que saber QUÉ vínculos escribió esta
+            # corrida para sacarlos antes de reponer los viejos. Sin esto,
+            # deshacer dejaba cada cheque aplicado dos veces.
+            db.execute(
+                "UPDATE scintela.mov_doble"
+                "   SET metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb"
+                " WHERE id_mov_doble = %s",
+                (_json.dumps({"ids_reaplicados": _ids_reaplicados,
+                              "n_links_reaplicados": n_reaplicados}),
+                 int(id_mov)),
+                conn=conn,
             )
         return {
             "codigo_cli": codigo_cli,
@@ -12084,7 +12098,27 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
         mov = db.fetch_one(
             "SELECT metadata FROM scintela.mov_doble WHERE id_mov_doble = %s",
             (id_mov_doble,), conn=conn)
-        links = (_md_dict(mov or {}).get("links") or [])
+        _md_rev = _md_dict(mov or {})
+        links = (_md_rev.get("links") or [])
+        # 🚨 17/09/2026: desde el 16/09 el totalizar VUELVE A APLICAR los
+        # cobros al reparto nuevo. Deshacerlo sin sacar esos vínculos dejaba
+        # cada cheque aplicado dos veces (los re-aplicados + los repuestos;
+        # probado en local: X 200 de 100). Se sacan los que la corrida anotó
+        # (`ids_reaplicados`) y, por las dudas, cualquier otro vivo sobre las
+        # facturas de la corrida: el candado de arriba ya garantiza que ninguna
+        # recibió una cobranza después (cambiaría el abono), así que lo que
+        # esté vivo ahí lo puso esta corrida o un "reponer" posterior — y el
+        # snapshot que sigue es la foto exacta de antes.
+        _ids_fact = [f["id_factura"] for f in prev["filas"]]
+        _ids_reap = [int(i) for i in (_md_rev.get("ids_reaplicados") or []) if i]
+        n_sacados = 0
+        if _ids_reap:
+            n_sacados += db.execute(
+                "DELETE FROM scintela.chequesxfact WHERE id_chequexfact = ANY(%s)",
+                (_ids_reap,), conn=conn) or 0
+        n_sacados += db.execute(
+            "DELETE FROM scintela.chequesxfact WHERE id_fact = ANY(%s)",
+            (_ids_fact,), conn=conn) or 0
         for f in prev["filas"]:
             if not f["cambia"]:
                 continue  # sin cambios — no ensuciar usuario_modifica
@@ -12160,6 +12194,7 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
                 "n_facturas": len(prev["filas"]),
                 "n_restauradas": n_upd,
                 "n_links_repuestos": n_links,
+                "n_links_sacados": n_sacados,
                 # 🚨 Las N facturas del lote, para que la traza sepa que son
                 # UN hecho. Sin esto el mov sólo nombra la primera y la
                 # última, y las del medio se clasifican por la FORMA del
@@ -12173,6 +12208,7 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
         "n_facturas": len(prev["filas"]),
         "n_restauradas": n_upd,
         "n_links_repuestos": n_links,
+        "n_links_sacados": n_sacados,
         "saldo": prev["sum_saldo_destino"],
     }
 
