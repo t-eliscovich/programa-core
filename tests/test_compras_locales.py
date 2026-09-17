@@ -518,6 +518,28 @@ def test_las_compras_viejas_del_tarifario_se_corrigen_a_la_factura():
     assert "38279" in kw["observacion"]
 
 
+def test_el_aviso_de_una_correccion_no_dice_que_llego_mercaderia():
+    """El 17/09 las 13 de HY avisaron «Llegó más mercadería» sin que llegara."""
+    from modules import avisos
+
+    puestos = []
+    with patch.object(avisos, "avisar", lambda **kw: puestos.append(kw) or True):
+        svc._avisar_carga({"detalle": [
+            {"ok": True, "ajuste": True, "cod": "HY", "proveedor": "HILTEXPOY",
+             "fact_num": 38279, "bod": "BOD-000002374", "kg": 5019.62,
+             "kg_previo": 5019.62, "crecio": False,
+             "importe_previo": 15268.42, "importe": 21358.48},
+            {"ok": True, "ajuste": True, "cod": "HY", "proveedor": "HILTEXPOY",
+             "fact_num": 38280, "bod": "BOD-000002380", "kg": 600.0,
+             "kg_previo": 300.0, "crecio": True,
+             "importe_previo": 1000.0, "importe": 2000.0},
+        ]})
+    corr, crec = puestos
+    assert "factura de Asinfo" in corr["detalle"]
+    assert "mercadería" not in corr["detalle"]
+    assert "Llegó más mercadería" in crec["detalle"]
+
+
 def test_una_compra_vieja_por_el_total_de_dos_entregas_no_se_recorta():
     """Cruzó por factura y sus kilos no son los de ESTA entrega: no es suya."""
     fila = _fila(

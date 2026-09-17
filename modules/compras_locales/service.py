@@ -631,9 +631,14 @@ def _ajustar_a_la_factura(f: dict, base: dict, *, dry_run: bool,
         if abs(kg_compra - float(f.get("kg") or 0)) > 0.5:
             return None
 
+    kg_viejo = float(hits[0].get("kg") or 0)
     fila = {**base, "ok": True, "ajuste": True,
             "importe_previo": round(importe_viejo, 2),
-            "importe": round(float(importe_nuevo), 2)}
+            "importe": round(float(importe_nuevo), 2),
+            # Para que el aviso diga QUÉ pasó: llegó más mercadería (los kg
+            # subieron) o el importe se corrigió al de la factura.
+            "kg_previo": round(kg_viejo, 2),
+            "crecio": float(f.get("kg") or 0) > kg_viejo + 0.005}
     if dry_run:
         return fila
     try:
@@ -797,7 +802,13 @@ def _avisar_carga(res: dict) -> int:
         if es_ajuste:
             titulo = (f"{cod} {nombre} · factura {d.get('fact_num')} · "
                       f"ahora $ {num_es(float(d.get('importe') or 0), 2)}")
-            detalle = (f"Llegó más mercadería de la misma entrega · antes "
+            # El 17/09 las 13 correcciones de HY salieron con "Llegó más
+            # mercadería" sin que hubiera llegado nada: el texto tiene que
+            # decir lo que pasó de verdad.
+            por_que = ("Llegó más mercadería de la misma entrega"
+                       if d.get("crecio")
+                       else "El importe pasó a ser el de la factura de Asinfo")
+            detalle = (f"{por_que} · antes "
                        f"$ {num_es(float(d.get('importe_previo') or 0), 2)} · "
                        f"{num_es(float(d.get('kg') or 0), 2)} kg")
         else:
