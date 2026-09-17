@@ -547,7 +547,7 @@
               <td style="padding:3px 8px;text-align:right;">
                 {% if p.importe_sugerido %}
                   <span style="font-variant-numeric:tabular-nums;font-weight:600;">$ {{ p.importe_sugerido|num_es(2) }}</span>
-                  <span style="color:rgb(148 163 184);font-size:10.5px;">({{ p.kg|num_es(2) }} × {{ p.tarifa|num_es(4) }} × 1,15)</span>
+                  {% if p.importe_de == 'asinfo' %}<span style="color:rgb(148 163 184);font-size:10.5px;" title="El proveedor no tiene tarifa: vale la factura de Asinfo, con IVA.">(factura de Asinfo)</span>{% else %}<span style="color:rgb(148 163 184);font-size:10.5px;">({{ p.kg|num_es(2) }} × {{ p.tarifa|num_es(4) }} × 1,15)</span>{% endif %}
                 {% else %}
                   <span style="color:rgb(180 83 9);font-weight:700;font-size:10.5px;">{{ p.traba or 'falta tarifa' }}</span>
                 {% endif %}

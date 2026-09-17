@@ -37,7 +37,13 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
     esto, prender el automático arrastraría un año de facturas históricas que
     ya están cargadas a mano o archivadas en el FoxPro.
  4. **Proveedor mapeado por RUC** o se saltea (nunca adivinamos el código).
- 5. **Tarifa resuelta** o se saltea — nunca inventamos un precio.
+ 5. **Plata resuelta** o se saltea — nunca inventamos un precio. Manda la
+    TARIFA del proveedor (HY, EP: el promedio que eligió la dueña el 30/07);
+    si el proveedor no tiene tarifa, vale la FACTURA de Asinfo (total + IVA,
+    prorrateado por kilos si la entrega es parcial). Tamara 2026-09-17,
+    mirando a QC y a Buenaño trabadas tres semanas por "falta la tarifa":
+    *"la factura está en Asinfo — buscarla y matchear todo de una"*. Un
+    proveedor ocasional no necesita tarifa.
  6. **Ya cruzada** — si la recepción ya tiene una compra en PC, no se vuelve
     a cargar. Idempotente. El match va en DOS pasos, en este orden:
       a. por **BOD** (`compra.comprobante`) — la identidad del hecho. Es lo que
@@ -114,6 +120,28 @@ def _importe(kg: float, tarifa: float | None) -> float | None:
     if not tarifa or kg <= 0:
         return None
     return round(round(kg * float(tarifa), 2) * IVA, 2)
+
+
+def _importe_asinfo(kg: float, total: float | None, iva: float | None,
+                    kg_factura: float | None) -> float | None:
+    """La plata de la FACTURA de Asinfo para esta entrega, o None si no está.
+
+    `total` es el neto de la factura y `iva` su impuesto (columnas
+    `factura_proveedor.total` / `.impuesto`, verificado: HY 37649 = 1.447,51
+    + 217,13). Se suman tal cual —sin recalcular el 15%— así la compra queda
+    al centavo con el papel del proveedor.
+
+    Si la factura tiene más kilos que la entrega (llegó en tandas), se
+    prorratea por kilos: cada BOD carga su parte y la suma cierra con la
+    factura. Sin kilos de factura conocidos se toma la factura entera.
+    """
+    if kg <= 0 or not total or float(total) <= 0:
+        return None
+    bruto = float(total) + float(iva or 0)
+    kf = float(kg_factura or 0)
+    if kf > 0 and kg < kf - 0.005:
+        bruto = bruto * kg / kf
+    return round(bruto, 2)
 
 
 # ---------------------------------------------------------------------------
@@ -336,7 +364,9 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
         producto      — código de producto de Asinfo
         fact_num      — nº de factura del proveedor (el que va al concepto)
         tarifa        — $/kg sin IVA resuelto, o None
-        importe_sugerido — kg × tarifa × IVA, o None
+        importe_sugerido — kg × tarifa × IVA; sin tarifa, la factura de
+                          Asinfo (total + IVA, prorrateada por kg); o None
+        importe_de      — 'tarifa' | 'asinfo' | None (de dónde salió la plata)
         pagada / saldo / parcial — estado del pasivo
 
     Fail-soft en todos los tramos: [] si Asinfo no contesta.
@@ -361,6 +391,12 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             refs.add((prov, int(fact)))
         kg = float(c.get("kg") or 0)
         tarifa = _tar.resolver(tarifas, prov or "", c.get("producto")) if prov else None
+        importe = _importe(kg, tarifa)
+        importe_de = "tarifa" if importe else None
+        if not importe:
+            importe = _importe_asinfo(kg, c.get("total_asinfo"), c.get("iva_asinfo"),
+                                      c.get("kg_factura"))
+            importe_de = "asinfo" if importe else None
         filas.append({
             "origen": "compra",
             "im_numero": c.get("fp_numero"),
@@ -385,7 +421,8 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             "numero_factura": c.get("numero_factura"),
             "fact_num": fact,
             "tarifa": tarifa,
-            "importe_sugerido": _importe(kg, tarifa),
+            "importe_sugerido": importe,
+            "importe_de": importe_de,
             # Claves que la plantilla comparte con las importaciones.
             "compra": None,
             "anticipo": None,
@@ -474,7 +511,12 @@ def hilado_local_recibido_mes(yy: int, mm: int) -> dict:
         _kg = float(f.get("kg") or 0.0)
         _tar = f.get("tarifa")
         kg += _kg
-        us += (_kg * float(_tar)) if _tar else 0.0
+        if _tar:
+            us += _kg * float(_tar)
+        elif f.get("importe_sugerido"):
+            # Sin tarifa la plata es la factura de Asinfo (con IVA): se le
+            # saca el IVA para quedar en la misma unidad que la tarifa.
+            us += float(f["importe_sugerido"]) / IVA
     return {"kg": kg, "us": us}
 
 
@@ -662,6 +704,7 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
             "kg": f.get("kg"),
             "tarifa": f.get("tarifa"),
             "importe": f.get("importe_sugerido"),
+            "importe_de": f.get("importe_de"),
         }
         kg = float(f.get("kg") or 0)
 
@@ -691,9 +734,10 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
         if f.get("fact_num") is None:
             detalle.append({**base, "ok": False, "motivo": "factura sin número"})
             continue
-        if not f.get("tarifa") or not f.get("importe_sugerido"):   # guarda 5
+        if not f.get("importe_sugerido"):                      # guarda 5
             detalle.append({**base, "ok": False,
-                            "motivo": f"falta tarifa para {f.get('producto') or '?'}"})
+                            "motivo": (f"sin tarifa para {f.get('producto') or '?'} "
+                                       "y la factura todavía no está en Asinfo")})
             continue
         if creadas >= TOPE_COMPRAS or (                        # guarda 7
                 importe_total + float(f["importe_sugerido"]) > TOPE_IMPORTE):
@@ -885,8 +929,9 @@ def sin_pasivo(filas: list[dict] | None = None) -> list[dict]:
             continue
         if not f.get("prov"):
             motivo = "el RUC de Asinfo no coincide con ningún proveedor del programa"
-        elif not f.get("tarifa"):
-            motivo = f"falta la tarifa de {f.get('prov')} para {f.get('producto') or '?'}"
+        elif not f.get("importe_sugerido"):
+            motivo = (f"{f.get('prov')} no tiene tarifa y la factura de "
+                      f"{f.get('producto') or '?'} todavía no está en Asinfo")
         else:
             motivo = "la carga automática no llegó a crearla"
         out.append({
@@ -899,6 +944,7 @@ def sin_pasivo(filas: list[dict] | None = None) -> list[dict]:
             "fact_num": f.get("fact_num"),
             "kg": round(float(f.get("kg") or 0), 2),
             "importe_sugerido": f.get("importe_sugerido"),
+            "importe_de": f.get("importe_de"),
             "motivo": motivo,
         })
     return sorted(out, key=lambda r: str(r.get("fecha_recepcion") or ""))

@@ -3533,7 +3533,13 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
         recibida        — bool
         numero_factura  — nº SRI del proveedor ('001-002-000037649')
         fact_num        — int con el nº de factura sin ceros ni guiones (37649)
-        total_asinfo    — total del ERP, SIN IVA (REFERENCIAL), o 0 sin factura
+        total_asinfo    — total del ERP, SIN IVA, o 0 sin factura. Es lo que
+                          vale la compra cuando el proveedor no tiene tarifa
+                          (Tamara 2026-09-17: *"buscar en Asinfo cuál es la
+                          factura y matchear todo de una"*).
+        iva_asinfo      — el IVA de esa factura (`impuesto`), o 0
+        kg_factura      — kg de TODA la factura (sus renglones), para
+                          prorratear cuando una entrega es parcial
         proveedor       — razón comercial/fiscal
         ruc             — empresa.codigo (para locales es el RUC)
         producto        — código de producto de la recepción
@@ -3594,6 +3600,8 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
                MIN(fp.numero)                                   AS fp_numero,
                CONVERT(varchar, MIN(fp.fecha), 23)              AS fecha_factura,
                COALESCE(MIN(fp.total), 0)                       AS total_asinfo,
+               COALESCE(MIN(fp.impuesto), 0)                    AS iva_asinfo,
+               COALESCE(MIN(kf.kg), 0)                          AS kg_factura,
                COALESCE(MIN(fp.descripcion), MIN(rp.descripcion), '') AS nota,
                SUM(d.cantidad)                                  AS kg,
                MIN(p.codigo)                                    AS producto,
@@ -3610,6 +3618,12 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
                ON fp.id_factura_proveedor = dfp.id_factura_proveedor
           LEFT JOIN factura_proveedor_importacion fpi
                ON fpi.id_factura_proveedor = fp.id_factura_proveedor
+          -- Los kg de la factura ENTERA (todos sus renglones): si la entrega
+          -- es parcial, la plata de Asinfo se prorratea por kilos.
+          LEFT JOIN (SELECT id_factura_proveedor, SUM(cantidad) AS kg
+                       FROM detalle_factura_proveedor
+                      GROUP BY id_factura_proveedor) kf
+               ON kf.id_factura_proveedor = fp.id_factura_proveedor
          WHERE d.id_bodega = {int(BODEGA_HILO)}
            AND rp.fecha >= DATEADD(month, -24, GETDATE())
          GROUP BY rp.id_recepcion_proveedor, rp.numero, rp.fecha,
@@ -3645,6 +3659,8 @@ def compras_locales_asinfo(limite: int = 200) -> list[dict]:
                 "numero_factura": nf,
                 "fact_num": numero_de_factura(nf),
                 "total_asinfo": float(r.get("total_asinfo") or 0),
+                "iva_asinfo": float(r.get("iva_asinfo") or 0),
+                "kg_factura": float(r.get("kg_factura") or 0),
                 "proveedor": str(r.get("proveedor") or "").strip(),
                 "ruc": str(r.get("ruc") or "").strip(),
                 "producto": str(r.get("producto") or "").strip(),

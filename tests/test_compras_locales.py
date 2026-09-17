@@ -158,10 +158,54 @@ def test_importe_sugerido_es_kg_por_tarifa_con_iva():
     assert f["importe_sugerido"] == 1664.64
 
 
-def test_sin_tarifa_no_hay_importe_sugerido():
-    (f,) = _con_cruce(tarifas=[])
+def test_sin_tarifa_ni_factura_no_hay_importe_sugerido():
+    (f,) = _con_cruce(crudas=[{**CRUDA, "total_asinfo": 0}], tarifas=[])
     assert f["tarifa"] is None
     assert f["importe_sugerido"] is None
+    assert f["importe_de"] is None
+
+
+def test_con_tarifa_manda_la_tarifa_aunque_asinfo_tenga_la_factura():
+    (f,) = _con_cruce(crudas=[{**CRUDA, "iva_asinfo": 217.13, "kg_factura": 499.14}])
+    assert f["importe_de"] == "tarifa"
+    assert f["importe_sugerido"] == 1664.64
+
+
+# Tamara 2026-09-17: "la factura está en Asinfo — buscarla y matchear todo de
+# una". El caso real: QC (Química Comercial) 1.012,32 kg de lycra trabados 23
+# días por "falta la tarifa", con la factura CMTR-07002 cargada en Asinfo
+# (6.580,08 + 987,01 de IVA).
+QC = {**CRUDA, "fp_numero": "CMTR-07002", "bod": "BOD-000002356",
+      "numero_factura": "001-003-000001773", "fact_num": 1773,
+      "total_asinfo": 6580.08, "iva_asinfo": 987.01, "kg_factura": 1012.32,
+      "proveedor": "QUIMICA COMERCIAL", "ruc": "1790451682001",
+      "producto": "40-LYC-QC", "kg": 1012.32, "fecha_recepcion": "2026-08-25"}
+
+
+def test_sin_tarifa_vale_la_factura_de_asinfo_con_iva():
+    with patch.dict(POR_RUC, {"1790451682001": "QC"}):
+        (f,) = _con_cruce(crudas=[QC], tarifas=TARIFA_HY)
+    assert f["prov"] == "QC"
+    assert f["tarifa"] is None
+    assert f["importe_de"] == "asinfo"
+    assert f["importe_sugerido"] == 7567.09      # 6.580,08 + 987,01, al centavo
+
+
+def test_entrega_parcial_prorratea_la_factura_por_kilos():
+    # La factura es de 1.000 kg y este BOD trajo 250: carga un cuarto.
+    assert svc._importe_asinfo(250.0, 1000.0, 150.0, 1000.0) == 287.5
+    # Entrega completa (o sin kg de factura conocidos): la factura entera.
+    assert svc._importe_asinfo(1000.0, 1000.0, 150.0, 1000.0) == 1150.0
+    assert svc._importe_asinfo(1000.0, 1000.0, 150.0, 0) == 1150.0
+    # Sin factura en Asinfo no hay plata.
+    assert svc._importe_asinfo(1000.0, 0, 0, 0) is None
+
+
+def test_el_motor_carga_la_de_asinfo_sin_tarifa():
+    res = _plan([_fila(tarifa=None, importe_sugerido=7567.09, importe_de="asinfo")])
+    assert res["creadas"] == 1
+    assert res["detalle"][0]["importe"] == 7567.09
+    assert res["detalle"][0]["importe_de"] == "asinfo"
 
 
 def test_cruce_con_compra_marca_fuente_y_estado():
@@ -219,7 +263,7 @@ def test_carga_dry_run_no_escribe_y_planifica():
         ({"fecha_recepcion": "2026-06-30"}, "antes del"),
         ({"prov": None}, "sin código en el programa"),
         ({"fact_num": None}, "factura sin número"),
-        ({"tarifa": None, "importe_sugerido": None}, "falta tarifa"),
+        ({"tarifa": None, "importe_sugerido": None}, "sin tarifa"),
     ],
 )
 def test_guardas_saltean_con_motivo(cambio, motivo):
@@ -544,7 +588,15 @@ def test_sin_tarifa_queda_trabada_y_la_alarma_la_nombra():
     (f,) = svc.sin_pasivo([_recibida()])
     assert f["bod"] == "BOD-000002356"
     assert f["kg"] == 1012.32
-    assert "falta la tarifa de QC" in f["motivo"]
+    assert "QC no tiene tarifa" in f["motivo"]
+    assert "no está en Asinfo" in f["motivo"]
+
+
+def test_con_la_factura_en_asinfo_no_esta_trabada():
+    # Misma QC, pero ya con la plata de la factura: el motor la carga; no es
+    # una alarma (y si el motor no corrió, el motivo lo dice).
+    (f,) = svc.sin_pasivo([_recibida(importe_sugerido=7567.09, importe_de="asinfo")])
+    assert "carga automática" in f["motivo"]
     assert f["dias"] >= 1
 
 
@@ -581,7 +633,11 @@ def test_health_marca_las_trabadas_con_los_kilos():
     assert a["category"] == "hilo_local_sin_pasivo"
     # números como se leen acá: punto de miles, coma de decimales
     assert "1.012,32 kg" in a["msg"]
-    assert "hace 22 días" in a["msg"]
+    # "hace N días" se mide contra hoy: el 16/09 (cuando se escribió el test)
+    # eran 22 — fijarlos rompía la suite al día siguiente.
+    from filters import today_ec
+    dias = (today_ec() - date(2026, 8, 25)).days
+    assert f"hace {dias} días" in a["msg"]
     assert len(h["stats"]["sin_pasivo"]) == 1
 
 

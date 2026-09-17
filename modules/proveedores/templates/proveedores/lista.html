@@ -73,7 +73,8 @@
         {% for p in filas %}
         {# Sin id_proveedor (rows legacy del dBase) no hay a quién postearle. #}
         {% set _edit = tiene_permiso('proveedores.editar') and p.id_proveedor %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo and p.activo != 'S' %}opacity-50{% endif %}"
+        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40 {% if p.activo in ('0', 'N') %}opacity-50{% endif %}"
+            {% if p.activo in ('0', 'N') %}title="Proveedor desactivado"{% endif %}
             data-id-proveedor="{{ p.id_proveedor }}">
           <td class="px-3 py-2 font-mono text-xs" style="white-space: nowrap;">{{ p.codigo_prov }}</td>
           {# TMT 2026-07-31 — todas las celdas son inputs inline (ver JS al pie). #}

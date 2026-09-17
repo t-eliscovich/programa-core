@@ -287,15 +287,17 @@ def lista():
         # cargar. (Si además tiene deuda viva, eso lo canta el health.)
         and not r.get("anulada")
     ]
-    locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("tarifa"))
+    # "Falta N" = las que NO tienen plata de ningún lado: sin tarifa Y sin
+    # factura en Asinfo. Un proveedor sin tarifa pero con factura no falta nada.
+    locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("importe_sugerido"))
     # Por qué está trabada cada una — antes la pantalla decía "falta tarifa"
     # para TODAS, incluso para las que el problema era otro (el RUC que no
     # mapea a ningún proveedor). Tamara 2026-09-16.
     for r in pendientes_local:
         if not r.get("prov"):
             r["traba"] = "el RUC no coincide con ningún proveedor"
-        elif not r.get("tarifa"):
-            r["traba"] = "falta tarifa"
+        elif not r.get("importe_sugerido"):
+            r["traba"] = "sin tarifa y la factura no está en Asinfo"
         else:
             r["traba"] = None
 
