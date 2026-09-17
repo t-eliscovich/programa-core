@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-09-11._
+_Última actualización: 2026-09-17._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -8,6 +8,10 @@ verdad. No hay más syncs ni compares.
 Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L >1 día).
 
 ---
+
+## Compras locales de hilo
+
+### [XS] Borrar `scintela.hilo_local_tarifa` (mig 0143) · el tarifario se retiró el 17/09/2026 (la plata es la factura de Asinfo) y ya no tiene lectores · migración de DROP TABLE
 
 ## Memoria del servidor (plan del 05/09/2026)
 

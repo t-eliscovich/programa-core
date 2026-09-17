@@ -261,16 +261,8 @@ def lista():
             filename="importaciones_cruce.csv",
         )
 
-    # Tarifario de las compras locales + qué está esperando para cargarse. Vive
-    # en esta misma pantalla, plegado detrás de un "+" (dueña 2026-07-30: "las
-    # tarifas en la misma pantalla de ingreso de hilo que tenga un + para que
-    # aparezcan escondidas salvo que queramos editar, como en tejeduría").
-    from modules.compras_locales import queries as _loc_q
-
-    try:
-        tarifas = _loc_q.listar_tarifas()
-    except Exception:  # noqa: BLE001 -- fail-soft: la tabla puede no existir
-        tarifas = []
+    # Qué está esperando para cargarse. Tamara 2026-09-17: la plata sale de
+    # la FACTURA de Asinfo (total + IVA); el tarifario se retiró.
     from modules.compras_locales import service as _loc_svc
 
     # "Recibidas sin cargar" = SOLO lo que el motor realmente va a intentar, o
@@ -287,26 +279,22 @@ def lista():
         # cargar. (Si además tiene deuda viva, eso lo canta el health.)
         and not r.get("anulada")
     ]
-    # "Falta N" = las que NO tienen plata de ningún lado: sin tarifa Y sin
-    # factura en Asinfo. Un proveedor sin tarifa pero con factura no falta nada.
-    locales_sin_tarifa = sum(1 for r in pendientes_local if not r.get("importe_sugerido"))
-    # Por qué está trabada cada una — antes la pantalla decía "falta tarifa"
-    # para TODAS, incluso para las que el problema era otro (el RUC que no
-    # mapea a ningún proveedor). Tamara 2026-09-16.
+    locales_sin_factura = sum(1 for r in pendientes_local if not r.get("importe_sugerido"))
+    # Por qué está trabada cada una (Tamara 2026-09-16): el RUC que no mapea
+    # es otro problema que la factura que todavía no está.
     for r in pendientes_local:
         if not r.get("prov"):
             r["traba"] = "el RUC no coincide con ningún proveedor"
         elif not r.get("importe_sugerido"):
-            r["traba"] = "sin tarifa y la factura no está en Asinfo"
+            r["traba"] = "la factura todavía no está en Asinfo"
         else:
             r["traba"] = None
 
     return render_template(
         "importaciones/lista.html",
         rows=rows,
-        tarifas=tarifas,
         pendientes_local=pendientes_local,
-        locales_sin_tarifa=locales_sin_tarifa,
+        locales_sin_factura=locales_sin_factura,
         total=total,
         con_codigo=con_codigo,
         con_match=con_match,
@@ -406,69 +394,9 @@ def guardar_codigo_importacion():
 
 
 # ---------------------------------------------------------------------------
-# Compras LOCALES de hilo — tarifario y carga (TMT 2026-07-30, dueña)
+# Compras LOCALES de hilo — carga (TMT 2026-07-30; sin tarifario desde el
+# 17/09/2026: la plata es la factura de Asinfo)
 # ---------------------------------------------------------------------------
-@importaciones_bp.route("/importaciones/tarifas", methods=["POST"])
-@requiere_login
-@requiere_permiso("tarifas.editar")
-def guardar_tarifas_locales():
-    """Guarda la matriz de tarifas $/kg de las compras locales.
-
-    Mismo patrón que /produccion-tejeduria-asinfo/tarifas: los inputs vienen
-    como t_<i>_<campo> y sólo se escriben las filas con proveedor y tarifa. La
-    fila en blanco del final sirve para agregar un producto nuevo.
-    """
-    from modules.compras_locales import queries as _loc_q
-
-    usuario = (g.user or {}).get("username", "web")
-    filas: list[dict] = []
-    idxs = sorted({
-        k.split("_")[1] for k in request.form
-        if k.startswith("t_") and len(k.split("_")) >= 3
-    })
-    for i in idxs:
-        raw = request.form.get(f"t_{i}_tarifa")
-        cod = (request.form.get(f"t_{i}_cod_prov") or "").strip()
-        if not cod:
-            continue
-        tarifa = parse_monto(raw)
-        if (raw or "").strip() and tarifa is None:
-            flash(f"No entendí la tarifa «{raw}» de {cod.upper()}. Usá formato 2,9500.",
-                  "error")
-            return redirect(url_for("importaciones.lista"))
-        if tarifa is None:
-            continue
-        filas.append({
-            "cod_prov": cod,
-            "patron": request.form.get(f"t_{i}_patron"),
-            "tarifa": tarifa,
-            "nota": request.form.get(f"t_{i}_nota"),
-        })
-    try:
-        res = _loc_q.guardar_tarifas(filas, usuario=usuario)
-        flash(f"Tarifas guardadas ({res['guardadas']}).", "ok")
-    except ValueError as e:
-        flash(str(e), "error")
-    except Exception as e:  # noqa: BLE001
-        flash_exc(e)
-    return redirect(url_for("importaciones.lista"))
-
-
-@importaciones_bp.route("/importaciones/tarifas/<int:id_tarifa>/borrar",
-                        methods=["POST"])
-@requiere_login
-@requiere_permiso("tarifas.editar")
-def borrar_tarifa_local(id_tarifa: int):
-    from modules.compras_locales import queries as _loc_q
-
-    try:
-        _loc_q.borrar_tarifa(id_tarifa)
-        flash("Tarifa borrada.", "ok")
-    except Exception as e:  # noqa: BLE001
-        flash_exc(e)
-    return redirect(url_for("importaciones.lista"))
-
-
 @importaciones_bp.route("/importaciones/cargar-locales", methods=["POST"])
 @requiere_login
 @requiere_permiso("compras.crear")

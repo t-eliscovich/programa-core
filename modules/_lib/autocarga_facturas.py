@@ -176,7 +176,7 @@ def _loop() -> None:
             # TMT 2026-07-30 (dueña): las COMPRAS LOCALES de hilo (HY, EP) se
             # cargan solas cuando Asinfo marca la recepción — no tienen anticipo,
             # así que el pasivo nace al recibir. Mismo patrón que tejeduría: kg de
-            # Asinfo × tarifa del tarifario, freno propio de 30 min,
+            # Asinfo con la factura del proveedor, freno propio de 30 min,
             # HILO_LOCAL_AUTO=0 lo apaga. Fail-soft por su cuenta.
             try:
                 from modules.compras_locales import service as _hloc

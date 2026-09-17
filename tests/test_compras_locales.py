@@ -1,7 +1,7 @@
-"""Compras LOCALES de hilo — tarifario, cruce y carga automática.
+"""Compras LOCALES de hilo — cruce contra Asinfo y carga automática.
 
 Nada de red ni de DB real: se mockean `asinfo_service.compras_locales_asinfo`,
-las tarifas y el cruce contra `scintela.compra`.
+el importe (la factura de Asinfo) y el cruce contra `scintela.compra`.
 """
 from __future__ import annotations
 
@@ -33,49 +33,6 @@ from modules.compras_locales import service as svc
 )
 def test_numero_de_factura(entrada, esperado):
     assert asinfo_service.numero_de_factura(entrada) == esperado
-
-
-# ---------------------------------------------------------------------------
-# resolver — el patrón más específico gana
-# ---------------------------------------------------------------------------
-TARIFAS = [
-    {"cod_prov": "HY", "patron": None, "tarifa": 3.00},
-    {"cod_prov": "HY", "patron": "22/1-65:35CAR-10%-HY", "tarifa": 3.5249},
-    {"cod_prov": "EP", "patron": "14/1-65:35-OP-PERAL", "tarifa": 2.95},
-]
-
-
-def test_resolver_patron_especifico_gana():
-    assert q.resolver(TARIFAS, "HY", "22/1-65:35CAR-10%-HY") == 3.5249
-
-
-def test_resolver_cae_al_default_del_proveedor():
-    assert q.resolver(TARIFAS, "HY", "99/1-OTRO") == 3.00
-
-
-def test_resolver_sin_default_devuelve_none():
-    # EP no tiene fila con patron NULL → un producto desconocido no resuelve.
-    assert q.resolver(TARIFAS, "EP", "16/1-65:35-OPEN-EP") is None
-
-
-def test_una_tarifa_por_proveedor_aplica_a_cualquier_producto():
-    # Forma REAL del tarifario desde la mig 0144: una fila por proveedor
-    # (patron NULL) con el promedio ponderado. Cubre todos sus productos.
-    solo_default = [{"cod_prov": "HY", "patron": None, "tarifa": 3.0708}]
-    assert q.resolver(solo_default, "HY", "75D/72F-POL-HENGYI") == 3.0708
-    assert q.resolver(solo_default, "HY", "14/1-SPUN-HY") == 3.0708
-    assert q.resolver(solo_default, "HY", None) == 3.0708
-
-
-def test_factura_con_varios_productos_ya_no_frena_la_carga():
-    # Con una tarifa por proveedor, cuántos productos trae la factura da igual.
-    res = _plan([_fila(n_productos=3)])
-    assert res["creadas"] == 1
-
-
-def test_resolver_proveedor_desconocido_o_vacio():
-    assert q.resolver(TARIFAS, "ZZ", "lo que sea") is None
-    assert q.resolver(TARIFAS, "", "lo que sea") is None
 
 
 # ---------------------------------------------------------------------------
@@ -125,20 +82,19 @@ CRUDA = {
     "fp_numero": "CMTR-06994", "fecha": "2026-07-21",
     "fecha_recepcion": "2026-07-20", "recibida": True, "bod": "BOD-000002314",
     "numero_factura": "001-002-000037649", "fact_num": 37649,
-    "total_asinfo": 1447.51, "proveedor": "HILTEXPOY S.A.",
+    "total_asinfo": 1447.51, "iva_asinfo": 217.13, "kg_factura": 499.14,
+    "proveedor": "HILTEXPOY S.A.",
     "ruc": "1791436210001", "producto": "14/1-65:35-CAR-HY", "n_productos": 1,
     "kg": 499.14, "nota": "HY14 CAR L-HGA514 20/F F-37649",
 }
-POR_RUC = {"1791436210001": "HY", "1890153654001": "EP"}
-TARIFA_HY = [{"cod_prov": "HY", "patron": "14/1-65:35-CAR-HY", "tarifa": 2.90}]
+POR_RUC = {"1791436210001": "HY", "1890153654001": "EP", "1790451682001": "QC"}
 
 
-def _con_cruce(crudas=None, cruce=None, tarifas=None):
+def _con_cruce(crudas=None, cruce=None):
     with patch.object(asinfo_service, "compras_locales_asinfo",
                       return_value=crudas if crudas is not None else [CRUDA]), \
          patch.object(q, "proveedores_por_ruc", return_value=POR_RUC), \
-         patch.object(q, "listar_tarifas",
-                      return_value=tarifas if tarifas is not None else TARIFA_HY), \
+         patch.object(svc, "_buscar_por_bod", return_value={}), \
          patch.object(svc, "_buscar_compras", return_value=cruce or {}):
         return svc.compras_locales_con_cruce()
 
@@ -151,30 +107,21 @@ def test_cruce_mapea_proveedor_por_ruc_y_arma_el_codigo():
     assert f["im_numero"] == "CMTR-06994"
 
 
-def test_importe_sugerido_es_kg_por_tarifa_con_iva():
-    # Caso REAL verificado contra /compras: 499,14 × 2,90 × 1,15 = 1.664,64.
+def test_el_importe_es_la_factura_de_asinfo_con_iva():
+    # Caso REAL: HY 37649 = 1.447,51 + 217,13 de IVA = 1.664,64, al centavo.
     (f,) = _con_cruce()
-    assert f["tarifa"] == 2.90
     assert f["importe_sugerido"] == 1664.64
 
 
-def test_sin_tarifa_ni_factura_no_hay_importe_sugerido():
-    (f,) = _con_cruce(crudas=[{**CRUDA, "total_asinfo": 0}], tarifas=[])
-    assert f["tarifa"] is None
+def test_sin_factura_en_asinfo_no_hay_importe():
+    (f,) = _con_cruce(crudas=[{**CRUDA, "total_asinfo": 0, "iva_asinfo": 0}])
     assert f["importe_sugerido"] is None
-    assert f["importe_de"] is None
 
 
-def test_con_tarifa_manda_la_tarifa_aunque_asinfo_tenga_la_factura():
-    (f,) = _con_cruce(crudas=[{**CRUDA, "iva_asinfo": 217.13, "kg_factura": 499.14}])
-    assert f["importe_de"] == "tarifa"
-    assert f["importe_sugerido"] == 1664.64
-
-
-# Tamara 2026-09-17: "la factura está en Asinfo — buscarla y matchear todo de
-# una". El caso real: QC (Química Comercial) 1.012,32 kg de lycra trabados 23
-# días por "falta la tarifa", con la factura CMTR-07002 cargada en Asinfo
-# (6.580,08 + 987,01 de IVA).
+# Tamara 2026-09-17: "para adelante sea sólo de Asinfo el total de la factura
+# y no más tarifas". El caso que lo disparó: QC (Química Comercial) 1.012,32 kg
+# de lycra trabados 23 días por "falta la tarifa", con la factura CMTR-07002
+# cargada en Asinfo (6.580,08 + 987,01 de IVA).
 QC = {**CRUDA, "fp_numero": "CMTR-07002", "bod": "BOD-000002356",
       "numero_factura": "001-003-000001773", "fact_num": 1773,
       "total_asinfo": 6580.08, "iva_asinfo": 987.01, "kg_factura": 1012.32,
@@ -182,13 +129,10 @@ QC = {**CRUDA, "fp_numero": "CMTR-07002", "bod": "BOD-000002356",
       "producto": "40-LYC-QC", "kg": 1012.32, "fecha_recepcion": "2026-08-25"}
 
 
-def test_sin_tarifa_vale_la_factura_de_asinfo_con_iva():
-    with patch.dict(POR_RUC, {"1790451682001": "QC"}):
-        (f,) = _con_cruce(crudas=[QC], tarifas=TARIFA_HY)
+def test_un_proveedor_ocasional_no_necesita_nada_mas_que_su_ruc():
+    (f,) = _con_cruce(crudas=[QC])
     assert f["prov"] == "QC"
-    assert f["tarifa"] is None
-    assert f["importe_de"] == "asinfo"
-    assert f["importe_sugerido"] == 7567.09      # 6.580,08 + 987,01, al centavo
+    assert f["importe_sugerido"] == 7567.09      # 6.580,08 + 987,01
 
 
 def test_entrega_parcial_prorratea_la_factura_por_kilos():
@@ -199,13 +143,6 @@ def test_entrega_parcial_prorratea_la_factura_por_kilos():
     assert svc._importe_asinfo(1000.0, 1000.0, 150.0, 0) == 1150.0
     # Sin factura en Asinfo no hay plata.
     assert svc._importe_asinfo(1000.0, 0, 0, 0) is None
-
-
-def test_el_motor_carga_la_de_asinfo_sin_tarifa():
-    res = _plan([_fila(tarifa=None, importe_sugerido=7567.09, importe_de="asinfo")])
-    assert res["creadas"] == 1
-    assert res["detalle"][0]["importe"] == 7567.09
-    assert res["detalle"][0]["importe_de"] == "asinfo"
 
 
 def test_cruce_con_compra_marca_fuente_y_estado():
@@ -236,7 +173,7 @@ def _fila(**kw):
         "proveedor": "HILTEXPOY S.A.", "fact_num": 37711,
         "producto": "14/1-65:35-CAR-HY", "n_productos": 1,
         "fecha_recepcion": "2026-07-27", "recibida": True, "kg": 5002.5,
-        "tarifa": 2.90, "importe_sugerido": 16683.34, "compra": None,
+        "importe_sugerido": 16683.34, "compra": None,
     }
     base.update(kw)
     return base
@@ -263,7 +200,7 @@ def test_carga_dry_run_no_escribe_y_planifica():
         ({"fecha_recepcion": "2026-06-30"}, "antes del"),
         ({"prov": None}, "sin código en el programa"),
         ({"fact_num": None}, "factura sin número"),
-        ({"tarifa": None, "importe_sugerido": None}, "sin tarifa"),
+        ({"importe_sugerido": None}, "no está en Asinfo"),
     ],
 )
 def test_guardas_saltean_con_motivo(cambio, motivo):
@@ -501,7 +438,6 @@ def test_dos_entregas_de_la_misma_factura_son_dos_pasivos():
     with patch.object(asinfo_service, "compras_locales_asinfo",
                       return_value=[cruda_a, cruda_b]), \
          patch.object(q, "proveedores_por_ruc", return_value=POR_RUC), \
-         patch.object(q, "listar_tarifas", return_value=TARIFA_HY), \
          patch.object(svc, "_buscar_por_bod", return_value=ya_cargada), \
          patch.object(svc, "_buscar_compras",
                       return_value={("HY", 37649): [_compra(1000.0)]}):
@@ -520,12 +456,16 @@ def test_recepcion_anulada_en_asinfo_no_se_carga():
     assert "anulada en Asinfo" in res["detalle"][0]["motivo"]
 
 
+MOTOR = svc.MARCADOR_CARGA
+
+
 def test_entrega_que_crece_ajusta_el_importe():
     """Tamara 2026-09-16: «con cada entrega, y se ajusta»."""
     fila = _fila(
         bod="BOD-000002374", kg=5002.5, importe_sugerido=16683.34,
         cruce_por="bod",
-        compra={"n": 1, "items": [{"id_compra": 720, "importe": 9000.0}]},
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 9000.0,
+                                   "kg": 5002.5, "usuario_crea": MOTOR}]},
     )
     res = _plan([fila])
     assert res["creadas"] == 0
@@ -536,21 +476,64 @@ def test_entrega_que_crece_ajusta_el_importe():
     assert d["importe"] == 16683.34
 
 
-def test_no_se_ajusta_lo_que_cruzo_por_numero_de_factura():
-    """Una compra tipeada a mano (o que cubre varias entregas) no se toca."""
+def test_no_se_ajusta_una_compra_tipeada_a_mano():
+    """La 37649 de Andrés: no la creó el motor, no se toca sola."""
     fila = _fila(
-        bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="factura",
-        compra={"n": 1, "items": [{"id_compra": 720, "importe": 9000.0}]},
+        bod="BOD-000002314", importe_sugerido=1664.64, cruce_por="factura",
+        compra={"n": 1, "items": [{"id_compra": 418, "importe": 1518.26,
+                                   "kg": 499.14, "usuario_crea": "andres"}]},
     )
     res = _plan([fila])
     assert res["ajustadas"] == 0
     assert res["detalle"][0]["motivo"] == "ya tiene compra"
 
 
+def test_las_compras_viejas_del_tarifario_se_corrigen_a_la_factura():
+    """Tamara 2026-09-17: «cambiamos el monto de las que ya están cargadas».
+
+    Las 13 de HY de antes del 16/09 no tienen BOD (cruzan por nº de factura)
+    y las creó el motor con la tarifa 2,645: la 38279 decía 15.268,42 y la
+    factura dice 21.358,48. Se corrigen y se les estampa el BOD.
+    """
+    from modules.compras import queries as compras_queries
+
+    editadas = []
+    fila = _fila(
+        bod="BOD-000002374", kg=5019.62, fact_num=38279,
+        importe_sugerido=21358.48, cruce_por="factura",
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 15268.42,
+                                   "kg": 5019.62, "usuario_crea": MOTOR}]},
+    )
+    with patch.object(svc, "compras_locales_con_cruce", return_value=[fila]), \
+         patch.object(compras_queries, "editar",
+                      lambda id_compra, **kw: editadas.append((id_compra, kw))), \
+         patch.object(svc, "_avisar_carga", return_value=0), \
+         patch.object(asinfo_service, "reset_locales_cache", lambda: None):
+        res = svc.cargar_pendientes()
+    assert res["ajustadas"] == 1
+    ((id_compra, kw),) = editadas
+    assert id_compra == 720
+    assert kw["importe"] == 21358.48
+    assert kw["comprobante"] == "BOD-000002374"
+    assert "38279" in kw["observacion"]
+
+
+def test_una_compra_vieja_por_el_total_de_dos_entregas_no_se_recorta():
+    """Cruzó por factura y sus kilos no son los de ESTA entrega: no es suya."""
+    fila = _fila(
+        bod="BOD-000002374", kg=300.0, importe_sugerido=1000.0, cruce_por="factura",
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 1664.64,
+                                   "kg": 499.14, "usuario_crea": MOTOR}]},
+    )
+    res = _plan([fila])
+    assert res["ajustadas"] == 0
+
+
 def test_no_se_ajusta_cuando_el_importe_no_cambio():
     fila = _fila(
         bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="bod",
-        compra={"n": 1, "items": [{"id_compra": 720, "importe": 16683.34}]},
+        compra={"n": 1, "items": [{"id_compra": 720, "importe": 16683.34,
+                                   "kg": 5002.5, "usuario_crea": MOTOR}]},
     )
     res = _plan([fila])
     assert res["ajustadas"] == 0
@@ -560,8 +543,8 @@ def test_no_se_ajusta_cuando_el_bod_tiene_varias_compras():
     """Repartir entre dos no es nuestro: eso va a la alarma de duplicados."""
     fila = _fila(
         bod="BOD-000002374", importe_sugerido=16683.34, cruce_por="bod",
-        compra={"n": 2, "items": [{"id_compra": 720, "importe": 9000.0},
-                                  {"id_compra": 721, "importe": 7000.0}]},
+        compra={"n": 2, "items": [{"id_compra": 720, "importe": 9000.0, "usuario_crea": MOTOR},
+                                  {"id_compra": 721, "importe": 7000.0, "usuario_crea": MOTOR}]},
     )
     res = _plan([fila])
     assert res["ajustadas"] == 0
@@ -576,26 +559,26 @@ def _recibida(**kw):
         "bod": "BOD-000002356", "prov": "QC", "proveedor": "QUIMICA COMERCIAL",
         "producto": "QCLY40", "fact_num": 1773, "kg": 1012.32,
         "fecha_recepcion": "2026-08-25", "recibida": True, "anulada": False,
-        "pre_corte": False, "tarifa": None, "importe_sugerido": None,
+        "pre_corte": False, "importe_sugerido": None,
         "compra": None, "pagada": False,
     }
     base.update(kw)
     return base
 
 
-def test_sin_tarifa_queda_trabada_y_la_alarma_la_nombra():
+def test_sin_factura_queda_trabada_y_la_alarma_lo_dice():
     """El caso real del 16/09: QC 1.012 kg de tres semanas, sin pasivo."""
     (f,) = svc.sin_pasivo([_recibida()])
     assert f["bod"] == "BOD-000002356"
     assert f["kg"] == 1012.32
-    assert "QC no tiene tarifa" in f["motivo"]
+    assert "factura de QC" in f["motivo"]
     assert "no está en Asinfo" in f["motivo"]
 
 
 def test_con_la_factura_en_asinfo_no_esta_trabada():
     # Misma QC, pero ya con la plata de la factura: el motor la carga; no es
     # una alarma (y si el motor no corrió, el motivo lo dice).
-    (f,) = svc.sin_pasivo([_recibida(importe_sugerido=7567.09, importe_de="asinfo")])
+    (f,) = svc.sin_pasivo([_recibida(importe_sugerido=7567.09)])
     assert "carga automática" in f["motivo"]
     assert f["dias"] >= 1
 

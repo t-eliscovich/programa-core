@@ -23,8 +23,8 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
     por el valor de lo que entró. Ahora la consulta parte de la RECEPCIÓN, que
     es autosuficiente: `id_empresa` y `numero_factura` son columnas propias y
     NOT NULL en Asinfo, así que la compra nace con su número de factura puesto;
-  * el importe sale de un TARIFARIO, no de Asinfo (dueña: *"asinfo nunca nos
-    importa en plata... tomá el tarifario con montos de dbase"*);
+  * el importe es el de la FACTURA del proveedor en Asinfo, con IVA (desde
+    el 17/09/2026; antes un tarifario, ver guarda 5);
   * la compra se crea impaga → `compras.queries.crear` le arma su `posdat`
     banc=0, que ES el pasivo, con vencimiento = fecha + proveedor.plazo
     (HY 60 días, EP 2 días — lo mismo que hace el FoxPro).
@@ -37,13 +37,15 @@ proveedor y **nace el pasivo** — igual que tejeduría. Por eso:
     esto, prender el automático arrastraría un año de facturas históricas que
     ya están cargadas a mano o archivadas en el FoxPro.
  4. **Proveedor mapeado por RUC** o se saltea (nunca adivinamos el código).
- 5. **Plata resuelta** o se saltea — nunca inventamos un precio. Manda la
-    TARIFA del proveedor (HY, EP: el promedio que eligió la dueña el 30/07);
-    si el proveedor no tiene tarifa, vale la FACTURA de Asinfo (total + IVA,
-    prorrateado por kilos si la entrega es parcial). Tamara 2026-09-17,
-    mirando a QC y a Buenaño trabadas tres semanas por "falta la tarifa":
-    *"la factura está en Asinfo — buscarla y matchear todo de una"*. Un
-    proveedor ocasional no necesita tarifa.
+ 5. **La factura está en Asinfo** o se espera — nunca inventamos un precio.
+    El importe es `factura_proveedor.total + impuesto` (con IVA, al centavo),
+    prorrateado por kilos si la entrega es parcial. Hasta el 17/09/2026 la
+    plata salía de un TARIFARIO $/kg (una tarifa por proveedor, decisión del
+    30/07) y estaba MAL: HY vende hilos de 2,30 a 3,80 $/kg y con 2,645 fijo
+    las 13 compras del motor quedaron $ 18.772 abajo de sus facturas. Tamara:
+    *"para adelante sea sólo de Asinfo el total de la factura y no más
+    tarifas"*. El costo es esperar la factura (~1 día, hasta 5): en esa
+    ventana la campanita avisa, y cuando aparece la compra entra sola.
  6. **Ya cruzada** — si la recepción ya tiene una compra en PC, no se vuelve
     a cargar. Idempotente. El match va en DOS pasos, en este orden:
       a. por **BOD** (`compra.comprobante`) — la identidad del hecho. Es lo que
@@ -86,7 +88,8 @@ _LOG = logging.getLogger("programa_core.compras_locales")
 #: corrida y el motor la vuelve a cargar solo. Se cura sola en los dos sentidos.
 MARCADOR_CARGA = "asinfo-hilo-local"
 
-#: El dBase graba COMPRAS.IMPORTE **con IVA**; el tarifario vive sin IVA.
+#: Las compras se graban **con IVA** (así lo hacía el dBase). Se usa para
+#: volver a neto donde el flujo valúa el hilado sin IVA.
 IVA = 1.15
 
 #: No se cargan recepciones anteriores a esta fecha (guarda 3). Se eligió el
@@ -101,25 +104,6 @@ TOPE_IMPORTE = 500_000.0
 _AUTO_LOCK = threading.Lock()
 _auto_ultimo_ts = 0.0
 _AUTO_INTERVALO_MIN = 1800.0  # 30 min entre corridas de fondo
-
-
-def _importe(kg: float, tarifa: float | None) -> float | None:
-    """kg × tarifa → base, y sobre la BASE REDONDEADA el IVA. En dos pasos.
-
-    Así factura el proveedor y así queda en el dBase: la base es el renglón de
-    la factura (redondeado al centavo) y el IVA se calcula sobre eso. Verificado
-    contra el caso real HY 37649 — 499,14 kg × 2,90 = 1.447,51 (que es exacto el
-    total sin IVA de Asinfo) y × 1,15 = **1.664,64**, la compra que está cargada
-    en /compras. En un solo paso daría 1.664,63.
-
-    Ojo: el resultado es una APROXIMACIÓN y tiene que serlo — la tarifa del
-    tarifario es un promedio (dueña 2026-07-30: *"el tarifario hace un
-    promedio"*) y la factura real puede venir partida en lotes, cada uno con su
-    redondeo. En facturas de ~$42.000 el desvío observado es de ~$0,40.
-    """
-    if not tarifa or kg <= 0:
-        return None
-    return round(round(kg * float(tarifa), 2) * IVA, 2)
 
 
 def _importe_asinfo(kg: float, total: float | None, iva: float | None,
@@ -174,7 +158,7 @@ def _buscar_compras(refs: set[tuple[str, int]]) -> dict[tuple[str, int], list[di
                    UPPER(TRIM(c.codigo_prov)) AS codigo_prov,
                    NULLIF(substring(btrim(COALESCE(c.concepto, '')) FROM '^(\d+)'), '')::bigint
                        AS fact_num,
-                   c.importe, c.kg, c.tipo, c.concepto,
+                   c.importe, c.kg, c.tipo, c.concepto, c.usuario_crea,
                    TO_CHAR(c.fecha, 'YYYY-MM-DD') AS fecha,
                    COALESCE((
                        SELECT SUM(pd.importe)
@@ -275,7 +259,7 @@ def _buscar_por_bod(bods: set[str]) -> dict[str, list[dict]]:
             SELECT c.id_compra,
                    UPPER(TRIM(COALESCE(c.comprobante, ''))) AS bod,
                    UPPER(TRIM(c.codigo_prov)) AS codigo_prov,
-                   c.importe, c.kg, c.tipo, c.concepto,
+                   c.importe, c.kg, c.tipo, c.concepto, c.usuario_crea,
                    TO_CHAR(c.fecha, 'YYYY-MM-DD') AS fecha,
                    COALESCE((
                        SELECT SUM(pd.importe)
@@ -363,10 +347,8 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
         origen        — siempre 'compra' (las importaciones traen 'importacion')
         producto      — código de producto de Asinfo
         fact_num      — nº de factura del proveedor (el que va al concepto)
-        tarifa        — $/kg sin IVA resuelto, o None
-        importe_sugerido — kg × tarifa × IVA; sin tarifa, la factura de
-                          Asinfo (total + IVA, prorrateada por kg); o None
-        importe_de      — 'tarifa' | 'asinfo' | None (de dónde salió la plata)
+        importe_sugerido — la factura de Asinfo (total + IVA, prorrateada por
+                          kg si la entrega es parcial); None si todavía no está
         pagada / saldo / parcial — estado del pasivo
 
     Fail-soft en todos los tramos: [] si Asinfo no contesta.
@@ -380,7 +362,6 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
         return []
 
     por_ruc = _tar.proveedores_por_ruc()
-    tarifas = _tar.listar_tarifas()
 
     filas: list[dict] = []
     refs: set[tuple[str, int]] = set()
@@ -390,13 +371,8 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
         if prov and fact is not None:
             refs.add((prov, int(fact)))
         kg = float(c.get("kg") or 0)
-        tarifa = _tar.resolver(tarifas, prov or "", c.get("producto")) if prov else None
-        importe = _importe(kg, tarifa)
-        importe_de = "tarifa" if importe else None
-        if not importe:
-            importe = _importe_asinfo(kg, c.get("total_asinfo"), c.get("iva_asinfo"),
-                                      c.get("kg_factura"))
-            importe_de = "asinfo" if importe else None
+        importe = _importe_asinfo(kg, c.get("total_asinfo"), c.get("iva_asinfo"),
+                                  c.get("kg_factura"))
         filas.append({
             "origen": "compra",
             "im_numero": c.get("fp_numero"),
@@ -420,9 +396,7 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             "n_productos": int(c.get("n_productos") or 0),
             "numero_factura": c.get("numero_factura"),
             "fact_num": fact,
-            "tarifa": tarifa,
             "importe_sugerido": importe,
-            "importe_de": importe_de,
             # Claves que la plantilla comparte con las importaciones.
             "compra": None,
             "anticipo": None,
@@ -467,7 +441,9 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
             "items": [
                 {"fecha": h.get("fecha"),
                  "importe": float(h.get("importe") or 0),
-                 "id_compra": h.get("id_compra")}
+                 "id_compra": h.get("id_compra"),
+                 "kg": float(h.get("kg") or 0),
+                 "usuario_crea": h.get("usuario_crea")}
                 for h in sorted(hits, key=lambda x: str(x.get("fecha") or ""),
                                 reverse=True)
             ],
@@ -481,13 +457,13 @@ def compras_locales_con_cruce(limite: int = 200) -> list[dict]:
 
 
 def hilado_local_recibido_mes(yy: int, mm: int) -> dict:
-    """Kg y $ (tarifario, SIN IVA) de compras LOCALES de hilo RECIBIDAS en el mes.
+    """Kg y $ (factura de Asinfo, SIN IVA) de compras LOCALES de hilo RECIBIDAS en el mes.
 
     El análogo local de `asinfo_service.hilado_recibido_mes` (que sólo cuenta
     importaciones). "Recibida en el mes" = con fecha de recepción a la bodega 51
-    cuyo prefijo YYYY-MM coincide, igual corte que las importaciones. El $ sale
-    del TARIFARIO (kg × tarifa sin IVA), la MISMA plata con la que el motor de
-    compras locales crea el pasivo — NO el total de Asinfo (referencial).
+    cuyo prefijo YYYY-MM coincide, igual corte que las importaciones. El $ es
+    la factura de Asinfo sin IVA — la MISMA plata con la que el motor crea el
+    pasivo. Una entrega cuya factura todavía no está suma kg y $ 0.
 
     Dueña 2026-07-30: "la fábrica importa hilo pero también hace compras locales;
     en Ingreso de hilado hay que sumarlas". Se usa en el cuadro MOVIMIENTOS del
@@ -509,13 +485,8 @@ def hilado_local_recibido_mes(yy: int, mm: int) -> dict:
         if not str(f.get("fecha_recepcion") or "").startswith(pref):
             continue
         _kg = float(f.get("kg") or 0.0)
-        _tar = f.get("tarifa")
         kg += _kg
-        if _tar:
-            us += _kg * float(_tar)
-        elif f.get("importe_sugerido"):
-            # Sin tarifa la plata es la factura de Asinfo (con IVA): se le
-            # saca el IVA para quedar en la misma unidad que la tarifa.
+        if f.get("importe_sugerido"):
             us += float(f["importe_sugerido"]) / IVA
     return {"kg": kg, "us": us}
 
@@ -608,35 +579,43 @@ def _antes_del_corte(fecha_recepcion: str | None) -> bool:
         return True  # sin fecha usable → no se carga
 
 
-def _ajustar_si_crecio(f: dict, base: dict, *, dry_run: bool,
-                       usuario: str) -> dict | None:
-    """Si la entrega creció en Asinfo, corrige el importe de su compra.
+def _ajustar_a_la_factura(f: dict, base: dict, *, dry_run: bool,
+                          usuario: str) -> dict | None:
+    """Si la compra no dice lo que dice la factura de Asinfo, la corrige.
 
-    Tamara 2026-09-16, eligiendo cómo tratar las recepciones partidas: *"con
-    cada entrega, y se ajusta"*. Una recepción se sigue pistoleando después de
-    creada (`indicador_tiene_recepcion_parcial`), así que los kg del BOD suben
-    entre una corrida y la siguiente. El pasivo tiene que seguirlos: si no, la
-    deuda con el proveedor queda corta y la utilidad alta por la diferencia.
+    Dos casos, un mismo mecanismo:
+      · la entrega CRECIÓ (Tamara 2026-09-16: *"con cada entrega, y se
+        ajusta"*) — una recepción se sigue pistoleando después de creada y
+        los kg del BOD suben entre corridas;
+      · la compra se creó con el TARIFARIO viejo (hasta el 17/09/2026) y
+        la factura dice otra cosa — Tamara: *"cambiamos el monto de las que
+        ya están cargadas"*. Son 13 compras de HY, $ 18.772 de deuda que
+        faltaba, y se corrigen acá en la primera corrida, sin cargar nada
+        extra.
 
-    Mismo patrón que el puente de químicos: `compras.queries.editar` corrige el
-    importe y **propaga al posdat hermano** en la misma transacción.
+    `compras.queries.editar` corrige el importe y **propaga al posdat
+    hermano** en la misma transacción; si la compra ya está pagada, el
+    propio `editar` la rechaza y queda anotada en el detalle.
 
     Sólo ajusta:
-      · compras que creó ESTE motor y que cruzaron por BOD — una compra tipeada
-        a mano no se toca sola, y una que cruzó por nº de factura puede estar
-        cubriendo más de una entrega;
-      · cuando hay UNA sola compra de ese BOD (si hay varias, el reparto no es
-        nuestro: va a la alarma de duplicados);
+      · compras que creó ESTE motor (`usuario_crea` = MARCADOR_CARGA) — una
+        tipeada a mano (la 37649 de Andrés) no se toca sola;
+      · cuando hay UNA sola compra de esa entrega (si hay varias, el reparto
+        no es nuestro: va a la alarma de duplicados);
       · cuando el importe nuevo difiere en más de un centavo.
+
+    De paso estampa el BOD en `comprobante` si la compra vieja no lo tenía
+    (las de antes del 16/09 cruzan por nº de factura): la corrida siguiente
+    ya la encuentra por el documento.
 
     Devuelve la fila del detalle si ajustó (o ajustaría, en dry-run), o None.
     """
     from modules.compras import queries as _compras_q
 
-    if f.get("cruce_por") != "bod":
-        return None
     hits = (f.get("compra") or {}).get("items") or []
     if len(hits) != 1:
+        return None
+    if (hits[0].get("usuario_crea") or "").strip() != MARCADOR_CARGA:
         return None
     importe_nuevo = f.get("importe_sugerido")
     if not importe_nuevo:
@@ -644,6 +623,13 @@ def _ajustar_si_crecio(f: dict, base: dict, *, dry_run: bool,
     importe_viejo = float(hits[0].get("importe") or 0)
     if abs(float(importe_nuevo) - importe_viejo) <= 0.01:
         return None
+    if f.get("cruce_por") != "bod":
+        # Cruzó por nº de factura: sólo si la compra es de ESTA entrega (mismos
+        # kilos). Una factura que llegó en dos tandas y tiene una sola compra
+        # vieja por el total no se recorta a la mitad.
+        kg_compra = float(hits[0].get("kg") or 0)
+        if abs(kg_compra - float(f.get("kg") or 0)) > 0.5:
+            return None
 
     fila = {**base, "ok": True, "ajuste": True,
             "importe_previo": round(importe_viejo, 2),
@@ -655,10 +641,12 @@ def _ajustar_si_crecio(f: dict, base: dict, *, dry_run: bool,
             int(hits[0]["id_compra"]),
             importe=float(importe_nuevo),
             kg=round(float(f.get("kg") or 0), 2),
+            comprobante=(str(f.get("bod") or "") or None
+                         if f.get("cruce_por") != "bod" else None),
             usuario=usuario,
-            observacion=(f"hilo local: la entrega {f.get('bod')} pasó de "
-                         f"${importe_viejo:.2f} a ${float(importe_nuevo):.2f} "
-                         f"en Asinfo"),
+            observacion=(f"hilo local: la factura {f.get('fact_num')} de Asinfo "
+                         f"dice ${float(importe_nuevo):.2f} (entrega {f.get('bod')}); "
+                         f"la compra decía ${importe_viejo:.2f}"),
         )
     except Exception as e:  # noqa: BLE001 -- una no corta el lote
         _LOG.warning("compras_locales: no pude ajustar %s: %s", f.get("bod"), e)
@@ -702,14 +690,12 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
             "producto": f.get("producto"),
             "fecha_recepcion": f.get("fecha_recepcion"),
             "kg": f.get("kg"),
-            "tarifa": f.get("tarifa"),
             "importe": f.get("importe_sugerido"),
-            "importe_de": f.get("importe_de"),
         }
         kg = float(f.get("kg") or 0)
 
         if f.get("compra"):                                    # guarda 6
-            aj = _ajustar_si_crecio(f, base, dry_run=dry_run, usuario=usuario)
+            aj = _ajustar_a_la_factura(f, base, dry_run=dry_run, usuario=usuario)
             detalle.append(aj or {**base, "ok": False, "motivo": "ya tiene compra"})
             if aj:
                 ajustadas += 1
@@ -736,8 +722,7 @@ def cargar_pendientes(*, usuario: str = "web", clave: str | None = None,
             continue
         if not f.get("importe_sugerido"):                      # guarda 5
             detalle.append({**base, "ok": False,
-                            "motivo": (f"sin tarifa para {f.get('producto') or '?'} "
-                                       "y la factura todavía no está en Asinfo")})
+                            "motivo": "la factura todavía no está en Asinfo"})
             continue
         if creadas >= TOPE_COMPRAS or (                        # guarda 7
                 importe_total + float(f["importe_sugerido"]) > TOPE_IMPORTE):
@@ -849,8 +834,8 @@ def correr_si_toca() -> dict:
         res["creadas"] = carga.get("creadas") or 0
         res["ajustadas"] = carga.get("ajustadas") or 0
         res["importe"] = carga.get("importe") or 0.0
-        # Y lo que quedó trabado por una guarda (falta tarifa, RUC sin
-        # proveedor): kilos en bodega sin su deuda. Fail-soft por su cuenta —
+        # Y lo que quedó trabado por una guarda (factura que no está, RUC
+        # sin proveedor): kilos en bodega sin su deuda. Fail-soft por su cuenta —
         # que no se pueda avisar nunca frena la carga.
         try:
             res["avisadas"] = avisar_trabadas()
@@ -868,8 +853,8 @@ def correr_si_toca() -> dict:
 # tiene que haber anuncios"*.
 #
 # Con el disparador en la recepción el pasivo nace junto con los kilos, así que
-# lo único que puede dejar una entrega sin deuda es una GUARDA: falta la tarifa
-# del proveedor, el RUC no mapea a ningún proveedor de PC, o Asinfo no contestó.
+# lo único que puede dejar una entrega sin deuda es una GUARDA: la factura no
+# está en Asinfo, el RUC no mapea a ningún proveedor de PC, o Asinfo no contestó.
 # Eso antes no lo miraba nadie: había que entrar a /importaciones y leer la
 # columna. Medido el 16/09 había 1.882 kg de tres semanas atrás sin su pasivo.
 #
@@ -930,7 +915,7 @@ def sin_pasivo(filas: list[dict] | None = None) -> list[dict]:
         if not f.get("prov"):
             motivo = "el RUC de Asinfo no coincide con ningún proveedor del programa"
         elif not f.get("importe_sugerido"):
-            motivo = (f"{f.get('prov')} no tiene tarifa y la factura de "
+            motivo = (f"la factura de {f.get('prov')} por "
                       f"{f.get('producto') or '?'} todavía no está en Asinfo")
         else:
             motivo = "la carga automática no llegó a crearla"
@@ -944,7 +929,6 @@ def sin_pasivo(filas: list[dict] | None = None) -> list[dict]:
             "fact_num": f.get("fact_num"),
             "kg": round(float(f.get("kg") or 0), 2),
             "importe_sugerido": f.get("importe_sugerido"),
-            "importe_de": f.get("importe_de"),
             "motivo": motivo,
         })
     return sorted(out, key=lambda r: str(r.get("fecha_recepcion") or ""))
