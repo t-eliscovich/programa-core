@@ -666,9 +666,10 @@ TIPOS_CORTO = {
     "banco_clasificado_gasto": ("BC", "→ GS"),
     "nota_debito": ("BC", "nota de débito"),
     "transfer_banco_banco": ("BC", "→ BC"),
-    "compra_a_posdat": ("CP", "→ DE"),
-    "compra_saldo_a_posdat": ("CP", "saldo → DE"),
-    "posdat_restaurada": ("CP", "→ DE restaurada"),
+    # "→ DE" era jerga (Tamara 2026-09-17): la deuda se llama deuda.
+    "compra_a_posdat": ("CP", "→ deuda nueva"),
+    "compra_saldo_a_posdat": ("CP", "saldo → deuda"),
+    "posdat_restaurada": ("CP", "→ deuda restaurada"),
     "compra_pagada_caja": ("CP", "← caja"),
     "compra_pagada_pichincha": ("CP", "← BC"),
     "compra_pagada_internacional": ("CP", "← BC"),

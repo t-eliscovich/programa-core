@@ -500,7 +500,7 @@ def test_tres_compras_de_una_importacion_en_un_renglon_sin_el_numero_de_una():
              "regla": "Deuda nueva cargada", "etiqueta": f"Posdat AQ · {i}",
              "familia": "utilidad"} for i, v in enumerate([8546.0, 7275.0, 5025.0])]
     g = t.resumir(movs, -20846.0, idx)[0]
-    assert g["texto"] == "3 CP → DE · AQ"
+    assert g["texto"] == "3 compras a crédito · AQ"
     assert g["aporte"] == -20846.0
 
 
