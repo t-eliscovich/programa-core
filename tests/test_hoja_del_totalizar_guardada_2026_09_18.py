@@ -50,6 +50,8 @@ def _db(monkeypatch, mov, vivas):
         return None
 
     def fetch_all(sql, params=None, conn=None):
+        if "chequesxfact" in sql:
+            return []
         return vivas
 
     monkeypatch.setattr(iq.db, "fetch_one", fetch_one)
@@ -121,3 +123,44 @@ def test_la_confirmacion_sigue_igual(app, nombre):
     import modules.informes.views as _v
     src = inspect.getsource(getattr(_v, nombre))
     assert "hoja_guardada" not in src
+
+
+def test_la_hoja_dice_quien_pago_cada_factura_antes_y_despues(monkeypatch):
+    """TMT 18/09 (dueña, sobre MTM): "acá no veo el cheque de 536"."""
+    md = dict(MD, ids_reaplicados=[901])
+
+    def fetch_all(sql, params=None, conn=None):
+        if "chequesxfact_totalizado" in sql:
+            return [{"id_fact": 2, "importe": 536.30, "rotulo": "47395434"}]
+        if "id_chequexfact = ANY" in sql:
+            return [{"id_fact": 1, "importe": 536.30, "rotulo": "47395434"}]
+        return VIVAS
+
+    _db(monkeypatch, _mov(md), VIVAS)
+    monkeypatch.setattr(iq.db, "fetch_all", fetch_all)
+    d = iq.totalizar_hoja_guardada(45)
+    assert d["con_cobros"] is True
+    f1, f2 = d["filas"]
+    assert f2["cobros_antes"] == [{"rotulo": "47395434", "importe": 536.30}]
+    assert f2["cobros_despues"] == []
+    assert f1["cobros_antes"] == []
+    assert f1["cobros_despues"] == [{"rotulo": "47395434", "importe": 536.30}]
+    assert PREVIEW.count("Pagada por") == 2
+    assert "@media print" in PREVIEW and "border: 1px solid #000 !important" in PREVIEW
+
+
+def test_sin_ids_reaplicados_el_despues_son_los_vinculos_vivos(monkeypatch):
+    """Corridas viejas (o repuestas con el botón): lo que hay hoy en la tabla viva."""
+    vistos = []
+
+    def fetch_all(sql, params=None, conn=None):
+        vistos.append(sql)
+        if "chequesxfact" in sql:
+            return []
+        return VIVAS
+
+    _db(monkeypatch, _mov(MD), VIVAS)
+    monkeypatch.setattr(iq.db, "fetch_all", fetch_all)
+    iq.totalizar_hoja_guardada(45)
+    assert any("x.id_fact = ANY(%s)" in s for s in vistos)
+    assert not any("id_chequexfact = ANY" in s for s in vistos)

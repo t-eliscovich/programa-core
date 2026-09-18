@@ -15,9 +15,29 @@
   @media print {
     .no-print { display: none !important; }
     body { background: #fff !important; color: #000 !important; }
-    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important; max-width: none !important; }
-    @page { margin: 1.5cm; size: auto; }
+    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important; max-width: none !important; padding: 0 2px !important; }
+    @page { margin: 1.2cm; size: auto; }
+    /* TMT 2026-09-18 (dueña): "puede ser más onda excel la impresión mientras
+       esté la info" — grilla con bordes en todas las celdas, sin colores ni
+       pastillas, letra chica. */
+    .hoja h1 { font-size: 13px !important; }
+    .hoja table { border: 1px solid #000 !important; }
+    .hoja th, .hoja td { border: 1px solid #000 !important; padding: 2px 4px !important;
+                         font-size: 9.5px !important; color: #000 !important; background: #fff !important; }
+    .hoja th { font-size: 8.5px !important; }
+    .hoja tfoot td { font-size: 10px !important; }
+    .hoja td.num, .hoja td, .hoja th { font-weight: normal !important; }
+    .hoja tfoot td, .hoja th { font-weight: 700 !important; }
+    .stat-pill { background: none !important; color: #000 !important; padding: 0 !important; border-radius: 0 !important; }
+    .fila-nc td { background: #fff !important; }
+    .sep-despues { border-left: 2px solid #000 !important; }
+    .kpis { gap: 14px !important; margin: 4px 0 !important; }
+    .kpi { font-size: 9px !important; color: #000 !important; }
+    .kpi b { font-size: 11px !important; }
+    .cobros { font-size: 8.5px !important; }
   }
+  .cobros { font-family: ui-monospace, monospace; font-size: 10px; color: #475569; white-space: nowrap; line-height: 1.35; }
+  .cobros span { display: block; }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
           padding:1.5rem 1.75rem; margin:1rem auto; max-width:980px; border-radius:4px; }
   .hoja h1 { font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#0f172a; }
@@ -79,7 +99,8 @@
   <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2"
        style="font-size:12px; line-height:1.5">
     Esta es la hoja del totalizar que se hizo el <strong>{{ hoja_guardada.fecha | fecha_es }}</strong>{% if hoja_guardada.usuario %} ({{ hoja_guardada.usuario }}){% endif %},
-    tal como quedó ese día: a la izquierda cómo estaba cada factura, a la derecha cómo la dejó.
+    tal como quedó ese día: a la izquierda cómo estaba cada factura y qué cobros la pagaban, a la derecha cómo la dejó y qué cobros la pagan ahora.
+    El abono que no tiene un cobro al lado vino de afuera (Asinfo, importación vieja) y no tiene cheque en el programa.
     {% if hoja_guardada.deshecha %}<strong style="color:#b45309">Este totalizar después se deshizo.</strong>{% endif %}
   </div>
 {% endif %}
@@ -129,10 +150,12 @@
           <th class="num">Abono</th>
           <th class="num">Saldo</th>
           <th style="text-align:center">Stat</th>
+          {% if data.con_cobros %}<th>Pagada por</th>{% endif %}
           <th class="sep-despues"></th>
           <th class="num">Abono →</th>
           <th class="num">Saldo →</th>
           <th style="text-align:center">Stat →</th>
+          {% if data.con_cobros %}<th>Pagada por →</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -148,10 +171,16 @@
           <td class="num" style="color:#64748b">{{ f.abono_actual | money_es }}</td>
           <td class="num" style="color:#64748b">{{ f.saldo_actual | money_es }}</td>
           <td style="text-align:center">{{ stat_badge(f.stat_actual) }}</td>
+          {% if data.con_cobros %}
+          <td class="cobros">{% for c in f.cobros_antes %}<span>{{ c.rotulo }} {{ c.importe | money_es }}</span>{% else %}<span style="color:#94a3b8">—</span>{% endfor %}</td>
+          {% endif %}
           <td class="sep-despues flecha" style="text-align:center">{{ '→' if f.cambia else '=' }}</td>
           <td class="num" style="font-weight:600">{{ f.abono_nuevo | money_es }}</td>
           <td class="num" style="font-weight:600; {{ 'color:#047857' if f.saldo_nuevo < -0.005 else ('color:#b91c1c' if f.saldo_nuevo > 0.005 else '') }}">{{ f.saldo_nuevo | money_es }}</td>
           <td style="text-align:center">{{ stat_badge(f.stat_nuevo) }}</td>
+          {% if data.con_cobros %}
+          <td class="cobros">{% for c in f.cobros_despues %}<span>{{ c.rotulo }} {{ c.importe | money_es }}</span>{% else %}<span style="color:#94a3b8">—</span>{% endfor %}</td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -163,10 +192,12 @@
           <td class="num">{{ data.pool | money_es }}</td>
           <td class="num">{{ data.sum_saldo_antes | money_es }}</td>
           <td></td>
+          {% if data.con_cobros %}<td></td>{% endif %}
           <td class="sep-despues"></td>
           <td class="num">{{ data.sum_abono_despues | money_es }}</td>
           <td class="num">{{ data.sum_saldo_despues | money_es }}</td>
           <td></td>
+          {% if data.con_cobros %}<td></td>{% endif %}
         </tr>
       </tfoot>
     </table>

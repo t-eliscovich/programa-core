@@ -12275,9 +12275,60 @@ def totalizar_hoja_guardada(id_mov_doble: int) -> dict:
                        or abs(sa0 - sa1) > 0.005),
         })
     filas.sort(key=lambda f: (f["fecha"] or date.min, f["id_factura"]))
+    # TMT 2026-09-18 (dueña, mirando la hoja de MTM): *"acá no veo el cheque
+    # de 536"*. La hoja decía cuánto abono tenía cada factura, no QUIÉN lo
+    # pagó. Antes: los vínculos que la corrida guardó (chequesxfact_totalizado).
+    # Después: los que la corrida re-aplicó (`ids_reaplicados`, desde el
+    # 16/09) o, si no los anotó, los vivos hoy sobre esas facturas (lo que
+    # dejó el botón "volver a ponerlos").
+    ids_fact = [f["id_factura"] for f in filas]
+    _rotulo = ("COALESCE(NULLIF(TRIM(c.no_cheque), ''), c.doc_banco::text, "
+               "'#' || c.id_cheque::text) AS rotulo")
+    try:
+        antes_lk = db.fetch_all(
+            f"""
+            SELECT t.id_fact, t.importe, {_rotulo}
+              FROM scintela.chequesxfact_totalizado t
+              LEFT JOIN scintela.cheque c ON c.id_cheque = t.id_cheque
+             WHERE t.id_mov_doble = %s
+             ORDER BY t.fechaing NULLS LAST, t.id_cheque
+            """, (id_mov_doble,)) or []
+    except Exception:  # noqa: BLE001 — la tabla puede no existir todavía
+        antes_lk = []
+    ids_reap = [int(i) for i in (md.get("ids_reaplicados") or []) if i]
+    if ids_reap:
+        despues_lk = db.fetch_all(
+            f"""
+            SELECT x.id_fact, x.importe, {_rotulo}
+              FROM scintela.chequesxfact x
+              LEFT JOIN scintela.cheque c ON c.id_cheque = x.id_cheque
+             WHERE x.id_chequexfact = ANY(%s)
+             ORDER BY x.fechaing, x.id_cheque
+            """, (ids_reap,)) or []
+    else:
+        despues_lk = db.fetch_all(
+            f"""
+            SELECT x.id_fact, x.importe, {_rotulo}
+              FROM scintela.chequesxfact x
+              LEFT JOIN scintela.cheque c ON c.id_cheque = x.id_cheque
+             WHERE x.id_fact = ANY(%s)
+             ORDER BY x.fechaing, x.id_cheque
+            """, (ids_fact,)) or []
+    por_fact_antes: dict[int, list] = {}
+    por_fact_despues: dict[int, list] = {}
+    for lk in antes_lk:
+        por_fact_antes.setdefault(int(lk["id_fact"]), []).append(
+            {"rotulo": lk.get("rotulo"), "importe": round(float(lk.get("importe") or 0), 2)})
+    for lk in despues_lk:
+        por_fact_despues.setdefault(int(lk["id_fact"]), []).append(
+            {"rotulo": lk.get("rotulo"), "importe": round(float(lk.get("importe") or 0), 2)})
+    for f in filas:
+        f["cobros_antes"] = por_fact_antes.get(f["id_factura"], [])
+        f["cobros_despues"] = por_fact_despues.get(f["id_factura"], [])
     return {
         "cliente": cliente,
         "filas": filas,
+        "con_cobros": True,
         "n_links": int(md.get("n_links_borrados") or 0),
         "pool": round(float(md.get("pool") or 0), 2),
         "hay_nc": any(f["importe"] < 0 for f in filas),
