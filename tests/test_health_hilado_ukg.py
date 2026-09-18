@@ -29,10 +29,30 @@ UKG_SANO = 3.0387    # después del fix
 UKG_ROTO = 3.0717    # lo que se mostraba con la doble dilución
 
 
-def _foto(ukg, hil_kg=HILADO_KG, com_kg=COMPRAS_KG, com_us=COMPRAS_US):
+def _foto(ukg, hil_kg=HILADO_KG, com_kg=COMPRAS_KG, com_us=COMPRAS_US,
+          insumos=None):
     return {"creado_en": "2026-08-07T11:35:00+00:00", "hilado_kg": hil_kg,
             "hilado_ukg": ukg, "compras_kg": com_kg, "compras_us": com_us,
-            "kg_sin_costo": 0.0}
+            "kg_sin_costo": 0.0, "hilado_insumos": insumos}
+
+
+# Producción, 18/09/2026 12:55 — la foto que hizo sonar el health con la
+# apertura PERFECTA (3,043548 = 6.009.239 / 1.974.421 del PDF de agosto).
+SEP_APERTURA = 3.043548
+SEP_HI0 = 1933359.0         # hilo en Asinfo al 01/09
+SEP_MAQ = 40566.0           # en máquinas
+SEP_HILADO_KG = 1960064.21  # hi1 + maq
+SEP_HI1 = SEP_HILADO_KG - SEP_MAQ
+SEP_COMPRAS_KG = 181253.76
+SEP_COMPRAS_US = 663472.10  # 3,66 US$/kg: 0,62 arriba de la apertura
+SEP_UKG = 3.0953            # lo que mostraba el balance (y era correcto)
+SEP_INSUMOS = {"hi0": SEP_HI0, "hi1": SEP_HI1, "maq": SEP_MAQ,
+               "open_ukg": SEP_APERTURA, "tarifa_congelada": False}
+
+
+def _foto_sep(ukg=SEP_UKG, insumos=SEP_INSUMOS):
+    return _foto(ukg, hil_kg=SEP_HILADO_KG, com_kg=SEP_COMPRAS_KG,
+                 com_us=SEP_COMPRAS_US, insumos=insumos)
 
 
 def _correr(fila, apertura=APERTURA):
@@ -51,7 +71,7 @@ def test_el_ukg_corregido_no_alerta():
     assert out["ok"] is True
     assert out["alerts"] == []
     assert round(out["stats"]["ukg_esperado"], 4) == 3.0396
-    assert abs(out["stats"]["gap_us"]) < hv._HILADO_UKG_TOL_US
+    assert abs(out["stats"]["gap_us"]) < out["stats"]["tolerancia_us"] == hv._HILADO_UKG_TOL_US_SIN_KILOS
 
 
 def test_la_doble_dilucion_habria_alertado():
@@ -89,7 +109,57 @@ def test_sin_apertura_del_mes_anterior_no_rompe():
 def test_la_tolerancia_esta_lejos_del_ruido_y_del_bug():
     """Ni un ⚠ diario por ruido, ni un agujero que pase.
 
-    Ruido medido con el cálculo corregido: ~$1.600 (los kg en máquinas se
-    valúan a la apertura). El bug: ~$63.700.
+    Con la cuenta exacta el ruido es el redondeo del $/kg a 4 decimales en
+    la foto (~100 US$ sobre 2 millones de kg). El bug de agosto: ~$63.700.
+    Para las fotos viejas (sin kilos) queda la tolerancia vieja: ~$1.600 de
+    ruido medido el 07/08 con compras cerca de la apertura.
     """
-    assert 1600 * 3 < hv._HILADO_UKG_TOL_US < 63604 / 3
+    assert 100 * 3 < hv._HILADO_UKG_TOL_US < 63604 / 10
+    assert 1600 * 3 < hv._HILADO_UKG_TOL_US_SIN_KILOS < 63604 / 3
+
+
+# ── 18/09/2026: el falso positivo del sobreprecio ────────────────────────
+
+
+def test_el_18_09_con_la_cuenta_vieja_sonaba_por_el_sobreprecio():
+    """La foto sin kilos cae a la cuenta vieja y da los −10.380 de ese día:
+    el sobreprecio de las compras que se fue con los 195.115 kg de egresos."""
+    out = _correr(_foto_sep(insumos=None), apertura=SEP_APERTURA)
+    assert out["stats"]["con_kilos"] is False
+    assert round(out["stats"]["gap_us"], 0) == -10380.0
+    assert out["ok"] is False
+
+
+def test_el_18_09_con_los_kilos_de_la_foto_se_reconstruye_al_centavo():
+    """Con hi0/hi1/maq el health repite la cuenta de mov_hilado_valuacion y
+    el 3,0953 cierra: la apertura estaba bien y no había nada que arreglar."""
+    out = _correr(_foto_sep(), apertura=SEP_APERTURA)
+    assert out["ok"] is True and out["alerts"] == []
+    assert out["stats"]["con_kilos"] is True
+    assert round(out["stats"]["ukg_esperado"], 4) == 3.0953
+    assert abs(out["stats"]["gap_us"]) < 200
+    assert out["stats"]["hi0"] == SEP_HI0 and out["stats"]["maq"] == SEP_MAQ
+
+
+def test_con_los_kilos_una_apertura_recalculada_si_suena():
+    """El bug de agosto (apertura = cierre del mes en curso, las compras
+    diluidas dos veces) sigue sonando fuerte con la cuenta nueva."""
+    out = _correr(_foto_sep(ukg=3.1253), apertura=SEP_APERTURA)
+    assert out["ok"] is False
+    assert out["alerts"][0]["category"] == "hilado_ukg_no_reconstruible"
+    assert out["stats"]["gap_us"] > 50000
+
+
+def test_hilado_insumos_como_texto_tambien_sirve():
+    import json
+    out = _correr(_foto_sep(insumos=json.dumps(SEP_INSUMOS)), apertura=SEP_APERTURA)
+    assert out["ok"] is True and out["stats"]["con_kilos"] is True
+
+
+def test_tarifa_congelada_no_se_reconstruye():
+    """Si el $/kg se sostuvo porque Asinfo no contestó, no se arma con estos
+    insumos: aviso bajo, sin alarma."""
+    ins = dict(SEP_INSUMOS, tarifa_congelada=True)
+    out = _correr(_foto_sep(ukg=3.0500, insumos=ins), apertura=SEP_APERTURA)
+    assert out["ok"] is True
+    assert [a["category"] for a in out["alerts"]] == ["tarifa_congelada"]

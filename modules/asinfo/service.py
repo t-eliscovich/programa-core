@@ -1965,8 +1965,17 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "recargos_tardios_us": recargos_tardios_us,
         # El desglose de `compras_us` + la apertura con la que se armó el
         # promedio. Va a la foto de la traza (`hilado_insumos`).
+        # ⭐ Y los KILOS con los que se armó (hi0/hi1/maq): sin ellos el $/kg
+        # no se puede reconstruir desde afuera. El health `hilado-ukg` lo
+        # intentaba con una fórmula que ignoraba los egresos del mes, y el
+        # 18/09/2026 sonó por −10.380 US$ que eran el sobreprecio de las
+        # compras (0,62 US$/kg arriba de la apertura) que se fue con los
+        # 195.115 kg consumidos — ruido, no un error. Con los kilos guardados
+        # el chequeo repite ESTA cuenta y la tolerancia puede ser chica.
         "insumos": dict(insumos, open_ukg=_open, kg_con_costo=compras,
-                        kg_sin_costo=kg_sin_costo),
+                        kg_sin_costo=kg_sin_costo,
+                        hi0=hi0, hi1=hi1, maq=maq,
+                        tarifa_congelada=bool(_congelada > 0)),
         "asimetrico": _asimetrico,
         # Con qué cara sale este $/kg: si `tarifa_motivo` no está vacío, los
         # insumos no eran de fiar. `tarifa_congelada` dice si además hubo una

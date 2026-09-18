@@ -1713,21 +1713,37 @@ def espejo_huerfano():
 #
 # Este check no busca ESE bug: busca el SÍNTOMA, que es el mismo venga por
 # donde venga. El $/kg del hilado tiene que ser reconstruible con la
-# aritmética del promedio ponderado y nada más:
+# aritmética del promedio ponderado y nada más — LA MISMA que hace
+# `asinfo.service.mov_hilado_valuacion`:
 #
-#     esperado = ((hilado_kg - compras_kg) * apertura + compras_us) / hilado_kg
+#     promedio = (hi0 * apertura + compras_us) / (hi0 + compras_kg)
+#     esperado = (hi1 * promedio + maq * apertura) / (hi1 + maq)
 #
 # donde `apertura` es el cierre GRABADO del mes anterior (queries.
-# apertura_ukg_hilado). Si el $/kg que se muestra no se reconstruye así, algo
-# lo está moviendo por fuera del promedio ponderado.
+# apertura_ukg_hilado), hi0 el stock de hilo en Asinfo al día 1, hi1 el de
+# hoy y maq los kilos en máquinas (a la apertura, convención de la app). Los
+# tres viajan en `hilado_insumos` de cada foto. Si el $/kg que se muestra no
+# se reconstruye así, algo lo está moviendo por fuera del promedio ponderado.
+#
+# 🚨 Hasta el 18/09/2026 la cuenta era `((hilado_kg − compras_kg) × apertura
+# + compras_us) / hilado_kg`: reparte TODO el sobreprecio de las compras
+# sobre el stock que queda, como si en el mes no hubiera salido un kilo. Pero
+# los egresos salen al promedio y se llevan su parte. Ese día sonó por
+# −10.380 US$ con la apertura PERFECTA (3,0435 = cierre de agosto del PDF):
+# las compras vinieron 0,62 US$/kg más caras (111.818 US$ de sobreprecio) y
+# 195.115 kg salieron con 10.317 de eso. Cuanto más caro el hilo y más
+# consumo, más "gap" — ruido que crecía con el negocio, no con un error. Las
+# fotos viejas sin kilos caen a la cuenta vieja con su tolerancia vieja.
 
 # Tolerancia EN DÓLARES sobre el hilado, no en $/kg: un centavo no dice nada y
-# lo que importa es cuánta plata mueve. Medido el 07/08 con el cálculo ya
-# corregido, la diferencia normal es ~$1.600 — viene de que los kilos "en
-# máquinas" se valúan a la apertura y no al promedio, que es la convención de
-# la app. El bug daba ~$63.700. El umbral queda lejos de los dos: ni un ⚠
-# diario por ruido, ni un agujero que pase. Ver [[feedback_flujo_chequeo_coherencia]].
-_HILADO_UKG_TOL_US = 10000.0
+# lo que importa es cuánta plata mueve. Con la cuenta exacta el ruido es el
+# redondeo del $/kg a 4 decimales en la foto (0,00005 × 2 millones de kg ≈
+# 100 US$). El bug de agosto daba ~$63.700. Ni un ⚠ diario por ruido, ni un
+# agujero que pase. Ver [[feedback_flujo_chequeo_coherencia]].
+_HILADO_UKG_TOL_US = 500.0
+#: Para fotos anteriores al 18/09/2026 (sin hi0/hi1/maq): la cuenta vieja y
+#: su tolerancia vieja, medida con compras cerca de la apertura.
+_HILADO_UKG_TOL_US_SIN_KILOS = 10000.0
 
 
 #: Cuántos minutos puede tener la última foto antes de encender la luz. El
@@ -1847,6 +1863,44 @@ def traza_fresca():
                               "tope_min": _TRAZA_FRESCA_MIN}})
 
 
+def _kilos_de_la_foto(insumos) -> dict | None:
+    """hi0/hi1/maq (+ tarifa_congelada) de `hilado_insumos`, o None si la foto
+    es anterior al 18/09/2026 y no los trae. jsonb llega como dict; en tests
+    y en fotos viejas puede venir como str o None."""
+    if isinstance(insumos, str):
+        try:
+            import json as _json
+            insumos = _json.loads(insumos)
+        except ValueError:
+            return None
+    if not isinstance(insumos, dict):
+        return None
+    try:
+        hi0 = float(insumos.get("hi0") or 0)
+        hi1 = float(insumos.get("hi1") or 0)
+        maq = float(insumos.get("maq") or 0)
+    except (TypeError, ValueError):
+        return None
+    if hi0 <= 0 or (hi1 + maq) <= 0:
+        return None
+    return {"hi0": hi0, "hi1": hi1, "maq": maq,
+            "tarifa_congelada": bool(insumos.get("tarifa_congelada"))}
+
+
+def _ukg_esperado(hil_kg: float, com_kg: float, com_us: float,
+                  apertura: float, kilos: dict | None) -> tuple[float, float]:
+    """(esperado, tolerancia). Con kilos: la cuenta de mov_hilado_valuacion.
+    Sin kilos (foto vieja): la cuenta aproximada de antes, con su tolerancia."""
+    if kilos:
+        hi0, hi1, maq = kilos["hi0"], kilos["hi1"], kilos["maq"]
+        avg = ((hi0 * apertura + com_us) / (hi0 + com_kg)
+               if (hi0 + com_kg) > 0 else apertura)
+        esperado = (hi1 * avg + maq * apertura) / (hi1 + maq)
+        return esperado, _HILADO_UKG_TOL_US
+    esperado = ((hil_kg - com_kg) * apertura + com_us) / hil_kg
+    return esperado, _HILADO_UKG_TOL_US_SIN_KILOS
+
+
 @bp.route("/hilado-ukg", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
@@ -1858,7 +1912,7 @@ def hilado_ukg_reconstruible():
     fila = db.fetch_one(
         """
         SELECT creado_en, hilado_kg, hilado_ukg, compras_kg, compras_us,
-               kg_sin_costo
+               kg_sin_costo, hilado_insumos
           FROM scintela.traza_utilidad
          ORDER BY creado_en DESC, id_traza DESC
          LIMIT 1
@@ -1943,15 +1997,33 @@ def hilado_ukg_reconstruible():
         })
         return jsonify({"ok": True, "alerts": alerts, "stats": stats})
 
-    esperado = ((hil_kg - com_kg) * apertura + com_us) / hil_kg
+    kilos = _kilos_de_la_foto(fila.get("hilado_insumos"))
+    if kilos and kilos.get("tarifa_congelada"):
+        # El $/kg se sostuvo a propósito (Asinfo no contestó las compras): no
+        # se arma con estos insumos, así que no hay nada que reconstruir. Eso
+        # ya lo grita el balance y el bloque compras_del_mes_en_cero.
+        stats["tarifa_congelada"] = True
+        alerts.append({
+            "severity": "low",
+            "category": "tarifa_congelada",
+            "msg": ("La última foto sostiene el $/kg anterior porque los "
+                    "insumos no llegaron: no se reconstruye hasta que Asinfo "
+                    "conteste."),
+        })
+        return jsonify({"ok": True, "alerts": alerts, "stats": stats})
+
+    esperado, tol = _ukg_esperado(hil_kg, com_kg, com_us, apertura, kilos)
     gap_ukg = ukg_real - esperado
     gap_us = gap_ukg * hil_kg
     stats["ukg_esperado"] = round(esperado, 6)
     stats["gap_ukg"] = round(gap_ukg, 6)
     stats["gap_us"] = round(gap_us, 2)
-    stats["tolerancia_us"] = _HILADO_UKG_TOL_US
+    stats["tolerancia_us"] = tol
+    stats["con_kilos"] = bool(kilos)
+    if kilos:
+        stats.update({k: round(float(kilos[k]), 2) for k in ("hi0", "hi1", "maq")})
 
-    if abs(gap_us) > _HILADO_UKG_TOL_US:
+    if abs(gap_us) > tol:
         alerts.append({
             "severity": "high",
             "category": "hilado_ukg_no_reconstruible",
