@@ -1,0 +1,211 @@
+{% extends "base.html" %}
+{# TMT 2026-09-18 (dueña, sobre la hoja de MTM): "está mal los títulos…
+   pagada por y monto tiene que ser dos columnas… stat queda raro, mejorá
+   visualización". Lo que se mira en esta hoja es, POR FACTURA, qué cobros la
+   pagaban y cómo estaba, y qué cobros la pagan y cómo quedó. Dos bloques
+   iguales (Antes / Después), un renglón por cobro, el estado con palabra. #}
+{% block title %}Totalizar del {{ corrida.fecha | fecha_es }} — {{ data.cliente.codigo_cli }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
+  <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}" class="hover:underline">{{ data.cliente.codigo_cli }}</a> /
+  <strong>Totalizar del {{ corrida.fecha | fecha_es }}</strong>
+{% endblock %}
+
+{% block content %}
+<style>
+  .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
+          padding:1.25rem 1.5rem; margin:1rem auto; max-width:1120px; border-radius:4px; color:#0f172a; }
+  .hoja h1 { font-size:15px; font-weight:700; text-transform:uppercase; letter-spacing:.04em; margin:0; }
+  .hoja .sub { font-size:12px; color:#475569; margin-top:2px; }
+  .kpis { display:flex; gap:28px; flex-wrap:wrap; margin:12px 0 10px; }
+  .kpi { font-size:11px; color:#64748b; text-transform:uppercase; letter-spacing:.03em; }
+  .kpi b { display:block; font-size:15px; font-family:ui-monospace,monospace; color:#0f172a; text-transform:none; letter-spacing:0; }
+  .tabla-scroll { overflow-x:auto; }
+  .hoja table { width:100%; border-collapse:collapse; }
+  .hoja th, .hoja td { padding:4px 6px !important; font-size:11.5px; vertical-align:top; }
+  .hoja thead th { font-size:10px !important; text-transform:uppercase; letter-spacing:.03em; color:#475569;
+                   text-align:left; border-bottom:1px solid #94a3b8; padding-top:5px; padding-bottom:5px; }
+  .hoja thead tr.grupo th { font-size:10.5px !important; font-weight:700; color:#0f172a; text-align:center;
+                            border-bottom:none; padding-bottom:2px; letter-spacing:.06em; }
+  .hoja thead tr.grupo th.antes { background:#f1f5f9; }
+  .hoja thead tr.grupo th.despues { background:#ecfdf5; }
+  .hoja th.num, .hoja td.num { text-align:right; font-family:ui-monospace,monospace; white-space:nowrap; }
+  .hoja td.mono { font-family:ui-monospace,monospace; white-space:nowrap; }
+  .hoja td.fact { border-top:1px solid #cbd5e1; }
+  .hoja tr.primera td { border-top:1px solid #cbd5e1; }
+  .hoja tbody td { border-top:none; }
+  /* base.html subraya cada <tr> y pinta el hover: acá el renglón es un cobro,
+     no una factura — la raya va sólo entre facturas (tr.primera). */
+  main .hoja tbody tr { border-bottom:none !important; }
+  main .hoja tbody tr:hover { background:transparent !important; }
+  .hoja tbody tr:not(.primera) td.con { border-top:1px dotted #e2e8f0; }
+  .hoja td.gris { color:#64748b; }
+  .hoja .sep { border-left:2px solid #94a3b8; }
+  .hoja tfoot td { border-top:2px solid #1e293b; font-weight:600; font-size:12px; padding-top:7px !important; }
+  .estado { display:inline-block; min-width:1.6rem; text-align:center; padding:1px 6px; border-radius:9999px;
+            font-size:10px; font-weight:700; font-family:ui-monospace,monospace; white-space:nowrap; }
+  .estado-T { background:#d1fae5; color:#047857; }
+  .estado-A { background:#fef3c7; color:#b45309; }
+  .estado-Z { background:#e2e8f0; color:#475569; }
+  .fila-nc td.fact, .fila-nc td.mono, .fila-nc td.num.imp { color:#b45309; }
+  .sin { color:#94a3b8; }
+  .deuda { color:#b91c1c; }
+  .favor { color:#047857; }
+  @media print {
+    .no-print { display:none !important; }
+    body { background:#fff !important; color:#000 !important; }
+    @page { margin:1cm; size: landscape; }
+    .hoja { border:none !important; box-shadow:none !important; margin:0 !important; max-width:none !important; padding:0 2px !important; }
+    .hoja h1 { font-size:12px !important; }
+    .hoja .sub { font-size:9px !important; color:#000 !important; }
+    .kpis { gap:16px !important; margin:6px 0 !important; }
+    .kpi { font-size:8px !important; color:#000 !important; }
+    .kpi b { font-size:10px !important; }
+    .hoja table { border:1px solid #000 !important; }
+    .hoja th, .hoja td { border:1px solid #000 !important; padding:2px 4px !important; font-size:9px !important;
+                         color:#000 !important; background:#fff !important; }
+    .hoja thead th { font-size:8px !important; font-weight:700 !important; }
+    .hoja thead tr.grupo th { font-size:9px !important; }
+    .hoja tfoot td { font-size:9.5px !important; }
+    .hoja .sep { border-left:2px solid #000 !important; }
+    .estado { background:none !important; color:#000 !important; padding:0 !important; font-weight:normal !important; }
+    .hoja td.gris, .sin, .deuda, .favor { color:#000 !important; }
+    .tabla-scroll { overflow:visible; }
+  }
+</style>
+
+{# TMT 2026-09-18 (dueña): "mantené el A T Z" — la letra, como en todo el programa. #}
+{% macro estado(st) -%}
+  <span class="estado estado-{{ st if st in ('T','A','Z') else 'Z' }}">{{ st or '—' }}</span>
+{%- endmacro %}
+
+{% if error %}
+  <div class="no-print mb-4 rounded-md bg-red-100 border border-red-300 text-red-800 px-3 py-2">{{ error }}</div>
+{% endif %}
+
+<div class="no-print max-w-6xl mx-auto mt-2 flex items-center justify-between gap-3 flex-wrap">
+  <h1 class="text-xl font-semibold">Totalizar del {{ corrida.fecha | fecha_es }} <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
+  <div class="flex items-center gap-2">
+    <a href="{{ volver_a(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
+       class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli), '← Volver al estado de cuenta') }}</a>
+    <button type="button" onclick="window.print()"
+            class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Imprimir</button>
+  </div>
+</div>
+
+<div class="no-print max-w-6xl mx-auto mt-3 rounded bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2"
+     style="font-size:12px; line-height:1.5">
+  La hoja del totalizar que se hizo el <strong>{{ corrida.fecha | fecha_es }}</strong>{% if corrida.usuario %} ({{ corrida.usuario }}){% endif %}.
+  A la izquierda, cada factura como estaba y qué cobros la pagaban; a la derecha, cómo la dejó el reparto y qué cobros la pagan ahora.
+  Un abono sin cobro al lado vino de afuera (Asinfo, importación vieja) y no tiene cheque en el programa.
+  {% if corrida.deshecha %}<strong style="color:#b45309">Este totalizar después se deshizo.</strong>{% endif %}
+</div>
+
+<div class="hoja">
+  <h1>Totalizar estado de cuenta — {{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})</h1>
+  <div class="sub">Hecho el {{ corrida.fecha | fecha_es }}{% if corrida.usuario %} por {{ corrida.usuario }}{% endif %} · {{ data.filas | length }} factura{{ '' if data.filas|length == 1 else 's' }} re-liquidadas</div>
+  <div class="kpis">
+    <div class="kpi">Facturado <b>{{ data.sum_importe | money_es }}</b></div>
+    {% if data.sum_retencion > 0.005 %}<div class="kpi">Retenciones (no se reparten) <b>{{ data.sum_retencion | money_es }}</b></div>{% endif %}
+    <div class="kpi">Abonos repartidos <b>{{ data.pool | money_es }}</b></div>
+    <div class="kpi">Deuda (no cambia) <b>{{ data.sum_saldo_despues | money_es }}</b></div>
+    <div class="kpi">Quedan <b>{{ data.n_T }} T · {{ data.n_A }} A · {{ data.n_Z }} Z</b></div>
+  </div>
+
+  <div class="tabla-scroll">
+  {# data-no-sort-table: hoja de informe con orden fijo (y con rowspan, que el sortable rompería). #}
+  <table data-no-sort-table>
+    <thead>
+      <tr class="grupo">
+        <th colspan="3"></th>
+        <th colspan="4" class="antes sep">Antes del totalizar</th>
+        <th colspan="4" class="despues sep">Después</th>
+      </tr>
+      <tr>
+        <th>Fecha</th>
+        <th>Factura</th>
+        <th class="num">Importe</th>
+        <th class="sep">Cobro</th>
+        <th class="num">$</th>
+        <th class="num">Saldo</th>
+        <th style="text-align:center">Stat</th>
+        <th class="sep">Cobro</th>
+        <th class="num">$</th>
+        <th class="num">Saldo</th>
+        <th style="text-align:center">Stat</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for f in data.filas %}
+        {# TMT 2026-09-18 (dueña: "no hace falta tres columnas, ¿cómo
+           sintetizamos?"): sin columna Abono — el abono es la suma de los
+           cobros; lo que no tiene cobro en el programa va como un renglón
+           "sin cobro" con su importe, y la columna $ suma el abono. #}
+        {% set ca = (f.cobros_antes or []) | list %}
+        {% set cd = (f.cobros_despues or []) | list %}
+        {% set resto_a = (f.abono_actual - (ca | sum(attribute='importe'))) | round(2) %}
+        {% set resto_d = (f.abono_nuevo - (cd | sum(attribute='importe'))) | round(2) %}
+        {% if resto_a > 0.005 or resto_a < -0.005 %}{% set ca = ca + [{'rotulo': 'sin cobro', 'importe': resto_a, 'sin': true}] %}{% endif %}
+        {% if resto_d > 0.005 or resto_d < -0.005 %}{% set cd = cd + [{'rotulo': 'sin cobro', 'importe': resto_d, 'sin': true}] %}{% endif %}
+        {% set n = [ca | length, cd | length, 1] | max %}
+        {% for i in range(n) %}
+        <tr class="{{ 'primera' if i == 0 }} {{ 'fila-nc' if f.importe < 0 }}">
+          {% if i == 0 %}
+          <td class="fact mono" rowspan="{{ n }}">{{ f.fecha | fecha_es }}</td>
+          <td class="fact mono" rowspan="{{ n }}">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}{% if f.importe < 0 %} NC{% endif %}</td>
+          <td class="fact num imp" rowspan="{{ n }}">{{ f.importe | money_es }}</td>
+          {% endif %}
+          {% if i < ca | length %}
+            <td class="mono sep con {{ 'sin' if ca[i].sin }}">{{ ca[i].rotulo }}</td>
+            <td class="num con {{ 'sin' if ca[i].sin }}">{{ ca[i].importe | money_es }}</td>
+          {% elif i == 0 %}
+            <td class="mono sep sin">—</td>
+            <td class="num sin"></td>
+          {% else %}
+            <td class="sep"></td><td></td>
+          {% endif %}
+          {% if i == 0 %}
+          <td class="num gris" rowspan="{{ n }}">{{ f.saldo_actual | money_es }}</td>
+          <td rowspan="{{ n }}" style="text-align:center">{{ estado(f.stat_actual) }}</td>
+          {% endif %}
+          {% if i < cd | length %}
+            <td class="mono sep con {{ 'sin' if cd[i].sin }}">{{ cd[i].rotulo }}</td>
+            <td class="num con {{ 'sin' if cd[i].sin }}">{{ cd[i].importe | money_es }}</td>
+          {% elif i == 0 %}
+            <td class="mono sep sin">—</td>
+            <td class="num sin"></td>
+          {% else %}
+            <td class="sep"></td><td></td>
+          {% endif %}
+          {% if i == 0 %}
+          <td class="num {{ 'favor' if f.saldo_nuevo < -0.005 else ('deuda' if f.saldo_nuevo > 0.005 else '') }}" rowspan="{{ n }}" style="font-weight:600">{{ f.saldo_nuevo | money_es }}</td>
+          <td rowspan="{{ n }}" style="text-align:center">{{ estado(f.stat_nuevo) }}</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="2">Totales ({{ data.filas | length }} factura{{ '' if data.filas|length == 1 else 's' }})</td>
+        <td class="num">{{ data.sum_importe | money_es }}</td>
+        <td class="sep"></td>
+        <td class="num">{{ data.pool | money_es }}</td>
+        <td class="num">{{ data.sum_saldo_antes | money_es }}</td>
+        <td></td>
+        <td class="sep"></td>
+        <td class="num">{{ data.sum_abono_despues | money_es }}</td>
+        <td class="num">{{ data.sum_saldo_despues | money_es }}</td>
+        <td></td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+  <div style="margin-top:8px; font-size:11px; color:#64748b">
+    Las T (totalizadas) dejan de mostrarse en el estado de cuenta. La deuda total no cambia:
+    {{ data.sum_saldo_antes | money_es }} antes = {{ data.sum_saldo_despues | money_es }} después.
+    {% if data.sum_retencion > 0.005 %}La retención de cada factura queda donde está: no se reparte.{% endif %}
+    "Sin cobro" es abono que no tiene cheque ni depósito en el programa (Asinfo, importación vieja).
+  </div>
+</div>
+{% endblock %}

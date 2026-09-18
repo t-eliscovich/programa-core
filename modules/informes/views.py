@@ -4619,8 +4619,8 @@ def estado_cuenta_totalizar_hoja(codigo_cli, id_mov_doble: int):
     if not data or (data.get("cliente") or {}).get("codigo_cli") != codigo_up:
         abort(404)
     return render_template(
-        "informes/totalizar_preview.html", data=data, error=error,
-        hoy=data["corrida"]["fecha"], hasta="", hoja_guardada=data["corrida"],
+        "informes/hoja_totalizar.html", data=data, error=error,
+        corrida=data["corrida"],
     )
 
 

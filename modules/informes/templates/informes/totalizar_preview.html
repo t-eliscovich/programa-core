@@ -3,11 +3,11 @@
    réplica mejorada del dBase CUENTA.PRG rama 'Y'. Muestra EXACTAMENTE lo que
    va a quedar (estilo dBase) antes de ejecutar. Imprimible (patrón
    resumen_dia.html). #}
-{% block title %}{% if hoja_guardada %}Hoja del totalizar {{ hoja_guardada.fecha | fecha_es }} — {{ data.cliente.codigo_cli }}{% else %}Totalizar — {{ data.cliente.codigo_cli }}{% endif %}{% endblock %}
+{% block title %}Totalizar — {{ data.cliente.codigo_cli }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
   <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}" class="hover:underline">{{ data.cliente.codigo_cli }}</a> /
-  <strong>{% if hoja_guardada %}Hoja del totalizar del {{ hoja_guardada.fecha | fecha_es }}{% else %}Totalizar{% endif %}</strong>
+  <strong>Totalizar</strong>
 {% endblock %}
 
 {% block content %}
@@ -26,18 +26,13 @@
                          font-size: 9.5px !important; color: #000 !important; background: #fff !important; }
     .hoja th { font-size: 8.5px !important; }
     .hoja tfoot td { font-size: 10px !important; }
-    .hoja td.num, .hoja td, .hoja th { font-weight: normal !important; }
-    .hoja tfoot td, .hoja th { font-weight: 700 !important; }
     .stat-pill { background: none !important; color: #000 !important; padding: 0 !important; border-radius: 0 !important; }
     .fila-nc td { background: #fff !important; }
     .sep-despues { border-left: 2px solid #000 !important; }
     .kpis { gap: 14px !important; margin: 4px 0 !important; }
     .kpi { font-size: 9px !important; color: #000 !important; }
     .kpi b { font-size: 11px !important; }
-    .cobros { font-size: 8.5px !important; }
   }
-  .cobros { font-family: ui-monospace, monospace; font-size: 10px; color: #475569; white-space: nowrap; line-height: 1.35; }
-  .cobros span { display: block; }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
           padding:1.5rem 1.75rem; margin:1rem auto; max-width:980px; border-radius:4px; }
   .hoja h1 { font-size:16px; font-weight:700; text-transform:uppercase; letter-spacing:.05em; color:#0f172a; }
@@ -82,7 +77,7 @@
 {% endif %}
 
 <div class="no-print max-w-5xl mx-auto mt-2 flex items-center justify-between gap-3 flex-wrap">
-  <h1 class="text-xl font-semibold">{% if hoja_guardada %}Hoja del totalizar del {{ hoja_guardada.fecha | fecha_es }}{% else %}Totalizar estado de cuenta{% endif %} <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
+  <h1 class="text-xl font-semibold">Totalizar estado de cuenta <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
   <div class="flex items-center gap-2">
     <a href="{{ volver_a(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli), '← Volver al estado de cuenta') }}</a>
@@ -90,20 +85,6 @@
             class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Imprimir</button>
   </div>
 </div>
-
-{# TMT 2026-09-18 (dueña: "cuando totalizamos imprimimos, ¿no? quisiera
-   re-entrar a ese archivo"): la misma hoja, armada desde la foto que guardó
-   la corrida. Sólo lectura: sin aviso previo, sin corte por fecha, sin
-   Confirmar. #}
-{% if hoja_guardada %}
-  <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2"
-       style="font-size:12px; line-height:1.5">
-    Esta es la hoja del totalizar que se hizo el <strong>{{ hoja_guardada.fecha | fecha_es }}</strong>{% if hoja_guardada.usuario %} ({{ hoja_guardada.usuario }}){% endif %},
-    tal como quedó ese día: a la izquierda cómo estaba cada factura y qué cobros la pagaban, a la derecha cómo la dejó y qué cobros la pagan ahora.
-    El abono que no tiene un cobro al lado vino de afuera (Asinfo, importación vieja) y no tiene cheque en el programa.
-    {% if hoja_guardada.deshecha %}<strong style="color:#b45309">Este totalizar después se deshizo.</strong>{% endif %}
-  </div>
-{% endif %}
 
 {% if data.nada_que_hacer %}
   <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
@@ -117,7 +98,6 @@
   {# TMT 2026-08-20 (dueña: "este aviso podría ser mucho más chico"): tres
      renglones corridos en vez de cuatro viñetas con marco grueso. Dice lo
      mismo. #}
-  {% if not hoja_guardada %}
   <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2"
        style="font-size:12px; line-height:1.5">
     <strong>Antes de confirmar:</strong>
@@ -126,7 +106,6 @@
     {% if data.hay_nc %}Las notas de crédito entran al reparto.{% endif %}
     Se deshace desde el ↺ del Historial, mientras nadie cobre ni cambie el estado de estas facturas.
   </div>
-  {% endif %}
 
   <div class="hoja">
     {# Encabezado imprimible #}
@@ -150,12 +129,10 @@
           <th class="num">Abono</th>
           <th class="num">Saldo</th>
           <th style="text-align:center">Stat</th>
-          {% if data.con_cobros %}<th>Pagada por</th>{% endif %}
           <th class="sep-despues"></th>
           <th class="num">Abono →</th>
           <th class="num">Saldo →</th>
           <th style="text-align:center">Stat →</th>
-          {% if data.con_cobros %}<th>Pagada por →</th>{% endif %}
         </tr>
       </thead>
       <tbody>
@@ -171,16 +148,10 @@
           <td class="num" style="color:#64748b">{{ f.abono_actual | money_es }}</td>
           <td class="num" style="color:#64748b">{{ f.saldo_actual | money_es }}</td>
           <td style="text-align:center">{{ stat_badge(f.stat_actual) }}</td>
-          {% if data.con_cobros %}
-          <td class="cobros">{% for c in f.cobros_antes %}<span>{{ c.rotulo }} {{ c.importe | money_es }}</span>{% else %}<span style="color:#94a3b8">—</span>{% endfor %}</td>
-          {% endif %}
           <td class="sep-despues flecha" style="text-align:center">{{ '→' if f.cambia else '=' }}</td>
           <td class="num" style="font-weight:600">{{ f.abono_nuevo | money_es }}</td>
           <td class="num" style="font-weight:600; {{ 'color:#047857' if f.saldo_nuevo < -0.005 else ('color:#b91c1c' if f.saldo_nuevo > 0.005 else '') }}">{{ f.saldo_nuevo | money_es }}</td>
           <td style="text-align:center">{{ stat_badge(f.stat_nuevo) }}</td>
-          {% if data.con_cobros %}
-          <td class="cobros">{% for c in f.cobros_despues %}<span>{{ c.rotulo }} {{ c.importe | money_es }}</span>{% else %}<span style="color:#94a3b8">—</span>{% endfor %}</td>
-          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
@@ -192,12 +163,10 @@
           <td class="num">{{ data.pool | money_es }}</td>
           <td class="num">{{ data.sum_saldo_antes | money_es }}</td>
           <td></td>
-          {% if data.con_cobros %}<td></td>{% endif %}
           <td class="sep-despues"></td>
           <td class="num">{{ data.sum_abono_despues | money_es }}</td>
           <td class="num">{{ data.sum_saldo_despues | money_es }}</td>
           <td></td>
-          {% if data.con_cobros %}<td></td>{% endif %}
         </tr>
       </tfoot>
     </table>
@@ -210,8 +179,6 @@
       {% if (data.sum_saldo_despues - data.sum_saldo_antes) | abs > 0.01 %}<strong style="color:#b91c1c">⚠ No cuadra — no confirmar, avisar.</strong>{% endif %}
     </div>
   </div>
-
-  {% if not hoja_guardada %}
 
   {# TMT 2026-07-06 (dueña: "¿cómo elegís hasta dónde totalizar?"):
      corte opcional por fecha inclusive — lo posterior no se toca. #}
@@ -269,7 +236,6 @@
       }
     })();
   </script>
-  {% endif %}
 {% else %}
   <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
     Este cliente no tiene facturas vivas (Z/A) — nada que totalizar.

@@ -12329,6 +12329,8 @@ def totalizar_hoja_guardada(id_mov_doble: int) -> dict:
         "cliente": cliente,
         "filas": filas,
         "con_cobros": True,
+        "sum_cobros_antes": round(sum(c["importe"] for f in filas for c in f["cobros_antes"]), 2),
+        "sum_cobros_despues": round(sum(c["importe"] for f in filas for c in f["cobros_despues"]), 2),
         "n_links": int(md.get("n_links_borrados") or 0),
         "pool": round(float(md.get("pool") or 0), 2),
         "hay_nc": any(f["importe"] < 0 for f in filas),
