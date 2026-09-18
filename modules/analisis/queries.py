@@ -529,6 +529,72 @@ def _fijar_puntos(conn=None) -> None:
              nivel, PUNTOS[nivel], hoy), conn=conn)
 
 
+def _completar_puntos(conn=None) -> list[str]:
+    """Puntaje para la tela que entró a la lista después del congelamiento.
+
+    `_fijar_puntos()` escribe UNA vez y no vuelve. Pero la cohorte sigue
+    creciendo (de segunda, ver `actualizar()`), y una tela que no existía en la
+    lista el 25/08 no tiene fila en `parado_punto`: `puntos_por_tela()` no la
+    encuentra y la pantalla la cobra a 1 punto por kilo — el default del
+    "sin fila", no una decisión. El health `competencia_sin_puntaje` lo cantó
+    el 18/09/2026 con Toper 1.80 (41,5 kg de segunda, entrados el 10 y el
+    15/09, vendidos el 17). Por la regla daba 1 igual (5.059 kg vendidos en 12
+    meses contra 41,5 parados: 0,1 meses), pero tenía que salir de la regla.
+
+    Se calcula el día que entra, con la MISMA fórmula que las demás
+    (`_nivel()`: kilos parados de la tela ÷ venta mensual de 12 meses en
+    Asinfo), y queda congelado como el resto: `fijado_el` = hoy. Devuelve las
+    telas que escribió.
+
+    ⚠ Sólo completa; nunca toca una fila que ya existe. Y sin la venta de 12
+    meses no escribe nada (fail-closed, igual que `_fijar_puntos()`): sin el
+    dato la tela daría "difícil" y valdría 10 por un corte de Metabase. Se
+    queda sin fila y el health la sigue cantando.
+    """
+    fila = db.fetch_one(
+        "SELECT MIN(fijado_el) AS f FROM scintela.parado_punto", conn=conn)
+    if not fila or not fila["f"]:
+        return []
+    faltan = db.fetch_all(
+        """SELECT DISTINCT c.subcategoria
+             FROM scintela.parado_cohorte c
+             LEFT JOIN scintela.parado_punto p ON p.subcategoria = c.subcategoria
+            WHERE NOT c.fuera AND p.subcategoria IS NULL""", conn=conn)
+    telas = {f["subcategoria"] for f in faltan if f.get("subcategoria")}
+    if not telas:
+        return []
+    venta12 = asinfo_parado.venta_por_tela()
+    if not venta12:
+        return []
+    agg: dict[str, dict] = {}
+    for f in items(conn):
+        if f["subcategoria"] not in telas:
+            continue
+        d = agg.setdefault(f["subcategoria"], {"cat": None, "kg": 0.0})
+        d["kg"] += float(f["stock_kg"] or 0) + float(f["kg_vendidos"] or 0)
+        if f["categoria"]:
+            d["cat"] = f["categoria"]
+    hoy = today_ec()
+    escritas: list[str] = []
+    for sub in sorted(telas):
+        d = agg.get(sub) or {"cat": None, "kg": 0.0}
+        v = venta12.get(sub) or {}
+        k12 = float(v.get("kg") or 0)
+        nivel, meses = _nivel(d["kg"], k12)
+        db.execute(
+            """INSERT INTO scintela.parado_punto
+                   (subcategoria, categoria, kg_base, kg_12m, kg_seg_12m, meses,
+                    nivel, puntos, fijado_el)
+               VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+               ON CONFLICT (subcategoria) DO NOTHING""",
+            (sub, d["cat"], round(d["kg"], 2), round(k12, 2),
+             round(float(v.get("seg") or 0), 2),
+             round(meses, 2) if meses is not None else None,
+             nivel, PUNTOS[nivel], hoy), conn=conn)
+        escritas.append(sub)
+    return escritas
+
+
 def _puntos_provisorios() -> dict[str, dict]:
     """Todas las telas a 1 punto: la competencia de kilos de siempre.
 
@@ -1181,8 +1247,33 @@ def actualizar() -> dict:
         pedidas = [p for p in fuera if p.get("pedida")]
         produciendo = [p for p in fuera if p.get("produciendo")]
 
-        # 1 · la cohorte SÓLO crece
+        # ⭐⭐ DESPUÉS DE LA LARGADA SÓLO ENTRA SEGUNDA (dueña 18/09/2026:
+        # "de la tela parada no debería entrar nueva, solo de segunda").
+        #
+        # "La cohorte sólo crece" dejaba entrar, en cada refresco, cualquier
+        # tela × color que ESE día cumpliera la regla de parada: 12 meses sin
+        # venta, 90 días en bodega, sin pedido ni orden. Pero la que cruza esa
+        # línea después de la largada no es un saldo que la competencia vino a
+        # destrabar: es tela que se estancó DURANTE la carrera. Medido el
+        # 18/09: 5 ítems, 438 kg, entrados como parada entre el 08 y el 15/09
+        # (Asturias CAR/ELE, Fleece 96 Perchado COJ, Toper ACM, Microfibra 1.2
+        # LIF), ninguno vendido. La migración 0251 los apaga.
+        #
+        # La segunda entra igual, siempre: "sí, la segunda siempre entra".
+        #
+        # Y por la misma razón, después de la largada la apagada NO vuelve
+        # sola. "Vuelve cuando cumpla los 90 días / cuando salga el pedido"
+        # (mig 0217) era la misma puerta por otro lado: tela recién hecha el
+        # 25/08 que hoy ya cumplió los 90 días es tela nueva que se estancó
+        # después, no un saldo de la largada.
+        pasada_largada = hoy > largada_f
+
+        # 1 · la cohorte SÓLO crece — y después de la largada, sólo de segunda
         for p in par:
+            k = (p["subcategoria"], p["color"])
+            if (pasada_largada and k not in motivo_previo
+                    and (p.get("motivo") or "parado") == "parado"):
+                continue
             db.execute(
                 """INSERT INTO scintela.parado_cohorte
                        (subcategoria, color, fecha_marcado, kg_al_marcar, motivo)
@@ -1208,10 +1299,13 @@ def actualizar() -> dict:
             # está parada.
             # Vuelve con su `fecha_marcado` original — nunca se fue de la
             # cohorte, sólo estaba apagada.
-            db.execute(
-                """UPDATE scintela.parado_cohorte SET fuera = FALSE
-                    WHERE subcategoria = %s AND color = %s AND fuera""",
-                (p["subcategoria"], p["color"]), conn=conn)
+            # ⭐ Sólo hasta la largada: después, la que cumple los 90 días es
+            # tela nueva que se estancó durante la carrera (ver arriba).
+            if not pasada_largada:
+                db.execute(
+                    """UPDATE scintela.parado_cohorte SET fuera = FALSE
+                        WHERE subcategoria = %s AND color = %s AND fuera""",
+                    (p["subcategoria"], p["color"]), conn=conn)
 
         # ⚠ Apagar, no borrar. La cohorte es deliberadamente inmutable ("si
         # empezamos a venderlas, que no se nos vayan de la lista"), así que la
@@ -1231,7 +1325,12 @@ def actualizar() -> dict:
         # meses): quedaba apagada para siempre con su venta adentro. Inter BLA
         # el 09/09/2026, después de corregir la regla del pedido: seguía
         # `fuera` porque nadie la volvía a prender.
-        for p in todas:
+        # ⚠ Tampoco después de la largada (dueña 18/09/2026): el caso Inter
+        # BLA ya no puede repetirse porque `_descalifica()` ignora el pedido
+        # que nace después, así que lo único que quedaría por prender acá es
+        # tela que dejó de ser reciente/pedida durante la carrera — y ésa no
+        # entra.
+        for p in todas if not pasada_largada else []:
             k = (p["subcategoria"], p["color"])
             if k in apagado_previo and not _descalifica(p):
                 db.execute(
@@ -1520,6 +1619,10 @@ def actualizar() -> dict:
         # largada se reescriben en cada refresco (es una previsualización),
         # desde la largada se escriben una vez y no se tocan más.
         _fijar_puntos(conn)
+        # ⭐ Y la tela que entra a la lista DESPUÉS del congelamiento recibe
+        # su puntaje el día que entra, con la misma regla — no el 1 por
+        # default del "sin fila" (dueña 18/09/2026, Toper 1.80).
+        _completar_puntos(conn)
 
         db.execute(
             """UPDATE scintela.parado_refresh
