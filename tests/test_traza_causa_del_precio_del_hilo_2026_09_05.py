@@ -123,11 +123,11 @@ def test_la_nota_del_dia_lee_la_causa_de_las_dos_fotos():
     from modules.informes import dia
     filas = [dict(ANT, id_traza=10), dict(HOY, id_traza=20)]
     with patch.object(dia, "_rows", return_value=filas):
-        c = dia._causa_tarifa_del_dia({"id_traza": 10}, {"id_traza": 20})
+        c, _stock = dia._fotos_del_dia({"id_traza": 10}, {"id_traza": 20})
     assert "MD 1 y AC 39" in c
-    assert dia._causa_tarifa_del_dia({}, {"id_traza": 20}) == ""
+    assert dia._fotos_del_dia({}, {"id_traza": 20}) == ("", {})
     with patch.object(dia, "_rows", side_effect=RuntimeError("sin base")):
-        assert dia._causa_tarifa_del_dia({"id_traza": 10}, {"id_traza": 20}) == ""
+        assert dia._fotos_del_dia({"id_traza": 10}, {"id_traza": 20}) == ("", {})
 
 
 def test_si_no_entro_plata_lo_dice():

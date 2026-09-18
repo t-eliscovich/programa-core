@@ -1220,7 +1220,102 @@ def _ancla_del_anticipo(grupos: dict) -> tuple[dict | None, dict | None]:
     return (conv, conv.get("evento")) if conv else (None, None)
 
 
-def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
+def stock_de_la_ventana(fila: dict | None, anterior: dict | None) -> dict:
+    """Lo que el renglón del anticipo necesita para quedarse SÓLO con el lote.
+
+    Sale de las dos fotos de `traza_utilidad` (o de `dia_captura`, que guarda
+    las mismas columnas de kilos): cuántos kilos de hilado COMPRADOS entraron
+    entre una y otra (`compras_kg`, que es lo que trae la importación, no el
+    Δ del hilado, que ya tiene descontado lo que se fue a tejer), el $/kg del
+    hilado ANTES, y los kilos de cada etapa después. Devuelve `{}` si falta
+    algo o si no entró ningún lote: ahí la regla sigue como siempre.
+    """
+    if not fila or not anterior:
+        return {}
+    from modules.informes.foto import ORDEN_ETAPAS
+
+    def _v(f, col):
+        v = (f or {}).get(col)
+        return None if v is None else float(v)
+    ck0, ck1 = _v(anterior, "compras_kg"), _v(fila, "compras_kg")
+    p0, p1 = _v(anterior, "hilado_ukg"), _v(fila, "hilado_ukg")
+    if ck0 is None or ck1 is None or not p0 or not p1:
+        return {}
+    lote_kg = round(ck1 - ck0, 2)
+    if lote_kg <= 0:
+        return {}
+    kg, dkg = {}, {}
+    for et in ORDEN_ETAPAS:
+        k0, k1 = _v(anterior, f"{et}_kg"), _v(fila, f"{et}_kg")
+        if k0 is None or k1 is None:
+            return {}
+        kg[et], dkg[et] = k1, round(k1 - k0, 2)
+    return {"lote_kg": lote_kg, "p0": p0, "p1": p1, "kg": kg, "dkg": dkg}
+
+
+def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
+                    stock: dict) -> None:
+    """Tres renglones donde había uno: el lote, la revaluación, y el resto.
+
+    ⭐ Tamara 18/09/2026, sobre la ventana de las 11:02 (AC 40, 24.494 kg):
+    el renglón único decía "entró la mercadería de 4 anticipos −3.021" y
+    adentro llevaba 833 kg de tejido y terminado que se fueron por la puerta
+    en esa misma ventana. *"Si una regla absorbe lo que no explica, la
+    pantalla dice 'todas explicadas' y no es cierto"*. La regla se queda
+    con lo suyo —el hilado que trajo el lote— y lo demás queda con nombre.
+
+        1. el lote          Ant −82.829 / Stk +82.829     aporte 0
+        2. revaluó el stock  lo que el hilado vale de más o de menos que
+                            la plata que entró: kg × $/kg viejo + la
+                            revaluación de todo el stock − el anticipo
+        3. el resto          los kilos de las otras etapas, con su texto
+                            ("salió de tej. y term."), en el renglón Stock
+
+    La suma de los tres es la misma de antes: no se pierde ni se inventa un
+    centavo, sólo se deja de esconder el tercero adentro del primero.
+    """
+    lote_us = round(-ant["aporte"], 2)
+    fisico = round(stock["lote_kg"] * stock["p0"], 2)
+    d_tarifa = round(tarifa["aporte"], 2) if tarifa else 0.0
+    # 1. El lote: la plata sale de anticipos y entra al stock, aporte cero.
+    ant["por_col"]["vsto"] = round(ant["por_col"].get("vsto", 0.0) + lote_us, 2)
+    ant["aporte"] = 0.0
+    ant["col"] = "vsto"                   # los kilos se pintan en este renglón
+    ant["bruto"] = max((abs(v) for v in ant["por_col"].values()), default=0.0)
+    ant["nota"] = (f"{_num(stock['lote_kg'], 0)} kg a "
+                   f"$ {_num(lote_us / stock['lote_kg'], 4)} el kilo")
+    # 2. La revaluación: el hilado vale lo que trajo el lote al $/kg viejo más
+    #    lo que revaluó el $/kg nuevo, y eso no coincide con la plata del
+    #    anticipo — el sobreprecio del lote se reparte sobre todo el hilado,
+    #    también sobre el que ya se consumió. Con nombre, y su $/kg al pie.
+    reval = round(fisico + d_tarifa - lote_us, 2)
+    if abs(reval) >= UMBRAL_VISIBLE:
+        grupos[("Revaluación de stock", "#lote")] = {
+            "regla": "Revaluación de stock", "aporte": reval, "n": 1,
+            "etiqueta": None, "url": None, "col": "vsto",
+            "por_col": {"vsto": reval}, "quienes": {}, "cuantos": {},
+            "evento": None, "hechos": set(), "signos": set(),
+            "familia": "utilidad", "bruto": abs(reval),
+            "texto_unido": "revaluó el stock de hilado",
+            "nota": (f"$/kg de hil.: {_num(stock['p0'], 4)} → "
+                     f"{_num(stock['p1'], 4)}")}
+    # 3. El resto del stock: lo que no es el lote, con el texto rehecho sin él.
+    from modules.informes.foto import ORDEN_ETAPAS, _texto_stock
+
+    resto = round(tela["aporte"] - fisico, 2)
+    tela["aporte"], tela["por_col"] = resto, {"vsto": resto}
+    tela["bruto"] = abs(resto)
+    est = {et: {"dkg": stock["dkg"].get(et, 0.0)} for et in ORDEN_ETAPAS}
+    est["hilado"]["dkg"] = round(est["hilado"]["dkg"] - stock["lote_kg"], 2)
+    tela["texto_unido"] = _abreviar_etapas(_texto_stock(est))
+    if abs(resto) < UMBRAL_VISIBLE:
+        tela["fundido"] = True
+    if tarifa:
+        tarifa["fundido"] = True
+
+
+def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None,
+                                  stock: dict | None = None) -> None:
     """El anticipo que sale y la mercadería que entra son UN movimiento.
 
     🚨 TMT 2026-08-10, sobre una ventana con −73.984 en Ant. y +75.026 en Stk.:
@@ -1229,12 +1324,14 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
     anticipo, la tela y la revaluación del $/kg— y había que sumarlos a ojo
     para ver que era una sola cosa.
 
-    ⭐ La revaluación entra en el MISMO renglón a propósito. Partirla en
-    "entró tanto" y "se revaluó tanto" hacía aparecer una diferencia
-    ("entró 4.111 abajo del anticipo") que NO es un hecho: es la aritmética
-    del promedio ponderado. Los kilos entraron a $3,2334 con el stock a
-    $3,0405, así que parte del costo se reparte sobre lo que ya había. El
-    $/kg queda como nota al pie, que es lo que explica el signo.
+    ⭐ Hasta el 18/09/2026 la revaluación entraba en el MISMO renglón a
+    propósito: partirla hacía aparecer una diferencia ("entró 4.111 abajo del
+    anticipo") que es la aritmética del promedio ponderado, no un hecho. Pero
+    ese renglón único absorbía TODO el stock de la ventana —los 833 kg de
+    tejido y terminado que salieron a las 11:02 del 18/09 iban adentro— y la
+    pantalla decía "todo explicado". Tamara: *"eso vale más que este caso
+    puntual"*. Con `stock` (ver `stock_de_la_ventana`) se parte en tres
+    (`_partir_el_lote`); sin él —fotos viejas, sin kilos— sigue como antes.
     """
     ant, ev = _ancla_del_anticipo(grupos)
     tela = next((g for g in grupos.values()
@@ -1254,6 +1351,9 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None) -> None:
         cod = _importacion_del_anticipo(ant["aporte"], hasta)
         ant["texto_unido"] = ("entró la mercadería del anticipo " + cod if cod
                               else "entró la mercadería de los anticipos")
+    if stock and stock.get("lote_kg", 0) > 0:
+        _partir_el_lote(grupos, ant, tela, tarifa, stock)
+        return
     for otro in (tela, tarifa):
         if not otro:
             continue
@@ -1453,7 +1553,8 @@ def _lista_y(items: list[str]) -> str:
 
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None, hasta=None,
-            venta: dict | None = None, causa_tarifa: str = "") -> list[dict]:
+            venta: dict | None = None, causa_tarifa: str = "",
+            stock: dict | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -1545,7 +1646,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     _unir_las_dos_patas(grupos)
-    _unir_anticipo_con_mercaderia(grupos, hasta)
+    _unir_anticipo_con_mercaderia(grupos, hasta, stock)
     _unir_conversion_del_anticipo(grupos)
     # La venta se explica sola: el renglón de las facturas se lleva el margen.
     _nota = _nota_del_margen(venta)
@@ -1812,7 +1913,8 @@ def una(id_traza: int) -> dict | None:
         _venta = None
     fila["resumen"] = resumir(
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
-        hasta=_hasta, venta=_venta, causa_tarifa=causa_tarifa(fila, _ant))
+        hasta=_hasta, venta=_venta, causa_tarifa=causa_tarifa(fila, _ant),
+        stock=stock_de_la_ventana(fila, _ant))
     fila["d_kg"] = fila.get("d_kg") or {}
     if fila.get("d_ukg") is None:
         fila["d_ukg"] = _d_ukg(fila, _ant)

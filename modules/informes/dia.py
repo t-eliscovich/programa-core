@@ -1644,35 +1644,42 @@ def _renglones(movs: list[dict], desde: dict, hasta: dict) -> list[dict]:
         idx = _ev.indice(_ev.de_la_ventana(d0, d1), _ev.transacciones(d0, d1))
         # La causa del $/kg sale de las dos fotos de la traza que anclan el
         # día (mig 0244): la nota dice lo mismo que la pantalla.
-        causa = _causa_tarifa_del_dia(desde, hasta)
+        causa, stock = _fotos_del_dia(desde, hasta)
         return [{"regla": g.get("texto") or "—", "familia": g.get("familia"),
                  "aporte": _f(g.get("aporte")), "n": int(g.get("n") or 0)}
-                for g in _tz.resumir(movs, None, idx, causa_tarifa=causa)]
+                for g in _tz.resumir(movs, None, idx, causa_tarifa=causa,
+                                     stock=stock)]
     except Exception as e:  # noqa: BLE001
         _LOG.warning("dia: no pude agrupar como la traza (%s)", e)
         return []
 
 
-def _causa_tarifa_del_dia(desde: dict | None, hasta: dict | None) -> str:
-    """Por qué cambió el $/kg del hilado en el día: las dos fotos de la traza
-    que anclan la ventana, leídas por `id_traza`. Fail-soft: ""."""
+def _fotos_del_dia(desde: dict | None, hasta: dict | None) -> tuple[str, dict]:
+    """(por qué cambió el $/kg del hilado, el stock de la ventana) — las dos
+    fotos de la traza que anclan el día, leídas por `id_traza`.
+
+    Lo segundo es lo que deja que el renglón del anticipo se quede sólo con
+    el lote (`traza.stock_de_la_ventana`): la nota dice lo mismo que la
+    pantalla. Fail-soft: ("", {})."""
     try:
         t0, t1 = (desde or {}).get("id_traza"), (hasta or {}).get("id_traza")
         if not t0 or not t1:
-            return ""
+            return "", {}
         filas = _rows(
             """
             SELECT id_traza, compras_import_us, compras_local_us, al_precio_us,
-                   recargos_tardios_us, hilado_insumos
+                   recargos_tardios_us, hilado_insumos,
+                   compras_kg, hilado_kg, hilado_ukg, tejido_kg, terminado_kg
               FROM scintela.traza_utilidad
              WHERE id_traza IN (%s, %s)
             """, (t0, t1))
         por_id = {int(f["id_traza"]): f for f in filas or []}
         from modules.informes import traza as _tz
-        return _tz.causa_tarifa(por_id.get(int(t1)), por_id.get(int(t0)))
+        f1, f0 = por_id.get(int(t1)), por_id.get(int(t0))
+        return _tz.causa_tarifa(f1, f0), _tz.stock_de_la_ventana(f1, f0)
     except Exception as e:  # noqa: BLE001
-        _LOG.warning("dia: no pude leer la causa del $/kg (%s)", e)
-        return ""
+        _LOG.warning("dia: no pude leer las fotos del día (%s)", e)
+        return "", {}
 
 
 def explicar(fecha=None) -> dict:
