@@ -1296,6 +1296,9 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
             "por_col": {"vsto": reval}, "quienes": {}, "cuantos": {},
             "evento": None, "hechos": set(), "signos": set(),
             "familia": "utilidad", "bruto": abs(reval),
+            # Va pegado DEBAJO del lote, no donde lo mande el tamaño: Tamara
+            # 18/09/2026, *"son parte del mismo movimiento"*.
+            "pegado_a": ant,
             "texto_unido": "revaluó el stock de hilado",
             "nota": (f"$/kg de hil.: {_num(stock['p0'], 4)} → "
                      f"{_num(stock['p1'], 4)}")}
@@ -1822,6 +1825,14 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         if _causa and not g.get("nota"):
             g["nota"] = _causa
         out.append(g)
+    # Un renglón "pegado" a otro va inmediatamente debajo de él, aunque por
+    # tamaño le tocara más abajo: las dos partes de un mismo movimiento se
+    # leen juntas (la revaluación debajo del lote que la causó).
+    pegados = [g for g in out if g.get("pegado_a") is not None]
+    for g in pegados:
+        if g["pegado_a"] in out:
+            out.remove(g)
+            out.insert(out.index(g["pegado_a"]) + 1, g)
     if abs(menores) >= UMBRAL_VISIBLE:
         out.append({"texto": "movimientos chicos", "aporte": menores, "n": 0,
                     "url": None, "col": None, "por_col": {}, "bruto": 0.0,

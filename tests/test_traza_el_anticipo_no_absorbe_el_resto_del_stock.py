@@ -13,6 +13,9 @@ Ahora son tres, y suman lo mismo:
     revaluó el stock de hil.                     +1.194   ($/kg 3,0951 → 3,0983)
     salió de tej. y term.                        −4.215
 
+La revaluación va DEBAJO del lote aunque pese menos que la salida: son
+parte del mismo movimiento.
+
 Los números son los reales de esa ventana (traza_utilidad + dia_movimiento).
 """
 from __future__ import annotations
@@ -93,10 +96,12 @@ def test_sin_lote_o_sin_fotos_no_hay_stock():
 def test_una_ventana_con_anticipo_y_salida_de_tejido_da_tres_renglones():
     out = _resumen()
     textos = [g["texto"] for g in out]
+    # La revaluación va DEBAJO del lote aunque pese menos que la salida:
+    # son parte del mismo movimiento (Tamara 18/09/2026).
     assert textos == ["AC 40 · entró la mercadería de 4 anticipos",
-                      "salió de tej. y term.",
-                      "revaluó el stock de hil."], textos
-    lote, resto, reval = out
+                      "revaluó el stock de hil.",
+                      "salió de tej. y term."], textos
+    lote, reval, resto = out
     # 1. El lote: la plata cambia de anticipos a stock y no aporta nada.
     assert lote["aporte"] == 0.0
     assert lote["por_col"] == {"antic": -82829.20, "vsto": 82829.20}
@@ -141,7 +146,7 @@ def test_el_resto_dice_lo_que_hizo_sin_el_lote():
     stock = t.stock_de_la_ventana(fotos, FOTO_1056)
     assert stock["dkg"]["hilado"] == pytest.approx(24494.24 - 500)
     out = _resumen(stock=stock)
-    assert out[1]["texto"] == "hil. → tej. · salió de term."
+    assert out[2]["texto"] == "hil. → tej. · salió de term."
 
 
 def test_la_foto_de_la_traza_pasa_el_stock_al_resumen():
