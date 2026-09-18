@@ -90,7 +90,14 @@
          kilos que salieron y los que entraron van cada uno en la columna de su
          etapa: no hace falta que coincidan (nunca coinciden del todo) y la
          diferencia queda a la vista sin explicarla de más. #}
-      {% set pinta_kg = (g.col == 'vsto' and not visto.stock) %}
+      {# ⭐ Tamara 18/09/2026: *"cada movimiento impactó distinto la parte
+         derecha"*. Cuando el grupo trae sus propios kilos (`g.kg`, los tres
+         renglones del lote partido), cada uno pinta los suyos; si no, el
+         primer renglón del stock pinta el Δ de la ventana, como siempre. #}
+      {% set propios = g.kg is defined and g.kg is not none %}
+      {% set pinta_kg = propios or (g.col == 'vsto' and not visto.stock) %}
+      {% set kgs = g.kg if propios else f.d_kg %}
+      {% set ukg = g.d_ukg if propios else f.d_ukg %}
       {# la columna "Otros" de la grilla: acá cae el importe que no tiene
          columna propia (el resto, los movimientos chicos). #}
       <td class="px-1 py-1 text-right"
@@ -105,8 +112,8 @@
       {% if pinta_kg %}
         {% for col, label in kilos %}
           <td class="px-1 py-1 text-right"
-              style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if f.d_kg.get(col) %}{% if f.d_kg[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-            {{ f.d_kg.get(col) | delta_es }}
+              style="{% if loop.first %}border-left:1px solid rgb(226 232 240);{% endif %}{% if kgs.get(col) %}{% if kgs[col] < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+            {{ kgs.get(col) | delta_es }}
           </td>
         {% endfor %}
       {% else %}
@@ -118,8 +125,8 @@
          es el mismo movimiento, y con cuatro decimales: a dos, +0,0027 se
          escribe "+0,00". #}
       <td class="px-1 py-1 text-right"
-          style="{% if pinta_kg and f.d_ukg %}{% if f.d_ukg < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
-        {% if pinta_kg %}{{ f.d_ukg | delta_es(4) }}{% endif %}
+          style="{% if pinta_kg and ukg %}{% if ukg < 0 %}color:rgb(185 28 28);{% else %}color:rgb(21 128 61);{% endif %}{% endif %}">
+        {% if pinta_kg %}{{ ukg | delta_es(4) }}{% endif %}
       </td>
       {% if g.col == 'vsto' %}{% set visto.stock = true %}{% endif %}
     </tr>

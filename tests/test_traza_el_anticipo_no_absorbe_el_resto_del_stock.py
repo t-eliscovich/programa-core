@@ -10,7 +10,7 @@ que este caso puntual."*
 Ahora son tres, y suman lo mismo:
 
     AC 40 · entró la mercadería de 4 anticipos   Ant −82.829 / Stk +82.829   0
-    revaluó el stock de hil.                     +1.194   ($/kg 3,0951 → 3,0983)
+    revaluó el stock                             +1.194   ($/kg 3,0951 → 3,0983)
     salió de tej. y term.                        −4.215
 
 La revaluación va DEBAJO del lote aunque pese menos que la salida: son
@@ -99,7 +99,7 @@ def test_una_ventana_con_anticipo_y_salida_de_tejido_da_tres_renglones():
     # La revaluación va DEBAJO del lote aunque pese menos que la salida:
     # son parte del mismo movimiento (Tamara 18/09/2026).
     assert textos == ["AC 40 · entró la mercadería de 4 anticipos",
-                      "revaluó el stock de hil.",
+                      "revaluó el stock",
                       "salió de tej. y term."], textos
     lote, reval, resto = out
     # 1. El lote: la plata cambia de anticipos a stock y no aporta nada.
@@ -110,11 +110,19 @@ def test_una_ventana_con_anticipo_y_salida_de_tejido_da_tres_renglones():
     assert lote["col"] == "vsto"                  # acá se pintan los kilos
     # 2. La revaluación, con nombre y su $/kg.
     assert reval["aporte"] == pytest.approx(75812.12 + 8211.37 - 82829.20)
-    assert reval["nota"] == "$/kg de hil.: 3,0951 → 3,0983"
+    assert reval["nota"] == "$/kg de hil.: 3,0951 → 3,0983 · tej. y term. suben igual"
     assert reval["familia"] == "utilidad"
     # 3. El resto del stock: los 833 kg que salieron, sin el "entró a hil."
     assert resto["aporte"] == pytest.approx(71597.19 - 75812.12)
     assert resto["por_col"] == {"vsto": pytest.approx(71597.19 - 75812.12)}
+    # Cada renglón pinta SUS kilos y su $/kg (Tamara 18/09: "cada movimiento
+    # impactó distinto la parte derecha"): el lote los de hilado, la
+    # revaluación el $/kg, la salida los de tejido y terminado.
+    assert lote["kg"] == {"hilado_kg": pytest.approx(24494.24)} and lote["d_ukg"] is None
+    assert reval["kg"] == {} and reval["d_ukg"] == pytest.approx(0.0032)
+    assert resto["kg"] == {"tejido_kg": pytest.approx(-84.80),
+                           "terminado_kg": pytest.approx(-747.50)}
+    assert resto["d_ukg"] is None
     # Y la suma de los tres es el Δ de la ventana: nada se pierde.
     assert sum(g["aporte"] for g in out) == pytest.approx(D_UTILIDAD, abs=0.02)
     assert not any(g["texto"] == "diferencia contra el Δ" for g in out)
@@ -135,7 +143,7 @@ def test_si_el_resto_es_cero_no_queda_un_renglon_vacio():
     movs[4]["etiqueta"] = "entró a hil."
     out = _resumen(movs, d_utilidad=round(75812.12 + 8211.37 - 82829.20, 2))
     assert [g["texto"] for g in out] == ["AC 40 · entró la mercadería de 4 anticipos",
-                                         "revaluó el stock de hil."]
+                                         "revaluó el stock"]
 
 
 def test_el_resto_dice_lo_que_hizo_sin_el_lote():
@@ -147,6 +155,41 @@ def test_el_resto_dice_lo_que_hizo_sin_el_lote():
     assert stock["dkg"]["hilado"] == pytest.approx(24494.24 - 500)
     out = _resumen(stock=stock)
     assert out[2]["texto"] == "hil. → tej. · salió de term."
+    assert out[2]["kg"] == {"hilado_kg": pytest.approx(-500), "tejido_kg": pytest.approx(480),
+                            "terminado_kg": pytest.approx(-747.50)}
+
+
+def test_la_pantalla_pinta_los_kilos_de_cada_renglon():
+    """El template: con `g.kg` cada renglón pinta los suyos; sin él, el primer
+    renglón del stock pinta el Δ de la ventana como siempre."""
+    from pathlib import Path
+
+    from flask import Flask
+
+    import filters
+    app = Flask(__name__, template_folder=str(
+        Path(__file__).resolve().parents[1] / "modules" / "informes" / "templates"))
+    filters.register(app)
+    kilos = [("hilado_kg", "Hil."), ("tejido_kg", "Tej."), ("terminado_kg", "Term.")]
+    with app.app_context():
+        from flask import render_template
+        out = _resumen()
+        f = {"sin_registro": False, "reconstruido": False, "resumen": out,
+             "d_kg": {"hilado_kg": 24494.24, "tejido_kg": -84.8, "terminado_kg": -747.5},
+             "d_ukg": 0.0032}
+        html = render_template("informes/traza_foto_detalle.html", f=f,
+                               deltas=[("antic", "Ant."), ("vsto", "Stk.")], kilos=kilos)
+        filas = [x for x in html.split("<tr") if "data-detalle" in x]
+        assert len(filas) == 3
+        assert "+24.494" in filas[0] and "-85" not in filas[0] and "+0,0032" not in filas[0]
+        assert "+0,0032" in filas[1] and "24.494" not in filas[1]
+        assert "-85" in filas[2] and "-748" in filas[2] and "+24.494" not in filas[2]
+        # Sin partir (fotos viejas): el renglón único pinta el Δ de la ventana.
+        f["resumen"] = _resumen(stock=None)
+        html = render_template("informes/traza_foto_detalle.html", f=f,
+                               deltas=[("antic", "Ant."), ("vsto", "Stk.")], kilos=kilos)
+        filas = [x for x in html.split("<tr") if "data-detalle" in x]
+        assert len(filas) == 1 and "+24.494" in filas[0] and "-748" in filas[0] and "+0,0032" in filas[0]
 
 
 def test_la_foto_de_la_traza_pasa_el_stock_al_resumen():

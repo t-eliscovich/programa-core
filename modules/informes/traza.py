@@ -1284,6 +1284,12 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
     ant["bruto"] = max((abs(v) for v in ant["por_col"].values()), default=0.0)
     ant["nota"] = (f"{_num(stock['lote_kg'], 0)} kg a "
                    f"$ {_num(lote_us / stock['lote_kg'], 4)} el kilo")
+    # ⭐ Tamara 18/09: "cada movimiento impactó distinto la parte derecha".
+    # Los kilos y el $/kg van en el renglón que los movió, no todos en el
+    # primero: el lote trae sus kilos de hilado, la revaluación el $/kg, y
+    # el resto los kilos de las otras etapas (y el hilado neto del lote).
+    ant["kg"] = {"hilado_kg": stock["lote_kg"]}
+    ant["d_ukg"] = None
     # 2. La revaluación: el hilado vale lo que trajo el lote al $/kg viejo más
     #    lo que revaluó el $/kg nuevo, y eso no coincide con la plata del
     #    anticipo — el sobreprecio del lote se reparte sobre todo el hilado,
@@ -1299,9 +1305,13 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
             # Va pegado DEBAJO del lote, no donde lo mande el tamaño: Tamara
             # 18/09/2026, *"son parte del mismo movimiento"*.
             "pegado_a": ant,
-            "texto_unido": "revaluó el stock de hilado",
+            # "el stock" y no "el hilado": el $/kg de tejido y terminado es
+            # el del hilado + 0,50 / + 2,20, así que el lote los revalúa
+            # también (18/09: 6.352 hil. + 915 tej. + 993 term.).
+            "texto_unido": "revaluó el stock",
+            "kg": {}, "d_ukg": round(stock["p1"] - stock["p0"], 4),
             "nota": (f"$/kg de hil.: {_num(stock['p0'], 4)} → "
-                     f"{_num(stock['p1'], 4)}")}
+                     f"{_num(stock['p1'], 4)} · tej. y term. suben igual")}
     # 3. El resto del stock: lo que no es el lote, con el texto rehecho sin él.
     from modules.informes.foto import ORDEN_ETAPAS, _texto_stock
 
@@ -1311,6 +1321,8 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
     est = {et: {"dkg": stock["dkg"].get(et, 0.0)} for et in ORDEN_ETAPAS}
     est["hilado"]["dkg"] = round(est["hilado"]["dkg"] - stock["lote_kg"], 2)
     tela["texto_unido"] = _abreviar_etapas(_texto_stock(est))
+    tela["kg"] = {f"{et}_kg": v["dkg"] for et, v in est.items() if abs(v["dkg"]) >= 1}
+    tela["d_ukg"] = None
     if abs(resto) < UMBRAL_VISIBLE:
         tela["fundido"] = True
     if tarifa:
