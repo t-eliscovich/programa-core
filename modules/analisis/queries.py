@@ -2352,20 +2352,35 @@ def entradas() -> dict:
     "apagada" (09/09); la dueña, el 18/09/2026, después de que se apagaran las
     paradas entradas tras la largada: *"acá sigo viendo las paradas"*. Lo que
     no debió entrar no se rotula, se saca: en esta pantalla no aparece.
+
+    ⭐⭐ Y los kilos son los que la tela TRAJO A LA CARRERA, no los del día
+    que se marcó. Dueña 18/09/2026, al ver 53.219 acá contra 51.720 en
+    Saldos: *"entonces no las pongas esos 2000, no sirve de nada"*. Los 2.103
+    kg de diferencia eran tela que salió de la bodega entre que entró (17/08)
+    y la largada (25/08) sin contar para nadie (Kiana Forro 1.45 LIF 535,
+    Fleece Lycra ELE 289, Alemania BAN 236…): `kg_al_marcar` los tenía, la
+    carrera nunca. Se muestra `stock hoy + vendido` de la foto —lo mismo que
+    "Al arrancar" de Saldos suma como piso—, así las dos pantallas dicen el
+    mismo número, y una tela que se fue entera antes de la largada no aparece
+    (0 kg en juego no es una entrada).
     """
     filas = db.fetch_all(
         """
         SELECT c.fecha_marcado AS fecha, c.subcategoria, c.color,
-               c.kg_al_marcar AS kg, c.motivo, c.fuera,
+               COALESCE(f.stock_kg, 0) + COALESCE(f.kg_vendidos, 0) AS kg,
+               c.kg_al_marcar, c.motivo, c.fuera,
                p.categoria
           FROM scintela.parado_cohorte c
+          LEFT JOIN scintela.parado_foto f
+                 ON f.subcategoria = c.subcategoria AND f.color = c.color
           LEFT JOIN scintela.parado_punto p ON p.subcategoria = c.subcategoria
          WHERE NOT c.fuera
          ORDER BY c.fecha_marcado DESC, c.subcategoria, c.color
         """)
     # ⚠ El filtro vive también acá: un fake de tests (o una lectura vieja)
-    # que devuelva apagadas no las tiene que colar a la pantalla.
-    filas = [f for f in filas if not f.get("fuera")]
+    # que devuelva apagadas o filas en cero no las tiene que colar.
+    filas = [f for f in filas
+             if not f.get("fuera") and float(f.get("kg") or 0) > 0]
     por_dia: dict = {}
     for f in filas:
         d = por_dia.setdefault(f["fecha"], {"fecha": f["fecha"], "telas": 0,

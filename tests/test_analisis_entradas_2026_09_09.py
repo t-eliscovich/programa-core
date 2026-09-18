@@ -83,6 +83,32 @@ def test_la_consulta_deja_afuera_la_apagada(monkeypatch):
     assert "WHERE NOT c.fuera" in visto["sql"]
 
 
+def test_los_kilos_son_los_que_la_tela_trajo_a_la_carrera(monkeypatch):
+    """Dueña 18/09/2026: *"no las pongas esos 2000, no sirve de nada"* — los
+    kilos que salieron antes de la largada sin contar para nadie no son una
+    entrada. Se muestra stock hoy + vendido (el piso de "Al arrancar"), y la
+    tela que se fue entera antes de la largada no aparece."""
+    visto = {}
+
+    def fake(sql, *a, **k):
+        visto["sql"] = " ".join(sql.split())
+        return [
+            {"fecha": date(2026, 8, 17), "subcategoria": "Kiana Forro 1.45",
+             "color": "LIF", "kg": 46, "kg_al_marcar": 580, "motivo": "parado",
+             "fuera": False},
+            {"fecha": date(2026, 8, 17), "subcategoria": "Fleece Lycra",
+             "color": "ELE", "kg": 0, "kg_al_marcar": 289, "motivo": "parado",
+             "fuera": False},
+        ]
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    r = queries.entradas()
+    assert "COALESCE(f.stock_kg, 0) + COALESCE(f.kg_vendidos, 0) AS kg" in visto["sql"]
+    assert "JOIN scintela.parado_foto f" in visto["sql"]
+    assert [f["subcategoria"] for f in r["filas"]] == ["Kiana Forro 1.45"]
+    assert r["dias"][0]["parada"] == 46 and r["dias"][0]["telas"] == 1
+
+
 def test_el_menu_la_ofrece_solo_al_wildcard(app, monkeypatch):
     """Un link que da 404 no se ofrece."""
     monkeypatch.setattr(queries, "vendidos", lambda *a, **k: [])
