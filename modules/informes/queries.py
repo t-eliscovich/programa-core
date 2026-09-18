@@ -12213,6 +12213,94 @@ def totalizar_reverso_ejecutar(id_mov_doble: int, usuario: str = "web") -> dict:
     }
 
 
+def totalizar_hoja_guardada(id_mov_doble: int) -> dict:
+    """La hoja imprimible de un totalizar YA HECHO, armada desde su foto.
+
+    TMT 2026-09-18 (dueña): *"cuando totalizamos imprimimos, ¿no? quisiera
+    re-entrar a ese archivo"*. La hoja de confirmación se arma en el momento
+    con los datos vivos y no se guarda: una vez confirmado, las facturas ya
+    cambiaron y esa URL no vuelve. Pero la corrida guardó `antes` y `despues`
+    por factura —lo mismo que muestra la hoja—, así que se re-arma de ahí con
+    la MISMA forma que `totalizar_estado_cuenta_preview` y el mismo template.
+
+    La fecha y la retención salen de la factura viva: la fecha no cambia, y
+    la retención el totalizar no la reparte (sólo se muestra). Las corridas
+    anteriores al 07/08/2026 no guardaron la foto: devuelve {}.
+    """
+    mov = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, usuario, fecha_creacion, metadata"
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s", (id_mov_doble,))
+    if not mov or (mov.get("tipo") or "") != "totalizar_estado_cuenta":
+        return {}
+    md = _md_dict(mov)
+    antes = md.get("antes") or []
+    despues = {int(d["id"]): d for d in (md.get("despues") or [])}
+    codigo_cli = (md.get("codigo_cli") or "").strip().upper()
+    if not antes or not despues or not codigo_cli:
+        return {}
+    cliente = db.fetch_one(
+        "SELECT codigo_cli, nombre FROM scintela.cliente WHERE codigo_cli = %s",
+        (codigo_cli,)) or {"codigo_cli": codigo_cli, "nombre": codigo_cli}
+    vivas = {
+        int(f["id_factura"]): f
+        for f in (db.fetch_all(
+            "SELECT id_factura, numf, numf_completo, fecha, retencion"
+            "  FROM scintela.factura WHERE id_factura = ANY(%s)",
+            ([int(a["id"]) for a in antes],)) or [])
+    }
+    filas = []
+    for a in antes:
+        fid = int(a["id"])
+        d = despues.get(fid) or {}
+        v = vivas.get(fid) or {}
+        num = a.get("numf") or v.get("numf_completo") or v.get("numf")
+        imp = round(float(a.get("importe") or 0), 2)
+        ab0 = round(float(a.get("abono") or 0), 2)
+        sa0 = round(float(a.get("saldo") or 0), 2)
+        st0 = (a.get("stat") or "").strip()
+        ab1 = round(float(d.get("abono") or 0), 2)
+        sa1 = round(float(d.get("saldo") or 0), 2)
+        st1 = (d.get("stat") or "").strip()
+        filas.append({
+            "id_factura": fid,
+            "numf": v.get("numf") or num,
+            "numf_completo": num if (isinstance(num, str) and "-" in num)
+            else v.get("numf_completo"),
+            "fecha": v.get("fecha"),
+            "importe": imp,
+            "retencion": round(float(v.get("retencion") or 0), 2),
+            "abono_actual": ab0, "saldo_actual": sa0, "stat_actual": st0,
+            "abono_nuevo": ab1, "saldo_nuevo": sa1, "stat_nuevo": st1,
+            "cambia": (st0 != st1 or abs(ab0 - ab1) > 0.005
+                       or abs(sa0 - sa1) > 0.005),
+        })
+    filas.sort(key=lambda f: (f["fecha"] or date.min, f["id_factura"]))
+    return {
+        "cliente": cliente,
+        "filas": filas,
+        "n_links": int(md.get("n_links_borrados") or 0),
+        "pool": round(float(md.get("pool") or 0), 2),
+        "hay_nc": any(f["importe"] < 0 for f in filas),
+        "nada_que_hacer": False,
+        "n_T": sum(1 for f in filas if f["stat_nuevo"] == "T"),
+        "n_A": sum(1 for f in filas if f["stat_nuevo"] == "A"),
+        "n_Z": sum(1 for f in filas if f["stat_nuevo"] == "Z"),
+        "sum_importe": round(sum(f["importe"] for f in filas), 2),
+        "sum_retencion": round(sum(f["retencion"] for f in filas), 2),
+        "sum_saldo_antes": round(sum(f["saldo_actual"] for f in filas), 2),
+        "sum_abono_despues": round(sum(f["abono_nuevo"] for f in filas), 2),
+        "sum_saldo_despues": round(sum(f["saldo_nuevo"] for f in filas), 2),
+        "corrida": {
+            "id_mov_doble": int(mov["id_mov_doble"]),
+            "fecha": (mov.get("fecha_creacion").date()
+                      if hasattr(mov.get("fecha_creacion"), "date")
+                      else mov.get("fecha_creacion")),
+            "usuario": mov.get("usuario"),
+            "deshecha": (mov.get("estado") or "") != "activo",
+        },
+    }
+
+
 # ---------------------------------------------------------------------------
 # Cambio manual de estado de factura A/Z ↔ T desde el estado de cuenta.
 # TMT 2026-07-09 (dueña): "poder pasar facturas de A→T y T→A". CERRAR una

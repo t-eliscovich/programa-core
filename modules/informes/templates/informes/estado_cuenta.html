@@ -593,6 +593,12 @@
         — {{ tz.n_facturas }} factura{{ '' if tz.n_facturas == 1 else 's' }} re-liquidadas con
         {{ tz.pool | money_es }} de abonos{% if tz.usuario %} · {{ tz.usuario }}{% endif %}
         <span class="text-slate-400">· ver cómo quedó</span>
+        {% if tz.facturas %}
+        {# TMT 2026-09-18 (dueña): "quisiera re-entrar a ese archivo" — la hoja
+           que se imprimió al totalizar, armada desde la foto guardada. #}
+        · <a href="{{ url_for('informes.estado_cuenta_totalizar_hoja', codigo_cli=data.cliente.codigo_cli, id_mov_doble=tz.id_mov_doble) }}"
+             class="text-blue-600 hover:underline">Ver la hoja</a>
+        {% endif %}
       </summary>
       {% if tz.facturas %}
       <table class="w-full text-sm border-t border-slate-100 dark:border-slate-800">

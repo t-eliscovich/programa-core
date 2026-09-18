@@ -3,11 +3,11 @@
    réplica mejorada del dBase CUENTA.PRG rama 'Y'. Muestra EXACTAMENTE lo que
    va a quedar (estilo dBase) antes de ejecutar. Imprimible (patrón
    resumen_dia.html). #}
-{% block title %}Totalizar — {{ data.cliente.codigo_cli }}{% endblock %}
+{% block title %}{% if hoja_guardada %}Hoja del totalizar {{ hoja_guardada.fecha | fecha_es }} — {{ data.cliente.codigo_cli }}{% else %}Totalizar — {{ data.cliente.codigo_cli }}{% endif %}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
   <a href="{{ url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli) }}" class="hover:underline">{{ data.cliente.codigo_cli }}</a> /
-  <strong>Totalizar</strong>
+  <strong>{% if hoja_guardada %}Hoja del totalizar del {{ hoja_guardada.fecha | fecha_es }}{% else %}Totalizar{% endif %}</strong>
 {% endblock %}
 
 {% block content %}
@@ -62,7 +62,7 @@
 {% endif %}
 
 <div class="no-print max-w-5xl mx-auto mt-2 flex items-center justify-between gap-3 flex-wrap">
-  <h1 class="text-xl font-semibold">Totalizar estado de cuenta <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
+  <h1 class="text-xl font-semibold">{% if hoja_guardada %}Hoja del totalizar del {{ hoja_guardada.fecha | fecha_es }}{% else %}Totalizar estado de cuenta{% endif %} <span class="font-mono text-slate-500">{{ data.cliente.codigo_cli }}</span></h1>
   <div class="flex items-center gap-2">
     <a href="{{ volver_a(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli)) }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(url_for('informes.estado_cuenta', codigo_cli=data.cliente.codigo_cli), '← Volver al estado de cuenta') }}</a>
@@ -70,6 +70,19 @@
             class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">Imprimir</button>
   </div>
 </div>
+
+{# TMT 2026-09-18 (dueña: "cuando totalizamos imprimimos, ¿no? quisiera
+   re-entrar a ese archivo"): la misma hoja, armada desde la foto que guardó
+   la corrida. Sólo lectura: sin aviso previo, sin corte por fecha, sin
+   Confirmar. #}
+{% if hoja_guardada %}
+  <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-slate-50 border border-slate-200 text-slate-700 px-3 py-2"
+       style="font-size:12px; line-height:1.5">
+    Esta es la hoja del totalizar que se hizo el <strong>{{ hoja_guardada.fecha | fecha_es }}</strong>{% if hoja_guardada.usuario %} ({{ hoja_guardada.usuario }}){% endif %},
+    tal como quedó ese día: a la izquierda cómo estaba cada factura, a la derecha cómo la dejó.
+    {% if hoja_guardada.deshecha %}<strong style="color:#b45309">Este totalizar después se deshizo.</strong>{% endif %}
+  </div>
+{% endif %}
 
 {% if data.nada_que_hacer %}
   <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
@@ -83,6 +96,7 @@
   {# TMT 2026-08-20 (dueña: "este aviso podría ser mucho más chico"): tres
      renglones corridos en vez de cuatro viñetas con marco grueso. Dice lo
      mismo. #}
+  {% if not hoja_guardada %}
   <div class="no-print max-w-5xl mx-auto mt-3 rounded bg-amber-50 border border-amber-300 text-amber-900 px-3 py-2"
        style="font-size:12px; line-height:1.5">
     <strong>Antes de confirmar:</strong>
@@ -91,6 +105,7 @@
     {% if data.hay_nc %}Las notas de crédito entran al reparto.{% endif %}
     Se deshace desde el ↺ del Historial, mientras nadie cobre ni cambie el estado de estas facturas.
   </div>
+  {% endif %}
 
   <div class="hoja">
     {# Encabezado imprimible #}
@@ -165,6 +180,8 @@
     </div>
   </div>
 
+  {% if not hoja_guardada %}
+
   {# TMT 2026-07-06 (dueña: "¿cómo elegís hasta dónde totalizar?"):
      corte opcional por fecha inclusive — lo posterior no se toca. #}
   <form method="get" class="no-print mb-3 flex items-end gap-2"
@@ -221,6 +238,7 @@
       }
     })();
   </script>
+  {% endif %}
 {% else %}
   <div class="no-print max-w-5xl mx-auto mt-4 rounded-md bg-sky-50 border border-sky-300 text-sky-900 px-4 py-3">
     Este cliente no tiene facturas vivas (Z/A) — nada que totalizar.

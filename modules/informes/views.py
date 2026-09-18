@@ -4606,6 +4606,24 @@ def estado_cuenta_reponer_vinculos(codigo_cli):
     return redirect(url_for("informes.estado_cuenta", codigo_cli=codigo_up))
 
 
+@informes_bp.route("/estado-cuenta/<codigo_cli>/totalizar/<int:id_mov_doble>/hoja")
+@requiere_login
+@requiere_permiso("clientes.ver")
+def estado_cuenta_totalizar_hoja(codigo_cli, id_mov_doble: int):
+    """La hoja imprimible de un totalizar ya hecho — "volver a entrar al
+    archivo" (dueña, 18/09/2026). Misma hoja que la confirmación, armada
+    desde la foto que guardó la corrida. Sólo lectura."""
+    codigo_up = codigo_cli.upper()
+    data, error = _safe(
+        lambda: queries.totalizar_hoja_guardada(id_mov_doble), {})
+    if not data or (data.get("cliente") or {}).get("codigo_cli") != codigo_up:
+        abort(404)
+    return render_template(
+        "informes/totalizar_preview.html", data=data, error=error,
+        hoy=data["corrida"]["fecha"], hasta="", hoja_guardada=data["corrida"],
+    )
+
+
 @informes_bp.route("/estado-cuenta/<codigo_cli>/totalizar", methods=["GET", "POST"])
 @requiere_login
 @requiere_permiso("clientes.ver")
