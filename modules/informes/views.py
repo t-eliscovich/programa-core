@@ -4321,20 +4321,22 @@ def estado_cuenta_netear(codigo_cli):
             sobrante_a_anticipo=_sobrante_ok,
         )
         session["neteo_ok"] = res
-        _reab = res.get("facturas_reabiertas") or []
+        # TMT 2026-09-18 (caso LUT): las facturas que pagaba el cheque ya no
+        # quedan abiertas — las paga el 95 que creó el neteo.
+        _pag = res.get("facturas_pagadas") or []
         _msg = (
             f"Neteado: {res['n_cheques']} cheque(s) y {res['n_anticipos']} "
             f"anticipo(s) por {res['total']:,.2f} anulados entre sí."
         )
-        if _reab:
-            _nums = ", ".join(
-                (f"#{r['numf']}" if r.get("numf") else f"id {r['id_factura']}")
-                for r in _reab
-            )
+        if _pag:
+            _vistas: list[str] = []
+            for r in _pag:
+                _n = f"#{r['numf']}" if r.get("numf") else f"id {r['id_factura']}"
+                if _n not in _vistas:
+                    _vistas.append(_n)
             _msg += (
-                f" Se reabrió(eron) {len(_reab)} factura(s) que el/los "
-                f"cheque(s) tenían aplicada(s): {_nums} (quedan con saldo "
-                "pendiente; reversible desde el Historial)."
+                f" Las {len(_vistas)} factura(s) que pagaba el cheque las paga "
+                f"ahora el anticipo: {', '.join(_vistas)}."
             )
         _res_amt = float(res.get("residuo") or 0)
         _ofrecido = float(res.get("sobrante_ofrecido") or 0)

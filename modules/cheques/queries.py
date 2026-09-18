@@ -4452,6 +4452,12 @@ def crear(
     # cargarlos dejaba julio +4.402,86 y agosto −4.402,86. Dos meses rotos
     # para arreglar uno.
     caja_existente_id: int | None = None,
+    # TMT 2026-09-18 (caso LUT): el neteo del estado de cuenta crea un 95
+    # CANCELA ANTICIPO por lo que pagaba el cheque neteado, y los espejos que
+    # consume YA los anuló él mismo. Con este flag el 95 no sale a buscar un
+    # espejo del cliente por importe exacto: podría llevarse puesto OTRO saldo
+    # a favor vivo que casualmente sume lo mismo.
+    sin_cancelar_espejo: bool = False,
     conn=None,
 ) -> dict:
     """Alta de cheque nuevo.
@@ -4773,7 +4779,10 @@ def crear(
         # cliente y marca AMBOS con stat 'X' (anulados entre si). Si no lo
         # encuentra, el cheque queda 'Z' y se avisa (dBase: "NO SE ENCUENTRA
         # EL ANTICIPO") — la duena lo resuelve a mano.
-        if no_banco == 95 and row.get("id_cheque") and importe_principal > 0:
+        if (
+            no_banco == 95 and row.get("id_cheque") and importe_principal > 0
+            and not sin_cancelar_espejo
+        ):
             # TMT 2026-07-30 (dueña: "deberia mostrar postergados igual, no se
             # porque filtramos"). Antes exigía stat='Z' EXACTO y por eso el
             # primer caso real falló: el espejo de GL1 (−900) estaba POSTERGADO,
@@ -7391,10 +7400,16 @@ def netear_cheques_con_anticipos(
     CHEQUES suman más se bloquea (un cheque no se anula en parte).
 
     - Si un cheque está aplicado a factura(s), se DESAPLICA primero (reusa
-      `desaplicar_factura`, reversible) → la factura vuelve a quedar con saldo
-      pendiente, igual que al anular un cheque por error/rebote. TMT 2026-07-09
+      `desaplicar_factura`, reversible) para poder anularlo. TMT 2026-07-09
       (dueña): "falta que se desaplique el cheque de la factura así completa el
-      flujo".
+      flujo". **Y las facturas NO quedan abiertas**: TMT 2026-09-18 (Tamara,
+      caso LUT, el segundo en una semana después de CJM 11/09) — el neteo crea
+      un cheque 95 CANCELA ANTICIPO por lo que pagaba el cheque y lo aplica a
+      las MISMAS facturas con los mismos importes (queda 'X', como todo 95).
+      Antes la factura "volvía a quedar con saldo pendiente" mientras el
+      anticipo se consumía: la plata del cliente se evaporaba y quedaba
+      debiendo lo que ya pagó — el mismo agujero que la guarda del 95 de la
+      cobranza (30/07) tapa del otro lado.
     - Cheques: se reusa `cancelar_por_anticipo` (guard: vivos, importe>0,
       del cliente; ya sin aplicaciones tras desaplicar) → stat='X' + mov_doble
       reversible.
@@ -7408,8 +7423,8 @@ def netear_cheques_con_anticipos(
     cobranza.
 
     Devuelve {n_cheques, n_anticipos, total, cheques:[...], anticipos:[...],
-    facturas_reabiertas:[{id_cheque, id_factura, numf}], id_residuo,
-    sobrante_ofrecido}.
+    facturas_pagadas:[{id_cheque, id_factura, numf, importe, id_95}],
+    ids_95:[...], id_residuo, sobrante_ofrecido}.
     """
     codigo_cli = (codigo_cli or "").strip().upper()
     ids_cheques = [int(i) for i in (ids_cheques or [])]
@@ -7557,10 +7572,9 @@ def netear_cheques_con_anticipos(
         # TMT 2026-07-09 (dueña): "falta que se desaplique el cheque de la
         # factura así completa el flujo". Un cheque aplicado a factura(s) no
         # se puede anular directo (cancelar_por_anticipo lo bloquea). Al
-        # netearlo contra un anticipo SÍ queremos reabrir la factura — mismo
-        # criterio que anular un cheque por error de carga / rebote: la
-        # desaplicamos primero (reversible desde el Historial) y después
-        # anulamos el cheque. La factura vuelve a quedar con su saldo pendiente.
+        # netearlo lo desaplicamos primero (reversible desde el Historial) y
+        # después lo anulamos. La factura queda abierta SÓLO un instante: más
+        # abajo la vuelve a pagar el 95 CANCELA ANTICIPO (TMT 2026-09-18).
         facturas_reabiertas: list[dict] = []
         for c in cheques:
             aps = db.fetch_all(
@@ -7644,6 +7658,72 @@ def netear_cheques_con_anticipos(
                 },
             )
 
+        # --- Las facturas que pagaba el cheque las paga ahora el anticipo ---
+        # TMT 2026-09-18 (Tamara, caso LUT: ch 3224 $21.086,49 cubierto con 3
+        # depósitos cargados como anticipos; el neteo reabrió 5 facturas y
+        # consumió los anticipos). Por cada cheque neteado que estaba aplicado
+        # se crea un 95 CANCELA ANTICIPO por lo aplicado y se aplica a las
+        # MISMAS facturas con los MISMOS importes (positivos y negativos: las
+        # devoluciones que absorbía el cheque también). Es lo que se hizo a
+        # mano en CJM (cobranza banco 95), adentro de la misma transacción.
+        # El 95 queda 'X' como todo 95 (no es plata nueva: la plata ya entró
+        # con el depósito del anticipo; ver aplicar_a_factura). Los espejos
+        # los anuló el bloque de arriba → `sin_cancelar_espejo` para que
+        # crear() no salga a buscar otro por importe.
+        facturas_pagadas: list[dict] = []
+        ids_95: list[int] = []
+        for c in cheques:
+            _sc = _snap_por_cheque.get(int(c["id_cheque"])) or {}
+            _aps = [a for a in (_sc.get("aplicaciones") or [])
+                    if abs(float(a.get("importe") or 0)) >= 0.005]
+            _total_ap = round(sum(float(a["importe"]) for a in _aps), 2)
+            if not _aps or abs(_total_ap) < 0.005:
+                continue
+            _no95 = f"NET {(c.get('no_cheque') or '').strip() or c['id_cheque']}"[:10]
+            _ch95 = crear(
+                fecha=fecha,
+                codigo_cli=codigo_cli,
+                no_cheque=_no95,
+                importe=_total_ap,
+                no_banco=95,
+                stat="Z",
+                concepto=f"neteo ch {c.get('no_cheque') or c['id_cheque']}",
+                usuario=usuario,
+                sin_cancelar_espejo=True,
+                conn=conn,
+            )
+            _id95 = int(_ch95["id_cheque"])
+            aplicar_a_factura(
+                id_cheque=_id95,
+                aplicaciones=[{"id_fact": a["id_factura"], "importe": a["importe"]}
+                              for a in _aps],
+                usuario=usuario,
+                conn=conn,
+                permitir_depositado=True,
+            )
+            db.execute(
+                "UPDATE scintela.cheque "
+                "SET stat='X', fechaout=%s, fechad=%s, "
+                "    observacion = RIGHT("
+                "        COALESCE(observacion || ' | ', '') || %s, 200), "
+                "    usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                "WHERE id_cheque=%s",
+                (fecha, fecha,
+                 f"[X] 95 del neteo: paga lo que pagaba ch {c.get('no_cheque') or c['id_cheque']}",
+                 usuario, _id95),
+                conn=conn,
+            )
+            ids_95.append(_id95)
+            _sc["id_95"] = _id95
+            for a in _aps:
+                facturas_pagadas.append({
+                    "id_cheque": int(c["id_cheque"]),
+                    "id_factura": int(a["id_factura"]),
+                    "numf": a.get("numf"),
+                    "importe": float(a["importe"]),
+                    "id_95": _id95,
+                })
+
         # --- Residuo: sobrante de anticipos → saldo a favor nuevo ---
         # TMT 2026-07-21 (dueña): el resto queda como espejo NB=98 fresco,
         # linkeado por mov_doble al anticipo de referencia (auditable y
@@ -7680,6 +7760,7 @@ def netear_cheques_con_anticipos(
             "ids_cheques": ids_cheques,
             "ids_anticipos": ids_anticipos,
             "id_residuo": id_residuo,
+            "ids_95": ids_95,
             "cheques": list(_snap_por_cheque.values()),
             "anticipos": _snap_anticipos,
         }
@@ -7712,7 +7793,11 @@ def netear_cheques_con_anticipos(
         "batch_id": batch_id,
         "cheques": [c["id_cheque"] for c in cheques],
         "anticipos": [a["id_cheque"] for a in anticipos],
+        # Se sigue devolviendo por compatibilidad, pero ya no quedan abiertas:
+        # cada una está en `facturas_pagadas` con su 95.
         "facturas_reabiertas": facturas_reabiertas,
+        "facturas_pagadas": facturas_pagadas,
+        "ids_95": ids_95,
     }
 
 
@@ -7760,8 +7845,9 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
       2. Reactiva los anticipos (X → stat previo).
       3. Reactiva los cheques (X → stat previo) + recrea la posdat hermana que
          `cancelar_por_anticipo` había borrado.
-      4. Re-aplica los cheques a las facturas de las que se desaplicaron
-         (recomputa abono/saldo/stat de la factura).
+      4. Desaplica y anula el 95 CANCELA ANTICIPO que el neteo creó por cada
+         cheque aplicado (TMT 2026-09-18) y re-aplica los cheques a las
+         facturas de las que se desaplicaron (recomputa abono/saldo/stat).
       5. Marca el batch del neteo como reversado y registra el reverso del
          evento (→ el evento queda `reversado`, no vuelve a aparecer).
 
@@ -7880,7 +7966,33 @@ def deshacer_neteo(id_evento: int, codigo_cli: str, usuario: str = "web") -> dic
                      p.get("importe") or 0, (p.get("concepto") or "")[:50],
                      usuario), conn=conn)
 
-        # --- 4. Re-aplicar cheques a sus facturas ---
+        # --- 4a. Sacar el 95 del neteo (TMT 2026-09-18) ---
+        # El 95 pagó las facturas en lugar del cheque; al volver el cheque,
+        # el 95 se desaplica (misma primitiva granular, mov_doble reverso) y
+        # queda anulado por deshecho — si no, la factura quedaría pagada dos
+        # veces. desaplicar_factura no mira el stat del cheque, y el 95 ya
+        # está en 'X'.
+        for sc in snap_cheques:
+            id95 = sc.get("id_95")
+            if not id95:
+                continue
+            aps95 = db.fetch_all(
+                "SELECT DISTINCT id_fact FROM scintela.chequesxfact "
+                " WHERE id_cheque=%s AND id_fact IS NOT NULL",
+                (id95,), conn=conn) or []
+            for ap in aps95:
+                desaplicar_factura(
+                    id_cheque=int(id95), id_factura=int(ap["id_fact"]),
+                    motivo="deshacer neteo", usuario=usuario, conn=conn)
+            db.execute(
+                "UPDATE scintela.cheque SET stat='X', fechaout=%s, "
+                "  observacion=RIGHT(COALESCE(observacion||' | ','')||%s,200), "
+                "  usuario_modifica=%s, fecha_modifica=CURRENT_TIMESTAMP "
+                " WHERE id_cheque=%s",
+                (fecha, "[X] deshecho neteo (95 sin efecto)", usuario, id95),
+                conn=conn)
+
+        # --- 4b. Re-aplicar cheques a sus facturas ---
         for sc in snap_cheques:
             ch = db.fetch_one(
                 "SELECT no_banco FROM scintela.cheque WHERE id_cheque=%s",
