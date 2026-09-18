@@ -44,10 +44,9 @@ def test_el_resumen_por_dia_separa_parada_de_segunda(monkeypatch):
     todo junto, el número no contestaría la pregunta."""
     monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: COHORTE)
     r = queries.entradas()
-    assert [d["fecha"] for d in r["dias"]] == [date(2026, 9, 3), date(2026, 8, 20)]
-    d20 = r["dias"][1]
+    assert [d["fecha"] for d in r["dias"]] == [date(2026, 8, 20)]
+    d20 = r["dias"][0]
     assert (d20["telas"], d20["parada"], d20["segunda"]) == (2, 255.05, 40)
-    assert r["dias"][0]["segunda"] == 0
 
 
 def test_solo_la_duena_ve_la_pantalla(app, monkeypatch):
@@ -61,13 +60,27 @@ def test_solo_la_duena_ve_la_pantalla(app, monkeypatch):
     assert _como(app, {"*"}).get("/analisis/entradas").status_code == 200
 
 
-def test_la_apagada_se_muestra_y_dice_que_lo_esta(app, monkeypatch):
-    """Entró ese día — el renglón no se borra. Pero hoy no cuenta, y un renglón
-    que está sin decir qué le pasó se lee como un error."""
+def test_la_apagada_no_aparece(app, monkeypatch):
+    """Dueña 18/09/2026, con las paradas de después de la largada ya apagadas:
+    *"acá sigo viendo las paradas"*. Lo que no debió entrar se saca, no se
+    rotula: ni en el detalle ni en el resumen por día."""
     monkeypatch.setattr(queries.db, "fetch_all", lambda *a, **k: COHORTE)
     html = _como(app, {"*"}).get("/analisis/entradas").get_data(as_text=True)
-    assert "Fleece 102" in html and "apagada" in html
-    assert "255" in html and "03/09/26" in html
+    assert "Fleece 102" not in html and "apagada" not in html
+    assert "03/09/26" not in html, "el día en que sólo entró una apagada no va"
+    assert "255" in html and "20/08/26" in html
+
+
+def test_la_consulta_deja_afuera_la_apagada(monkeypatch):
+    visto = {}
+
+    def fake(sql, *a, **k):
+        visto["sql"] = " ".join(sql.split())
+        return []
+
+    monkeypatch.setattr(queries.db, "fetch_all", fake)
+    queries.entradas()
+    assert "WHERE NOT c.fuera" in visto["sql"]
 
 
 def test_el_menu_la_ofrece_solo_al_wildcard(app, monkeypatch):

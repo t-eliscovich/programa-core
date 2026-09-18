@@ -2346,8 +2346,12 @@ def entradas() -> dict:
     borra, así que la pantalla es una lectura, sin foto ni Asinfo.
 
     Devuelve los renglones (más nuevos primero) y el resumen por día: kilos
-    que entraron como parada y como segunda. La apagada (`fuera`) se muestra
-    igual —entró ese día— pero dice que hoy no cuenta.
+    que entraron como parada y como segunda.
+
+    ⭐ Sólo lo que HOY cuenta. La apagada (`fuera`) se mostraba con un rótulo
+    "apagada" (09/09); la dueña, el 18/09/2026, después de que se apagaran las
+    paradas entradas tras la largada: *"acá sigo viendo las paradas"*. Lo que
+    no debió entrar no se rotula, se saca: en esta pantalla no aparece.
     """
     filas = db.fetch_all(
         """
@@ -2356,8 +2360,12 @@ def entradas() -> dict:
                p.categoria
           FROM scintela.parado_cohorte c
           LEFT JOIN scintela.parado_punto p ON p.subcategoria = c.subcategoria
+         WHERE NOT c.fuera
          ORDER BY c.fecha_marcado DESC, c.subcategoria, c.color
         """)
+    # ⚠ El filtro vive también acá: un fake de tests (o una lectura vieja)
+    # que devuelva apagadas no las tiene que colar a la pantalla.
+    filas = [f for f in filas if not f.get("fuera")]
     por_dia: dict = {}
     for f in filas:
         d = por_dia.setdefault(f["fecha"], {"fecha": f["fecha"], "telas": 0,

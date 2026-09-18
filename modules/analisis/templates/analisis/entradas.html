@@ -38,7 +38,7 @@ segunda <b>{{ dias | sum(attribute='segunda') | num_es(0) }}</b></p>
 <div class="caja"><table class="resumen" id="entradas">
 <thead><tr>
 <th>Día</th><th class="opt">Grupo</th><th>Tela</th><th>Color</th>
-<th>Entró por</th><th class="n">Kg</th><th>Hoy</th>
+<th>Entró por</th><th class="n">Kg</th>
 </tr></thead>
 <tbody>
 {% for f in filas %}
@@ -50,8 +50,6 @@ segunda <b>{{ dias | sum(attribute='segunda') | num_es(0) }}</b></p>
     <td class="col2"><b>{{ f.color }}</b></td>
     <td>{{ 'segunda' if f.motivo == 'segunda' else 'parada' }}</td>
     <td class="n">{{ f.kg | num_es(1) if f.kg < 1 else f.kg | num_es(0) }}</td>
-    {# ⚠ La apagada no se borra ni se deja en blanco: se dice qué le pasó. #}
-    <td class="g">{% if f.fuera %}<span class="pill viejo">apagada</span>{% else %}—{% endif %}</td>
   </tr>
 {% endfor %}
 </tbody></table></div>
@@ -61,7 +59,7 @@ segunda <b>{{ dias | sum(attribute='segunda') | num_es(0) }}</b></p>
 {% endif %}
 
 <footer>
-Los kilos son los del día que entró, no los de hoy. «Apagada» es la que después
-resultó pedida o recién hecha antes de la largada y hoy no cuenta.
+Los kilos son los del día que entró, no los de hoy. Sólo lo que hoy cuenta:
+la que se apagó no aparece. Desde la largada entra sólo segunda.
 </footer>
 {% endblock %}
