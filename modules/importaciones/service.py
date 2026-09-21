@@ -473,6 +473,8 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
         r["prov"] = code.get("prov")
         r["numero"] = code.get("numero")
         r["numero_hasta"] = code.get("numero_hasta")
+        r["sufijo"] = code.get("sufijo")
+        r["sin_parentesis"] = bool(code.get("sin_parentesis"))
         if r["prov"] and r["numero"] is not None:
             for n in _numeros_de(code):
                 refs.add((r["prov"], n))

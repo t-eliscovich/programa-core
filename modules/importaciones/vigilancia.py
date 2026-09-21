@@ -111,7 +111,7 @@ def _dias_umbral() -> int:
 #     buscarlo las trae juntas;
 #   · por defecto muestra sólo el año en curso. Un aviso no puede depender de en
 #     qué año cayó la recepción, así que va `anio=todos`.
-_RE_CODIGO = re.compile(r"^[A-Z]{2,3} \d+(-\d+)?$")
+_RE_CODIGO = re.compile(r"^[A-Z]{2,3} \d+[A-Z]?(-\d+)?$")
 
 
 def _url_filtrada(q: str) -> str:
@@ -492,10 +492,19 @@ def facturas_con_plata_en_una_sola(limite: int = 1000,
 # Por eso avisa de una, sin umbral de días. El techo de antigüedad sí va, como
 # siempre, para no estrenar la alarma con un inventario de casos viejos
 # (MTGE3755 de enero, la INV 25-26/426 de 2025).
+#
+# TMT 2026-09-21 (Tamara, sobre AC 83A): ya no espera a que LLEGUE. La
+# IM-0000663 se creó en Asinfo el 09/09 con la Nota mal escrita ("…/8586 AC
+# 83A)", sin paréntesis) y estuvo 12 días muda, hasta que fue a cargarle un
+# anticipo y el picker no la encontró. *"¿Y cómo podríamos agarrar estas cosas
+# más temprano?"* — avisando cuando la importación APARECE, en tránsito: ahí es
+# cuando alguien va a cargarle plata. La edad se mide desde la recepción si
+# llegó, y si no desde la fecha de la factura del proveedor.
 def importaciones_sin_codigo(limite: int = 1000,
                              rows: list[dict] | None = None,
                              techo: int | None = None) -> list[dict]:
-    """Recepciones cuya Nota no trae el código del programa (tipo "AC 36").
+    """Importaciones (recibidas O en tránsito) cuya Nota no trae el código
+    del programa (tipo "AC 36").
 
     Una por factura del proveedor (las partidas ---1/---2 comparten la Nota
     base). Fail-soft: [] si no se pudo leer.
@@ -513,24 +522,25 @@ def importaciones_sin_codigo(limite: int = 1000,
 
     por_base: dict[str, dict] = {}
     for r in rows or []:
-        if not r.get("recibida"):
-            continue
         if r.get("prov") and r.get("numero") is not None:
             continue                     # tiene código: no es de acá
-        frec = _d(r.get("fecha_recepcion"))
-        if not frec:
+        recibida = bool(r.get("recibida"))
+        fref = _d(r.get("fecha_recepcion")) if recibida else _d(r.get("fecha"))
+        if not fref:
             continue
         base = svc._nota_base(r.get("nota")) or str(r.get("im_numero") or "")
         if not base:
             continue
         c = por_base.setdefault(base, {
-            "nota": base, "ims": [], "kg": 0.0, "recepcion": frec,
+            "nota": base, "ims": [], "kg": 0.0, "recepcion": fref,
+            "recibida": False,
             "proveedor": str(r.get("proveedor") or "").strip(),
         })
         c["ims"].append(r.get("im_numero"))
         c["kg"] += float(r.get("kg") or 0)
-        if frec > c["recepcion"]:
-            c["recepcion"] = frec
+        c["recibida"] = c["recibida"] or recibida
+        if fref > c["recepcion"]:
+            c["recepcion"] = fref
 
     out = []
     for c in por_base.values():
@@ -542,6 +552,57 @@ def importaciones_sin_codigo(limite: int = 1000,
         c["recepcion"] = str(c["recepcion"])
         out.append(c)
     out.sort(key=lambda x: -x["kg"])
+    return out
+
+
+# ── La Nota que cruza de casualidad ─────────────────────────────────────────
+# TMT 2026-09-21 (Tamara). La Nota de IM-0000663 decía "ACMT/EXP/2026-27/8586
+# AC 83A)": sin el paréntesis de apertura y con una letra pegada al número.
+# Desde hoy el parser la salva (cruza como AC 83A), pero es una Nota mal
+# escrita, y la próxima puede venir peor. Aviso suave para que la corrijan en
+# Asinfo ANTES de que alguien cargue plata contra ella. Sólo lo que se ve en la
+# Nota: el paréntesis que falta o la letra pegada. Que el número exista en otra
+# campaña NO es raro (se reusa todos los años) y no se avisa.
+def notas_mal_escritas(limite: int = 1000,
+                       rows: list[dict] | None = None,
+                       techo: int | None = None) -> list[dict]:
+    """Importaciones con código, pero con la Nota fuera del formato
+    "( AC 36 )": sin paréntesis o con letra pegada. Una por importación."""
+    from filters import today_ec
+
+    if rows is None:
+        rows = _leer_importaciones(limite=limite)
+    if rows is None:
+        return []
+    techo = _techo_dias() if techo is None else int(techo)
+    hoy = today_ec()
+
+    out = []
+    for r in rows or []:
+        if not (r.get("prov") and r.get("numero") is not None):
+            continue
+        motivos = []
+        if r.get("sin_parentesis"):
+            motivos.append("sin paréntesis")
+        if r.get("sufijo"):
+            motivos.append(f"letra pegada al número ({r['sufijo']})")
+        if not motivos:
+            continue
+        fref = (_d(r.get("fecha_recepcion")) if r.get("recibida")
+                else _d(r.get("fecha")))
+        if not fref:
+            continue
+        edad = (hoy - fref).days
+        if techo and edad > techo:
+            continue
+        out.append({
+            "im_numero": str(r.get("im_numero") or ""),
+            "codigo": str(r.get("codigo") or ""),
+            "nota": str(r.get("nota") or "").strip(),
+            "motivos": motivos, "dias": edad,
+            "proveedor": str(r.get("proveedor") or "").strip(),
+        })
+    out.sort(key=lambda x: x["dias"])
     return out
 
 
@@ -561,6 +622,27 @@ def _resolver_los_arreglados(rows: list[dict] | None) -> None:
         return
     from filters import num_es as _n
     from modules.avisos import queries as avisos
+
+    # La Nota mal escrita no necesita costos: se arregla cuando la misma importación vuelve a
+    # leerse con la Nota en formato (con paréntesis y sin letra pegada).
+    limpias = {
+        str(r.get("im_numero") or "").strip()
+        for r in rows
+        if r.get("prov") and r.get("numero") is not None
+        and not r.get("sin_parentesis") and not r.get("sufijo")
+    }
+    for a in avisos.abiertos_por_clave("import-nota-rara:"):
+        clave = str(a.get("clave") or "")
+        if ":" not in clave:
+            continue
+        im = clave.split(":", 1)[1]
+        if im not in limpias:
+            continue                     # sigue igual (o no se leyó)
+        avisos.resolver(
+            int(a["id_aviso"]),
+            titulo=f"{im} · listo, la Nota ya está bien escrita",
+            detalle="Cruza por el camino normal.",
+        )
 
     costos = _leer_costos()
     if not costos:
@@ -646,6 +728,7 @@ def revisar_si_toca() -> dict:
         casos = importaciones_fuera_de_banda(dias, rows=_rows)
         facturas = facturas_con_plata_en_una_sola(rows=_rows)
         sin_codigo = importaciones_sin_codigo(rows=_rows)
+        raras = notas_mal_escritas(rows=_rows)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
@@ -720,15 +803,27 @@ def revisar_si_toca() -> dict:
         ):
             n += 1
     for c in sin_codigo:
-        kg_txt = f"{_n(c['kg'], 0)} kg llegaron" if c["kg"] else "llegó mercadería"
-        titulo = (f"{c['nota']} · {kg_txt} sin código del programa en la Nota. "
-                  "¿Qué compra es?")
-        detalle = (
-            "Sin el código (tipo AC 36) no cruza con ninguna compra ni "
-            "anticipo: los kilos ya están en el stock sin su plata. Cargale "
-            "el código en la columna Código de la pantalla (o ponerlo en la "
-            "Nota en Asinfo), y cargar la compra."
-        )
+        if c.get("recibida"):
+            kg_txt = (f"{_n(c['kg'], 0)} kg llegaron" if c["kg"]
+                      else "llegó mercadería")
+            titulo = (f"{c['nota']} · {kg_txt} sin código del programa en la "
+                      "Nota. ¿Qué compra es?")
+            detalle = (
+                "Sin el código (tipo AC 36) no cruza con ninguna compra ni "
+                "anticipo: los kilos ya están en el stock sin su plata. Cargale "
+                "el código en la columna Código de la pantalla (o ponerlo en la "
+                "Nota en Asinfo), y cargar la compra."
+            )
+        else:
+            kg_txt = f"{_n(c['kg'], 0)} kg vienen" if c["kg"] else "viene"
+            titulo = (f"{c['nota']} · {kg_txt} en camino sin código del "
+                      "programa en la Nota. ¿Qué importación es?")
+            detalle = (
+                "Sin el código (tipo AC 36) el anticipo no la va a encontrar "
+                "y cuando llegue va a entrar al stock sin su plata. Ponerle el "
+                "código en la Nota en Asinfo, o cargarlo en la columna Código "
+                "de la pantalla."
+            )
         if c.get("proveedor"):
             detalle = f"Proveedor {c['proveedor']}. " + detalle
         if avisos.avisar(
@@ -742,6 +837,25 @@ def revisar_si_toca() -> dict:
             clave=f"import-sin-codigo:{c['nota']}",
         ):
             n += 1
+    for c in raras:
+        titulo = (f"{c['codigo']} · la Nota en Asinfo está mal escrita "
+                  f"({', '.join(c['motivos'])}). Corregila.")
+        detalle = (
+            f"Dice «{c['nota']}». Hoy cruza igual, pero el formato es "
+            "«( AC 36 )»: paréntesis y el número solo. Así la próxima no "
+            "queda sin cruzar."
+        )
+        if avisos.avisar(
+            fuente="importaciones",
+            # 'alerta' y no 'ok': un aviso 'ok' nace resuelto para
+            # abiertos_por_clave() y nunca se podría dar vuelta.
+            nivel="alerta",
+            titulo=titulo[:200],
+            detalle=detalle,
+            url=_url_filtrada(c["im_numero"]),
+            clave=f"import-nota-rara:{c['im_numero']}",
+        ):
+            n += 1
     try:
         _resolver_los_arreglados(_rows)
     except Exception as e:  # noqa: BLE001 -- resolver nunca frena la alarma
@@ -750,4 +864,5 @@ def revisar_si_toca() -> dict:
         _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
                   "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
     return {"corrio": True, "casos": len(casos), "facturas": len(facturas),
-            "sin_codigo": len(sin_codigo), "avisados": n, "dias": dias}
+            "sin_codigo": len(sin_codigo), "notas_raras": len(raras),
+            "avisados": n, "dias": dias}

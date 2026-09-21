@@ -339,13 +339,21 @@ def parse_nota_importacion(nota: str | None) -> dict:
     numero = int(m.group(2))
     sufijo = (m.group(3) or "").upper() or None
     numero_hasta = int(m.group(4)) if m.group(4) else None
-    codigo = f"{prov} {numero}" + (f"-{numero_hasta}" if numero_hasta else "")
+    # Tamara 2026-09-21: "se tiene que llamar 83A" — el código que se muestra
+    # lleva la letra. El cruce sigue por (prov, número, año): la letra no es
+    # otra importación, es el nombre que le puso el proveedor.
+    codigo = (f"{prov} {numero}{sufijo or ''}"
+              + (f"-{numero_hasta}" if numero_hasta else ""))
     return {
         "prov": prov,
         "numero": numero,
         "numero_hasta": numero_hasta,
         "sufijo": sufijo,
         "codigo": codigo,
+        # True cuando lo salvó el fallback: la Nota no trae el "( AC 83 )" con
+        # paréntesis. Cruza igual, pero es una Nota mal escrita — el vigía de
+        # importaciones la marca para que la corrijan en Asinfo.
+        "sin_parentesis": not matches,
         "raw": raw,
     }
 

@@ -265,7 +265,9 @@
             + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac
             + (im.fecha ? ' · ' + im.fecha : '');
           b.addEventListener('click', () => {
-            concepto.value = String(im.numero != null ? im.numero : (im.codigo || ''));
+            concepto.value = im.numero != null
+              ? String(im.numero) + (im.sufijo || '')
+              : (im.codigo || '');
             concepto.dispatchEvent(new Event('input', {bubbles: true}));
             elegida.textContent = '✔ Va a matchear con ' + im.im_numero + ' (' + (im.codigo || '') + ')';
             elegida.classList.remove('hidden');

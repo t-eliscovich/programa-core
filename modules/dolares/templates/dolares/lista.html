@@ -832,7 +832,9 @@ document.addEventListener('click', function (ev) {
             // TMT 2026-07-29 (dueña): el concepto se llena con nº + AÑO de la
             // importación elegida (`58/26`). El número solo no alcanza: se
             // reusa cada campaña y el anticipo se pegaba al del año anterior.
-            const _n = String(im.numero != null ? im.numero : '');
+            // Tamara 2026-09-21: la letra pegada de la Nota ("AC 83A") va
+            // también al concepto (`83A/26`), para que se llame igual.
+            const _n = String(im.numero != null ? im.numero : '') + (im.sufijo || '');
             const _a = im.anio ? '/' + String(im.anio).slice(-2) : '';
             concepto.value = _n + _a + ' ';
             concepto.focus();

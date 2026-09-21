@@ -5,9 +5,10 @@ paréntesis de apertura y con una letra pegada al número (el AC 83 ya existía
 en la campaña 2025-26 y el proveedor le puso la A para distinguirlo). El parser
 la daba por "sin código" y el anticipo no encontraba la importación.
 
-Regla: la letra se tolera y NO cambia el código (sigue siendo AC 83; el año de
-la campaña es lo que separa las dos), en la Nota, en el concepto del anticipo
-y en el SQL que saca el número del concepto.
+Regla: la letra se tolera y NO cambia el cruce (sigue siendo el nº 83; el año
+de la campaña es lo que separa las dos) — pero el código se MUESTRA con la
+letra ("AC 83A", Tamara: "se tiene que llamar 83A"), en la Nota, en el
+concepto del anticipo y en el SQL que saca el número del concepto.
 """
 import inspect
 
@@ -22,15 +23,17 @@ def test_nota_sin_parentesis_y_con_letra_parsea_ac_83():
     code = parse_nota_importacion("ACMT/EXP/2026-27/8586 AC 83A)")
     assert code["prov"] == "AC"
     assert code["numero"] == 83
-    assert code["codigo"] == "AC 83"
+    assert code["codigo"] == "AC 83A"             # Tamara: "se tiene que llamar 83A"
     assert code["sufijo"] == "A"
+    assert code["sin_parentesis"] is True
     assert code["numero_hasta"] is None
     assert anio_importacion(code["raw"])["anio"] == 2026
 
 
 def test_la_letra_tambien_entre_parentesis_y_no_rompe_el_rango():
-    assert parse_nota_importacion("X ( AC 83A )")["codigo"] == "AC 83"
+    assert parse_nota_importacion("X ( AC 83A )")["codigo"] == "AC 83A"
     assert parse_nota_importacion("X ( AC 83A )")["sufijo"] == "A"
+    assert parse_nota_importacion("X ( AC 83A )")["sin_parentesis"] is False
     rango = parse_nota_importacion("INVHY5464-26-2 ( MH 74-75 )")
     assert (rango["codigo"], rango["sufijo"]) == ("MH 74-75", None)
     assert parse_nota_importacion("AYF02823 ( AI 46 )")["sufijo"] is None

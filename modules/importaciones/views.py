@@ -339,7 +339,7 @@ def guardar_codigo_importacion():
     im = (request.form.get("im_numero") or "").strip()
     crudo = (request.form.get("codigo") or "").strip().upper()
     volver = request.referrer or url_for("importaciones.lista")
-    m = _re.match(r"^([A-Z]{2,3})\s*(\d+(?:-\d+)?)$", crudo)
+    m = _re.match(r"^([A-Z]{2,3})\s*(\d+[A-Z]?(?:-\d+)?)$", crudo)
     if not im or not m:
         flash("El código va como en la Nota: letras y número, ej. MD 1.",
               "error")
@@ -733,6 +733,9 @@ def api_importaciones_abiertas(prov):
             "im_numero": r.get("im_numero"),
             "codigo": r.get("codigo"),
             "numero": r.get("numero"),
+            # Tamara 2026-09-21: la letra pegada al número ("AC 83A") viaja al
+            # concepto del anticipo, para que se llame igual que en la Nota.
+            "sufijo": r.get("sufijo"),
             "nota": r.get("nota"),
             "fecha": str(r.get("fecha") or ""),
             # TMT 2026-07-29: año de la importación (el de la CAMPAÑA de la

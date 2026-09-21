@@ -42,15 +42,17 @@ def test_recepcion_sin_codigo_es_un_caso_y_agrupa_las_partidas():
         _fila("MTG3756 ---1", im="IM-0000653", kg=3009.6),
         # Con código: no es de acá.
         _fila("AYF02871 ( AI 48)", im="IM-0000650", prov="AI", numero=48),
-        # Sin código pero NO recibida: todavía no entró al stock.
-        _fila("XTG9999", im="IM-9", recibida=False),
+        # Sin código y NO recibida: desde el 21/09/2026 también avisa (en
+        # camino), para que la corrijan antes de que alguien le cargue plata.
+        _fila("XTG9999", im="IM-9", recibida=False, kg=10.0),
     ]
     out = vig.importaciones_sin_codigo(rows=rows)
-    assert len(out) == 1
+    assert [c["nota"] for c in out] == ["MTG3756", "XTG9999"]
     c = out[0]
-    assert c["nota"] == "MTG3756"
+    assert c["recibida"] is True
     assert c["kg"] == 16113.6                     # las dos partidas, juntas
     assert sorted(c["ims"]) == ["IM-0000653", "IM-0000654"]
+    assert out[1]["recibida"] is False
 
 
 def test_mas_vieja_que_el_techo_no_avisa():
