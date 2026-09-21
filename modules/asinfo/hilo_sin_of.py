@@ -357,39 +357,101 @@ def _detalle(caso: dict) -> str:
     return " · ".join(partes) + "\nCargale la orden en Asinfo y vuelven."
 
 
-def ordenes_de(numeros: set[str]) -> dict[str, str]:
-    """{OSM: OFT} de los despachos que YA tienen orden colgada. Fail-soft: {}."""
+def situacion_de(numeros: set[str]) -> dict[str, dict] | None:
+    """Qué pasó con cada despacho que DEJÓ de aparecer como "sin orden".
+
+    Devuelve `{OSM: {"oft": "OFT-…" | "", "viva": bool}}`. Un OSM que se
+    preguntó y no vino en la respuesta es uno que Asinfo borró: se informa
+    como `{"oft": "", "viva": False}`.
+
+    `None` cuando Asinfo NO CONTESTÓ. Es distinto de `{}` a propósito: sin
+    respuesta no se resuelve nada (ver `_resolver_avisos`).
+
+    🚨 TMT 2026-09-21 (caso OSM-000010926, "MQ11 OF41886 DUPLICADO"). Hasta acá
+    la única pregunta era `ordenes_de` —"¿qué OFT tiene?"— porque se daba por
+    hecho que un despacho sólo deja de estar "sin orden" cuando le cargan la
+    orden. No es la única forma: también deja de aparecer si lo ANULAN (el
+    duplicado del 19/09 se arregla anulándolo, no colgándole una OFT), si
+    cumple los `_dias` de la ventana sin que nadie lo toque, o si Metabase se
+    cae y `despachos_sin_of` devuelve [] sin haber preguntado. En los tres
+    casos el aviso pasaba a ✅ "orden cargada" —dos veces mentira, una vez
+    sobre TODOS los avisos abiertos a la vez—. Ahora se pregunta la situación
+    entera y se resuelve sólo con evidencia: orden cargada, o despacho anulado.
+    """
     from modules._lib import metabase_client
 
     limpios = [n.replace("'", "") for n in numeros if n]
     if not limpios:
         return {}
     lista = ", ".join(f"'{n}'" for n in limpios)
+    # `viva` = sigue con renglones despachados. Cuando Asinfo anula una salida
+    # el movimiento pasa a estado 0 Y sus renglones desaparecen (medido el
+    # 21/09 sobre las SM anuladas de septiembre), así que las dos señales
+    # dicen lo mismo; se miran ambas por si algún día sólo cambia una.
+    # La OFT se busca en las DOS junctions, como en `despachos_sin_of`: si
+    # cuelga de cualquiera, el despacho dejó de estar sin orden por eso.
     sql = f"""
-        SELECT osm.numero AS osm, MIN(ofr.numero) AS oft
+        SELECT osm.numero AS osm,
+               osm.estado AS estado,
+               (SELECT SUM(ISNULL(d.cantidad_despachada, 0))
+                  FROM detalle_orden_salida_material d
+                 WHERE d.id_orden_salida_material = osm.id_orden_salida_material) AS kg,
+               COALESCE(
+                 (SELECT MIN(ofr.numero)
+                    FROM orden_fabricacion_orden_salida_material j
+                    JOIN orden_fabricacion ofr
+                      ON ofr.id_orden_fabricacion = j.id_orden_fabricacion
+                   WHERE j.id_orden_salida_material = osm.id_orden_salida_material),
+                 (SELECT MIN(ofr.numero)
+                    FROM detalle_orden_salida_material dd
+                    JOIN detalle_orden_salida_material_orden_fabricacion jd
+                      ON jd.id_detalle_orden_salida_material
+                       = dd.id_detalle_orden_salida_material
+                    JOIN orden_fabricacion ofr
+                      ON ofr.id_orden_fabricacion = jd.id_orden_fabricacion
+                   WHERE dd.id_orden_salida_material = osm.id_orden_salida_material)
+               ) AS oft
           FROM orden_salida_material osm
-          JOIN orden_fabricacion_orden_salida_material j
-            ON j.id_orden_salida_material = osm.id_orden_salida_material
-          JOIN orden_fabricacion ofr
-            ON ofr.id_orden_fabricacion = j.id_orden_fabricacion
          WHERE osm.numero IN ({lista})
-         GROUP BY osm.numero
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=500)
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=500)
     except Exception as e:  # noqa: BLE001
-        _LOG.warning("no pude leer las órdenes cargadas: %s", e)
-        return {}
-    return {str(r.get("osm") or "").strip(): str(r.get("oft") or "").strip()
-            for r in rows or [] if r.get("osm")}
+        _LOG.warning("no pude leer la situación de los despachos: %s", e)
+        return None
+    if not ok:
+        _LOG.warning("Asinfo no contestó la situación de los despachos")
+        return None
+    out: dict[str, dict] = {n: {"oft": "", "viva": False} for n in limpios}
+    for r in rows or []:
+        osm = str(r.get("osm") or "").strip()
+        if not osm:
+            continue
+        try:
+            kg = float(r.get("kg") or 0)
+            estado = int(r.get("estado") if r.get("estado") is not None else 1)
+        except (TypeError, ValueError):
+            kg, estado = 0.0, 1
+        out[osm] = {"oft": str(r.get("oft") or "").strip(),
+                    "viva": kg > 0 and estado != 0}
+    return out
 
 
 def _resolver_avisos(abiertos_ahora: set[str]) -> int:
-    """Da vuelta los avisos de despachos que YA tienen su orden cargada.
+    """Da vuelta los avisos de despachos que YA no están "sin orden" — y sólo
+    si Asinfo confirma POR QUÉ dejaron de estarlo.
 
     `abiertos_ahora` son los OSM que siguen sin orden. Todo aviso vivo cuya
-    clave `hilo-sin-of:<osm>` no esté ahí describe algo que se arregló: pasa a
-    ✅ con el número de la orden que lo resolvió.
+    clave `hilo-sin-of:<osm>` no esté ahí es candidato; después se le pregunta
+    a Asinfo (`situacion_de`) y:
+
+    · tiene OFT            → ✅ "orden cargada", con el número de la orden.
+    · anulado / borrado    → ✅ "se anuló el despacho": el hilo volvió a la
+                             bodega, no hay nada que cargar.
+    · sigue vivo sin orden → NO SE TOCA. Salió de la lista por la ventana de
+                             días, no porque se haya arreglado; el ⚠ sigue
+                             siendo cierto.
+    · Asinfo no contestó   → NO SE TOCA nada. Sin evidencia no hay resuelto.
 
     🚨 Esto se consulta DIRECTO y no por `avisos.listar()`. La primera versión
     usaba `listar(fuente="stock")` y no resolvía nunca: `listar` no devuelve la
@@ -432,16 +494,26 @@ def _resolver_avisos(abiertos_ahora: set[str]) -> int:
 
     from modules.avisos import queries as avisos
 
-    ofts = ordenes_de(set(mios))
+    situacion = situacion_de(set(mios))
+    if situacion is None:
+        return 0                     # Asinfo mudo: los ⚠ se quedan como están
+
     n = 0
     for osm, a in mios.items():
-        oft = ofts.get(osm)
+        s = situacion.get(osm) or {"oft": "", "viva": False}
         # "Salieron 849 kg de hilo a Ponce — falta cargar…" → se conserva
         # el "de hilo a Ponce": sin eso el resuelto no dice ni qué ni de quién.
         m = re.search(r"kg (de .+?) — ", str(a.get("titulo") or ""))
         que = m.group(1) if m else "de hilo"
-        titulo = f"{_kg_txt(a.get('cantidad') or 0)} kg {que} — orden cargada"
-        detalle = f"{osm} → {oft}" if oft else osm
+        kg = _kg_txt(a.get("cantidad") or 0)
+        if s["oft"]:
+            titulo = f"{kg} kg {que} — orden cargada"
+            detalle = f"{osm} → {s['oft']}"
+        elif not s["viva"]:
+            titulo = f"{kg} kg {que} — se anuló el despacho"
+            detalle = f"{osm} anulado en Asinfo · el hilo volvió a la bodega"
+        else:
+            continue                 # vivo y sin orden: el aviso sigue siendo cierto
         try:
             if avisos.resolver(int(a["id_aviso"]), titulo=titulo,
                                detalle=detalle):

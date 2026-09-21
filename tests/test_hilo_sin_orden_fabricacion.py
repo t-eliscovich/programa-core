@@ -35,8 +35,12 @@ def _sin_freno(monkeypatch):
     hs.reset_cache()
 
 
-def _correr(casos, vivos=(), ofts=None):
+def _correr(casos, vivos=(), ofts=None, situacion="auto"):
     """`vivos` son filas de `scintela.aviso` TAL COMO LAS DEVUELVE LA BASE.
+
+    `ofts` es el atajo de siempre: {OSM: OFT} → situación "tiene orden".
+    `situacion` pisa todo: el dict que devolvería `situacion_de`, o None
+    para simular que Asinfo no contestó.
 
     🚨 A propósito se mockea `db.fetch_all` y no `avisos.listar()`: la primera
     versión leía por `listar`, que NO devuelve la columna `clave`, y por eso no
@@ -44,8 +48,11 @@ def _correr(casos, vivos=(), ofts=None):
     """
     import db as _db
     puestos, resueltos = [], []
+    if situacion == "auto":
+        situacion = {osm: {"oft": oft, "viva": True}
+                     for osm, oft in (ofts or {}).items()}
     with patch.object(hs, "despachos_sin_of", return_value=casos), \
-         patch.object(hs, "ordenes_de", return_value=dict(ofts or {})), \
+         patch.object(hs, "situacion_de", return_value=situacion), \
          patch.object(_db, "fetch_all", return_value=list(vivos)), \
          patch("modules.avisos.queries.resolver",
                side_effect=lambda i, **kw: resueltos.append((i, kw)) or True), \
@@ -203,14 +210,50 @@ def test_si_cargan_la_orden_el_aviso_pasa_a_resuelto():
     assert kw["detalle"] == "OSM-000010460 → OFT-000040516"
 
 
-def test_sin_saber_la_orden_igual_se_cierra():
-    """Si Asinfo no contesta el número de la OFT, el aviso se cierra lo mismo:
-    dejarlo en rojo diciendo 'falta cargar' sería peor que no nombrarla."""
-    vivo = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
-            "cantidad": 3240,
-            "titulo": "Salieron 3.240 kg de hilo a Ponce — falta cargar orden de fabricación"}
-    _, _p, resueltos = _correr([], vivos=[vivo], ofts={})
-    assert resueltos[0][1]["detalle"] == "OSM-000010460"
+VIVO_PONCE = {"id_aviso": 77, "clave": "hilo-sin-of:OSM-000010460",
+              "cantidad": 3240,
+              "titulo": "Salieron 3.240 kg de hilo a Ponce — falta cargar orden de fabricación"}
+
+
+def test_si_anulan_el_despacho_el_aviso_dice_eso_y_no_orden_cargada():
+    """TMT 2026-09-21: OSM-000010926 ("MQ11 OF41886 DUPLICADO") era una copia
+    exacta de la OSM-000010925 —los mismos 60 lotes, los mismos kilos— y dejó
+    60 lotes de hilo en negativo. Se arregla ANULÁNDOLA en Asinfo, no
+    colgándole una orden; y el aviso tiene que contar eso, no inventar una
+    "orden cargada" que no existe."""
+    _, _p, resueltos = _correr(
+        [], vivos=[VIVO_PONCE],
+        situacion={"OSM-000010460": {"oft": "", "viva": False}})
+    assert len(resueltos) == 1
+    kw = resueltos[0][1]
+    assert kw["titulo"] == "3.240 kg de hilo a Ponce — se anuló el despacho"
+    assert "OSM-000010460" in kw["detalle"]
+    assert "orden cargada" not in kw["titulo"]
+
+
+def test_un_despacho_que_asinfo_ya_no_tiene_cuenta_como_anulado():
+    """Se preguntó por él y no vino en la respuesta: lo borraron."""
+    _, _p, resueltos = _correr([], vivos=[VIVO_PONCE], situacion={})
+    assert resueltos[0][1]["titulo"].endswith("— se anuló el despacho")
+
+
+def test_si_sigue_vivo_y_sin_orden_el_aviso_NO_se_cierra():
+    """El despacho salió de `despachos_sin_of` por la ventana de días, no
+    porque alguien lo haya arreglado. Cerrarlo como "orden cargada" era la
+    forma de que un ⚠ de más de una semana se resolviera solo, mintiendo."""
+    _, _p, resueltos = _correr(
+        [], vivos=[VIVO_PONCE],
+        situacion={"OSM-000010460": {"oft": "", "viva": True}})
+    assert resueltos == []
+
+
+def test_si_asinfo_no_contesta_NO_se_resuelve_nada():
+    """Metabase caído hacía que `despachos_sin_of` devolviera [] y TODOS los
+    avisos abiertos pasaran a ✅ "orden cargada" de una vez. Sin respuesta de
+    Asinfo no hay evidencia, y sin evidencia los ⚠ se quedan como están."""
+    res, _p, resueltos = _correr([], vivos=[VIVO_PONCE], situacion=None)
+    assert resueltos == []
+    assert res["resueltos"] == 0
 
 
 def test_el_que_sigue_sin_orden_no_se_toca():
@@ -277,3 +320,60 @@ def test_sin_destino_el_titulo_queda_como_estaba():
                                    descripcion="")])
     assert puestos[0]["titulo"] == ("Salieron 910 kg de hilo — "
                                     "falta cargar orden de fabricación")
+
+
+# ── la situación se pregunta con evidencia, no se adivina ──────────────────
+
+def _situacion_con(rows, ok=True):
+    visto = {}
+
+    def _fake(db_id, sql, *a, **k):
+        visto["db"] = db_id
+        visto["sql"] = sql
+        return list(rows), ok
+
+    with patch("modules._lib.metabase_client.fetch_dataset_estado",
+               side_effect=_fake):
+        out = hs.situacion_de({"OSM-000010925", "OSM-000010926"})
+    return out, visto
+
+
+def test_situacion_distingue_orden_anulado_y_vivo():
+    out, visto = _situacion_con([
+        {"osm": "OSM-000010925", "estado": 1, "kg": 1647.0,
+         "oft": "OFT-000041886"},
+        {"osm": "OSM-000010926", "estado": 0, "kg": None, "oft": None},
+    ])
+    assert visto["db"] == 2
+    assert out["OSM-000010925"] == {"oft": "OFT-000041886", "viva": True}
+    assert out["OSM-000010926"] == {"oft": "", "viva": False}
+
+
+def test_situacion_un_despacho_con_renglones_pero_sin_orden_esta_vivo():
+    out, _ = _situacion_con([
+        {"osm": "OSM-000010926", "estado": 1, "kg": 1620.0, "oft": None}])
+    assert out["OSM-000010926"] == {"oft": "", "viva": True}
+    # el que se preguntó y no vino: borrado
+    assert out["OSM-000010925"] == {"oft": "", "viva": False}
+
+
+def test_situacion_devuelve_None_si_asinfo_no_contesto():
+    """`None` y no `{}`: `{}` diría "los borraron a todos"."""
+    out, _ = _situacion_con([], ok=False)
+    assert out is None
+
+
+def test_situacion_busca_la_oft_en_las_dos_junctions():
+    """Igual que `despachos_sin_of`: si el despacho cuelga de cualquiera de
+    las dos, dejó de estar sin orden por eso y hay que poder nombrarla."""
+    _, visto = _situacion_con([])
+    sql = visto["sql"]
+    assert "orden_fabricacion_orden_salida_material" in sql
+    assert "detalle_orden_salida_material_orden_fabricacion" in sql
+    assert "'OSM-000010925'" in sql and "'OSM-000010926'" in sql
+
+
+def test_situacion_sin_numeros_no_pregunta():
+    with patch("modules._lib.metabase_client.fetch_dataset_estado") as f:
+        assert hs.situacion_de(set()) == {}
+    f.assert_not_called()
