@@ -359,7 +359,7 @@ def _historial_por_ref(ctas: list[str]) -> dict[tuple[str, int], list[dict]]:
             SELECT UPPER(cta) AS cta, concepto, importe,
                    TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
                    COALESCE(TRIM(st), '') AS st,
-                   NULLIF(substring(concepto FROM '\y(\d{1,6})\y'), '')::int AS ref
+                   NULLIF(substring(concepto FROM '(?:^|[^0-9A-Za-z])0*(\d{1,6})(?![0-9])'), '')::int AS ref
               FROM scintela.dolares
              WHERE UPPER(cta) = ANY(%s)
              ORDER BY fecha DESC

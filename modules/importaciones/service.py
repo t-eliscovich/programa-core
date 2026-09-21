@@ -292,7 +292,7 @@ def _buscar_anticipos(refs: set[tuple[str, int]]) -> list[dict]:
                        TO_CHAR(fecha, 'YYYY-MM-DD') AS fecha,
                        -- nº del concepto como PALABRA: "31 SALDO"→31 y "AC 95"→95
                        -- (antes anclado al inicio: se perdían los que llevan el código adelante)
-                       NULLIF(substring(concepto FROM '\y(\d{1,6})\y'), '')::int AS ref_num
+                       NULLIF(substring(concepto FROM '(?:^|[^0-9A-Za-z])0*(\d{1,6})(?![0-9])'), '')::int AS ref_num
                   FROM scintela.dolares
                  -- SOLO anticipos VIVOS (mismo criterio que /dolares "solo vivos").
                  -- Al convertir a compra el anticipo pasa a st='B' (y 'X' si se

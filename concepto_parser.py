@@ -299,12 +299,19 @@ def _test() -> None:
 # de 2-3 letras seguidos de número chico.
 
 #: paréntesis abierto + 2-3 letras + número (+ rango opcional). Lo preferido.
+#: TMT 2026-09-21 (AC 83A): el número puede llevar UNA letra pegada
+#: ("AC 83A") cuando el proveedor reusa el número dentro de la misma campaña;
+#: la letra no cambia el cruce (sigue siendo AC 83, el año hace el resto) pero
+#: sin aceptarla la Nota quedaba "sin código" y el anticipo no la encontraba.
 _NOTA_CODE_PAREN = re.compile(
-    r"\(\s*([A-Za-z]{2,3})\s+0*(\d+)(?:\s*[-/]\s*0*(\d+))?", re.UNICODE
+    r"\(\s*([A-Za-z]{2,3})\s+0*(\d+)([A-Za-z])?(?:\s*[-/]\s*0*(\d+))?", re.UNICODE
 )
-#: fallback — 2-3 letras + número cerca del final (sin exigir paréntesis).
+#: fallback — 2-3 letras + número cerca del final (sin exigir paréntesis;
+#: la Nota de IM-0000663 venía "…/8586 AC 83A)" con el paréntesis de apertura
+#: olvidado).
 _NOTA_CODE_BARE = re.compile(
-    r"([A-Za-z]{2,3})\s+0*(\d+)(?:\s*[-/]\s*0*(\d+))?\s*\)?\s*[\s\W]*$", re.UNICODE
+    r"([A-Za-z]{2,3})\s+0*(\d+)([A-Za-z])?(?:\s*[-/]\s*0*(\d+))?\s*\)?\s*[\s\W]*$",
+    re.UNICODE,
 )
 
 
@@ -330,12 +337,14 @@ def parse_nota_importacion(nota: str | None) -> dict:
 
     prov = m.group(1).upper()
     numero = int(m.group(2))
-    numero_hasta = int(m.group(3)) if m.lastindex and m.group(3) else None
+    sufijo = (m.group(3) or "").upper() or None
+    numero_hasta = int(m.group(4)) if m.group(4) else None
     codigo = f"{prov} {numero}" + (f"-{numero_hasta}" if numero_hasta else "")
     return {
         "prov": prov,
         "numero": numero,
         "numero_hasta": numero_hasta,
+        "sufijo": sufijo,
         "codigo": codigo,
         "raw": raw,
     }
@@ -364,9 +373,13 @@ def parse_nota_importacion(nota: str | None) -> dict:
 
 #: nº + barra + año en el concepto de un anticipo: "58/26", "58 / 2026".
 #: El (?<!\d)/(?!\d) evita cortar números largos por la mitad.
-_REF_ANIO_ANTICIPO = re.compile(r"(?<!\d)0*(\d{1,6})\s*/\s*(\d{4}|\d{2})(?!\d)")
-#: primer número suelto del concepto ("31 SALDO" → 31, "AC 95" → 95).
-_REF_SUELTA = re.compile(r"\b0*(\d{1,6})\b")
+#: La letra pegada al número ("83A/26") se tolera: es la del código de la Nota.
+_REF_ANIO_ANTICIPO = re.compile(
+    r"(?<![\d])0*(\d{1,6})[A-Za-z]?\s*/\s*(\d{4}|\d{2})(?!\d)"
+)
+#: primer número suelto del concepto ("31 SALDO" → 31, "AC 95" → 95,
+#: "83A" → 83). No arranca pegado a una letra ("INV2026" no es un número).
+_REF_SUELTA = re.compile(r"(?<![A-Za-z\d])0*(\d{1,6})(?!\d)")
 #: campaña dentro de la nota de Asinfo, SIEMPRE entre barras:
 #: "ACMT/EXP/2026-27/8368". Las barras son las que evitan el falso positivo
 #: de "INV HY336-26-1" (que NO es una campaña).
