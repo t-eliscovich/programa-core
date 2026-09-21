@@ -130,20 +130,33 @@ def test_pedido_editado_despues_del_envio_pisa_la_foto_y_deja_la_alerta():
     assert por == "Asinfo · Ventas"
 
 
-def test_pedido_editado_antes_del_envio_no_alerta_pero_se_anota():
-    """La foto ya traía esa edición: se sella `asinfo_modificado` en
-    silencio para no volver a mirarlo."""
+def test_pedido_editado_antes_del_envio_tambien_se_refotografia():
+    """Caso PDCL-31867 (16/09): la edición fue ANTES de mandar el memo,
+    pero el memo salió del cache con la foto de antes de la edición. Ya no
+    se asume que "la foto ya lo trae": se re-fotografía y se compara."""
     enviado = datetime(2026, 9, 4, 23, 0, tzinfo=UTC)  # después de las 14:51 EC
     llamadas = []
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=_fake_asinfo()), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
          patch.object(formulas_memos, "vivos", return_value=[_memo_vivo(enviado)]), \
          patch.object(formulas_memos, "actualizar",
                       side_effect=lambda *a: (llamadas.append(a), (True, "actualizado"))[1]):
         res = memos_sync.sincronizar()
-    assert res["actualizados"] == [] and res["silenciosos"] == ["PDCL-30949"]
-    assert llamadas[0][2] is None
+    assert res["actualizados"] == ["PDCL-30949"] and res["silenciosos"] == []
     assert llamadas[0][1]["asinfo_modificado"] == "2026-09-04 14:51:44"
-    assert llamadas[0][1]["lineas"] == _foto_vieja()["lineas"]
+    assert [ln["producto"] for ln in llamadas[0][1]["lineas"]] == ["FE96HAB", "PO24AZU"]
+    assert "FE96HAB (Fleece 96 Perchado HAB): 12 roll → 17 roll" in llamadas[0][2]["lineas"]
+
+
+def test_el_acabado_que_cambio_es_un_cambio_para_la_fabrica():
+    """Jonathan 18/09: el memo decía TUB y el pedido era ABI."""
+    viejo = {"lineas": [{"producto": "FE22AVB", "tela": "Fleece 2.2", "color": "AVB",
+                         "cantidad": 3.0, "unidad": "roll", "acabado": "TUB"}]}
+    nuevo = {"lineas": [dict(viejo["lineas"][0], acabado="ABI")]}
+    assert memos_sync.diferencias(viejo, nuevo) == ["FE22AVB (Fleece 2.2 AVB): acabado TUB → ABI"]
+    # Un memo viejo sin acabado que ahora lo trae no es un cambio del pedido.
+    sin = {"lineas": [dict(viejo["lineas"][0], acabado="")]}
+    assert memos_sync.diferencias(sin, nuevo) == []
 
 
 def test_una_edicion_ya_procesada_no_se_vuelve_a_mirar():

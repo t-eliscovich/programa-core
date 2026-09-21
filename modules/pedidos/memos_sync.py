@@ -10,8 +10,8 @@ El memo es una FOTO del pedido al momento de enviar. Este módulo la
 mantiene al día: cada pocos minutos (del hilo de fondo de
 `autocarga_facturas`, sin cron del EC2 como todo lo demás) mira
 `pedido_cliente.fecha_modificacion` en Asinfo para los memos VIVOS
-('pendiente' / 'en_proceso'). Si el pedido se tocó después del envío,
-arma la foto nueva con `service.armar_memo`, la compara línea por línea
+('pendiente' / 'en_proceso'). Si el pedido tiene una edición que no se
+miró todavía (antes O después del envío — ver abajo), arma la foto nueva con `service.armar_memo`, la compara línea por línea
 con la vieja, pisa `detalle` en formulas_app y deja en `cambios` qué
 cambió, en castellano. La fábrica lo ve como alerta roja en /memos y en
 la campanita hasta que apreta "Visto".
@@ -24,8 +24,12 @@ fecha_modificacion NULL) — sólo la edición desde Ventas la sella. Así una
 entrega no dispara "modificado".
 
 ⚠ `fecha_modificacion` viene en hora ECUADOR (como todas las columnas
-datetime guardadas de Asinfo); `enviado_en` del memo es TIMESTAMPTZ. Se
-compara llevando la de Asinfo a UTC (+5 h).
+datetime guardadas de Asinfo). Hasta el 21/09 se comparaba con
+`enviado_en` y una edición ANTERIOR al envío se daba por "ya está en la
+foto" — falso: el memo se armaba desde el cache de 5 min de la pantalla
+(PDCL-31867, 16/09: creado 08:31, 7 líneas TUB→ABI a las 08:33, memo
+08:35 con TUB). Ahora toda edición no procesada re-fotografía y compara;
+si no cambió nada visible queda en silencio.
 
 Guard sin tabla: la fecha de modificación ya procesada queda adentro del
 `detalle` (`asinfo_modificado`), que es de Programa Core — un memo se
@@ -114,6 +118,12 @@ def diferencias(viejo: dict, nuevo: dict) -> list[str]:
         ua, ub = vl.get("unidad") or "", ln.get("unidad") or ""
         if a != b or ua != ub:
             out.append(f"{_rotulo(ln)}: {a} {ua} → {b} {ub}".replace("  ", " ").rstrip())
+        # El acabado también es "lo que ve la fábrica" (Jonathan 18/09: el
+        # memo decía tubular y el pedido era abierto): si cambió, se avisa.
+        # Un acabado que el memo no traía y ahora sí no es un cambio.
+        aa, ab = (vl.get("acabado") or "").upper(), (ln.get("acabado") or "").upper()
+        if aa and ab and aa != ab:
+            out.append(f"{_rotulo(ln)}: acabado {aa} → {ab}")
     if (viejo.get("descripcion") or "") != (nuevo.get("descripcion") or ""):
         out.append(f"Nota del pedido: «{nuevo.get('descripcion') or '(sin nota)'}»")
     return out
@@ -173,26 +183,19 @@ def sincronizar(usuario: str = "auto-sync-memos") -> dict:
         viejo = m.get("detalle") or {}
         if viejo.get("asinfo_modificado") == mod_ec:
             continue  # esta edición ya se procesó
-        mod_utc = _a_utc(mod_ec)
-        enviado = m.get("enviado_en")
-        if mod_utc is None or enviado is None:
-            continue
-        if enviado.tzinfo is None:
-            enviado = enviado.replace(tzinfo=UTC)
-        if mod_utc <= enviado:
-            # Se editó ANTES de mandar el memo: la foto ya lo trae. Se deja
-            # anotado para no volver a mirarlo.
-            nuevo = dict(viejo, asinfo_modificado=mod_ec)
-            ok_upd, _ = formulas_memos.actualizar(numero, nuevo, None, "")
-            if ok_upd:
-                res["silenciosos"].append(numero)
-            continue
+        # ⚠ Se re-fotografía SIEMPRE que haya una edición no procesada,
+        # también si es anterior al envío: hasta el 21/09 se asumía que "la
+        # foto ya lo trae", pero el memo se armaba desde el cache de 5 min
+        # de la pantalla y podía salir con la versión de ANTES de la
+        # edición (PDCL-31867: 7 líneas TUB que en Asinfo ya eran ABI). Si
+        # la foto es igual, queda silencioso; si no, la alerta dice qué
+        # cambió. Cada edición se mira una sola vez (`asinfo_modificado`).
         if not cache_limpio:
             # La foto nueva tiene que salir de Asinfo AHORA, no del cache de
-            # 5 min de la pantalla.
+            # 5 min de la pantalla — una consulta para toda la pasada.
             service._CACHE.pop("por_pedido", None)
             cache_limpio = True
-        nuevo = service.armar_memo(numero)
+        nuevo = service.armar_memo(numero, fresco=False)
         if nuevo is None:
             continue  # ya no está entre los pendientes: no hay foto nueva
         nuevo["asinfo_modificado"] = mod_ec

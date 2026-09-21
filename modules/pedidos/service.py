@@ -1074,17 +1074,22 @@ def _linea_pedido(row: dict) -> dict:
     }
 
 
-def por_pedido() -> tuple[list[dict], bool]:
+def por_pedido(fresco: bool = False) -> tuple[list[dict], bool]:
     """Los pedidos pendientes como PEDIDOS: uno por fila, con dueño y líneas.
 
     Mismo universo que el resto de la pantalla (≤ DIAS_PEDIDO_MAX días).
     Devuelve `(pedidos, disponible)`; los más nuevos primero.
+
+    `fresco=True` va a Asinfo AHORA (y deja el cache al día): es lo que
+    necesita una foto que se va a guardar, no una pantalla que se mira.
     """
     def _traer():
         return metabase_client.fetch_dataset_estado(
             ASINFO_DB, _SQL_POR_PEDIDO.format(
                 color=SQL_COLOR, ahora=AHORA_EC, dias=DIAS_PEDIDO_MAX))
 
+    if fresco:
+        _CACHE.pop("por_pedido", None)
     filas, ok = _cacheado("por_pedido", _traer)
     if not ok:
         return [], False
@@ -1128,11 +1133,18 @@ def por_pedido() -> tuple[list[dict], bool]:
     return pedidos, True
 
 
-def armar_memo(numero: str) -> dict | None:
+def armar_memo(numero: str, fresco: bool = True) -> dict | None:
     """La foto del pedido que viaja en el memo. None si el pedido no está
     entre los pendientes (ya se despachó, es más viejo que el corte, o Asinfo
-    no contestó)."""
-    pedidos, ok = por_pedido()
+    no contestó).
+
+    ⚠ La foto sale de Asinfo en el momento, NO del cache de 5 min de la
+    pantalla (caso PDCL-31867, 16/09: el vendedor creó el pedido, pasó 7
+    líneas de TUB a ABI y mandó el memo dos minutos después — el memo salió
+    con el acabado viejo porque alguien había abierto la lista en el medio).
+    `fresco=False` es sólo para el sync, que limpia el cache una vez por
+    pasada y re-fotografía varios memos con una sola consulta."""
+    pedidos, ok = por_pedido(fresco=fresco)
     if not ok:
         return None
     p = next((x for x in pedidos if x["numero"] == numero), None)
@@ -1152,8 +1164,12 @@ def armar_memo(numero: str) -> dict | None:
 
 
 #: Versión de la regla del acabado que viaja en el memo. 1 = por producto
-#: (09/09, estaba mal: mostraba todo TUB); 2 = por LÍNEA del pedido (10/09).
-ACABADO_VERSION = 2
+#: (09/09, estaba mal: mostraba todo TUB); 2 = por LÍNEA del pedido (10/09);
+#: 3 = la foto del memo sale de Asinfo al momento de mandarla, no del cache
+#: (21/09) — subir el número hace que el sync vuelva a completar el acabado
+#: de TODOS los memos mandados con la foto vieja (PDCL-31867 y los que
+#: hayan caído en la misma ventana).
+ACABADO_VERSION = 3
 
 
 def etiqueta_dueno(dueno: dict) -> str:

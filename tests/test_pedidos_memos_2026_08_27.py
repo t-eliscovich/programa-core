@@ -665,3 +665,29 @@ def test_por_pedido_trae_el_acabado_de_cada_linea():
          patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
         pedidos, _ = service.por_pedido()
     assert pedidos[0]["lineas"][0]["acabado"] == "ABI"
+
+
+# ── la foto del memo sale de Asinfo al momento, no del cache (21/09) ─────────
+
+def test_el_memo_no_sale_del_cache_de_la_pantalla(monkeypatch):
+    """Caso PDCL-31867 (16/09): la lista se cacheó con las líneas en TUB, el
+    vendedor las pasó a ABI en Asinfo y mandó el memo dos minutos después —
+    y el memo salió con TUB. La foto que se guarda tiene que ir a Asinfo."""
+    monkeypatch.setenv("PEDIDOS_CACHE_SECS", "300")
+    service.reset_cache()
+    viejas = [dict(f, acabado="TUB") for f in _FILAS]
+    nuevas = [dict(f, acabado="ABI") for f in _FILAS]
+    respuestas = [(viejas, True), (nuevas, True)]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=lambda *a, **k: respuestas.pop(0)) as fetch, \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
+        pedidos, _ = service.por_pedido()          # la pantalla: cachea TUB
+        assert pedidos[0]["lineas"][0]["acabado"] == "TUB"
+        m = service.armar_memo("PDCL-26401")       # el memo: va a Asinfo
+        assert m["lineas"][0]["acabado"] == "ABI"
+        assert fetch.call_count == 2
+        # Y la pantalla queda al día con lo que trajo el memo.
+        pedidos, _ = service.por_pedido()
+        assert pedidos[0]["lineas"][0]["acabado"] == "ABI"
+        assert fetch.call_count == 2
+    service.reset_cache()
