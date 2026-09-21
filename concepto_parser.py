@@ -306,9 +306,10 @@ def _test() -> None:
 _NOTA_CODE_PAREN = re.compile(
     r"\(\s*([A-Za-z]{2,3})\s+0*(\d+)([A-Za-z])?(?:\s*[-/]\s*0*(\d+))?", re.UNICODE
 )
-#: fallback — 2-3 letras + número cerca del final (sin exigir paréntesis;
-#: la Nota de IM-0000663 venía "…/8586 AC 83A)" con el paréntesis de apertura
-#: olvidado).
+#: fallback — 2-3 letras + número cerca del final (sin exigir paréntesis).
+#: La Nota de IM-0000663 venía "…/8586 AC 83A)" y Tamara (21/09/2026) la dio
+#: por BIEN escrita: "quiero que también entienda 83A)". No es un caso raro,
+#: es un formato más.
 _NOTA_CODE_BARE = re.compile(
     r"([A-Za-z]{2,3})\s+0*(\d+)([A-Za-z])?(?:\s*[-/]\s*0*(\d+))?\s*\)?\s*[\s\W]*$",
     re.UNICODE,
@@ -350,10 +351,6 @@ def parse_nota_importacion(nota: str | None) -> dict:
         "numero_hasta": numero_hasta,
         "sufijo": sufijo,
         "codigo": codigo,
-        # True cuando lo salvó el fallback: la Nota no trae el "( AC 83 )" con
-        # paréntesis. Cruza igual, pero es una Nota mal escrita — el vigía de
-        # importaciones la marca para que la corrijan en Asinfo.
-        "sin_parentesis": not matches,
         "raw": raw,
     }
 

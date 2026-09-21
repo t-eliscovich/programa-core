@@ -6,8 +6,8 @@ estuvo 12 días muda — el vigía sólo miraba las RECIBIDAS. *"¿Y cómo
 podríamos agarrar estas cosas más temprano?"*:
 
   1. la importación SIN código avisa apenas aparece, en tránsito;
-  2. la Nota que cruza por el camino de emergencia (sin paréntesis o con
-     letra pegada) avisa para que la corrijan en Asinfo.
+  2. la Nota "AC 83A)" (sin paréntesis, letra pegada) se ENTIENDE, sin
+     avisar nada — Tamara: "quiero que también entienda 83A)".
 """
 from __future__ import annotations
 
@@ -36,7 +36,6 @@ def _fila(nota, *, dias_atras=1, kg=24072.4, im="IM-0000663",
         "nota": nota, "prov": code.get("prov"), "numero": code.get("numero"),
         "numero_hasta": code.get("numero_hasta"),
         "sufijo": code.get("sufijo"), "codigo": code.get("codigo"),
-        "sin_parentesis": bool(code.get("sin_parentesis")),
         "proveedor": proveedor,
         "grupo_id": im, "grupo_ims": [im], "grupo_kg": kg, "kg": kg,
         "compra": None, "anticipo": None,
@@ -86,65 +85,34 @@ def test_recibida_sin_codigo_sigue_diciendo_que_llego():
     assert a["titulo"].startswith("MTG3756 · 16.114 kg llegaron sin código")
 
 
-# ── 2 · la Nota mal escrita ─────────────────────────────────────────────────
+# ── 2 · la Nota "AC 83A)" NO es un caso raro ─────────────────────────────────
+# Hubo unas horas un aviso "la Nota en Asinfo está mal escrita" (sin paréntesis
+# / letra pegada). Tamara lo bajó el mismo día: *"no quiero que me diga que
+# está mal, quiero que también entienda 83A)"*. El formato se entiende y punto.
 
-def test_nota_sin_parentesis_y_con_letra_es_una_nota_rara():
-    rows = [
-        _fila("ACMT/EXP/2026-27/8586 AC 83A)", dias_atras=12),
-        _fila("ACMT/EXP/2026-27/8549 ( AC 69)", im="IM-0000668"),      # bien
-        _fila("INVHY5464-26-2 ( MH 74-75 )", im="IM-0000658"),         # rango: bien
-        _fila("MTG3756", im="IM-0000654"),                             # sin código: es del otro
-    ]
-    raras = vig.notas_mal_escritas(rows=rows)
-    assert [r["im_numero"] for r in raras] == ["IM-0000663"]
-    r = raras[0]
-    assert r["codigo"] == "AC 83A"
-    assert r["motivos"] == ["sin paréntesis", "letra pegada al número (A)"]
-
+def test_la_nota_con_letra_y_sin_parentesis_no_genera_ningun_aviso():
+    rows = [_fila("ACMT/EXP/2026-27/8586 AC 83A)", dias_atras=12)]
+    assert rows[0]["codigo"] == "AC 83A"
     out, vistos = _correr(rows)
-    assert out["notas_raras"] == 1
-    a = next(v for v in vistos if v["clave"] == "import-nota-rara:IM-0000663")
-    assert a["nivel"] == "alerta"       # 'ok' nacería resuelto: no se podría dar vuelta
-    assert a["titulo"] == ("AC 83A · la Nota en Asinfo está mal escrita "
-                           "(sin paréntesis, letra pegada al número (A)). "
-                           "Corregila.")
-    assert "( AC 36 )" in a["detalle"]
-    assert a["url"] == "/importaciones?anio=todos&q=IM-0000663"
+    assert out["sin_codigo"] == 0 and out["avisados"] == 0
+    assert vistos == []
+    assert not hasattr(vig, "notas_mal_escritas")
 
 
-def test_nota_rara_vieja_no_avisa():
-    assert vig.notas_mal_escritas(
-        rows=[_fila("X AC 83A)", dias_atras=200)]) == []
-
-
-def test_la_nota_rara_se_resuelve_cuando_la_escriben_bien():
-    rows = [_fila("ACMT/EXP/2026-27/8586 ( AC 83 )")]      # ya corregida
+def test_el_aviso_de_nota_rara_que_quedo_abierto_se_da_vuelta_solo():
     resueltos = []
     with patch.object(vig, "_leer_costos", return_value={}), \
          patch("modules.avisos.queries.abiertos_por_clave",
                side_effect=lambda pref: (
-                   [{"id_aviso": 9, "clave": "import-nota-rara:IM-0000663"}]
+                   [{"id_aviso": 11089, "clave": "import-nota-rara:IM-0000663"}]
                    if pref == "import-nota-rara:" else [])), \
          patch("modules.avisos.queries.resolver",
                side_effect=lambda id_aviso, **kw: resueltos.append(
                    (id_aviso, kw)) or True):
-        vig._resolver_los_arreglados(rows)
-    assert resueltos == [(9, {"titulo": "IM-0000663 · listo, la Nota ya está bien escrita",
-                              "detalle": "Cruza por el camino normal."})]
-
-
-def test_la_nota_rara_no_se_resuelve_mientras_siga_igual():
-    rows = [_fila("ACMT/EXP/2026-27/8586 AC 83A)")]
-    resueltos = []
-    with patch.object(vig, "_leer_costos", return_value={}), \
-         patch("modules.avisos.queries.abiertos_por_clave",
-               side_effect=lambda pref: (
-                   [{"id_aviso": 9, "clave": "import-nota-rara:IM-0000663"}]
-                   if pref == "import-nota-rara:" else [])), \
-         patch("modules.avisos.queries.resolver",
-               side_effect=lambda id_aviso, **kw: resueltos.append(id_aviso)):
-        vig._resolver_los_arreglados(rows)
-    assert resueltos == []
+        vig._resolver_los_arreglados([_fila("ACMT/EXP/2026-27/8586 AC 83A)")])
+    assert resueltos == [(11089, {
+        "titulo": "IM-0000663 · listo, la Nota se entiende así como está",
+        "detalle": "El programa ya lee el código con la letra pegada."})]
 
 
 # ── el nombre: 83A ──────────────────────────────────────────────────────────

@@ -25,7 +25,7 @@ def test_nota_sin_parentesis_y_con_letra_parsea_ac_83():
     assert code["numero"] == 83
     assert code["codigo"] == "AC 83A"             # Tamara: "se tiene que llamar 83A"
     assert code["sufijo"] == "A"
-    assert code["sin_parentesis"] is True
+    assert "sin_parentesis" not in code           # es un formato válido, no una marca
     assert code["numero_hasta"] is None
     assert anio_importacion(code["raw"])["anio"] == 2026
 
@@ -33,7 +33,6 @@ def test_nota_sin_parentesis_y_con_letra_parsea_ac_83():
 def test_la_letra_tambien_entre_parentesis_y_no_rompe_el_rango():
     assert parse_nota_importacion("X ( AC 83A )")["codigo"] == "AC 83A"
     assert parse_nota_importacion("X ( AC 83A )")["sufijo"] == "A"
-    assert parse_nota_importacion("X ( AC 83A )")["sin_parentesis"] is False
     rango = parse_nota_importacion("INVHY5464-26-2 ( MH 74-75 )")
     assert (rango["codigo"], rango["sufijo"]) == ("MH 74-75", None)
     assert parse_nota_importacion("AYF02823 ( AI 46 )")["sufijo"] is None

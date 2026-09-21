@@ -555,57 +555,6 @@ def importaciones_sin_codigo(limite: int = 1000,
     return out
 
 
-# ── La Nota que cruza de casualidad ─────────────────────────────────────────
-# TMT 2026-09-21 (Tamara). La Nota de IM-0000663 decía "ACMT/EXP/2026-27/8586
-# AC 83A)": sin el paréntesis de apertura y con una letra pegada al número.
-# Desde hoy el parser la salva (cruza como AC 83A), pero es una Nota mal
-# escrita, y la próxima puede venir peor. Aviso suave para que la corrijan en
-# Asinfo ANTES de que alguien cargue plata contra ella. Sólo lo que se ve en la
-# Nota: el paréntesis que falta o la letra pegada. Que el número exista en otra
-# campaña NO es raro (se reusa todos los años) y no se avisa.
-def notas_mal_escritas(limite: int = 1000,
-                       rows: list[dict] | None = None,
-                       techo: int | None = None) -> list[dict]:
-    """Importaciones con código, pero con la Nota fuera del formato
-    "( AC 36 )": sin paréntesis o con letra pegada. Una por importación."""
-    from filters import today_ec
-
-    if rows is None:
-        rows = _leer_importaciones(limite=limite)
-    if rows is None:
-        return []
-    techo = _techo_dias() if techo is None else int(techo)
-    hoy = today_ec()
-
-    out = []
-    for r in rows or []:
-        if not (r.get("prov") and r.get("numero") is not None):
-            continue
-        motivos = []
-        if r.get("sin_parentesis"):
-            motivos.append("sin paréntesis")
-        if r.get("sufijo"):
-            motivos.append(f"letra pegada al número ({r['sufijo']})")
-        if not motivos:
-            continue
-        fref = (_d(r.get("fecha_recepcion")) if r.get("recibida")
-                else _d(r.get("fecha")))
-        if not fref:
-            continue
-        edad = (hoy - fref).days
-        if techo and edad > techo:
-            continue
-        out.append({
-            "im_numero": str(r.get("im_numero") or ""),
-            "codigo": str(r.get("codigo") or ""),
-            "nota": str(r.get("nota") or "").strip(),
-            "motivos": motivos, "dias": edad,
-            "proveedor": str(r.get("proveedor") or "").strip(),
-        })
-    out.sort(key=lambda x: x["dias"])
-    return out
-
-
 # ── El aviso que ya se solucionó ────────────────────────────────────────────
 # TMT 2026-08-26 (dueña): *"si un aviso ya se solucionó habría que avisar que se
 # solucionó"*.
@@ -623,25 +572,18 @@ def _resolver_los_arreglados(rows: list[dict] | None) -> None:
     from filters import num_es as _n
     from modules.avisos import queries as avisos
 
-    # La Nota mal escrita no necesita costos: se arregla cuando la misma importación vuelve a
-    # leerse con la Nota en formato (con paréntesis y sin letra pegada).
-    limpias = {
-        str(r.get("im_numero") or "").strip()
-        for r in rows
-        if r.get("prov") and r.get("numero") is not None
-        and not r.get("sin_parentesis") and not r.get("sufijo")
-    }
+    # TMT 2026-09-21: el aviso "la Nota está mal escrita" (sin paréntesis /
+    # letra pegada) vivió unas horas y Tamara lo bajó: *"no quiero que me diga
+    # que está mal, quiero que también entienda 83A)"*. El formato es válido.
+    # Lo que quedó abierto se da vuelta acá; cuando no quede ninguno, este
+    # bloque se puede borrar.
     for a in avisos.abiertos_por_clave("import-nota-rara:"):
         clave = str(a.get("clave") or "")
-        if ":" not in clave:
-            continue
-        im = clave.split(":", 1)[1]
-        if im not in limpias:
-            continue                     # sigue igual (o no se leyó)
+        im = clave.split(":", 1)[1] if ":" in clave else ""
         avisos.resolver(
             int(a["id_aviso"]),
-            titulo=f"{im} · listo, la Nota ya está bien escrita",
-            detalle="Cruza por el camino normal.",
+            titulo=f"{im} · listo, la Nota se entiende así como está",
+            detalle="El programa ya lee el código con la letra pegada.",
         )
 
     costos = _leer_costos()
@@ -728,7 +670,6 @@ def revisar_si_toca() -> dict:
         casos = importaciones_fuera_de_banda(dias, rows=_rows)
         facturas = facturas_con_plata_en_una_sola(rows=_rows)
         sin_codigo = importaciones_sin_codigo(rows=_rows)
-        raras = notas_mal_escritas(rows=_rows)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("revisión falló: %s", e)
         return {"corrio": True, "avisados": 0, "error": str(e)[:200]}
@@ -837,25 +778,6 @@ def revisar_si_toca() -> dict:
             clave=f"import-sin-codigo:{c['nota']}",
         ):
             n += 1
-    for c in raras:
-        titulo = (f"{c['codigo']} · la Nota en Asinfo está mal escrita "
-                  f"({', '.join(c['motivos'])}). Corregila.")
-        detalle = (
-            f"Dice «{c['nota']}». Hoy cruza igual, pero el formato es "
-            "«( AC 36 )»: paréntesis y el número solo. Así la próxima no "
-            "queda sin cruzar."
-        )
-        if avisos.avisar(
-            fuente="importaciones",
-            # 'alerta' y no 'ok': un aviso 'ok' nace resuelto para
-            # abiertos_por_clave() y nunca se podría dar vuelta.
-            nivel="alerta",
-            titulo=titulo[:200],
-            detalle=detalle,
-            url=_url_filtrada(c["im_numero"]),
-            clave=f"import-nota-rara:{c['im_numero']}",
-        ):
-            n += 1
     try:
         _resolver_los_arreglados(_rows)
     except Exception as e:  # noqa: BLE001 -- resolver nunca frena la alarma
@@ -864,5 +786,4 @@ def revisar_si_toca() -> dict:
         _LOG.info("importaciones sin plata: %s aviso(s) nuevos de %s caso(s) "
                   "y %s factura(s) repartida(s)", n, len(casos), len(facturas))
     return {"corrio": True, "casos": len(casos), "facturas": len(facturas),
-            "sin_codigo": len(sin_codigo), "notas_raras": len(raras),
-            "avisados": n, "dias": dias}
+            "sin_codigo": len(sin_codigo), "avisados": n, "dias": dias}
