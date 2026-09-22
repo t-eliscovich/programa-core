@@ -1703,24 +1703,42 @@ async function _gfSaveCampo(id, campo, valor, expectedVersion) {
 function gfApplyToData(rows) {
   /* Devuelve una copia de `rows` con los gastos forzados aplicados
      como egresos adicionales (sumados a `gastos`) y restados del saldo
-     acumulado a partir de la fecha de cada gasto. */
+     acumulado a partir de la fecha de cada gasto.
+
+     2026-09-22 (Federico: "muevo un forzado de ene-26 a ene-27 y el flujo
+     no cambia"): antes se buscaba la fecha EXACTA del gasto entre las filas
+     del gráfico → un forzado VENCIDO (fecha < hoy, fuera de la serie) no
+     calzaba con ninguna fila y se ignoraba en silencio. Ahora sigue la misma
+     regla que los posdat del server (queries.flujo_calculado): los vencidos
+     se imputan a HOY+1. Y el acumulado se calcula por fecha <= fila (no por
+     igualdad), así ningún gasto se pierde aunque falte un día en la serie. */
   const items = gfLoad();
   if (items.length === 0) return rows;
-  // Map fecha ISO → suma de gastos forzados ese día
-  const porFecha = {};
-  items.forEach(it => {
-    porFecha[it.fecha] = (porFecha[it.fecha] || 0) + Number(it.importe || 0);
-  });
+  const iso = d => {
+    const yyyy = d.getFullYear(), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+    return yyyy + '-' + mm + '-' + dd;
+  };
+  const manana = new Date(HOY); manana.setDate(HOY.getDate() + 1);
+  const MANANA_ISO = iso(manana);
+  // Fecha efectiva de cada gasto (vencidos → mañana), ordenados.
+  const efectivos = items
+    .filter(it => it.fecha)
+    .map(it => ({
+      fecha: it.fecha < HOY_ISO ? MANANA_ISO : it.fecha,
+      importe: Number(it.importe || 0),
+    }))
+    .sort((a, b) => (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0));
   // Proyectar: cada gasto se RESTA del saldo de su día y de todos los
   // posteriores, y se SUMA a `gastos` con signo negativo.
   let acumNeg = 0;
+  let k = 0;
   const out = rows.map(r => {
-    const isoFecha = (() => {
-      const d = r.fecha;
-      const yyyy = d.getFullYear(), mm = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
-      return yyyy + '-' + mm + '-' + dd;
-    })();
-    const gastoExtra = porFecha[isoFecha] || 0;
+    const isoFecha = iso(r.fecha);
+    let gastoExtra = 0;
+    while (k < efectivos.length && efectivos[k].fecha <= isoFecha) {
+      gastoExtra += efectivos[k].importe;
+      k++;
+    }
     if (gastoExtra) acumNeg -= gastoExtra;
     return {
       ...r,
