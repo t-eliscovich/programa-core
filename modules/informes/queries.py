@@ -6531,6 +6531,112 @@ def flujo_calculado(
     return filas
 
 
+def construir_flujo_excel(hoy, arranque: float, items: list[dict],
+                          dias_adelante: int = 365) -> list[dict]:
+    """Arma el flujo día por día con la fórmula de Federico (2026-09-22):
+
+        saldo del día = saldo del día anterior
+                        − gastos forzados del día   (posdat banc=9 + manuales)
+                        − posdatados del día        (posdat banc=0)
+                        + cheques a depositar del día
+    y aparte − cheques emitidos sin debitar (posdat banc=1/2): el dBase los
+    suma al saldo de arranque y los resta a su fecha, así que tienen que
+    restarse para que el saldo coincida con el gráfico.
+
+    Función PURA (testeable). `items` = [{fecha, tipo, importe}] con tipo ∈
+    forzado | posdat | emitido | cheque. Vencidos (fecha < hoy) → hoy+1, igual que
+    flujo_calculado y el gráfico. Devuelve sólo los días con movimiento."""
+    from datetime import timedelta as _td
+
+    manana = hoy + _td(days=1)
+    tope = hoy + _td(days=dias_adelante)
+    por_dia: dict = {}
+    for it in items:
+        f = it.get("fecha") or hoy
+        if f < hoy:
+            f = manana
+        if f > tope:
+            continue
+        d = por_dia.setdefault(
+            f, {"forzado": 0.0, "posdat": 0.0, "emitido": 0.0, "cheque": 0.0}
+        )
+        if it["tipo"] in d:
+            d[it["tipo"]] += float(it.get("importe") or 0)
+
+    filas: list[dict] = []
+    saldo = round(float(arranque or 0), 2)
+    for f in sorted(por_dia):
+        d = por_dia[f]
+        if not (d["forzado"] or d["posdat"] or d["emitido"] or d["cheque"]):
+            continue
+        anterior = saldo
+        saldo = round(
+            anterior - d["forzado"] - d["posdat"] - d["emitido"] + d["cheque"], 2
+        )
+        filas.append({
+            "fecha": f,
+            "saldo_anterior": anterior,
+            "forzados": round(d["forzado"], 2),
+            "posdatados": round(d["posdat"], 2),
+            "emitidos": round(d["emitido"], 2),
+            "cheques": round(d["cheque"], 2),
+            "saldo": saldo,
+        })
+    return filas
+
+
+def flujo_excel_dbase(dias_adelante: int = 365,
+                      ignorar_cheques: bool = False) -> dict:
+    """Datos del Excel del flujo (/informes/flujo/grafico/export.xlsx).
+
+    Mismos ítems que el gráfico, agrupados como los pide Federico:
+      - Gastos forzados = posdat banc=9 + manuales (scintela.gasto_forzado).
+        Antes el Excel NO tenía los manuales (sólo el gráfico los sumaba
+        client-side) → el saldo del Excel no coincidía con el del gráfico.
+      - Posdatados      = posdat banc=0 (incluye materia prima).
+      - Cheques emitidos sin debitar = posdat banc=1/2 (van sumados en el
+        arranque, igual que en el dBase y el gráfico).
+      - Cheques a depositar = cheques stat Z/1/2/3/P.
+    Arranque = saldo bancos de hoy (flujo_arranque_dbase().total)."""
+    hoy = today_ec()
+    arr = flujo_arranque_dbase()
+    items: list[dict] = []
+    if not ignorar_cheques:
+        items += [it for it in flujo_items_dbase() if it["tipo"] == "cheque"]
+    rows = db.fetch_all(
+        """
+        SELECT p.fechad AS fecha,
+               CASE WHEN COALESCE(p.banc, 0) = 9 THEN 'forzado'
+                    WHEN COALESCE(p.banc, 0) IN (1, 2) THEN 'emitido'
+                    ELSE 'posdat' END AS tipo,
+               COALESCE(SUM(p.importe), 0) AS total
+          FROM scintela.posdat p
+         WHERE p.fechad IS NOT NULL
+           AND COALESCE(p.num, 0) <> 9999
+           AND COALESCE(p.banc, 0) IN (0, 1, 2, 9)
+           AND (p.anulada IS NOT TRUE OR p.anulada IS NULL)
+         GROUP BY 1, 2
+        """
+    ) or []
+    items += [{"fecha": r["fecha"], "tipo": r["tipo"],
+               "importe": float(r["total"] or 0)} for r in rows]
+    rows = db.fetch_all(
+        """
+        SELECT fecha, COALESCE(SUM(importe), 0) AS total
+          FROM scintela.gasto_forzado
+         WHERE fecha IS NOT NULL
+         GROUP BY fecha
+        """
+    ) or []
+    items += [{"fecha": r["fecha"], "tipo": "forzado",
+               "importe": float(r["total"] or 0)} for r in rows]
+    return {
+        "hoy": hoy,
+        "arranque": arr["total"],
+        "filas": construir_flujo_excel(hoy, arr["total"], items, dias_adelante),
+    }
+
+
 def plazos_dbase() -> dict:
     """KPIs PLAZ.COBR y PLAZ.DEUDA del gráfico de flujo, calculados como
     en dBase: plazo otorgado promedio (vencimiento − fecha_emisión)

@@ -2462,11 +2462,11 @@ def flujo_grafico():
 @requiere_login
 @requiere_permiso("informes.ver")
 def flujo_grafico_export():
-    """Excel del flujo día por día — qué SUMA (ingresos) y qué RESTA (egresos)
-    cada día, con el saldo acumulado. Pedido dueña 2026-07-08 ("un excel del
-    flujo que muestre cada día que suma y que resta"). Misma fuente que el
-    gráfico (flujo_calculado): cheques cobrados = ingreso (+); posdat P1/P2,
-    materia prima y gastos = egresos (−). Fechas en DD/MM/AAAA."""
+    """Excel del flujo día por día. Fórmula (Federico 2026-09-22):
+    saldo del día = saldo del día anterior − gastos forzados (banc=9 +
+    manuales de scintela.gasto_forzado, antes faltaban) − posdatados (banc=0)
+    + cheques a depositar − cheques emitidos sin debitar (banc=1/2). Ver queries.flujo_excel_dbase.
+    Fechas en DD/MM/AAAA."""
     import io
 
     from openpyxl import Workbook
@@ -2474,19 +2474,20 @@ def flujo_grafico_export():
     from openpyxl.utils import get_column_letter
 
     ignorar_cheques = request.args.get("ignorar_cheques") in ("1", "true", "yes", "on")
-    filas, _ = _safe(
-        lambda: queries.flujo_calculado(
-            dias_atras=0, dias_adelante=365, ignorar_cheques=ignorar_cheques
+    datos, _ = _safe(
+        lambda: queries.flujo_excel_dbase(
+            dias_adelante=365, ignorar_cheques=ignorar_cheques
         ),
-        [],
+        {"hoy": today_ec(), "arranque": 0.0, "filas": []},
     )
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Flujo"
     headers = [
-        "Fecha", "Ingresos (cheques)", "Posdat P1", "Posdat P2",
-        "Materia prima", "Gastos", "Neto del día", "Saldo acumulado",
+        "Fecha", "Saldo día anterior", "Gastos forzados (−)",
+        "Posdatados (−)", "Cheques a depositar (+)",
+        "Cheques emitidos banc 1/2 (−)", "Saldo del día",
     ]
     hdr_font = Font(bold=True, color="FFFFFF")
     hdr_fill = PatternFill("solid", fgColor="0F172A")
@@ -2497,25 +2498,23 @@ def flujo_grafico_export():
         cell.alignment = Alignment(horizontal="center")
 
     money_fmt = "#,##0.00"
-    rownum = 2
-    for r in filas:
-        ing = float(r.get("cheques") or 0)   # +
-        p1 = float(r.get("posdat1") or 0)    # ya negativo (egreso)
-        p2 = float(r.get("posdat2") or 0)
-        mp = float(r.get("mprima") or 0)
-        g = float(r.get("gastos") or 0)
-        # Sólo días con movimiento (el resto es la línea plana del saldo).
-        if ing == 0 and p1 == 0 and p2 == 0 and mp == 0 and g == 0:
-            continue
-        neto = round(ing + p1 + p2 + mp + g, 2)
-        ws.cell(row=rownum, column=1, value=r.get("fecha")).number_format = "DD/MM/YYYY"
+    # Fila de arranque: saldo de bancos hoy.
+    ws.cell(row=2, column=1, value=datos["hoy"]).number_format = "DD/MM/YYYY"
+    c = ws.cell(row=2, column=7, value=round(float(datos["arranque"] or 0), 2))
+    c.number_format = money_fmt
+    c.font = Font(bold=True)
+    ws.cell(row=2, column=2, value="Saldo bancos hoy").font = Font(italic=True)
+    rownum = 3
+    for r in datos["filas"]:
+        ws.cell(row=rownum, column=1, value=r["fecha"]).number_format = "DD/MM/YYYY"
         for i, v in enumerate(
-            [ing, p1, p2, mp, g, neto, round(float(r.get("saldo") or 0), 2)], start=2
+            [r["saldo_anterior"], r["forzados"], r["posdatados"],
+             r["cheques"], r["emitidos"], r["saldo"]], start=2
         ):
             ws.cell(row=rownum, column=i, value=v).number_format = money_fmt
         rownum += 1
 
-    for i, w in enumerate([13, 18, 13, 13, 14, 13, 14, 16], start=1):
+    for i, w in enumerate([13, 18, 19, 16, 22, 26, 16], start=1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
 
