@@ -447,7 +447,10 @@
                ajuste ≤0) y con permiso de banco. Abre un mini-modal para
                confirmar fecha + N° de cheque opcional. #}
             {% if (f.prov or '') | upper not in ('YY', 'RT') and not f.op_line_key and not es_ajuste and tiene_permiso('bancos.conciliar') %}
-              <button type="button"
+              {# Tamara 2026-09-23 (caso AQ 166): tabindex=-1 — editando importes
+                 con el teclado, el Tab caía en este botón y un Enter lo
+                 disparaba. Se usa sólo con el mouse. #}
+              <button type="button" tabindex="-1"
                       class="posdat-registrar-banco no-print ml-1 align-middle"
                       style="background:#1d4ed8;color:#ffffff;border-radius:4px;padding:1px 6px;font-size:10px;font-weight:600;white-space:nowrap;"
                       data-id-posdat="{{ f.id_posdat }}"
@@ -455,6 +458,7 @@
                       data-importe-fmt="{{ f.importe | money_es }}"
                       data-prov="{{ f.prov or '' }}"
                       data-concepto="{{ f.concepto or '' }}"
+                      data-fechad="{{ (f.fechad | string)[:10] if f.fechad else '' }}"
                       title="Mandar a debitar este posdatado a Pichincha (sale de Pasivos)">
                 Registrar banco
               </button>
@@ -1100,7 +1104,10 @@
         <span style="font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;">Monto</span>
         <span id="rb-monto" style="font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:#1d4ed8;"></span>
       </div>
-      <div id="rb-detalle" style="font-size:11px;color:#475569;margin-bottom:14px;"></div>
+      <div id="rb-detalle" style="font-size:11px;color:#475569;margin-bottom:8px;"></div>
+      {# Tamara 2026-09-23 (caso AQ 166): la 166 se debitó 9 días ANTES de
+         vencer y el banco nunca la debitó — se pagó en el PAG-CASH. #}
+      <div id="rb-vence" style="display:none;font-size:12px;border-radius:6px;padding:8px 10px;margin-bottom:12px;"></div>
       <label style="display:block;font-size:11px;color:#334155;margin-bottom:4px;">Fecha del débito</label>
       <input type="date" name="fecha" id="rb-fecha" value="{{ today_iso }}"
              style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:6px 8px;font-size:13px;margin-bottom:12px;">
@@ -1126,6 +1133,37 @@
       const elDetalle = document.getElementById('rb-detalle');
       const elCheque  = document.getElementById('rb-cheque');
       const btnCancel = document.getElementById('rb-cancel');
+      const elVence   = document.getElementById('rb-vence');
+      const elFecha   = document.getElementById('rb-fecha');
+      const btnOk     = document.getElementById('rb-confirm');
+      let fechad = '';
+
+      function ddmm(iso) { const p = (iso || '').split('-'); return p.length === 3 ? p[2] + '/' + p[1] + '/' + p[0] : iso; }
+      function pintarVence() {
+        const deb = (elFecha && elFecha.value) || '';
+        if (!fechad) { elVence.style.display = 'none'; return; }
+        const dias = Math.round((new Date(fechad) - new Date(deb || fechad)) / 86400000);
+        elVence.style.display = 'block';
+        if (dias > 0) {
+          elVence.style.background = '#fef3c7'; elVence.style.color = '#92400e';
+          elVence.innerHTML = 'Vence el <strong>' + ddmm(fechad) + '</strong>: todavía faltan <strong>' + dias +
+            (dias === 1 ? ' día' : ' días') + '</strong>. Registralo sólo si el banco ya lo debitó.';
+        } else {
+          elVence.style.background = '#f1f5f9'; elVence.style.color = '#334155';
+          elVence.textContent = 'Venció el ' + ddmm(fechad) + '.';
+        }
+      }
+      if (elFecha) elFecha.addEventListener('change', pintarVence);
+      // Enter en un campo NO manda el débito: sólo el botón. El 20/08 salieron
+      // tres envíos en medio segundo.
+      form.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' && e.target.tagName === 'INPUT') e.preventDefault();
+      });
+      form.addEventListener('submit', (e) => {
+        if (form.dataset.enviado === '1') { e.preventDefault(); return; }
+        form.dataset.enviado = '1';
+        btnOk.disabled = true; btnOk.style.opacity = '.6'; btnOk.textContent = 'Registrando…';
+      });
 
       function abrir(btn) {
         const id = btn.dataset.idPosdat;
@@ -1136,6 +1174,10 @@
         const conc = (btn.dataset.concepto || '').trim();
         elDetalle.textContent = [prov, conc].filter(Boolean).join(' · ');
         elCheque.value = '';
+        fechad = btn.dataset.fechad || '';
+        pintarVence();
+        form.dataset.enviado = '';
+        btnOk.disabled = false; btnOk.style.opacity = ''; btnOk.textContent = 'Confirmar débito';
         modal.style.display = 'flex';
         setTimeout(() => elCheque.focus(), 50);
       }

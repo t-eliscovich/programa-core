@@ -374,6 +374,7 @@ def emitir_cheque():
     bancos = queries.bancos_operativos() or []
     pregunta_fecha = None     # fecha anterior a hoy pendiente de confirmar
     pregunta_repetido = None  # movimiento igual cargado recién
+    pregunta_pagadas = None   # facturas que ya salieron con "Registrar banco"
 
     if request.method == "POST":
         tipo = (request.form.get("tipo") or "").strip().lower()
@@ -428,9 +429,27 @@ def emitir_cheque():
         _conf = (request.form.get("confirmar_fecha") or "").strip()
         if fecha < today_ec() and _conf not in ("1", fecha.isoformat()):
             pregunta_fecha = fecha
+        # ⭐ Freno de FACTURA YA PAGADA (Tamara 2026-09-23, caso AQ 166): si el
+        # concepto nombra una factura del mismo proveedor que ya salió del
+        # banco con "Registrar banco" en /posdat, se pregunta antes de grabar.
+        # La 166 de AQ salió dos veces así: el 20/08 por Registrar banco y el
+        # 05/09 dentro de "AQ 165/166/167/…". No se bloquea: puede ser otra
+        # factura con el mismo número.
+        if (tipo == "proveedor" and pregunta_fecha is None
+                and (request.form.get("permitir_ya_pagada") or "") != "1"):
+            try:
+                from modules.bancos import pago_repetido as _pr
+                pregunta_pagadas = _pr.ya_debitadas(
+                    concepto=concepto, id_posdats=id_posdats or (
+                        [id_posdat] if id_posdat else None),
+                    hoy=today_ec()) or None
+            except Exception as _e:  # noqa: BLE001 -- el freno nunca traba el pago
+                from modules._lib.silencios import avisar as _silencio
+                _silencio(__name__, "ya_debitadas", _e)
+                pregunta_pagadas = None
         try:
             usuario = (g.user or {}).get("username", "web")
-            if pregunta_fecha is not None:
+            if pregunta_fecha is not None or pregunta_pagadas:
                 raise _Preguntar
             r = queries.emitir_cheque(
                 tipo=tipo,
@@ -496,13 +515,15 @@ def emitir_cheque():
 
     # Si hay algo que confirmar, nada se grabó: se muestra la pregunta con
     # todo lo tipeado colgando en hidden, para que el "Sí" lo mande igual.
-    if pregunta_fecha is not None or pregunta_repetido is not None:
+    if (pregunta_fecha is not None or pregunta_repetido is not None
+            or pregunta_pagadas):
         return render_template(
             "bancos/emitir_confirmar.html",
             doc=doc,
             label=label,
             pregunta_fecha=pregunta_fecha,
             pregunta_repetido=pregunta_repetido,
+            pregunta_pagadas=pregunta_pagadas,
             hoy_es=today_ec().strftime("%d/%m/%Y"),
             campos=_campos_ocultos(
                 request.form,

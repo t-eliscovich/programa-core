@@ -2402,6 +2402,7 @@ def saldos_coherente():
     `con_puntos`, `kg_al_marcar_vivo` y `largada`).
     """
     from datetime import date
+
     from modules.analisis import queries as _saldos_q
     base = _saldos_q.con_puntos(_saldos_q.items())
     resumen = _saldos_q.resumen(
@@ -2716,6 +2717,53 @@ def deudas_desaparecidas():
 
 
 # ---------------------------------------------------------------------------
+# "Registrar banco" que el banco no tiene / la misma factura pagada dos veces
+# ---------------------------------------------------------------------------
+# Tamara 2026-09-23 (caso AQ 166): un "Registrar banco" de /posdat grabó una
+# nota de débito de $ 6.603,30 que el banco nunca hizo, y la factura se volvió
+# a pagar en el PAG-CASH del 04/09. Estuvo un mes como pendiente de
+# conciliación sin que nadie supiera qué era. Ver modules/bancos/pago_repetido.
+
+
+def _avisar_debito_sin_banco(alerts: list[dict]) -> None:
+    """Campanita para quien concilia. Nunca rompe el health."""
+    try:
+        from modules.avisos import avisar
+        for a in alerts:
+            filas = a.get("filas") or []
+            ids = "|".join(str(f.get("id_transaccion")) for f in filas)
+            titulo = ("Débito del banco que el banco no tiene"
+                      if a.get("category") == "debito_posdat_sin_banco"
+                      else "Factura de proveedor pagada dos veces")
+            avisar(fuente="bancos", nivel="alerta", titulo=titulo,
+                   detalle=a.get("msg"), cantidad=len(filas),
+                   url="/conciliacion/banco",
+                   clave=f"bancos:{a.get('category')}:{ids}")
+    except Exception as exc:  # noqa: BLE001 -- avisar nunca rompe al que avisa
+        _LOG_REPETIDOS.warning("no pude avisar el débito sin banco: %s", exc)
+
+
+@bp.route("/debito-sin-banco", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def debito_sin_banco():
+    from filters import today_ec
+    from modules.bancos import pago_repetido as _pr
+    try:
+        alerts, stats = _pr.debitos_sin_banco(today_ec())
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "alerts": [{
+            "severity": "high", "category": "debito_sin_banco_error",
+            "msg": f"No pude revisar los débitos de posdatados: {e}"}],
+            "stats": {}})
+    _avisar_debito_sin_banco(alerts)
+    for a in alerts:
+        a["filas"] = [{k: (str(v) if k.endswith("fecha") else v)
+                       for k, v in f.items()} for f in a.get("filas") or []]
+    return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
+
+
+# ---------------------------------------------------------------------------
 # Hilo en bodega sin su deuda cargada
 # ---------------------------------------------------------------------------
 # Tamara 2026-09-16: el motor de compras locales carga el pasivo junto con la
@@ -2774,6 +2822,10 @@ def health_all():
     # Tamara 2026-09-16: hilo en bodega sin su deuda (guarda trabada), y la
     # misma entrega cargada dos veces.
     resp27 = hilo_local()
+    # Tamara 2026-09-23: "Registrar banco" que el banco no tiene, y la misma
+    # factura de proveedor pagada dos veces (caso AQ 166).
+    resp28 = debito_sin_banco()
+    data28 = json.loads(resp28.get_data(as_text=True))
     # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
     # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
     from modules._lib import servidor as _srv
@@ -2828,7 +2880,7 @@ def health_all():
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
                and data23["ok"] and data24["ok"] and data25["ok"]
-               and data26["ok"]),
+               and data26["ok"] and data28["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2855,6 +2907,7 @@ def health_all():
         "arranque_de_mes": data24,
         "deudas_desaparecidas": data25,
         "hilo_local": json.loads(resp27.get_data(as_text=True)),
+        "debito_sin_banco": data28,
         "servidor": data26,
     })
 

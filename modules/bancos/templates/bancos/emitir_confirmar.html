@@ -74,6 +74,38 @@
     </div>
     {% endif %}
 
+    {% if pregunta_pagadas %}
+    {# Tamara 2026-09-23 (caso AQ 166): la factura ya salió del banco con
+       "Registrar banco" en Posdatados. Estilos inline: tailwind congelado. #}
+    <div style="border:2px solid #f87171;background:#fef2f2;border-radius:8px;padding:16px;">
+      <div class="font-mono font-semibold" style="color:#991b1b;margin-bottom:4px;">¿YA PAGADA?</div>
+      <p class="text-sm" style="color:#7f1d1d;margin-bottom:8px;">
+        {% if pregunta_pagadas|length == 1 %}Esta factura ya salió{% else %}Estas facturas ya salieron{% endif %}
+        del banco con <strong>Registrar banco</strong> en Posdatados:
+      </p>
+      <ul class="text-sm" style="color:#7f1d1d;margin:0 0 12px 18px;list-style:disc;">
+        {% for p in pregunta_pagadas %}
+        <li><strong>{{ p.prov }} {{ p.factura }}</strong> — el {{ p.fecha.strftime('%d/%m/%Y') if p.fecha else '' }}
+          por <span class="font-mono">{{ p.importe | money_es }}</span></li>
+        {% endfor %}
+      </ul>
+      <p class="text-sm" style="color:#7f1d1d;margin-bottom:12px;">
+        Si este pago la incluye, sale dos veces del banco. Sacala del importe, o
+        si el débito de antes no pasó en el banco, reversalo primero desde el Historial.
+      </p>
+      <div class="flex gap-3 items-center">
+        <a href="{{ url_for('bancos.emitir_cheque', doc=doc) }}"
+           class="text-sm px-5 py-1.5 rounded font-semibold"
+           style="background:#059669;color:#fff;">No lo cargues</a>
+        <button type="submit" name="permitir_ya_pagada" value="1"
+                class="text-sm px-4 py-1.5 rounded border"
+                style="border-color:#fca5a5;color:#991b1b;background:#fff;">
+          Es otra factura, cargalo igual
+        </button>
+      </div>
+    </div>
+    {% endif %}
+
     <a href="{{ url_for('bancos.emitir_cheque', doc=doc) }}"
        class="inline-block text-sm text-slate-600 hover:underline">← Cargarlo de nuevo</a>
   </form>
