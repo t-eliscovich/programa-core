@@ -148,9 +148,10 @@ def integraciones():
     if out["metabase"]["configured"]:
         t0 = time.perf_counter()
         try:
-            # Forzamos un re-login para validar que credentials siguen vivos.
-            # No tocamos cards — solo /api/session. Más barato y diagnóstico.
-            metabase_client.reset_session()
+            # Hay sesión, o se consigue una. NO se borra la sesión de todos
+            # para probar un login nuevo: cada /healthz era un login más, y el
+            # 23/09 Metabase frenó al usuario del programa por pedir de más
+            # (ver metabase_client._login). El login respeta el freno.
             import requests as _requests  # local: ya es dep del cliente
 
             ok = bool(metabase_client._login(_requests))

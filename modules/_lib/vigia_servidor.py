@@ -270,6 +270,40 @@ def vigilar_metabase() -> dict | None:
     return None
 
 
+#: Como mucho un reinicio por freno de login cada tanto.
+_LOGIN_REINICIO_CADA_S = 3600.0
+_ultimo_reinicio_login = 0.0
+
+
+def vigilar_login_metabase(ahora: float | None = None) -> dict | None:
+    """Si Metabase FRENÓ al usuario del programa ("Too many attempts"),
+    lo reinicia: el freno vive en la memoria de Metabase y se va con el
+    reinicio. TMT 2026-09-23: después de un deploy el programa se quedó sin
+    sesión y todo lo de Asinfo (despachos, stock, precios, sync de clientes)
+    contestaba vacío; la espera que pedía Metabase crecía con cada intento
+    y ya iba por 17 días. Como mucho una vez por hora, y avisa."""
+    global _ultimo_reinicio_login
+    ahora = time.time() if ahora is None else ahora
+    try:
+        from modules._lib import metabase_client
+        if not metabase_client.login_frenado_por_metabase():
+            return None
+    except Exception:  # noqa: BLE001
+        return None
+    if ahora - _ultimo_reinicio_login < _LOGIN_REINICIO_CADA_S:
+        return None
+    _ultimo_reinicio_login = ahora
+    hecho = _reiniciar_metabase()
+    metabase_client.destrabar_login()
+    return _avisar(
+        "Metabase frenó al programa",
+        "Metabase dejó de darle sesión al programa por demasiados intentos de "
+        "entrar, y sin sesión no llega nada de Asinfo (despachos, stock, precios). "
+        f"Lo que hice: {hecho}. Si en 10 min /admin/health/metabase sigue "
+        "mostrando un error de login, avisar.",
+        clave=f"metabase-login-{int(ahora // 3600)}")
+
+
 def _arrancar_tarea_metabase() -> str:
     """`schtasks /Run /TN Metabase` — sin PowerShell. Devuelve qué pasó."""
     if not sys.platform.startswith("win"):
@@ -293,6 +327,7 @@ def revisar(ahora: float | None = None) -> dict:
                     "acciones": [], "aviso": None}
     _estado["ultima_revision"] = ahora
     vuelta["metabase"] = vigilar_metabase()
+    vuelta["login_metabase"] = vigilar_login_metabase(ahora)
     if not est.get("total_mb"):
         return vuelta
     global _ultima_guardada

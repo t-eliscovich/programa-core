@@ -114,24 +114,107 @@ def disponible() -> bool:
     return bool(_url() and all(_creds()))
 
 
-def _login(requests_mod) -> str | None:
-    """Login. Setea _session_token. Devuelve el token o None si falla."""
-    global _session_token
+# ── El LOGIN, de a uno y con freno (TMT 2026-09-23) ─────────────────────────
+# El 23/09 a las 19:01 UTC, después de un deploy, Metabase dejó de darle
+# sesión al programa: "Too many attempts! You must wait N seconds". Metabase
+# frena el login de un usuario que prueba muchas veces, y CADA intento frenado
+# suma espera: con cada consulta de Asinfo (despachos, stock, precios, el sync
+# de clientes) pidiendo su propio login varias veces por segundo, la espera
+# pasó de 4,5 horas a 17 días en media hora — nunca se iba a destrabar sola.
+# Tres reglas desde entonces:
+#   1. Un solo login a la vez (`_login_lock`); el que espera usa la sesión que
+#      consiguió el otro en vez de pedir otra.
+#   2. Si el login falla, no se vuelve a probar hasta que pase `_FRENO_S`
+#      (o `_FRENO_METABASE_S` si fue Metabase el que frenó): mientras tanto
+#      las consultas contestan "no contestó" sin tocar la red.
+#   3. /healthz ya no borra la sesión de todos para probar un login nuevo.
+# Si aun así Metabase queda frenado, el vigía del servidor lo reinicia (el
+# freno de Metabase vive en su memoria y se va con el reinicio).
+_login_lock = threading.Lock()
+_FRENO_S = 60.0
+_FRENO_METABASE_S = 300.0
+_login_frenado_hasta = 0.0
+_ultimo_error_login = ""
+_ultimo_error_login_ts = 0.0
+
+
+def _ahora() -> float:
+    import time as _t
+    return _t.time()
+
+
+def login_frenado_por_metabase() -> bool:
+    """True si el último login falló porque METABASE frenó al usuario
+    ("Too many attempts") — lo que sólo se arregla reiniciando Metabase."""
+    return "too many attempts" in _ultimo_error_login.lower()
+
+
+def estado_login() -> dict:
+    """Para el health y el vigía: si hay sesión, el último error y el freno."""
+    falta = max(0.0, _login_frenado_hasta - _ahora())
+    return {
+        "hay_sesion": bool(_session_token),
+        "ultimo_error": _ultimo_error_login,
+        "frenado_s": round(falta),
+        "frenado_por_metabase": login_frenado_por_metabase(),
+    }
+
+
+def destrabar_login() -> None:
+    """Saca el freno propio (lo llama el vigía después de reiniciar Metabase)."""
+    global _login_frenado_hasta, _ultimo_error_login
+    _login_frenado_hasta = 0.0
+    _ultimo_error_login = ""
+
+
+def _login(requests_mod, vencido: str | None = None) -> str | None:
+    """Login. Setea _session_token. Devuelve el token o None si falla.
+
+    `vencido`: el token que Metabase acaba de rechazar con 401. Si al entrar
+    ya hay OTRO token (lo renovó otro hilo mientras esperábamos), se usa ese
+    y no se pide un login nuevo. Sin `vencido`, cualquier sesión viva sirve.
+    """
+    global _session_token, _login_frenado_hasta, _ultimo_error_login, _ultimo_error_login_ts
     user, pwd = _creds()
     if not (_url() and user and pwd):
         return None
-    try:
-        r = requests_mod.post(
-            f"{_url()}/api/session",
-            json={"username": user, "password": pwd},
-            timeout=5,
-        )
-        r.raise_for_status()
-        _session_token = r.json().get("id")
-        return _session_token
-    except Exception as e:
-        _log.warning("Metabase login falló: %s", e)
+    if _ahora() < _login_frenado_hasta:
         return None
+    with _login_lock:
+        if _session_token and _session_token != vencido:
+            return _session_token
+        if _ahora() < _login_frenado_hasta:
+            return None
+        try:
+            r = requests_mod.post(
+                f"{_url()}/api/session",
+                json={"username": user, "password": pwd},
+                timeout=10,
+            )
+            if getattr(r, "status_code", 200) >= 400:
+                cuerpo = ""
+                try:
+                    cuerpo = str(r.text)[:300]
+                except Exception:  # noqa: BLE001
+                    pass
+                raise RuntimeError(f"HTTP {r.status_code} {cuerpo}".strip())
+            r.raise_for_status()
+            tok = r.json().get("id")
+            if not tok:
+                raise RuntimeError("Metabase no devolvió sesión")
+            _session_token = tok
+            _ultimo_error_login = ""
+            _login_frenado_hasta = 0.0
+            return _session_token
+        except Exception as e:
+            _session_token = None
+            _ultimo_error_login = str(e)[:300]
+            _ultimo_error_login_ts = _ahora()
+            freno = _FRENO_METABASE_S if login_frenado_por_metabase() else _FRENO_S
+            _login_frenado_hasta = _ahora() + freno
+            _log.warning("Metabase login falló (no reintento por %ss): %s", int(freno), e)
+            _anotar(0, 0.0, False, f"login: {_ultimo_error_login}")
+            return None
 
 
 def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> list[dict]:
@@ -167,8 +250,7 @@ def fetch_card(card_id: int | str | None, params: list[dict] | None = None) -> l
         )
         if r.status_code == 401:
             # Token vencido: re-login una vez y reintento.
-            _session_token = None
-            token = _login(requests)
+            token = _login(requests, vencido=token)
             if not token:
                 return []
             r = requests.post(
@@ -257,8 +339,7 @@ def fetch_dataset(
     try:
         r = _do()
         if r.status_code == 401:
-            _session_token = None
-            token2 = _login(requests)
+            token2 = _login(requests, vencido=token)
             if not token2:
                 _anotar(database_id, (_t.monotonic() - _t0) * 1000, False,
                         "401 y no pude renovar la sesión")
@@ -311,6 +392,7 @@ def fetch_dataset_estado(
 
 
 def reset_session() -> None:
-    """Forzar re-login en la próxima llamada. Útil para tests."""
+    """Forzar re-login en la próxima llamada (y sacar el freno). Para tests."""
     global _session_token
     _session_token = None
+    destrabar_login()

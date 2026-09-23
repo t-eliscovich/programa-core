@@ -435,3 +435,15 @@ def _portal_con_sus_datos_cargados(monkeypatch):
 
     monkeypatch.setattr(_pd, "completo", lambda cod: True)
     yield
+
+
+@pytest.fixture(autouse=True)
+def _metabase_login_sin_freno():
+    """TMT 2026-09-23: el login de Metabase guarda un FRENO de módulo después de
+    fallar (ver metabase_client._login). Un test que simula un login caído no
+    puede dejarle el freno puesto al siguiente."""
+    from modules._lib import metabase_client
+
+    metabase_client.destrabar_login()
+    yield
+    metabase_client.destrabar_login()

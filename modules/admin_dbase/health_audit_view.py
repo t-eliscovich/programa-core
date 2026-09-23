@@ -604,8 +604,12 @@ def metabase_bitacora():
     fallos = [f for f in filas if not f.get("ok")]
     lentas = sorted(filas, key=lambda f: -(f.get("ms") or 0))[:5]
     tiempos = sorted((f.get("ms") or 0) for f in filas)
+    login = metabase_client.estado_login()
     return jsonify({
-        "ok": not fallos,
+        "ok": not fallos and not login["ultimo_error"],
+        # El 23/09 esta pantalla decía ok con CERO consultas: el login fallaba
+        # antes de llegar a consultar y no quedaba anotado. Ahora se ve acá.
+        "login": login,
         "timeout_configurado_secs": metabase_client._timeout_secs(),
         "n_consultas": len(filas),
         "n_fallos": len(fallos),
