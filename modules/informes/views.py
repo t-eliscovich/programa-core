@@ -3888,6 +3888,24 @@ def estado_cuenta_grupos():
     sel = (request.args.get("sel") or "").strip()
     filas, error = _safe(queries.estado_cuenta_clientes_saldos, [])
     filas = filas or []
+    # TMT 2026-09-23 (dueña): saldo, cheques y total IGUALES a la ficha de
+    # cada cliente (mismas consultas). Si esa consulta falla, la pantalla se
+    # abre igual con el saldo de antes y los cheques en cero.
+    _con, _err_tot = _safe(lambda: queries.con_totales_de_la_ficha(filas), None)
+    if _con is not None and not _err_tot:
+        filas = _con
+    else:
+        for r in filas:
+            r.setdefault("cheques", 0.0)
+            r["total"] = float(r.get("saldo") or 0) + float(r.get("cheques") or 0)
+        error = error or _err_tot
+
+    def _sumas(lista):
+        return {
+            "saldo": sum(float(r.get("saldo") or 0) for r in lista),
+            "cheques": sum(float(r.get("cheques") or 0) for r in lista),
+            "total": sum(float(r.get("total") or 0) for r in lista),
+        }
 
     def _keylabel(r):
         return _ec_group_key(por, r)
@@ -3899,16 +3917,15 @@ def estado_cuenta_grupos():
     # vendedor/provincia (ver estado_cuenta_lote_imprimir), así la hoja sale
     # siempre ordenada igual sin importar por dónde se entró.
     if por == "todos":
-        # TMT 2026-08-17 (dueña): probamos traerle al renglón las cifras del
-        # encabezado de la ficha (facturas / cheques / total / cupo / % usado)
-        # y lo bajó: *"mejor solo saldo. como todo el resto"*. El renglón de
-        # "Todos" es EL MISMO que el de Vendedor/Provincia/Grupos — código,
-        # cliente y saldo. Para el desglose está la ficha del cliente.
+        # TMT 2026-08-17 (dueña): el renglón de "Todos" es EL MISMO que el de
+        # Vendedor/Provincia/Grupos. TMT 2026-09-23: todas suman Cheques y
+        # Total, iguales a la ficha (ver `con_totales_de_la_ficha`).
         clientes = sorted(filas, key=lambda r: (r.get("codigo_cli") or "").upper())
         ctx.update(
             mode="todos",
             clientes=clientes,
             total=sum(float(r.get("saldo") or 0) for r in clientes),
+            sumas=_sumas(clientes),
         )
         return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
@@ -3919,10 +3936,13 @@ def estado_cuenta_grupos():
         for r in filas:
             k, label = _keylabel(r)
             grp = gmap.setdefault(
-                k, {"codigo": k, "label": label, "clientes": [], "saldo": 0.0}
+                k, {"codigo": k, "label": label, "clientes": [], "saldo": 0.0,
+                    "cheques": 0.0, "total": 0.0}
             )
             grp["clientes"].append(r)
             grp["saldo"] += float(r.get("saldo") or 0)
+            grp["cheques"] += float(r.get("cheques") or 0)
+            grp["total"] += float(r.get("total") or 0)
         grupos = [g for g in gmap.values() if len(g["clientes"]) >= 2]
         grupos.sort(key=lambda x: x["saldo"], reverse=True)
         for grp in grupos:
@@ -3931,6 +3951,7 @@ def estado_cuenta_grupos():
             mode="grupo",
             grupos=grupos,
             total=sum(g["saldo"] for g in grupos),
+            sumas=_sumas([c for g in grupos for c in g["clientes"]]),
             n_clientes=sum(len(g["clientes"]) for g in grupos),
         )
         return render_template("informes/estado_cuenta_grupos.html", **ctx)
@@ -3951,20 +3972,25 @@ def estado_cuenta_grupos():
             sel_label=sel_label,
             clientes=clientes,
             total=sum(float(r.get("saldo") or 0) for r in clientes),
+            sumas=_sumas(clientes),
         )
         return render_template("informes/estado_cuenta_grupos.html", **ctx)
 
     opt_map: dict = {}
     for r in filas:
         k, label = _keylabel(r)
-        o = opt_map.setdefault(k, {"sel": k, "label": label, "n": 0, "saldo": 0.0})
+        o = opt_map.setdefault(k, {"sel": k, "label": label, "n": 0, "saldo": 0.0,
+                                   "cheques": 0.0, "total": 0.0})
         o["n"] += 1
         o["saldo"] += float(r.get("saldo") or 0)
+        o["cheques"] += float(r.get("cheques") or 0)
+        o["total"] += float(r.get("total") or 0)
     options = sorted(opt_map.values(), key=lambda x: x["saldo"], reverse=True)
     ctx.update(
         mode="picker",
         options=options,
         total=sum(o["saldo"] for o in options),
+        sumas=_sumas(filas),
         n_clientes=len(filas),
     )
     return render_template("informes/estado_cuenta_grupos.html", **ctx)

@@ -83,6 +83,8 @@
           <th class="text-left py-2 px-2">{{ 'Vendedor' if por == 'vendedor' else 'Provincia' }}</th>
           <th class="text-right py-2 px-2">Clientes</th>
           <th class="text-right py-2 px-2">Saldo</th>
+          <th class="text-right py-2 px-2">Cheques</th>
+          <th class="text-right py-2 px-2">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -93,7 +95,9 @@
                  class="font-medium text-sky-700 dark:text-sky-400 hover:underline">{{ o.label }}</a>
             </td>
             <td class="py-2 px-2 text-right tabular-nums text-slate-500">{{ o.n }}</td>
-            <td class="py-2 px-2 text-right tabular-nums font-semibold">{{ o.saldo | money_es }}</td>
+            <td class="py-2 px-2 text-right tabular-nums">{{ o.saldo | money_es }}</td>
+            <td class="py-2 px-2 text-right tabular-nums">{{ o.cheques | money_es }}</td>
+            <td class="py-2 px-2 text-right tabular-nums font-semibold">{{ o.total | money_es }}</td>
           </tr>
         {% endfor %}
       </tbody>
@@ -101,7 +105,9 @@
         <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
           <td class="py-2 px-2">TOTAL</td>
           <td class="py-2 px-2 text-right tabular-nums">{{ n_clientes }}</td>
-          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.saldo | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.cheques | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.total | money_es }}</td>
         </tr>
       </tfoot>
     </table>
@@ -132,6 +138,8 @@
           <th class="text-left py-2 px-2">Código</th>
           <th class="text-left py-2 px-2">Cliente</th>
           <th class="text-right py-2 px-2">Saldo</th>
+          <th class="text-right py-2 px-2">Cheques</th>
+          <th class="text-right py-2 px-2">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -143,13 +151,17 @@
             </td>
             <td class="py-1 px-2">{{ c.nombre }}</td>
             <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
+            <td class="py-1 px-2 text-right tabular-nums">{{ c.cheques | money_es }}</td>
+            <td class="py-1 px-2 text-right tabular-nums font-semibold">{{ c.total | money_es }}</td>
           </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
           <td class="py-2 px-2" colspan="2">TOTAL</td>
-          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.saldo | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.cheques | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.total | money_es }}</td>
         </tr>
       </tfoot>
     </table>
@@ -157,10 +169,9 @@
 
   {# ═══════════════════ MODE: TODOS (sin agrupar) ══════════════════════════ #}
   {# TMT 2026-08-17 (dueña): el renglón es EL MISMO que el de las otras
-     pestañas — código, cliente, saldo. Probamos traerle acá las cifras del
-     encabezado de la ficha (cheques, total, cupo, % usado) y lo bajó:
-     *"mejor solo saldo. como todo el resto"*. Para el desglose de un cliente
-     está su ficha, que es adonde lleva el link del código. #}
+     pestañas. TMT 2026-09-23 (dueña): *"lo mismo para los otros tabs"* —
+     todas las pestañas suman Cheques y Total, iguales a la ficha (cupo y
+     % usado siguen quedando en la ficha). #}
   {% elif mode == 'todos' %}
     <p class="no-print text-sm text-slate-500 mb-3">
       Todos los clientes con saldo, en orden alfabético por código.
@@ -183,6 +194,8 @@
           <th class="text-left py-2 px-2">Código</th>
           <th class="text-left py-2 px-2">Cliente</th>
           <th class="text-right py-2 px-2">Saldo</th>
+          <th class="text-right py-2 px-2">Cheques</th>
+          <th class="text-right py-2 px-2">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -194,13 +207,17 @@
             </td>
             <td class="py-1 px-2">{{ c.nombre }}</td>
             <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
+            <td class="py-1 px-2 text-right tabular-nums">{{ c.cheques | money_es }}</td>
+            <td class="py-1 px-2 text-right tabular-nums font-semibold">{{ c.total | money_es }}</td>
           </tr>
         {% endfor %}
       </tbody>
       <tfoot>
         <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
           <td class="py-2 px-2" colspan="2">TOTAL</td>
-          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.saldo | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.cheques | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.total | money_es }}</td>
         </tr>
       </tfoot>
     </table>
@@ -225,6 +242,8 @@
           <th class="text-left py-2 px-2">Código</th>
           <th class="text-left py-2 px-2">Cliente</th>
           <th class="text-right py-2 px-2">Saldo</th>
+          <th class="text-right py-2 px-2">Cheques</th>
+          <th class="text-right py-2 px-2">Total</th>
         </tr>
       </thead>
       <tbody>
@@ -242,6 +261,8 @@
               <span class="text-xs font-normal text-slate-500">· {{ grp.clientes | length }} clientes</span>
             </td>
             <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.saldo | money_es }}</td>
+            <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.cheques | money_es }}</td>
+            <td class="py-1.5 px-2 text-right font-bold tabular-nums">{{ grp.total | money_es }}</td>
           </tr>
           {% for c in grp.clientes %}
             <tr class="border-b border-slate-100 dark:border-slate-800/60">
@@ -251,6 +272,8 @@
               </td>
               <td class="py-1 px-2">{{ c.nombre }}</td>
               <td class="py-1 px-2 text-right tabular-nums">{{ c.saldo | money_es }}</td>
+              <td class="py-1 px-2 text-right tabular-nums">{{ c.cheques | money_es }}</td>
+              <td class="py-1 px-2 text-right tabular-nums font-semibold">{{ c.total | money_es }}</td>
             </tr>
           {% endfor %}
         {% endfor %}
@@ -258,7 +281,9 @@
       <tfoot>
         <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-bold">
           <td class="py-2 px-2" colspan="2">TOTAL</td>
-          <td class="py-2 px-2 text-right tabular-nums">{{ total | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.saldo | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.cheques | money_es }}</td>
+          <td class="py-2 px-2 text-right tabular-nums">{{ sumas.total | money_es }}</td>
         </tr>
       </tfoot>
     </table>

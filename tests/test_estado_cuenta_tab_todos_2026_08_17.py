@@ -102,13 +102,23 @@ def test_todos_muestra_codigo_cliente_y_saldo():
     assert "c.saldo | money_es" in bloque
 
 
-@pytest.mark.parametrize(
-    "col", ["Cheques", "Total", "Cupo", "% usado"]
-)
+@pytest.mark.parametrize("col", ["Cupo", "% usado"])
 def test_todos_no_trae_las_columnas_de_la_ficha(col):
     """Se probaron y la dueña las bajó. Si alguien las re-agrega sin preguntar,
-    este test lo frena: el desglose vive en la ficha del cliente."""
+    este test lo frena: el desglose vive en la ficha del cliente.
+
+    TMT 2026-09-23: Cheques y Total SÍ volvieron — pedido explícito de la
+    dueña para todas las pestañas (*"lo mismo para los otros tabs"*), iguales
+    a la ficha. Cupo y % usado siguen afuera."""
     assert f">{col}<" not in _bloque("TODOS")
+
+
+@pytest.mark.parametrize("nombre", ["LIST", "GRUPO", "TODOS"])
+def test_las_listas_traen_cheques_y_total(nombre):
+    bloque = _bloque(nombre)
+    for col in ("Cheques", "Total"):
+        assert f">{col}<" in bloque, f"{nombre}: falta la columna {col}"
+    assert "c.cheques | money_es" in bloque and "c.total | money_es" in bloque
 
 
 def test_las_tres_listas_tienen_el_mismo_encabezado():

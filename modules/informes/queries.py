@@ -7672,6 +7672,37 @@ def estado_cuenta_clientes_saldos() -> list[dict]:
     ) or []
 
 
+def con_totales_de_la_ficha(filas: list[dict]) -> list[dict]:
+    """Les pone a las filas de `estado_cuenta_clientes_saldos` los TRES números
+    de la ficha del cliente: saldo, cheques y total.
+
+    TMT 2026-09-23 (dueña, pestañas Vendedor/Provincia/Grupos/Todos): *"lo
+    mismo para los otros tabs"* — lo mismo que el Top 10: cheques y total,
+    iguales a lo que se ve al abrir el estado de cuenta. Mismas consultas
+    que la ficha (`_agregados_estado_cuenta` + `_totales_estado_cuenta`):
+
+      · saldo   = "Saldo facturas" (neto del saldo a favor, `saldo_neto`)
+      · cheques = "Cheques por cobrar"
+      · total   = "Total (facturas + cheques)"
+
+    Devuelve filas NUEVAS (no toca las que recibe: `estado_cuenta_clientes_saldos`
+    también la usa el aviso del portal, con su propio `saldo`).
+    """
+    filas = [dict(f) for f in (filas or [])]
+    cods = [f["codigo_cli"] for f in filas if f.get("codigo_cli")]
+    if not cods:
+        return filas
+    tot_fac, tot_che, tot_ant = _agregados_estado_cuenta(cods)
+    for f in filas:
+        c = f.get("codigo_cli")
+        t = _totales_estado_cuenta(tot_fac.get(c) or {}, tot_che.get(c) or {},
+                                   tot_ant.get(c) or {})
+        f["saldo"] = t["saldo_neto"]
+        f["cheques"] = t["cheques_por_cobrar"]
+        f["total"] = t["saldo_neto"] + t["cheques_por_cobrar"]
+    return filas
+
+
 def top_clientes_estado_cuenta(n: int = 10) -> list[dict]:
     """El Top N de la portada de estados de cuenta, con los MISMOS números
     que muestra la ficha de cada cliente.

@@ -57,3 +57,31 @@ def test_el_saldo_a_favor_netea_como_en_la_ficha():
 def test_sin_clientes_no_explota():
     with patch.object(iq.db, "fetch_all", return_value=[]):
         assert iq.top_clientes_estado_cuenta() == []
+
+
+# ---------------------------------------------------------------------------
+# Pestañas Vendedor / Provincia / Grupos / Todos (mismo pedido, 23/09)
+# ---------------------------------------------------------------------------
+
+
+def test_pestanias_usan_los_totales_de_la_ficha():
+    src = inspect.getsource(iq.con_totales_de_la_ficha)
+    assert "_agregados_estado_cuenta(cods)" in src
+    assert "_totales_estado_cuenta(" in src
+
+
+def test_con_totales_de_la_ficha_pisa_saldo_y_agrega_cheques_y_total():
+    filas = [{"codigo_cli": "AAA", "saldo": 300.0}, {"codigo_cli": "BBB", "saldo": 50.0}]
+    fac = {"AAA": {"saldo": 300}, "BBB": {"saldo": 50}}
+    che = {"BBB": {"por_cobrar": 25.5}}
+    ant = {"AAA": {"anticipo_raw": -80}}
+    with patch.object(iq, "_agregados_estado_cuenta", return_value=(fac, che, ant)):
+        out = iq.con_totales_de_la_ficha(filas)
+    assert [(r["saldo"], r["cheques"], r["total"]) for r in out] == [
+        (220.0, 0.0, 220.0), (50.0, 25.5, 75.5)]
+    # No toca las filas que recibe (las usa también el aviso del portal).
+    assert filas[0]["saldo"] == 300.0 and "cheques" not in filas[0]
+
+
+def test_con_totales_de_la_ficha_sin_filas():
+    assert iq.con_totales_de_la_ficha([]) == []
