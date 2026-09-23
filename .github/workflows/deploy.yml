@@ -251,6 +251,16 @@ jobs:
               } else { Write-Output "PC_INTERNO_SECRET: ya existia" }
           } catch { Write-Output "AVISO: PC_INTERNO_SECRET: \$_" }
 
+          # 4.c El USUARIO PROPIO de Metabase (TMT 2026-09-23): el programa
+          #     entraba con el usuario administrador de Tamara y, cuando su
+          #     mail apareció cambiado, se quedó sin Asinfo. El script le pone
+          #     al usuario programa@intela.com.ec una contraseña nueva, la
+          #     prueba y la deja en el server. Idempotente; la contraseña no
+          #     se imprime nunca (este log es público). Nunca corta el deploy.
+          try {
+              & C:\Python312\python.exe scripts\servidor\metabase_usuario_propio.py 2>&1 | Select -Last 3 | ForEach-Object { Write-Output "Metabase usuario: \$_" }
+          } catch { Write-Output "AVISO: Metabase usuario: \$_" }
+
           # 5. Restart task. TMT 2026-06-07: matar el python.exe HUÉRFANO que
           #    queda tomando el puerto 5002. Stop-ScheduledTask para la TAREA
           #    pero no siempre mata el proceso hijo; el python nuevo entonces
