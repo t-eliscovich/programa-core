@@ -36,7 +36,10 @@ _TPL = (
 def _src_estado_cuenta():
     from modules.informes import queries as iq
     # El SQL vive en `estado_cuenta_lote` desde el 26/08 — ver ahí el porqué.
-    return inspect.getsource(iq.estado_cuenta_lote)
+    # Desde el 23/09 los TOTALES están en `_agregados_estado_cuenta` (los
+    # comparte con el Top 10 de la portada); el lote los llama.
+    return (inspect.getsource(iq.estado_cuenta_lote)
+            + inspect.getsource(iq._agregados_estado_cuenta))
 
 
 def test_totales_facturas_mismo_filtro_que_la_lista():

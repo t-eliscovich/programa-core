@@ -3795,9 +3795,10 @@ def estado_cuenta_landing():
                 "informes.estado_cuenta",
                 codigo_cli=(directo.get("codigo_cli") or "").strip()))
 
-    top, error = _safe(queries.cartera_por_cliente, [])
-    # top 10 deudores como atajos
-    top = top[:10] if top else []
+    # TMT 2026-09-23 (dueña): el Top 10 muestra saldo, cheques y total con
+    # los MISMOS números que la ficha de cada cliente (misma consulta).
+    top, error = _safe(lambda: queries.top_clientes_estado_cuenta(10), [])
+    top = top or []
     return render_template(
         "informes/estado_cuenta_landing.html",
         top=top,

@@ -7669,6 +7669,58 @@ def estado_cuenta_clientes_saldos() -> list[dict]:
     ) or []
 
 
+def top_clientes_estado_cuenta(n: int = 10) -> list[dict]:
+    """El Top N de la portada de estados de cuenta, con los MISMOS números
+    que muestra la ficha de cada cliente.
+
+    TMT 2026-09-23 (dueña): *"sumar cheques y total — fijate que coincidan
+    exacto con lo que vemos al abrir estado de cuenta"*. Por eso no se suma
+    nada acá: se corren las consultas de totales del estado de cuenta
+    (`_agregados_estado_cuenta` + `_totales_estado_cuenta`) y se leen los tres
+    tiles de la ficha:
+
+      · saldo   = "Saldo facturas"            (totales.saldo_neto)
+      · cheques = "Cheques por cobrar"        (totales.cheques_por_cobrar)
+      · total   = "Total (facturas + cheques)"
+
+    Candidatos: todo cliente con alguna factura viva con saldo. Orden: por
+    saldo, como dice el título.
+    """
+    filas = db.fetch_all(
+        """
+        SELECT DISTINCT codigo_cli
+          FROM scintela.factura
+         WHERE COALESCE(saldo, 0) <> 0
+           AND codigo_cli IS NOT NULL
+           __STAT_VIVO__
+           AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+        """.replace("__STAT_VIVO__", _SQL_ESTADO_CUENTA_STAT_VIVO)
+    ) or []
+    cods = [f["codigo_cli"] for f in filas if f.get("codigo_cli")]
+    if not cods:
+        return []
+    tot_fac, tot_che, tot_ant = _agregados_estado_cuenta(cods)
+    filas_out = []
+    for c in cods:
+        t = _totales_estado_cuenta(tot_fac.get(c) or {}, tot_che.get(c) or {},
+                                   tot_ant.get(c) or {})
+        saldo = t["saldo_neto"]
+        cheques = t["cheques_por_cobrar"]
+        filas_out.append({"codigo_cli": c, "saldo": saldo, "cheques": cheques,
+                          "total": saldo + cheques})
+    filas_out.sort(key=lambda r: (-r["saldo"], r["codigo_cli"]))
+    filas_out = filas_out[:n]
+    nombres = {
+        r["codigo_cli"]: r.get("nombre")
+        for r in (db.fetch_all(
+            "SELECT codigo_cli, nombre FROM scintela.cliente WHERE codigo_cli = ANY(%s)",
+            ([r["codigo_cli"] for r in filas_out],)) or [])
+    }
+    for r in filas_out:
+        r["nombre"] = nombres.get(r["codigo_cli"])
+    return filas_out
+
+
 def totales_estado_cuenta_en_cero() -> dict:
     """El bloque `totales` del estado de cuenta, todo en cero.
 
@@ -7783,16 +7835,6 @@ def estado_cuenta_lote(codigos: list[str]) -> dict[str, dict]:
         for f in filas or []:
             salida.setdefault(f["codigo_cli"], []).append(f)
         return salida
-
-    def _uno_por_cliente(filas):
-        """Los totales, que son UNA fila por cliente.
-
-        ⚠ El cliente que no tiene ninguna factura (o ningún cheque) NO trae
-        fila: el `GROUP BY` no inventa grupos vacíos. Se le devuelve `{}`, que
-        es exactamente lo que leía antes — todos los `.get(...) or 0` de más
-        abajo dan cero igual, que es lo que devolvía el agregado sin agrupar.
-        """
-        return {f["codigo_cli"]: f for f in filas or []}
 
     clientes_filas = db.fetch_all(
         """
@@ -7940,6 +7982,40 @@ def estado_cuenta_lote(codigos: list[str]) -> dict[str, dict]:
         (cods,),
     ))
 
+    tot_fac, tot_che, tot_ant = _agregados_estado_cuenta(cods)
+    salida: dict[str, dict] = {}
+    for _cod, cliente in clientes.items():
+        salida[_cod] = {
+            "cliente": cliente,
+            "facturas": facturas.get(_cod) or [],
+            "cheques": cheques.get(_cod) or [],
+            "anticipos": anticipos.get(_cod) or [],
+            "totales": _totales_estado_cuenta(tot_fac.get(_cod) or {},
+                                              tot_che.get(_cod) or {},
+                                              tot_ant.get(_cod) or {}),
+        }
+    return salida
+
+
+def _agregados_estado_cuenta(cods: list[str]):
+    """Los tres agregados (facturas, cheques, anticipos) de los totales.
+
+    TMT 2026-09-23 (dueña, Top 10 de /informes/estado-cuenta): *"sumar cheques
+    y total — que coincidan exacto con lo que vemos al abrir estado de
+    cuenta"*. Para que no haya dos cuentas, las consultas viven ACÁ y las usan
+    las dos: el estado de cuenta (`estado_cuenta_lote`) y el Top 10.
+    """
+
+    def _uno_por_cliente(filas):
+        """Los totales, que son UNA fila por cliente.
+
+        ⚠ El cliente que no tiene ninguna factura (o ningún cheque) NO trae
+        fila: el `GROUP BY` no inventa grupos vacíos. Se le devuelve `{}`, que
+        es exactamente lo que leía antes — todos los `.get(...) or 0` de más
+        abajo dan cero igual, que es lo que devolvía el agregado sin agrupar.
+        """
+        return {f["codigo_cli"]: f for f in filas or []}
+
     # Totales — calculados en SQL para precisión numeric, no en Python.
     tot_fac = _uno_por_cliente(
         db.fetch_all(
@@ -8036,18 +8112,7 @@ def estado_cuenta_lote(codigos: list[str]) -> dict[str, dict]:
             (cods,),
         )
     )
-    salida: dict[str, dict] = {}
-    for _cod, cliente in clientes.items():
-        salida[_cod] = {
-            "cliente": cliente,
-            "facturas": facturas.get(_cod) or [],
-            "cheques": cheques.get(_cod) or [],
-            "anticipos": anticipos.get(_cod) or [],
-            "totales": _totales_estado_cuenta(tot_fac.get(_cod) or {},
-                                              tot_che.get(_cod) or {},
-                                              tot_ant.get(_cod) or {}),
-        }
-    return salida
+    return tot_fac, tot_che, tot_ant
 
 
 def _totales_estado_cuenta(tot_fac: dict, tot_che: dict, tot_ant: dict) -> dict:
