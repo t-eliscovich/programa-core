@@ -1053,11 +1053,112 @@ _RE_ETIQUETA_DOC = re.compile(r"^(Factura|Cheque)\s+(\S+)\s+·\s+(.+)$")
 _OBJETO = {"Factura": "FA", "Cheque": "CH"}
 
 
+#: El número SRI entero ("001-099-000175928") se lee como el corto (175928),
+#: que es como se nombran las demás facturas en la traza. Tamara 23/09/2026.
+_RE_SRI = re.compile(r"^\d{3}-\d{3}-0*(\d+)$")
+
+
+def _num_corto(numero) -> str:
+    n = str(numero or "").strip()
+    m = _RE_SRI.match(n)
+    return m.group(1) if m else n
+
+
 def _corto_etiqueta(etiqueta: str) -> str:
     m = _RE_ETIQUETA_DOC.match((etiqueta or "").strip())
     if not m:
         return etiqueta
-    return f"{_OBJETO[m.group(1)]} #{m.group(2)} {m.group(3)}"
+    return f"{_OBJETO[m.group(1)]} #{_num_corto(m.group(2))} {m.group(3)}"
+
+
+def _numero_en(g: dict, objeto: str) -> tuple[str, str]:
+    """(número corto, código) del primer documento de ese tipo en el grupo.
+
+    Las etiquetas de la foto ya traen el número que la dueña reconoce
+    ("Cheque 0004512 · PGQ", "Factura 001-099-000181549 · STP"); el hecho de
+    `mov_doble` muchas veces sólo trae el id interno.
+    """
+    for e in g.get("etqs") or []:
+        m = _RE_ETIQUETA_DOC.match((e or "").strip())
+        if m and m.group(1) == objeto:
+            cod = m.group(3).strip()
+            return _num_corto(m.group(2)), (cod if _RE_CODIGO.match(cod) else "")
+    return "", ""
+
+
+def _unir(*partes) -> str:
+    return " ".join(str(p) for p in partes if p)
+
+
+#: Los hechos que la traza nombra con su documento y no con el tipo a secas.
+#: ⭐ Tamara 23/09/2026, auditoría de 487 ventanas: *"Posdat: edit de importe"*,
+#: *"Neteo del estado de cuenta"*, *"↩ factura anulada"*, *"FA STP cambio de
+#: estado"* — todos sabían el documento (estaba en el tooltip) y no lo decían.
+def _texto_del_hecho(ev: dict, md: dict, g: dict, quien: str) -> str | None:
+    """El renglón de UN hecho, con su número. None si el tipo no es de éstos."""
+    tipo = ev.get("tipo") or ""
+    concepto = ev.get("concepto") or ""
+    if tipo == "posdat_edit_importe":
+        prov = (md.get("prov") or quien or "").strip()
+        try:
+            antes, ahora = float(md["importe_prev"]), float(md["importe_nuevo"])
+        except (KeyError, TypeError, ValueError):
+            return _unir("deuda", prov, "corregida")
+        return _unir("deuda", prov, f"corregida: {_num(antes, 0)} → {_num(ahora, 0)}")
+    if tipo == "neteo_estado_cuenta":
+        cli = md.get("codigo_cli") or quien
+        nch = len(md.get("ids_cheques") or [])
+        nan = len(md.get("ids_anticipos") or [])
+        lados = " ↔ ".join(x for x in (f"{nch} CH" if nch else "",
+                                         f"{nan} AN" if nan else "") if x)
+        return _unir("neteo", cli) + (f" · {lados}" if lados else "")
+    if tipo == "factura_stat_cambio":
+        numf, cli = _numero_en(g, "Factura")
+        if not numf:
+            m = re.search(r"factura\s+(\S+)", concepto)
+            numf = _num_corto(m.group(1)) if m else ""
+        pase = (f"{md.get('stat_previo')}→{md.get('stat_nuevo')}"
+                if md.get("stat_previo") and md.get("stat_nuevo") else "")
+        return _unir("FA", f"#{numf}" if numf else "",
+                     md.get("codigo_cli") or cli or quien, pase)
+    if tipo == "reverso_factura_anulada":
+        numf, cli = _numero_en(g, "Factura")
+        numf = _num_corto(md.get("numf")) or numf
+        return _unir("FA", f"#{numf}" if numf else "", cli or quien, "anulada")
+    if tipo == "reverso_cheque_administrativo":
+        no, cli = _numero_en(g, "Cheque")
+        txt = _unir("CH", f"#{no}" if no else "", cli or quien, "anulado")
+        return txt + (" (error de carga)" if "error de carga" in concepto.lower() else "")
+    if tipo == "reverso_cheque_aplicacion":
+        no, cli = _numero_en(g, "Cheque")
+        numf = _num_corto(md.get("numf")) or _numero_en(g, "Factura")[0]
+        return _unir("↩ CH", f"#{no}" if no else "", cli or quien,
+                     "✗ FA", f"#{numf}" if numf else "")
+    return None
+
+
+#: Cómo se dicen esos mismos hechos cuando vienen varios en la ventana.
+ROTULO_JUNTADO_EXTRA = {
+    "posdat_edit_importe": "deudas corregidas",
+    "neteo_estado_cuenta": "neteos",
+    "reverso_factura_anulada": "FA anuladas",
+    "reverso_cheque_administrativo": "CH anulados",
+    "reverso_cheque_aplicacion": "CH desaplicados",
+}
+
+
+def _quienes_de_los_hechos(g: dict) -> dict:
+    """Cliente o proveedor de cada hecho, cuando la etiqueta no lo trajo
+    (un cheque que pasa a caja se ve como un renglón de CAJA, sin código)."""
+    out: dict[str, float] = {}
+    cuantos: dict[str, int] = {}
+    for e in (g.get("evs") or {}).values():
+        md = e.get("meta") or {}
+        q = (md.get("codigo_cli") or md.get("codigo_prov") or md.get("prov") or "").strip()
+        if q:
+            out[q] = out.get(q, 0.0) + abs(float(e.get("importe") or 0))
+            cuantos[q] = cuantos.get(q, 0) + 1
+    return {"quienes": out, "cuantos": cuantos}
 
 
 #: (hecho, componente) donde el hecho NO puede explicar que el documento SALGA
@@ -1084,6 +1185,12 @@ COD_COMPONENTE = {
     "caja": "CJ", "bancos": "BC", "cheques": "CH", "facturas": "FA",
     "antic": "AN", "totp": "DE", "uret": "DV", "vsto": "STK", "vqx": "QX",
 }
+
+
+def _nombre_manda(tipo: str | None) -> bool:
+    """El hecho se nombra solo: su nombre le gana al "X → Y" de las patas."""
+    t = (tipo or "").strip()
+    return t.startswith("reverso_") or t == "dolares_anticipo"
 
 
 def _unir_las_dos_patas(grupos: dict) -> None:
@@ -1121,11 +1228,35 @@ def _unir_las_dos_patas(grupos: dict) -> None:
         usados.update({id(a), id(b)})
         destino, origen = a, b                # a recibe, b entrega
         def _mayor(g):
-            return max(g["por_col"], key=lambda k: abs(g["por_col"][k]))
+            return max(g["por_col"], key=lambda c: abs(g["por_col"][c]))
 
         cod_o = COD_COMPONENTE.get(_mayor(origen), "")
         cod_d = COD_COMPONENTE.get(_mayor(destino), "")
         if not (cod_o and cod_d):
+            continue
+        # ⭐ Tamara 23/09/2026: si una de las dos patas es un hecho con
+        # nombre propio (un reverso, un anticipo entregado), el renglón se
+        # llama como el hecho. "BC → FA · BAN" era un cheque DESAPLICADO por
+        # duplicado y "FA → CH · NUN, IZA" un cheque anulado por error de
+        # carga: el par de códigos decía hacia dónde fue la plata, no qué pasó.
+        nombrado = next((g for g in (destino, origen)
+                         if _nombre_manda((g.get("evento") or {}).get("tipo"))), None)
+        if nombrado is not None:
+            destino["evento"] = nombrado["evento"]
+            for k in ("quienes", "cuantos"):
+                for q, v in (origen.get(k) or {}).items():
+                    destino.setdefault(k, {})
+                    destino[k][q] = destino[k].get(q, 0) + v
+            destino["evs"] = {**(origen.get("evs") or {}), **(destino.get("evs") or {})}
+            destino["etqs"] = (destino.get("etqs") or []) + (origen.get("etqs") or [])
+            destino["signos"] = (destino.get("signos") or set()) | (origen.get("signos") or set())
+            destino["aporte"] = round(destino["aporte"] + origen["aporte"], 2)
+            destino["por_col"].update(origen["por_col"])
+            destino["n"] += origen["n"]
+            destino["hechos"] |= origen["hechos"]
+            destino["url"] = destino.get("url") or origen.get("url")
+            destino["col"] = None
+            origen["fundido"] = True
             continue
         quienes = dict(origen["quienes"])
         for k, v in origen.get("cuantos", {}).items():
@@ -1167,15 +1298,26 @@ def _importacion_del_anticipo(monto: float, hasta) -> str:
     try:
         filas = db.fetch_all(
             """
-            SELECT codigo_prov, concepto
+            SELECT codigo_prov, concepto,
+                   fecha_crea >= (%s::timestamptz AT TIME ZONE 'UTC')
+                                 - interval '10 minutes' AS despues
               FROM scintela.compra
              WHERE usuario_crea LIKE 'bap%%'
                AND ABS(importe - %s) < 0.01
                AND fecha_crea BETWEEN %s - interval '5 days' AND %s + interval '5 days'
-            """, (abs(monto), hasta, hasta)) or []
+             ORDER BY fecha_crea
+            """, (hasta, abs(monto), hasta, hasta)) or []
     except Exception as e:  # noqa: BLE001 -- un renglón nunca rompe la pantalla
         _LOG.warning("traza: no pude nombrar la importación (%s)", e)
         return ""
+    # 🚨 Tamara 23/09/2026, ventana de las 10:13: AI 43, AI 44 y AI 45 valen
+    # los tres 69.443,56 y el renglón decía "entró la mercadería de los
+    # anticipos" sin nombre. La compra `bap-auto` nace DESPUÉS de que el
+    # anticipo baja (`fecha_crea` guarda hora UTC sin zona), así que entre
+    # las del mismo importe la que corresponde es la PRIMERA que nació
+    # después: las anteriores ya se habían convertido en otra ventana.
+    if len(filas) > 1:
+        filas = [f for f in filas if f.get("despues")][:1]
     if len(filas) != 1:
         return ""
     cod = (filas[0].get("codigo_prov") or "").strip().upper()
@@ -1389,12 +1531,36 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None,
     tarifa = next((g for g in grupos.values()
                    if g.get("regla") == "Revaluación de stock"
                    and not g.get("fundido")), None)
+    # 🚨 Tamara 23/09/2026, ventana de las 10:13: entraron DOS importaciones
+    # en la misma foto. La de AI 44 bajó por el descuento sintético; la de
+    # AC 37 se convirtió a compra en la misma ventana y quedó sola, con
+    # −62.632, diciendo "pasaron a la compra" como si no hubiera movido
+    # plata — y su mercadería iba adentro del renglón de la otra.
+    otras = [] if ev else [
+        g for g in grupos.values()
+        if (g.get("evento") or {}).get("tipo") == "bap_anticipo_a_compra"
+        and not g.get("fundido") and g["aporte"] < 0 and g is not ant]
+    for o in otras:
+        ant["aporte"] = round(ant["aporte"] + o["aporte"], 2)
+        for c, v in o["por_col"].items():
+            ant["por_col"][c] = round(ant["por_col"].get(c, 0.0) + v, 2)
+        ant["n"] += o["n"]
+        ant["hechos"] |= o["hechos"]
+        o["fundido"] = True
     if ev:
         # El renglón de la conversión ya sabe cómo se llama la importación y
         # en cuántos anticipos vino: no hay que salir a buscarla por importe.
         nombre = _nombre_de_fabrica(ev.get("concepto") or "")
         que = _texto_mercaderia((ev.get("meta") or {}).get("n_anticipos"))
         ant["texto_unido"] = f"{nombre} · {que}" if nombre else que
+    elif otras:
+        base = round(ant["aporte"] - sum(o["aporte"] for o in otras), 2)
+        nombres = [_importacion_del_anticipo(base, hasta)] + [
+            _nombre_de_fabrica((o.get("evento") or {}).get("concepto") or "")
+            for o in otras]
+        nombres = [x for x in nombres if x]
+        que = f"entró la mercadería de {1 + len(otras)} importaciones"
+        ant["texto_unido"] = (" y ".join(nombres) + " · " + que) if nombres else que
     else:
         cod = _importacion_del_anticipo(ant["aporte"], hasta)
         ant["texto_unido"] = ("entró la mercadería del anticipo " + cod if cod
@@ -1416,6 +1582,37 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None,
     # El $/kg no desaparece: baja a la nota, que es lo que explica el signo.
     if tarifa:
         ant["nota"] = tarifa.get("etiqueta") or ""
+
+
+def _unir_anticipo_de_mercaderia_ya_recibida(grupos: dict) -> None:
+    """Un anticipo que se entrega para una importación que YA está en stock
+    no mueve la utilidad: el descuento sintético lo tapa en la misma foto.
+
+    ⭐ Tamara 23/09/2026 (ventana 17:22 del 21/09): "5 AN entregado +6.429"
+    y, suelto, "Menos anticipos cuya mercadería ya está en stock −6.429".
+    Eran recargos de AI 20 y AC 48, cuya mercadería había entrado antes. Un
+    renglón, con la explicación al pie. Sólo si netean al centavo.
+    """
+    sint = next((g for g in grupos.values()
+                 if (g.get("etiqueta") or "") == TXT_ANTICIPO_RECIBIDO
+                 and not g.get("fundido") and g["aporte"] < 0), None)
+    ent = next((g for g in grupos.values()
+                if (g.get("evento") or {}).get("tipo") == "dolares_anticipo"
+                and not g.get("fundido")
+                and (g["por_col"].get("antic") or 0) > 0), None)
+    # Se mira la columna Ant. y no el aporte: si la pata del banco ya se
+    # unió al anticipo, el aporte del renglón es cero.
+    if (not sint or not ent
+            or abs(sint["aporte"] + ent["por_col"]["antic"]) >= 0.01):
+        return
+    bruto = max(sint["bruto"], ent["bruto"])
+    ent["aporte"] = round(ent["aporte"] + sint["aporte"], 2)
+    for c, v in sint["por_col"].items():
+        ent["por_col"][c] = round(ent["por_col"].get(c, 0.0) + v, 2)
+    ent["n"] += sint["n"]
+    ent["bruto"] = bruto
+    ent["nota"] = "la mercadería ya estaba en stock: no mueve plata"
+    sint["fundido"] = True
 
 
 def _nombre_de_fabrica(concepto: str) -> str:
@@ -1655,6 +1852,8 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                                   "evento": ev,
                                   "hechos": set(),
                                   "signos": set(),
+                                  "evs": {},
+                                  "etqs": [],
                                   "familia": m.get("familia")})
         # 🚨 Cuántos HECHOS hay en el grupo, no cuántos documentos. Un cheque
         # aplicado a una factura toca dos documentos y es UN hecho: salía
@@ -1662,6 +1861,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # ocho cheques y una cuenta y son ocho hechos, uno por cheque.
         if ev and ev.get("id_mov_doble"):
             g["hechos"].add(ev["id_mov_doble"])
+            g["evs"][ev["id_mov_doble"]] = ev
             # 🚨 El tipo `retiro_socio_de_*` sirve para el retiro Y para el
             # aporte (lo distingue el signo), así que un grupo puede tener los
             # dos. Ahí ningún nombre es cierto para todos: se guarda el signo
@@ -1686,6 +1886,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         if c:
             g["por_col"][c] = round(g["por_col"].get(c, 0.0) + ap, 2)
         g["n"] += 1
+        g["etqs"].append(m.get("etiqueta"))
         q = _quien(m.get("etiqueta"), m.get("componente"))
         if q:
             g["quienes"][q] = round(g["quienes"].get(q, 0.0) + ap, 2)
@@ -1694,6 +1895,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
         # Lo que el grupo MOVIÓ, aunque no haya aportado: el lado más grande.
         g["bruto"] = max((abs(v) for v in g["por_col"].values()), default=0.0)
     _unir_las_dos_patas(grupos)
+    _unir_anticipo_de_mercaderia_ya_recibida(grupos)
     _unir_anticipo_con_mercaderia(grupos, hasta, stock)
     _unir_conversion_del_anticipo(grupos)
     # La venta se explica sola: el renglón de las facturas se lleva el margen.
@@ -1732,12 +1934,23 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             cerrado = False        # el texto ya cuenta cuántos son
             # La contraparte que sabe el evento manda sobre la que se adivina
             # de la etiqueta.
-            quien = (md.get("codigo_prov") or (quienes[0] if quienes else ""))
+            quien = (md.get("codigo_prov") or (quienes[0] if quienes else "")
+                     or md.get("codigo_cli") or "")
             if len(g["hechos"]) > 1:
                 # El rótulo sale de `corto()` salvo que el tipo se diga de otra
                 # manera; SIN la contraparte, que acá son varias.
                 rotulo, unidad = ROTULO_JUNTADO.get(
                     ev["tipo"], (_corto(ev["tipo"], "", _imp), ""))
+                if ev["tipo"] in ROTULO_JUNTADO_EXTRA:
+                    rotulo = ROTULO_JUNTADO_EXTRA[ev["tipo"]]
+                if ev["tipo"] == "factura_stat_cambio":
+                    pases = {f"{(e.get('meta') or {}).get('stat_previo')}→"
+                             f"{(e.get('meta') or {}).get('stat_nuevo')}"
+                             for e in g["evs"].values()}
+                    if len(pases) == 1 and "None" not in next(iter(pases)):
+                        rotulo = f"FA {next(iter(pases))}"
+                if not g["quienes"]:
+                    g.update(_quienes_de_los_hechos(g))
                 # ⭐ Una nota de débito contra un posdat es una DEUDA PAGADA
                 # desde el banco; "2 BC nota de débito · AP, SY" no lo decía.
                 # Tamara 05/09/2026.
@@ -1750,6 +1963,9 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                     nombres = _nombres(g)
                     g["texto"] = (f"{len(g['hechos'])} {rotulo}"
                                   + (f" · {nombres}" if nombres else ""))
+                cerrado = True
+            elif _texto_del_hecho(ev, md, g, quien):
+                g["texto"] = _texto_del_hecho(ev, md, g, quien)
                 cerrado = True
             elif ev.get("texto"):
                 # El evento ya trae su renglón escrito (la cuenta bancaria con
@@ -1853,6 +2069,10 @@ def resumir(movs: list[dict], d_utilidad: float | None,
             g["texto"] = _corto_etiqueta(g.get("etiqueta") or g["regla"])
         if g.get("texto_unido"):
             g["texto"] = g["texto_unido"]
+        # "movimiento de stock" es lo que escribe la foto cuando el valor se
+        # movió y los kilos no (Tamara 23/09: *"no dice nada"*).
+        if (g.get("texto") or "").strip() == "movimiento de stock":
+            g["texto"] = "cambió el valor del stock sin mover kilos"
         # ⭐ El $/kg del hilado no cambia solo: cambia porque entró plata a las
         # compras del mes. Si la foto sabe por dónde entró (mig 0244), el
         # renglón lo dice ANTES de las dos cifras — "recargos de AC 39 y MD 1

@@ -26,6 +26,7 @@ factura no haya sellado `fecha_modifica`.
 from __future__ import annotations
 
 import logging
+import re
 
 import db
 
@@ -210,7 +211,8 @@ def _varios(conceptos: list[str], n: int) -> str:
         total = sum(cuenta[c] for c in miembros)
         if len(miembros) > 1:
             rot = _prefijo_comun(miembros) or " ".join(miembros[0].split()[:2])
-            partes.append((total, f"{total} × {rot}"))
+            partes.append((total, _con_numeros(rot, miembros, cuenta)
+                           or f"{total} × {rot}"))
         elif total > 1:
             partes.append((total, f"{total} × {miembros[0]}"))
         else:
@@ -225,6 +227,28 @@ def _varios(conceptos: list[str], n: int) -> str:
             break
         texto += ("" if texto.endswith("· ") else ", ") + parte
     return texto + (f" +{sobran}" if sobran else "")
+
+
+#: Lo que queda después del prefijo tiene que ser un NÚMERO ("44/26", "83A",
+#: "74-75-76") para listarse; si es texto, se sigue contando con "N ×".
+_RE_COLA_NUMERO = re.compile(r"^\d[\w/-]{0,11}$")
+
+
+def _con_numeros(rot: str, miembros: list[str], cuenta: dict) -> str:
+    """"ANTICIPO AI 20/26 ×2, 44/26" — el prefijo una vez y los números.
+
+    ⭐ Tamara 23/09/2026, sobre "BC · 3 × ANTICIPO AI, 2 × ANTICIPO AC":
+    *"le falta el número"*. Juntar por prefijo tiraba lo único que distingue
+    a un anticipo de otro. Si alguno no tiene número se dice "s/n".
+    """
+    colas: dict[str, int] = {}
+    for c in miembros:
+        cola = c[len(rot):].strip() if c.upper().startswith(rot.upper()) else None
+        if cola is None or (cola and not _RE_COLA_NUMERO.match(cola)):
+            return ""
+        colas[cola or "s/n"] = colas.get(cola or "s/n", 0) + cuenta[c]
+    return f"{rot} " + ", ".join(k + (f" ×{n}" if n > 1 else "")
+                                 for k, n in colas.items())
 
 
 #: Hasta dónde se estira el renglón de la cuenta antes de cortar con "+N". La
