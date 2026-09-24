@@ -923,6 +923,35 @@ def _nombres(g: dict, tope: int = 3) -> str:
     return txt
 
 
+#: El número de la importación tal como lo tipean en /dolares: "54/26",
+#: "83A/26", "37" (el año va si lo pusieron). Lo que sigue ("MAPFRE") es
+#: el concepto y no se muestra: el número es lo que se busca.
+_RE_NUM_IMPORTACION = re.compile(r"^\d{1,4}[A-Z]?(/\d{2,4})?$")
+
+
+def _ref_anticipo(partes: list[str]) -> str:
+    """"AC 54/26" — la cuenta Y el número del anticipo, o "" si no lo tiene.
+
+    ⭐ Tamara 23/09/2026, sobre "AN AC entregado −18.801" en la ventana de
+    las 17:49: *"acá debería decir qué número de anticipo se entregó"*. La
+    etiqueta de la foto ya lo traía ("Anticipo AC · 54/26") y `_quien` tiraba
+    el concepto y se quedaba con la cuenta sola: AC tiene decenas de
+    importaciones abiertas a la vez, así que "AC" no identifica nada.
+    El concepto de una importación a veces repite la cuenta ("AC 95"): se
+    saca para no escribir "AC AC 95".
+    """
+    cabeza = partes[0].split()
+    cta = cabeza[1].strip().upper() if len(cabeza) > 1 else ""
+    if not _RE_CODIGO.match(cta) or len(partes) < 2:
+        return ""
+    toks = partes[1].upper().split()
+    if toks and toks[0] == cta:
+        toks = toks[1:]
+    if toks and _RE_NUM_IMPORTACION.match(toks[0]):
+        return f"{cta} {toks[0]}"
+    return ""
+
+
 def _quien(etiqueta: str | None, comp: str | None = None) -> str:
     """El cliente (o proveedor) que hay al final de la etiqueta, si lo hay.
 
@@ -937,6 +966,10 @@ def _quien(etiqueta: str | None, comp: str | None = None) -> str:
     # pero en anticipos, deudas y retiros el último segmento es el CONCEPTO
     # ("Anticipo AI · 21" daba "21", que no significa nada). Ahí la contraparte
     # es el segundo token del primer segmento.
+    if comp == "antic":
+        ref = _ref_anticipo(partes)
+        if ref:
+            return ref
     if comp in ("antic", "totp", "uret"):
         cabeza = partes[0].split()
         q = cabeza[1] if len(cabeza) > 1 else ""

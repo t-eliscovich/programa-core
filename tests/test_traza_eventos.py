@@ -958,3 +958,44 @@ def test_el_prefijo_comun_no_corta_la_palabra_entera():
     # Cortó una palabra al medio ("ANTICIPO MDX" vs "ANTICIPO MD"): saca esa palabra.
     assert ev._prefijo_comun(["ANTICIPO MDX 1", "ANTICIPO MD 2"]) == "ANTICIPO"
     assert ev._prefijo_comun(["Anticipo USD AI 1", "Anticipo USD AI 2"]) == "Anticipo USD AI"
+
+
+# ── 23/09: el anticipo entregado dice CUÁL ──────────────────────────────────
+
+def test_el_anticipo_entregado_dice_su_numero():
+    """⭐ Tamara 23/09/2026, ventana de las 17:49: "AN AC entregado −18.801"
+    — *"acá debería decir qué número de anticipo se entregó"*. AC tiene
+    muchas importaciones abiertas: la cuenta sola no identifica nada."""
+    idx = ev.indice(_con_label([
+        _ev("dolares_anticipo", "dolares", 3441, "transacciones_bancarias", 47875,
+            importe=18800.8, concepto="Anticipo USD AC 54/26 (ND Pichincha)",
+            metadata={"cta": "AC", "concepto": "54/26"}),
+    ]))
+    movs = [{"doc_id": "d3441", "componente": "antic", "aporte": 18800.8,
+             "regla": "Anticipo entregado", "etiqueta": "Anticipo AC · 54/26",
+             "familia": "traspaso"}]
+    textos = [g["texto"] for g in t.resumir(movs, 18800.8, idx)]
+    assert "AN AC 54/26 entregado" in textos, textos
+
+
+def test_varios_anticipos_entregados_nombran_sus_numeros():
+    idx = ev.indice(_con_label([
+        _ev("dolares_anticipo", "dolares", i, "transacciones_bancarias", 900 + i,
+            importe=1000.0 * i, metadata={"cta": c, "concepto": n})
+        for i, c, n in ((1, "AC", "61/26"), (2, "AC", "66/26"), (3, "AI", "42/26"))
+    ]))
+    movs = [{"doc_id": f"d{i}", "componente": "antic", "aporte": 1000.0 * i,
+             "regla": "Anticipo entregado", "etiqueta": f"Anticipo {c} · {n}",
+             "familia": "traspaso"}
+            for i, c, n in ((1, "AC", "61/26"), (2, "AC", "66/26"), (3, "AI", "42/26"))]
+    g = t.resumir(movs, 6000.0, idx)[0]
+    assert g["texto"] == "3 AN entregado · AI 42/26, AC 66/26, AC 61/26", g["texto"]
+
+
+def test_el_numero_del_anticipo_sale_de_la_etiqueta():
+    assert t._quien("Anticipo AC · 54/26", "antic") == "AC 54/26"
+    assert t._quien("Anticipo AC · 83A/26", "antic") == "AC 83A/26"
+    assert t._quien("Anticipo AC · 37 MAPFRE", "antic") == "AC 37"
+    assert t._quien("Anticipo AC · AC 95", "antic") == "AC 95"
+    # Sin número reconocible queda la cuenta, como antes.
+    assert t._quien("Anticipo MP · Anticipo USD cta MP", "antic") == "MP"
