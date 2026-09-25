@@ -96,13 +96,21 @@ def test_el_cache_vence(monkeypatch):
 
 
 def test_no_cachea_el_silencio_de_asinfo(monkeypatch):
-    """Vacío puede ser "no hay nada" o "no pude preguntar". No se guarda: si
-    fuera lo segundo, sostendríamos un "todo bien" que nadie verificó."""
+    """"No pude preguntar" no se guarda: sostendríamos un "todo bien" que
+    nadie verificó. TMT 2026-09-25: ahora se distingue del "contestó vacío"
+    con `fetch_dataset_estado` — el vacío de verdad SÍ se guarda (ver
+    test_un_dia_sin_despachos_TAMBIEN_se_guarda)."""
+    from modules._lib import metabase_client
     from modules.asinfo import hilo_sin_of as hs
 
     hs.reset_cache()
     n = []
-    _fake_metabase(monkeypatch, [], n)
+
+    def _mudo(*a, **k):
+        n.append(1)
+        return [], False
+
+    monkeypatch.setattr(metabase_client, "fetch_dataset_estado", _mudo)
     hs.despachos_sin_of()
     hs.despachos_sin_of()
     assert len(n) == 2

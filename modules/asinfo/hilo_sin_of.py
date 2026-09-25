@@ -211,7 +211,7 @@ def despachos_sin_of(dias: int | None = None,
          ORDER BY x.creado DESC
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=500)
+        rows, contesto = metabase_client.fetch_dataset_estado(2, sql, max_results=500)
     except Exception as e:  # noqa: BLE001
         _LOG.warning("no pude leer los despachos sin orden: %s", e)
         return []
@@ -234,10 +234,18 @@ def despachos_sin_of(dias: int | None = None,
             "descripcion": _limpiar(r.get("descripcion")),
             "creado": str(r.get("creado") or "").strip(),
         })
-    # Sólo se guarda si Asinfo CONTESTÓ. Si no contestó (`rows` vacío por
-    # error de red) la lista también sale vacía, y cachear eso 2 minutos
-    # sería sostener un "no hay nada" que en realidad es "no pude preguntar".
-    if ttl > 0 and rows:
+    # Sólo se guarda si Asinfo CONTESTÓ. Si no contestó la lista también sale
+    # vacía, y cachear eso 2 minutos sería sostener un "no hay nada" que en
+    # realidad es "no pude preguntar".
+    #
+    # ⭐ TMT 2026-09-25 (dueña: "ver qué más es lento"). Antes se preguntaba
+    # `if rows:` — o sea que el caso NORMAL, un día sin despachos esperando
+    # orden (Asinfo contesta cero filas), no se guardaba NUNCA. El calentador
+    # lo releía en cada vuelta (650 ms) y Balance, Inventario en proceso y
+    # Tejeduría lo volvían a pedir en cada visita (~540 ms cada una, medido en
+    # /admin/pantallas). `fetch_dataset_estado` distingue "contestó vacío" de
+    # "no contestó".
+    if ttl > 0 and contesto:
         _CACHE[clave] = (ahora, out)
     return out
 

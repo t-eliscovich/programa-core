@@ -377,3 +377,32 @@ def test_situacion_sin_numeros_no_pregunta():
     with patch("modules._lib.metabase_client.fetch_dataset_estado") as f:
         assert hs.situacion_de(set()) == {}
     f.assert_not_called()
+
+
+def test_un_dia_sin_despachos_TAMBIEN_se_guarda(monkeypatch):
+    """TMT 2026-09-25: con `if rows:` el caso normal —cero despachos
+    esperando— no se cacheaba nunca y cada pantalla pagaba ~540 ms de Asinfo."""
+    from modules._lib import metabase_client
+
+    hs.reset_cache()
+    llamadas = []
+
+    def _fake(*a, **k):
+        llamadas.append(1)
+        return []
+
+    monkeypatch.setattr(metabase_client, "fetch_dataset", _fake)
+    assert hs.despachos_sin_of(dias=0) == []
+    assert hs.despachos_sin_of(dias=0) == []
+    assert len(llamadas) == 1
+    hs.reset_cache()
+
+
+def test_si_asinfo_no_contesta_no_se_guarda_el_vacio(monkeypatch):
+    from modules._lib import metabase_client
+
+    hs.reset_cache()
+    monkeypatch.setattr(metabase_client, "fetch_dataset_estado",
+                        lambda *a, **k: ([], False))
+    assert hs.despachos_sin_of(dias=0) == []
+    assert not hs._CACHE
