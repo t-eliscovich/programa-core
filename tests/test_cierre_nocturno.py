@@ -240,3 +240,110 @@ def test_health_avisa_si_falta_el_pdf():
     assert "cierre_sin_pdf" in _cats_arranque(paquete_prev=False)
     assert "cierre_sin_pdf" not in _cats_arranque(paquete_prev=True)
     assert "cierre_sin_pdf" not in _cats_arranque()   # sin dato, no inventa
+
+
+# ─── el ensayo (sólo lectura) ───────────────────────────────────────────────
+
+FILA_SANA = {
+    "banco": 930_800.0, "cart": 7_876_800.0, "anticipos": 3_264_700.0,
+    "ustock": 9_767_400.0, "uqui": 510_500.0, "maquinaria": 1_038_400.0,
+    "realty": 2_352_500.0, "deuda": 3_582_600.0, "patrimonio": 22_158_500.0,
+    "stock": 1_200_000.0, "kcom": 300_000.0, "ucom": 900_000.0, "ktej": 250_000.0,
+    "utej": 150_000.0, "utin": 350_000.0, "gasto": 180_000.0, "gstotal": 680_000.0,
+    "kvent": 291_000.0, "uvent": 2_487_000.0, "usuti": 654_700.0, "usret": 228_833.0,
+}
+
+
+def _ensayo(monkeypatch, fila=None, gastos=None, uret=228_833.0, pdf_secciones=None):
+    from modules.informes import cierres_paquete, queries, views
+    monkeypatch.setattr(views, "_gastos_mes_anterior_componentes",
+                        lambda meses_atras=1: dict(gastos or {"tej": 160_000.0, "tin": 350_000.0,
+                                                              "adm": 180_000.0}))
+    llamadas = []
+
+    def snap(anio, mes, usuario="auto", forzar=False, dry_run=False, forzar_vivo=False):
+        llamadas.append((dry_run, forzar_vivo, forzar))
+        return {"row": dict(FILA_SANA if fila is None else fila)}
+
+    monkeypatch.setattr(queries, "crear_snapshot_historia", snap)
+    monkeypatch.setattr(queries, "uret_mes_corriente", lambda: uret)
+    n = len(cierres_paquete.PAGINAS) if pdf_secciones is None else pdf_secciones
+    monkeypatch.setattr(cierres_paquete, "armar_pdf", lambda a, m: (b"x" * 2048, n))
+    return llamadas
+
+
+def test_ensayo_sano_no_escribe_y_da_ok(monkeypatch):
+    fila = dict(FILA_SANA)
+    fila["patrimonio"] = (sum(fila[c] for c in ("banco", "cart", "anticipos", "ustock", "uqui",
+                                               "maquinaria", "realty")) - fila["deuda"])
+    llamadas = _ensayo(monkeypatch, fila=fila)
+    r = cn.ensayo(date(2026, 9, 25))
+    assert r["ok"] is True, r["problemas"]
+    assert llamadas == [(True, True, False)]      # dry-run, rama en vivo, sin forzar
+    assert r["pdf"]["secciones"] == r["pdf"]["de"]
+
+
+def test_ensayo_caza_columnas_en_cero(monkeypatch):
+    fila = dict(FILA_SANA, banco=0.0, ustock=0.0)
+    _ensayo(monkeypatch, fila=fila)
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("banco" in p and "ustock" in p for p in r["problemas"])
+
+
+def test_ensayo_caza_un_balance_que_no_cierra(monkeypatch):
+    _ensayo(monkeypatch, fila=dict(FILA_SANA, patrimonio=1.0))
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("no cierra" in p for p in r["problemas"])
+
+
+def test_ensayo_caza_retiros_de_otro_mes(monkeypatch):
+    _ensayo(monkeypatch, uret=0.0)
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("retiros" in p for p in r["problemas"])
+
+
+def test_ensayo_caza_gastos_que_no_coinciden(monkeypatch):
+    _ensayo(monkeypatch, gastos={"tej": 10.0, "tin": 10.0, "adm": 10.0})
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("difieren" in p for p in r["problemas"])
+
+
+def test_ensayo_caza_pdf_incompleto_o_roto(monkeypatch):
+    _ensayo(monkeypatch, pdf_secciones=3)
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("secciones" in p for p in r["problemas"])
+
+    from modules.informes import cierres_paquete
+
+    def boom(a, m):
+        raise RuntimeError("sin navegador")
+
+    monkeypatch.setattr(cierres_paquete, "armar_pdf", boom)
+    r = cn.ensayo(date(2026, 9, 25))
+    assert any("PDF" in p for p in r["problemas"])
+
+
+def test_ensayo_sin_pdf_no_lo_arma(monkeypatch):
+    _ensayo(monkeypatch)
+    from modules.informes import cierres_paquete
+    monkeypatch.setattr(cierres_paquete, "armar_pdf",
+                        lambda a, m: (_ for _ in ()).throw(AssertionError("no")))
+    r = cn.ensayo(date(2026, 9, 25), con_pdf=False)
+    assert r["pdf"] is None
+
+
+def test_forzar_vivo_solo_vale_en_dry_run():
+    import inspect
+
+    from modules.informes import queries
+    src = inspect.getsource(queries.crear_snapshot_historia)
+    assert "(forzar_vivo and dry_run)" in src
+
+
+def test_la_ruta_del_ensayo_existe():
+    import inspect
+
+    import modules.admin_dbase.health_audit_view as hv
+    src = inspect.getsource(hv.ensayo_cierre)
+    assert "usuarios.admin" in inspect.getsource(hv).split("def ensayo_cierre")[0][-300:]
+    assert "ensayo(" in src

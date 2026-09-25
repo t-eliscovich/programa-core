@@ -725,6 +725,18 @@ def se_puede_comparar_la_foto(hoy) -> bool:
     return hoy.day == _cal.monthrange(hoy.year, hoy.month)[1]
 
 
+@bp.route("/ensayo-cierre", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def ensayo_cierre():
+    """ENSAYO del cierre nocturno — SÓLO LECTURA. Corre hoy lo mismo que la
+    última noche del mes (gastos, foto de cierre, PDF) sin guardar nada. Ver
+    `modules/informes/cierre_nocturno.ensayo`. `?pdf=0` saltea el PDF."""
+    from modules.informes.cierre_nocturno import ensayo
+
+    return jsonify(ensayo(con_pdf=request.args.get("pdf", "1") != "0"))
+
+
 @bp.route("/simulacro-cierre", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")

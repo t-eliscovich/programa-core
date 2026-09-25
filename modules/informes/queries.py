@@ -9913,7 +9913,8 @@ def historia_balance_fijo_mes_cerrado(anio: int, mes: int) -> dict:
 
 def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
                             forzar: bool = False,
-                            dry_run: bool = False) -> dict:
+                            dry_run: bool = False,
+                            forzar_vivo: bool = False) -> dict:
     """Crea un snapshot mensual en scintela.historia para (anio, mes).
 
     TMT 2026-08-01 — `forzar=True` REHACE la foto de cierre: borra la(s)
@@ -10018,7 +10019,12 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
     _dias_de_atraso = (_hoy_cierre - fecha_snap).days
     _mismo_dia = _dias_de_atraso == 0
     _GRACIA_CIERRE_DIAS = 2
-    _usar_balance_live = 0 <= _dias_de_atraso <= _GRACIA_CIERRE_DIAS
+    # `forzar_vivo` (sólo con dry_run): el ENSAYO del cierre nocturno
+    # (cierre_nocturno.ensayo) calcula HOY la fila que la última noche del mes
+    # va a guardar, por la misma rama en vivo. Tamara 2026-09-25.
+    _usar_balance_live = (forzar_vivo and dry_run) or (
+        0 <= _dias_de_atraso <= _GRACIA_CIERRE_DIAS
+    )
     # El paquete PDF de cierre archiva pantallas "de hoy" (cartera, gastos,
     # activos) — sólo tienen sentido si hoy TODAVÍA es el día que cierra.
     _es_live = _mismo_dia

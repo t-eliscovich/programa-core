@@ -120,3 +120,106 @@ def debe_pisar_el_cierre(filas: list[dict], fecha_cierre: date) -> bool:
         if creada is not None and creada >= limite_utc:
             return False
     return True
+
+
+#: Columnas de la foto de cierre que un mes normal NUNCA deja en cero. Si el
+#: ensayo saca alguna en 0, el mapeo balance → historia se rompió (agosto 2026
+#: salió con banco = 0 y ustock = 0 por la rama en vivo y nadie lo vio).
+COLUMNAS_QUE_NO_PUEDEN_SER_CERO = (
+    "banco", "cart", "deuda", "patrimonio", "anticipos", "ustock", "uqui",
+    "maquinaria", "realty", "stock", "kcom", "ucom", "ktej", "utej", "utin",
+    "gasto", "gstotal", "kvent", "uvent", "usuti",
+)
+
+
+def ensayo(hoy: date | None = None, con_pdf: bool = True) -> dict:
+    """ENSAYO del cierre nocturno — SÓLO LECTURA, no guarda nada.
+
+    Tamara 2026-09-25: *"cómo podríamos hacer para buscar bugs o cosas que no
+    van a quedar bien, la vez pasada todo estuvo mal"*. Corre HOY los mismos
+    tres pasos que la última noche del mes, sin escribir:
+
+      1. los gastos que se congelarían (tej/tin/adm del mes en curso);
+      2. la fila de historia que guardaría la foto de cierre (rama en vivo,
+         la misma de las 23:30), con sus chequeos: columnas en cero, activo
+         que no cierra contra pasivo + patrimonio, retiros distintos de los
+         del mes, gastos de la foto lejos de los que se congelan;
+      3. el PDF de cierre armado en memoria (páginas, tamaño, segundos).
+
+    Los flujos son del mes en curso hasta HOY (no el mes entero): sirve para
+    encontrar lo que sale en cero, mal mapeado o roto, no para comparar montos.
+    """
+    import time
+
+    from filters import today_ec
+
+    hoy = hoy or today_ec()
+    res: dict = {"hoy": str(hoy), "problemas": [], "gastos": None, "fila": None,
+                 "pdf": None}
+
+    try:
+        from modules.informes.views import _gastos_mes_anterior_componentes
+
+        g = _gastos_mes_anterior_componentes(meses_atras=0)
+        res["gastos"] = {k: round(float(v or 0), 2) for k, v in g.items()}
+        if sum(res["gastos"].values()) <= 0:
+            res["problemas"].append("Los gastos del mes dan 0: no se podrían congelar.")
+    except Exception as e:  # noqa: BLE001
+        res["problemas"].append(f"Los gastos del mes no se pudieron calcular: {e}")
+
+    fila = None
+    try:
+        from modules.informes.queries import crear_snapshot_historia, uret_mes_corriente
+
+        foto = crear_snapshot_historia(hoy.year, hoy.month, usuario=USUARIO,
+                                       dry_run=True, forzar_vivo=True)
+        fila = foto.get("row")
+        if not fila:
+            res["problemas"].append(f"La foto de cierre no se pudo calcular: {foto.get('razon')}")
+        else:
+            res["fila"] = fila
+            ceros = [c for c in COLUMNAS_QUE_NO_PUEDEN_SER_CERO
+                     if not float(fila.get(c) or 0)]
+            if ceros:
+                res["problemas"].append("La foto de cierre sale con estas columnas en 0: "
+                                        + ", ".join(ceros))
+            from modules.admin_dbase.health_audit_view import _historia_balance_evaluar
+
+            st, al = _historia_balance_evaluar(fila, "ensayo del cierre")
+            res["balance"] = st
+            if al:
+                res["problemas"].append(
+                    f"La foto de cierre no cierra: activo − (pasivo + patrimonio) = "
+                    f"{st['delta']:+,.2f}")
+            uret = float(uret_mes_corriente() or 0)
+            if abs(float(fila.get("usret") or 0) - uret) > 1:
+                res["problemas"].append(
+                    f"Los retiros de la foto ({float(fila.get('usret') or 0):,.2f}) no son "
+                    f"los del mes ({uret:,.2f}).")
+            if res["gastos"]:
+                g_total = sum(res["gastos"].values())
+                gst = float(fila.get("gstotal") or 0)
+                if g_total and abs(gst - g_total) > 0.05 * g_total:
+                    res["problemas"].append(
+                        f"Los gastos de la foto (gstotal {gst:,.2f}) y los que se congelan "
+                        f"({g_total:,.2f}) difieren más de 5%.")
+    except Exception as e:  # noqa: BLE001
+        res["problemas"].append(f"La foto de cierre falló: {e}")
+
+    if con_pdf:
+        try:
+            from modules.informes import cierres_paquete
+
+            t0 = time.time()
+            pdf, paginas = cierres_paquete.armar_pdf(hoy.year, hoy.month)
+            res["pdf"] = {"secciones": paginas, "kb": round(len(pdf) / 1024),
+                          "segundos": round(time.time() - t0, 1),
+                          "de": len(cierres_paquete.PAGINAS)}
+            if paginas < len(cierres_paquete.PAGINAS):
+                res["problemas"].append(
+                    f"El PDF salió con {paginas} de {len(cierres_paquete.PAGINAS)} secciones.")
+        except Exception as e:  # noqa: BLE001
+            res["problemas"].append(f"El PDF de cierre no se pudo armar: {e}")
+
+    res["ok"] = not res["problemas"]
+    return res
