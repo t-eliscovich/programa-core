@@ -326,9 +326,12 @@ def _det_activos(cual: str) -> list[dict]:
     tipos = ("M", "C", "K") if cual == "umaq" else ("I", "T")
     try:
         from modules.activos.queries import borrado_where_sql as _borr
+        from modules.activos.queries import cuota_pendiente_sql as _pend
         borr = _borr()
+        pend = _pend()
     except Exception:  # noqa: BLE001
         borr = ""
+        pend = "0"
     return [
         {"doc_id": f"a{r['id_activos']}",
          "etiqueta": f"{(r.get('concepto') or '').strip()[:60]}",
@@ -341,7 +344,7 @@ def _det_activos(cual: str) -> list[dict]:
             SELECT id_activos, concepto,
                    GREATEST(COALESCE(inicial, 0)
                             - COALESCE(amortizac, 0)
-                            - (SELECT c FROM coef) * COALESCE(cuota, 0), 0) AS valor_calc
+                            - ((SELECT c FROM coef) + {pend}) * COALESCE(cuota, 0), 0) AS valor_calc
               FROM scintela.activos
              WHERE UPPER(TRIM(COALESCE(tipo, ''))) IN %s
                {borr}

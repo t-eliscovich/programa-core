@@ -152,6 +152,45 @@ def _tiene_borrado() -> bool:
     return _HAS_BORRADO
 
 
+#: La fecha de hoy en Ecuador, en SQL.
+HOY_EC_SQL = "(CURRENT_TIMESTAMP - INTERVAL '5 hours')::date"
+
+
+def cuota_pendiente_sql(alias: str = "", hoy_sql: str = HOY_EC_SQL) -> str:
+    """1 si la cuota del MES QUE TERMINÓ todavía no se sumó a `amortizac`; si no, 0.
+
+    Tamara 2026-09-25 (*"claro, debería no verse ese movimiento"*): a la
+    medianoche del día 1 el coeficiente pasa de 30/30 a 1/31, pero la cuota del
+    mes que terminó recién entra a `amortizac` con la tarea de las 06:00 EC
+    (`scintela.actualizar_amortizacion`). En esas 6 horas los activos subían
+    ~47.000 y la utilidad del mes nuevo arrancaba inflada (01/09/2026: +46.593
+    a las 00:04, −48.200 a las 06:04). Sumando acá lo que esa tarea VA a sumar
+    —con su misma condición— el valor en libros baja sólo un día a la
+    medianoche y no depende de que la tarea haya corrido.
+
+    Es la misma condición del paso 1 de `actualizar_amortizacion`: cuota > 0,
+    le queda valor, y `ult_mes_amortizado` no es el mes en curso. Un activo
+    cargado ESTE mes no debe nada del anterior: los nuevos nacen con
+    `ult_mes_amortizado` = mes de alta (ver `crear`), y el único viejo sin
+    marca (NULL) cuenta sólo si se cargó antes de este mes.
+    """
+    p = f"{alias}." if alias else ""
+    return (
+        f"(CASE WHEN COALESCE({p}cuota, 0) > 0"
+        f" AND COALESCE({p}inicial, 0) - COALESCE({p}amortizac, 0) > 0.01"
+        f" AND {p}ult_mes_amortizado IS DISTINCT FROM"
+        f" (EXTRACT(YEAR FROM {hoy_sql})::int * 100 + EXTRACT(MONTH FROM {hoy_sql})::int)"
+        f" AND ({p}ult_mes_amortizado IS NOT NULL"
+        f" OR {p}fecha_crea < date_trunc('month', {hoy_sql}) + INTERVAL '5 hours')"
+        f" THEN 1 ELSE 0 END)"
+    )
+
+
+#: El mes de alta en Ecuador (año*100+mes), para `ult_mes_amortizado` al crear.
+MES_EC_SQL = ("(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours'))::int * 100"
+              " + EXTRACT(MONTH FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours'))::int)")
+
+
 def borrado_where_sql(alias: str = "") -> str:
     """'AND <alias>.borrado_en IS NULL' si la columna existe; si no, ''.
 
@@ -201,6 +240,7 @@ def buscar(
     else:
         orden_manual_select   = ""
         orden_manual_order_by = ""
+    pend_a = cuota_pendiente_sql("a")        # mes que terminó, si falta sumarlo
     borrado_where = borrado_where_sql("a")   # excluye soft-borrados
     sql = f"""
         WITH coef AS (
@@ -227,7 +267,7 @@ def buscar(
                GREATEST(
                  COALESCE(a.inicial, 0)
                    - COALESCE(a.amortizac, 0)
-                   - (SELECT c FROM coef) * COALESCE(a.cuota, 0),
+                   - ((SELECT c FROM coef) + {pend_a}) * COALESCE(a.cuota, 0),
                  0
                )                                                     AS valor,
                a.cuota,
@@ -238,7 +278,7 @@ def buscar(
                GREATEST(
                  COALESCE(a.inicial, 0)
                    - COALESCE(a.amortizac, 0)
-                   - (SELECT c FROM coef) * COALESCE(a.cuota, 0),
+                   - ((SELECT c FROM coef) + {pend_a}) * COALESCE(a.cuota, 0),
                  0
                )                                                     AS valor_libros,
                CASE WHEN COALESCE(a.inicial, 0) > 0
@@ -329,18 +369,18 @@ def resumen() -> dict:
                COALESCE(SUM(GREATEST(
                  COALESCE(inicial, 0)
                    - COALESCE(amortizac, 0)
-                   - (SELECT c FROM coef) * COALESCE(cuota, 0),
+                   - ((SELECT c FROM coef) + {pend}) * COALESCE(cuota, 0),
                  0
                )), 0)                                              AS valor_libros,
                COUNT(*) FILTER (WHERE
                  COALESCE(inicial, 0)
                    - COALESCE(amortizac, 0)
-                   - (SELECT c FROM coef) * COALESCE(cuota, 0)
+                   - ((SELECT c FROM coef) + {pend}) * COALESCE(cuota, 0)
                  > 0.01
                )                                                   AS n_vivos
         FROM scintela.activos
         WHERE TRUE {borrado}
-        """.format(borrado=borrado_where_sql())
+        """.format(borrado=borrado_where_sql(), pend=cuota_pendiente_sql())
     )
     if not row:
         return {
@@ -483,8 +523,8 @@ def crear(
         """
         INSERT INTO scintela.activos
             (fecha, concepto, tipo, inicial, amortizac, amortimes, valor,
-             cuota, vida_util, id_proveedor, usuario_crea)
-        VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s)
+             cuota, vida_util, id_proveedor, usuario_crea, ult_mes_amortizado)
+        VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s, """ + MES_EC_SQL + """)
         RETURNING id_activos
         """,
         (
@@ -744,8 +784,9 @@ def activar_maquinaria(
             """
             INSERT INTO scintela.activos
                 (fecha, concepto, tipo, inicial, amortizac, amortimes,
-                 valor, cuota, vida_util, id_proveedor, usuario_crea)
-            VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s)
+                 valor, cuota, vida_util, id_proveedor, usuario_crea,
+                 ult_mes_amortizado)
+            VALUES (%s, %s, %s, %s, 0, 0, %s, %s, %s, %s, %s, """ + MES_EC_SQL + """)
             RETURNING id_activos
             """,
             (

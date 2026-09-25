@@ -662,6 +662,7 @@ def activos_totales() -> dict:
     # tipados quedan fuera, idéntico al legacy. `valor_calc` = valor en libros
     # prorrateado al día (NUNCA `inicial`). Excluye los soft-borrados (papelera).
     from modules.activos.queries import borrado_where_sql as _borr
+    from modules.activos.queries import cuota_pendiente_sql as _pend
     row = db.fetch_one(
         f"""
         WITH coef AS (
@@ -672,7 +673,7 @@ def activos_totales() -> dict:
             UPPER(TRIM(COALESCE(tipo, ''))) AS tp,
             COALESCE(inicial, 0)
               - COALESCE(amortizac, 0)
-              - (SELECT c FROM coef) * COALESCE(cuota, 0) AS valor_calc
+              - ((SELECT c FROM coef) + {_pend()}) * COALESCE(cuota, 0) AS valor_calc
           FROM scintela.activos
           WHERE TRUE {_borr()}
         )
