@@ -5,7 +5,7 @@
 {% block content %}
 <div class="max-w-7xl">
 {{ page_hero('Metas de venta · en KILOS',
-             'Bajo cada meta, en gris, los kilos vendidos y el % de cumplimiento. Vacío = sin meta.') }}
+             'En cada mes: la meta, abajo en gris lo vendido y el % cumplido. Vacío = sin meta.') }}
 
 {# ⚠ La columna se llamaba `monto` y guardaba dólares hasta la migración 0163,
    que la renombra a `kg` y borra las metas viejas — convertir dólares a kilos
@@ -51,29 +51,42 @@
 <form method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="anio" value="{{ anio }}">
-  <div class="bg-white border rounded-lg shadow-sm overflow-x-auto">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 border-b text-left uppercase tracking-wider text-slate-400">
-        {# `data-no-sort`: es una grilla de CARGA, no un listado. Ordenar por
-           "el mes 04" no significa nada y las flechitas ↕ sobre doce números
-           son ruido puro. #}
+  {# ⭐ TMT 2026-09-25 (dueña: *"acá no quiero tener que scrollear de lado a
+     lado, mejorá — y fijate si el diseño puede ser más ameno"*). La grilla
+     medía ~1.300 px: cada celda se estiraba al ancho de "61.571 140%" puesto
+     en UN renglón, y eso ×12 meses no entra al lado del menú. Ahora cada
+     celda tiene TRES renglones fijos — meta · vendido · % — así la columna
+     mide lo que el número más ancho (~60 px) y los 12 meses entran enteros.
+     La regla del 05/08 sigue: TODAS las celdas tienen los mismos renglones
+     (vacíos con &nbsp;), así ninguna fila se dispara.
+     Más ameno: meses con nombre (Ene…Dic) y el % en una pastilla de color
+     suave. La caja vacía sigue diciendo "kg" (08/2026: sin unidad se llena
+     en dólares por costumbre). #}
+  {% set MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'] %}
+  <div class="mt-caja">
+    {# `data-no-sort-table`: es una grilla de CARGA, no un listado. #}
+    <table class="mt-tabla" data-no-sort-table>
+      <colgroup>
+        <col style="width:52px">
+        {% for m in range(1, 13) %}<col>{% endfor %}
+        <col style="width:96px">
+      </colgroup>
+      <thead>
         <tr>
-          <th class="mt-th mt-th-l" data-no-sort>Vend.</th>
+          <th class="mt-th mt-th-l">Vend.</th>
           {% for m in range(1, 13) %}
-            <th class="mt-th{% if m == mes_en_curso %} mt-th-hoy{% endif %}"
-                data-no-sort>{{ '%02d'|format(m) }}</th>
+            <th class="mt-th{% if m == mes_en_curso %} mt-th-hoy{% endif %}">{{ MESES[m-1] }}</th>
           {% endfor %}
-          <th class="mt-th" data-no-sort>Año</th>
+          <th class="mt-th mt-th-anio">Año</th>
         </tr>
       </thead>
-      <tbody class="divide-y">
+      <tbody>
         {% for v in vendedores %}
         {% set fila = [] %}
         <tr>
           {# Sólo el código: son seis y la dueña los conoce de memoria. El
              nombre completo queda en el title, por si entra alguien nuevo. #}
-          <td class="mt-cod"
-              title="{{ v.nombre }}">{{ v.codigo }}</td>
+          <td class="mt-cod" title="{{ v.nombre }}">{{ v.codigo }}</td>
           {% set real = [] %}
           {% for m in range(1, 13) %}
             {% set val = cargadas.get((v.codigo, m)) %}
@@ -83,51 +96,36 @@
             {% if paso and val %}{% set _ = real.append(kg or 0) %}{% endif %}
             {# ⚠ `val` viene de Postgres como Decimal (NUMERIC) y `kg` como
                float: en Jinja `float / Decimal` es un TypeError y la pantalla
-               da 500. Se pasa a float en cada cuenta, no en el `value=` del
-               input — ahí el Decimal imprime "44000.00" y el float "44000.0",
-               y lo que la dueña ve en la caja no tiene por qué cambiar. #}
+               da 500. Se pasa a float en cada cuenta, no en el `value=`. #}
             {% set valf = val|float if val else 0 %}
-            <td class="mt-c">
+            <td class="mt-c{% if m == mes_en_curso %} mt-c-hoy{% endif %}">
               <input name="meta_{{ v.codigo }}_{{ m }}" inputmode="decimal"
                      {# ⚠ El value NO se formatea con `kg_es`: este input se
                         MANDA de vuelta y `guardar_meta` lo pasa tal cual al
                         NUMERIC. "44.000,00" no es un número válido para
-                        Postgres y el guardado explotaría — un cambio de
-                        formato que rompe una escritura. Se muestra entero
-                        cuando es entero (que es como se cargan las metas) y,
-                        si algún día alguien pone decimales, tal cual vino. #}
+                        Postgres y el guardado explotaría. #}
                      value="{{ val|round|int if val and val == val|round else (val if val is not none else '') }}"
-                     title="Meta de {{ v.nombre }} para el mes {{ '%02d'|format(m) }}, en kilos"
+                     title="Meta de {{ v.nombre }} para {{ MESES[m-1] }}, en kilos"
                      placeholder="kg"
-                     class="mt-in{% if m == mes_en_curso %} mt-hoy{% endif %}">
-              {# ⭐ Vendido y % en UN SOLO renglón. Con dos, esta celda medía un
-                 renglón más que sus hermanas y estiraba la fila entera. Va
-                 aunque no haya meta cargada: si no, un mes sin meta parecería
-                 un mes sin ventas. #}
+                     class="mt-in">
+              {# Vendido: va aunque no haya meta — si no, un mes sin meta
+                 parecería un mes sin ventas. Los meses que no llegaron, vacío. #}
+              <div class="mt-real" title="Kilos realmente facturados">{% if paso %}{{ (kg or 0)|num_es(0) }}{% else %}&nbsp;{% endif %}</div>
               <div class="mt-sub">
-                {% if paso %}
-                  <span class="mt-real" title="Kilos realmente facturados">{{ (kg or 0)|num_es(0) }}</span>
-                  {% if val %}
-                    {% set pct = (kg or 0)|float * 100 / valf %}
-                    {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
-                       gris: su % es parcial y pintarlo de rojo el día 5 es una
-                       alarma falsa todos los meses. #}
-                    <span class="mt-pct {% if m == mes_en_curso %}text-slate-400
-                                {%- elif pct >= 100 %}text-emerald-600 font-semibold
-                                {%- elif pct >= 80 %}text-amber-600
-                                {%- else %}text-red-600{% endif %}"
-                          title="{{ (kg or 0)|kg_es }} kg vendidos sobre una meta de {{ val|kg_es }} kg{% if m == mes_en_curso %} · mes en curso, parcial{% endif %}">
-                      {{ pct|num_es(0) }}%{% if m == mes_en_curso %}*{% endif %}
-                    </span>
-                  {% endif %}
+                {% if paso and val %}
+                  {% set pct = (kg or 0)|float * 100 / valf %}
+                  {# Verde ≥100, ámbar ≥80, rojo debajo. El mes en curso va en
+                     gris: su % es parcial y pintarlo de rojo el día 5 es una
+                     alarma falsa todos los meses. #}
+                  <span class="mt-pct {% if m == mes_en_curso %}mt-gris{% elif pct >= 100 %}mt-verde{% elif pct >= 80 %}mt-ambar{% else %}mt-rojo{% endif %}"
+                        title="{{ (kg or 0)|kg_es }} kg vendidos sobre una meta de {{ val|kg_es }} kg{% if m == mes_en_curso %} · mes en curso, parcial{% endif %}">{{ pct|num_es(0) }}%{% if m == mes_en_curso %}*{% endif %}</span>
                 {% else %}&nbsp;{% endif %}
               </div>
             </td>
           {% endfor %}
           {# El año compara like con like: sólo los meses que YA pasaron y que
              TIENEN meta. Sumar la meta de doce meses contra lo vendido en ocho
-             da un % que no significa nada — es el mismo error del anillo del
-             portal, que llegó a marcar 3345%. #}
+             da un % que no significa nada (el anillo del portal llegó a 3345%). #}
           {% set meta_corrida = [] %}
           {% for m in range(1, 13) %}
             {% if m <= ultimo_mes and cargadas.get((v.codigo, m)) %}
@@ -135,61 +133,83 @@
             {% endif %}
           {% endfor %}
           <td class="mt-anio">
-            <div class="mt-anio-t">{{ fila|sum|num_es(0) }}</div>
-            <div class="mt-sub">
-              {% if meta_corrida %}
-                {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
-                <span class="mt-real">{{ real|sum|num_es(0) }}</span>
-                <span class="mt-pct {% if pct_anio >= 100 %}text-emerald-600 font-semibold
-                            {%- elif pct_anio >= 80 %}text-amber-600{% else %}text-red-600{% endif %}"
-                      title="{{ real|sum|kg_es }} kg vendidos sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">
-                  {{ pct_anio|num_es(0) }}%
-                </span>
-              {% else %}&nbsp;{% endif %}
-            </div>
+            <div class="mt-anio-t" title="Suma de las metas del año">{{ fila|sum|num_es(0) }}</div>
+            {% if meta_corrida %}
+              {% set pct_anio = real|sum|float * 100 / meta_corrida|sum %}
+              <div class="mt-real" title="Vendido en los meses con meta que ya pasaron">{{ real|sum|num_es(0) }}</div>
+              <div class="mt-sub">
+                <span class="mt-pct {% if pct_anio >= 100 %}mt-verde{% elif pct_anio >= 80 %}mt-ambar{% else %}mt-rojo{% endif %}"
+                      title="{{ real|sum|kg_es }} kg vendidos sobre los {{ meta_corrida|length }} mes(es) con meta que ya pasaron">{{ pct_anio|num_es(0) }}%</span>
+              </div>
+            {% else %}
+              <div class="mt-real">&nbsp;</div><div class="mt-sub">&nbsp;</div>
+            {% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-  <div class="mt-3 flex items-center gap-3">
+  <div class="mt-pie">
     <button type="submit" class="bg-sky-600 hover:bg-sky-700 text-white px-4 rounded text-sm shadow-sm mt-btn">
       Guardar metas {{ anio }}
     </button>
-    <span class="text-xs mt-real">* mes en curso: el % es parcial</span>
+    <span class="mt-leyenda">
+      En cada mes: <b>meta</b> · <span class="mt-real-i">vendido</span> · % cumplido
+      &nbsp;·&nbsp; <span class="mt-pct mt-verde">≥100%</span>
+      <span class="mt-pct mt-ambar">80–99%</span>
+      <span class="mt-pct mt-rojo">&lt;80%</span>
+      &nbsp;·&nbsp; * mes en curso: el % es parcial
+    </span>
   </div>
 </form>
 </div>
 
 {# ⚠ `static/tailwind.css` es un build JIT CONGELADO: las clases que no
-   existían el día del build NO renderizan, y no avisan. `w-[68px]`,
-   `text-[10px]`, `py-1.5`, `w-16` y `border-l` no están — los inputs salían
-   con el ancho por defecto del navegador (~177 px) y la grilla se cortaba en
-   el mes 06. Por eso el tamaño va acá, en CSS propio. #}
+   existían el día del build NO renderizan, y no avisan. Por eso el tamaño y
+   los colores van acá, en CSS propio. #}
 <style>
-  .mt-th{padding:5px 4px;font-size:10px;text-align:right;font-weight:400;white-space:nowrap}
-  .mt-th-l{text-align:left;padding-left:8px}
-  .mt-th-hoy{color:#4338CA;font-weight:600}
-  .mt-cod{padding:3px 8px;white-space:nowrap;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-          font-size:11px;font-weight:600}
-  .mt-c{padding:3px 2px}
-  .mt-in{border:1px solid var(--tw-border,#CBD5E1);border-radius:4px;padding:2px 4px;
-         width:64px;text-align:right;font-size:11px;font-variant-numeric:tabular-nums;
-         background:transparent}
-  .mt-hoy{background:#EEF2FF;border-color:#A5B4FC}
-  /* TMT 2026-08-18 dueña: *"agranda un punto los kg y % está muy chico"*.
-     9,5 px era ilegible al lado de un input de 11 px. Va a 11 px: el real y
-     la meta se leen del mismo tamaño, que es la comparación que se viene a
-     hacer acá. */
-  .mt-sub{font-size:11px;line-height:1.15;margin-top:3px;text-align:right;
-          white-space:nowrap;font-variant-numeric:tabular-nums}
-  .mt-real{color:#94A3B8}
-  .mt-pct{margin-left:4px}
-  .mt-anio{padding:3px 8px;text-align:right;white-space:nowrap;
-           font-variant-numeric:tabular-nums;border-left:1px solid #E2E8F0}
-  .mt-anio-t{font-size:11px;font-weight:600}
-  .mt-btn{padding-top:5px;padding-bottom:5px}
+  /* ⚠ base.html pone `main table tbody td { padding: .55rem .75rem
+     !important }`: sin !important acá cada mes perdía 24 px de relleno y la
+     caja de la meta quedaba en 34 px, cortando "44000". */
+  .mt-caja{background:#fff;border:1px solid #E2E8F0;border-radius:10px;
+           box-shadow:0 1px 2px rgba(15,23,42,.04);overflow-x:auto}
+  .mt-tabla{width:100%;table-layout:fixed;border-collapse:collapse;font-variant-numeric:tabular-nums}
+  main .mt-tabla th.mt-th{padding:9px 4px 7px !important;font-size:11px;font-weight:500;color:#64748B;text-align:right;
+         white-space:nowrap;background:#F8FAFC;border-bottom:1px solid #E2E8F0}
+  main .mt-tabla th.mt-th-l{text-align:left;padding-left:12px !important}
+  main .mt-tabla th.mt-th-anio{padding-right:12px !important;border-left:1px solid #E2E8F0}
+  main .mt-tabla th.mt-th-hoy{color:#4338CA !important;font-weight:600}
+  main .mt-tabla tbody tr{border-bottom:1px solid #F1F5F9}
+  main .mt-tabla tbody tr:last-child{border-bottom:none}
+  main .mt-tabla tbody tr:hover{background:#FAFBFD}
+  main .mt-tabla td.mt-cod{padding:8px 4px 8px 12px !important;font-size:12px;font-weight:600;color:#0F172A;white-space:nowrap}
+  main .mt-tabla td.mt-c{padding:7px 2px !important;text-align:right;vertical-align:top}
+  .mt-c-hoy{background:#F5F7FF}
+  /* La caja de la meta. El borde NO se toca: base.html los pone negros a
+     propósito ("mi papá no las ve"). Sí la letra — base.html agranda los
+     inputs a 15 px con !important y "44000" no entraba en la columna. */
+  main .mt-tabla input.mt-in{width:100%;box-sizing:border-box;border:1px solid #CBD5E1;border-radius:5px;
+         padding:2px 3px;text-align:right;font-size:12px !important;font-weight:500;color:#0F172A;
+         background:#fff;font-variant-numeric:tabular-nums;line-height:1.35}
+  main .mt-tabla input.mt-in::placeholder{color:#CBD5E1;font-weight:400}
+  main .mt-tabla input.mt-in:focus{outline:none;box-shadow:0 0 0 2px rgba(99,102,241,.25)}
+  .mt-c-hoy input.mt-in{background:#E0E7FF}
+  .mt-real{font-size:11px;color:#94A3B8;line-height:1.2;margin-top:4px;white-space:nowrap;padding-right:4px}
+  .mt-sub{font-size:11px;line-height:1.2;margin-top:2px;white-space:nowrap;padding-right:2px}
+  .mt-pct{display:inline-block;padding:0 5px;border-radius:9px;font-size:10.5px;font-weight:600}
+  .mt-verde{background:#DCFCE7;color:#15803D}
+  .mt-ambar{background:#FEF3C7;color:#B45309}
+  .mt-rojo{background:#FEE2E2;color:#B91C1C}
+  .mt-gris{background:#F1F5F9;color:#64748B;font-weight:500}
+  main .mt-tabla td.mt-anio{padding:7px 12px 7px 8px !important;text-align:right;vertical-align:top;white-space:nowrap;
+           border-left:1px solid #E2E8F0;background:#FCFCFD}
+  .mt-anio-t{font-size:12.5px;font-weight:700;color:#0F172A;line-height:1.35;padding:3px 0}
+  .mt-pie{margin-top:12px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+  .mt-btn{padding-top:6px;padding-bottom:6px}
+  .mt-leyenda{font-size:11.5px;color:#64748B}
+  .mt-leyenda b{color:#0F172A}
+  .mt-real-i{color:#94A3B8}
 </style>
 
 {% endblock %}

@@ -2365,7 +2365,7 @@ def test_la_grilla_de_metas_muestra_lo_vendido_y_el_cumplimiento(
     # un kilo cuestan ancho y no cambian ninguna decisión.
     assert "54.535" in html
     assert "109%" in html
-    assert "text-emerald-600" in html
+    assert "mt-verde" in html
 
 
 def test_el_mes_en_curso_no_se_pinta_de_rojo(app, fake_db, monkeypatch):
@@ -2375,7 +2375,7 @@ def test_el_mes_en_curso_no_se_pinta_de_rojo(app, fake_db, monkeypatch):
     assert "6.572" in html
     assert "15%*" in html
     fila_agosto = html.split("6.572")[1].split("</td>")[0]
-    assert "text-slate-400" in fila_agosto and "text-red-600" not in fila_agosto
+    assert "mt-gris" in fila_agosto and "mt-rojo" not in fila_agosto
 
 
 def test_los_meses_que_no_pasaron_no_llevan_ni_real_ni_porcentaje(
@@ -2459,24 +2459,27 @@ def test_todas_las_celdas_de_mes_miden_lo_mismo(app, fake_db, monkeypatch):
     vendido + %) contra dos de las demás, y una fila se estira al alto de su
     celda más alta: UNA celda distinta desalinea la tabla entera.
 
-    Ahora vendido y % van en el MISMO renglón, así que cada celda tiene
-    exactamente dos: el input y una línea de texto. El test cuenta los `<div>`
-    de la celda de agosto (la que tiene meta Y vendido) y los compara con los
-    de julio (meta sin cargar, sólo vendido).
+    TMT 2026-09-25 (dueña: "no quiero scrollear de lado a lado"): vendido y
+    % en un renglón hacían la columna tan ancha como "61.571 140%" y los 12
+    meses no entraban. Ahora van en renglones SEPARADOS — pero en TODAS las
+    celdas, vacíos con &nbsp; cuando no hay dato: la regla sigue siendo que
+    todas midan lo mismo. El test cuenta los `<div>` de agosto (meta y
+    vendido), julio (sólo vendido) y diciembre (nada todavía).
     """
     html = _metas_html(app, fake_db, monkeypatch)
     fila = html.split('name="meta_EDG_1"')[1].split("</tr>")[0]
     agosto = fila.split('name="meta_EDG_8"')[1].split("</td>")[0]
     julio = fila.split('name="meta_EDG_7"')[1].split("</td>")[0]
-    assert agosto.count("<div") == julio.count("<div") == 1
+    diciembre = fila.split('name="meta_EDG_12"')[1].split("</td>")[0]
+    assert agosto.count("<div") == julio.count("<div") == diciembre.count("<div") == 2
 
 
 def test_los_meses_no_se_pueden_ordenar(app, fake_db, monkeypatch):
     """Es una grilla de CARGA, no un listado. Ordenar por "el mes 04" no
     significa nada y las flechitas ↕ sobre doce números son ruido."""
     html = _metas_html(app, fake_db, monkeypatch)
-    thead = html.split("<thead")[1].split("</thead>")[0]
-    assert thead.count("data-no-sort") == 14   # Vend. + 12 meses + Año
+    tabla = html.split('<table class="mt-tabla"')[1].split(">")[0]
+    assert "data-no-sort-table" in tabla   # la tabla entera, sin flechitas
 
 
 def test_el_value_del_input_se_puede_volver_a_guardar(app, fake_db, monkeypatch):
