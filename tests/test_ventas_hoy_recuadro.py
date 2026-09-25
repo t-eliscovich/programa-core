@@ -423,3 +423,10 @@ def test_los_archivos_estaticos_no_consultan_la_base(monkeypatch):
         auth.load_logged_in_user()
         assert g.user is None
     assert llamadas == []
+
+
+def test_el_calentador_recalienta_los_ingresos_de_tejeduria():
+    from pathlib import Path
+
+    src = Path("modules/_lib/warmup.py").read_text(encoding="utf-8")
+    assert '("ingresos_fabricacion", lambda: asvc.ingresos_fabricacion_mes(yy, mm))' in src

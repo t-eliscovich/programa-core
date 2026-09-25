@@ -102,6 +102,11 @@ def _warm_once() -> None:
         ("importaciones", lambda: asvc.importaciones_asinfo()),
         ("importaciones_kg", lambda: asvc.importaciones_kg()),
         ("produccion_tejeduria", lambda: asvc.produccion_tejeduria_mes(yy, mm)),
+        # TMT 2026-09-25 (dueña: "ver qué más es lento"): /produccion-tejeduria-
+        # asinfo tardaba ~1 s en CADA visita — medido en /admin/pantallas, 560 ms
+        # de puente siempre. Desde el 19/08 la pantalla también lee los IFT
+        # (ingresos a bodega 52) y ese paso nunca se sumó acá.
+        ("ingresos_fabricacion", lambda: asvc.ingresos_fabricacion_mes(yy, mm)),
         # ventas_facturado_kg → facturas_periodo(mes) — sin este paso quedaban
         # ~3s vivos en el flujo (medido 18/07: mov_asinfo_quimicos 3,1s que en
         # realidad eran la card de facturas fría).
