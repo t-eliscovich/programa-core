@@ -6203,6 +6203,11 @@ def flujo_items_dbase(incluir_facturas: bool = False) -> list[dict]:
     # Cheques en cartera — MENU.PRG L643: &AF CHEQUES FOR STAT $ "Z123P".
     # OJO: stat 'D' (devuelto) NO entra — el dBase no lo cuenta como
     # ingreso futuro. TMT 2026-07-06 (dueña): antes se sumaba.
+    # TMT 2026-09-25 (dueña): los SALDOS A FAVOR de clientes (espejo
+    # negativo, no_banco=98) NO entran. El cheque entero ya suma como
+    # ingreso; el espejo se consume contra facturas futuras y no es plata
+    # que sale. Restarlo hundía el flujo 86.203 a un año (51.834 a fin de
+    # octubre). El dBase sí los restaba (NB>0 → C); acá se aparta a propósito.
     rows = (
         db.fetch_all(
             """
@@ -6210,6 +6215,7 @@ def flujo_items_dbase(incluir_facturas: bool = False) -> list[dict]:
           FROM scintela.cheque
          WHERE stat IN ('Z', '1', '2', '3', 'P')
            AND fechad IS NOT NULL
+           AND NOT (COALESCE(no_banco, 0) = 98 AND importe < 0)
          GROUP BY fechad
         """
         )
