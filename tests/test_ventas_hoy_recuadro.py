@@ -403,3 +403,23 @@ def test_el_calentador_recalienta_el_despachado_de_hoy():
 
     src = Path("modules/_lib/warmup.py").read_text(encoding="utf-8")
     assert '("despacho_hoy", lambda: asvc.despacho_fisico_dia_info(hoy, forzar=True))' in src
+
+
+def test_los_archivos_estaticos_no_consultan_la_base(monkeypatch):
+    """TMT 2026-09-25: /static hacía 2 consultas (usuario + permisos) y
+    tardaba ~1 s en producción. Un css no necesita saber quién sos."""
+    from flask import Flask, g
+
+    import auth
+
+    app = Flask(__name__)
+    app.secret_key = "x"
+    llamadas = []
+    monkeypatch.setattr(auth.db, "fetch_one", lambda *a, **k: llamadas.append(a) or None)
+    monkeypatch.setattr(auth.db, "fetch_all", lambda *a, **k: llamadas.append(a) or [])
+    with app.test_request_context("/static/tailwind.css"):
+        from flask import session
+        session["user_id"] = 1
+        auth.load_logged_in_user()
+        assert g.user is None
+    assert llamadas == []

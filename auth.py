@@ -164,6 +164,15 @@ def load_logged_in_user() -> None:
     """
     g.user = None
     g.permisos = set()
+    # TMT 2026-09-25 (dueña: "ver qué más es lento"). Medido en
+    # /admin/pantallas: los archivos de /static (css, js, logo) hacían DOS
+    # consultas cada uno — el usuario y sus permisos — y tardaban ~1 s en vez
+    # de milisegundos. Cada pantalla pide cinco, y el navegador las vuelve a
+    # pedir en cada visita. Un archivo estático no necesita saber quién sos:
+    # ni `enforce_allowlist` ni `enforce_scope_vendedor` los frenan, y no
+    # cuentan como actividad para el vencimiento de la sesión.
+    if (request.path or "").startswith(("/static/", "/favicon")):
+        return
     user_id = session.get("user_id")
     if not user_id:
         return
