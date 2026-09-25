@@ -12,9 +12,22 @@ from __future__ import annotations
 import os
 import sys
 
+import pytest
+
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
+
+
+@pytest.fixture(autouse=True)
+def _dia_comun(monkeypatch):
+    """Estos tests son de la foto diaria: un día cualquiera de mitad de mes,
+    para que el cierre nocturno (sólo el último día) no se meta si la suite
+    corre justo un fin de mes. El cierre se testea en test_cierre_nocturno.py."""
+    from datetime import date
+
+    import filters
+    monkeypatch.setattr(filters, "today_ec", lambda: date(2026, 9, 15))
 
 
 def _importar_script():

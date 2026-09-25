@@ -208,7 +208,6 @@ def _ejecutar_tarea(tarea: str, sql_call: str, fecha: date) -> None:
         # mes siguiente, e inflaba/desfasaba los saldos del cierre). El
         # camino as_of además incluye la caja en `banco` y excluye
         # 'asinfo-backfill'. Idempotente: salta si ya existe el mes.
-        from modules.informes.queries import crear_snapshot_historia
         # Tamara 2026-09-01 -- si una foto DIARIA (usuario_crea='snapshot-diario')
         # ya ocupó la fecha EXACTA del cierre -- alguien visitó una pantalla
         # que la dispara, o el botón manual de /admin/health/all, antes de que
@@ -223,13 +222,27 @@ def _ejecutar_tarea(tarea: str, sql_call: str, fecha: date) -> None:
         # hay CUALQUIER otra cosa (una reconstrucción manual de Tamara/Andrés
         # vía /admin/regenerar-snapshot/, un backfill, etc.) no la toca --
         # forzar=False sigue siendo el default seguro para todo lo demás.
-        fila_previa = db.fetch_one(
-            "SELECT usuario_crea FROM scintela.historia WHERE fecha = %s LIMIT 1",
+        # Tamara 2026-09-25 — el cierre lo saca la última noche del mes
+        # (modules/informes/cierre_nocturno.py). Acá sólo se rehace si lo que
+        # hay es una foto diaria DE PASO (de antes de las 23:00 EC): rehacerla
+        # el día 1 guarda los flujos del mes NUEVO. Antes esto miraba UNA fila
+        # cualquiera (LIMIT 1 sin orden) y la decisión salía a la suerte.
+        from modules.informes.cierre_nocturno import debe_pisar_el_cierre
+        from modules.informes.queries import crear_snapshot_historia
+
+        filas_previas = db.fetch_all(
+            "SELECT usuario_crea, fecha_crea FROM scintela.historia WHERE fecha = %s",
             (fecha_cierre,),
+        ) or []
+        forzar_por_foto_diaria = debe_pisar_el_cierre(
+            [dict(f) for f in filas_previas], fecha_cierre
         )
-        forzar_por_foto_diaria = bool(
-            fila_previa and fila_previa.get("usuario_crea") == "snapshot-diario"
-        )
+        if not filas_previas or forzar_por_foto_diaria:
+            log.warning(
+                "snapshot_historia %s -- la noche del cierre no dejó foto: se "
+                "saca HOY, con los flujos del mes nuevo. Revisar el cierre.",
+                fecha_cierre,
+            )
         result = crear_snapshot_historia(
             fecha_cierre.year, fecha_cierre.month, usuario=f"cron_{tarea}",
             forzar=forzar_por_foto_diaria,

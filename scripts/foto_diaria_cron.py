@@ -64,7 +64,41 @@ def main() -> int:
     for a in resultado.get("alerts") or []:
         log.warning("ALERTA: %s", a)
 
-    return 0 if resultado.get("ok") else 1
+    ok = bool(resultado.get("ok"))
+
+    # Tamara 2026-09-25 — el último día del mes, esta misma tarea saca el
+    # CIERRE (gastos congelados + foto de cierre + PDF). Ver
+    # modules/informes/cierre_nocturno.py.
+    from filters import today_ec
+    from modules.informes.cierre_nocturno import cerrar_mes_de_noche, es_ultimo_dia
+
+    if es_ultimo_dia(today_ec()):
+        cierre = _con_app(cerrar_mes_de_noche)
+        log.info("cierre del mes %s: %s", cierre.get("periodo"), cierre.get("pasos"))
+        for a in cierre.get("alertas") or []:
+            log.warning("ALERTA: %s", a)
+        ok = ok and not cierre.get("alertas")
+
+    return 0 if ok else 1
+
+
+def _con_app(fn):
+    """Corre `fn` dentro de la app de Flask (el PDF de cierre le pide las
+    pantallas a la app). Los hilos de fondo se apagan ANTES de construirla:
+    este proceso vive un par de minutos y no tiene que calentar Asinfo,
+    vigilar la memoria ni prender un navegador persistente."""
+    for var in ("WARMUP_ASINFO", "VIGIA_SERVIDOR", "AUTOCARGA_FACTURAS",
+                "PDF_NAVEGADOR_PERSISTENTE"):
+        os.environ[var] = "0"
+    try:
+        from app import create_app
+
+        app = create_app()
+    except Exception as e:  # noqa: BLE001 -- sin app igual se cierra, sin PDF
+        log.warning("no se pudo levantar la app para el PDF de cierre: %s", e)
+        return fn()
+    with app.app_context():
+        return fn()
 
 
 if __name__ == "__main__":

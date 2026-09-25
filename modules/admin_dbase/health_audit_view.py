@@ -3412,6 +3412,9 @@ def arranque_de_mes_datos(hoy: _dt_date | None = None) -> dict:
     _leer("gastos_manual_prev", lambda: _iq.gastos_mes_manual_get(_periodo(prev)))
     _leer("patant", _iq.historia_ultimo_mes)
     _leer("provisiones", lambda: _provisiones_con_salto(hoy))
+    _leer("paquete_prev", lambda: bool(db.fetch_one(
+        "SELECT 1 AS ok FROM scintela.cierre_paquete WHERE anio = %s AND mes = %s",
+        (prev.year, prev.month))))
     return datos
 
 
@@ -3546,6 +3549,19 @@ def arranque_de_mes_alertas(datos: dict, hoy: _dt_date | None = None) -> dict:
         _al("patant_en_cero",
             f"La foto de cierre del {prev} tiene patrimonio 0: la utilidad "
             f"de {mes} sería el patrimonio entero.")
+
+    # 5b. El cierre lo tiene que haber sacado la ÚLTIMA NOCHE del mes
+    #     (cierre_nocturno, 23:30 EC). Si lo sacó la tarea del día 1, los
+    #     flujos guardados son los del mes nuevo (Tamara 2026-09-25).
+    if pa and str(pa.get("usuario_crea") or "").startswith("cron_"):
+        _al("cierre_tomado_el_dia_1",
+            f"La foto de cierre del {prev} la sacó la tarea del día 1, no la de "
+            f"la última noche: compras, gastos, retiros y utilidad del mes pueden "
+            f"haber quedado con los del mes nuevo. Revisarla en el Historial.")
+    if datos.get("paquete_prev") is False:
+        _al("cierre_sin_pdf",
+            f"No está el PDF de cierre de {_nombre_mes(prev)} en /informes/cierres.",
+            severity="medium")
 
     # 6. Las provisiones YY/RT: ninguna puede haber saltado medio mes.
     provs = datos.get("provisiones") or []

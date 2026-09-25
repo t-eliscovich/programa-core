@@ -113,6 +113,14 @@ class _FakeDB:
             return {"v": 0, "kvent": 0, "uvent": 0, "kcom": 0, "ucom": 0}
         raise AssertionError(f"fetch_one inesperado: {s[:100]}")
 
+    def fetch_all(self, sql, params=None):
+        s = " ".join(sql.split()).lower()
+        # Tamara 2026-09-25: el cron mira TODAS las filas del día de cierre
+        # (usuario y hora) para decidir si pisa — ver cierre_nocturno.
+        if "usuario_crea" in s and "from scintela.historia" in s:
+            return [dict(self.historia_fila_previa)] if self.historia_fila_previa else []
+        raise AssertionError(f"fetch_all inesperado: {s[:100]}")
+
     def execute(self, sql, params=None):
         s = " ".join(sql.split()).lower()
         params = tuple(params or ())
@@ -233,6 +241,7 @@ def fake_db(monkeypatch):
     monkeypatch.setattr(db_mod, "init_pool", fake.init_pool)
     monkeypatch.setattr(db_mod, "execute_returning", fake.execute_returning)
     monkeypatch.setattr(db_mod, "fetch_one", fake.fetch_one)
+    monkeypatch.setattr(db_mod, "fetch_all", fake.fetch_all)
     monkeypatch.setattr(db_mod, "execute", fake.execute)
     monkeypatch.setattr(db_mod, "tx", fake.tx)
     # 2026-06-04 — el cron ahora crea el snapshot del cierre vía
@@ -512,11 +521,23 @@ def test_snapshot_historia_no_forza_si_no_hay_fila_previa(fake_db):
 
 def test_snapshot_historia_forza_si_lo_unico_que_hay_es_foto_diaria(fake_db):
     """Una foto diaria de paso ocupó el 30/09 -> el cron la pisa (forzar=True)."""
-    fake_db.historia_fila_previa = {"usuario_crea": "snapshot-diario"}
+    fake_db.historia_fila_previa = {"usuario_crea": "snapshot-diario",
+                                    "fecha_crea": datetime(2026, 9, 30, 20, 0)}
     ppm = _importar_script()
     ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
     llamada = fake_db.crear_snapshot_historia_calls[0]
     assert llamada["forzar"] is True
+
+
+def test_snapshot_historia_no_pisa_la_foto_de_la_noche(fake_db):
+    """Tamara 2026-09-25: la foto de las 23:30 EC del último día (04:30 UTC del
+    día 1) ES el cierre; rehacerla el día 1 guarda los flujos del mes nuevo."""
+    fake_db.historia_fila_previa = {"usuario_crea": "snapshot-diario",
+                                    "fecha_crea": datetime(2026, 10, 1, 4, 30)}
+    ppm = _importar_script()
+    ppm.correr(periodo="2026-10", fecha=date(2026, 10, 1))
+    llamada = fake_db.crear_snapshot_historia_calls[0]
+    assert llamada["forzar"] is False
 
 
 def test_snapshot_historia_no_forza_si_la_fila_es_manual(fake_db):
