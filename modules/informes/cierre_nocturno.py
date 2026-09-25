@@ -63,11 +63,25 @@ def cerrar_mes_de_noche(hoy: date | None = None) -> dict:
         return res
     res["corrio"] = True
 
-    try:
-        res["pasos"]["gastos"] = congelar_gastos_del_mes(hoy)
-    except Exception as e:  # noqa: BLE001
-        res["alertas"].append(f"CIERRE: no se pudieron congelar los gastos del mes: {e}")
+    def _sigue_siendo_hoy(paso: str) -> bool:
+        """Revisión 25/09: cada paso vuelve a mirar la fecha de Ecuador. Si la
+        corrida cruzó la medianoche, el programa ya está en el mes nuevo y el
+        paso guardaría números de ese mes con el rótulo del que cerró."""
+        if today_ec() == hoy:
+            return True
+        res["alertas"].append(
+            f"CIERRE: pasó la medianoche de Ecuador antes de {paso}; no se hizo "
+            f"para no guardar números del mes nuevo. Rehacerlo a mano.")
+        return False
 
+    if _sigue_siendo_hoy("congelar los gastos"):
+        try:
+            res["pasos"]["gastos"] = congelar_gastos_del_mes(hoy)
+        except Exception as e:  # noqa: BLE001
+            res["alertas"].append(f"CIERRE: no se pudieron congelar los gastos del mes: {e}")
+
+    if not _sigue_siendo_hoy("sacar la foto de cierre"):
+        return res
     try:
         from modules.informes.queries import crear_snapshot_historia
 
@@ -88,12 +102,33 @@ def cerrar_mes_de_noche(hoy: date | None = None) -> dict:
             res["alertas"].append(
                 "CIERRE: el PDF de cierre no quedó guardado — se arma a mano desde "
                 "/admin/regenerar-snapshot/ ANTES de la medianoche.")
+        else:
+            secciones = secciones_del_pdf(hoy.year, hoy.month)
+            res["pasos"]["pdf_secciones"] = secciones
+            total = len(cierres_paquete.PAGINAS)
+            if secciones is not None and secciones < total:
+                res["alertas"].append(
+                    f"CIERRE: el PDF de cierre salió con {secciones} de {total} "
+                    f"secciones — rehacerlo desde /admin/regenerar-snapshot/.")
     except Exception as e:  # noqa: BLE001
         res["alertas"].append(f"CIERRE: no se pudo verificar el PDF de cierre: {e}")
 
     for a in res["alertas"]:
         _LOG.warning(a)
     return res
+
+
+def secciones_del_pdf(anio: int, mes: int) -> int | None:
+    """Cuántas secciones entraron en el PDF guardado (None si no se sabe)."""
+    import db
+
+    fila = db.fetch_one(
+        "SELECT paginas FROM scintela.cierre_paquete WHERE anio = %s AND mes = %s",
+        (anio, mes),
+    )
+    if not fila or fila.get("paginas") is None:
+        return None
+    return int(fila["paginas"])
 
 
 def debe_pisar_el_cierre(filas: list[dict], fecha_cierre: date) -> bool:

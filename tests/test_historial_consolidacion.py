@@ -134,7 +134,9 @@ def test_consolidar_no_borra_la_foto_diaria(monkeypatch):
     # La exclusión tiene que estar en el DELETE de afuera, NO sólo en el
     # subselect de los que se conservan (ahí no protegería nada).
     delete_head = cap["sql"].split("id_historia NOT IN")[0]
-    assert "COALESCE(usuario_crea, '') <> %(diario)s" in delete_head
+    # Desde el 25/09 también queda afuera la foto del CIERRE nocturno.
+    assert "COALESCE(usuario_crea, '') NOT IN (%(diario)s, %(cierre)s)" in delete_head
+    assert cap["params"]["cierre"] == queries.USUARIO_CIERRE_NOCTURNO
 
 
 def test_consolidar_sigue_borrando_los_manuales(monkeypatch):

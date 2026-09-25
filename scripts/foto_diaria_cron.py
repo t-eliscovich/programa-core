@@ -90,6 +90,10 @@ def _con_app(fn):
     for var in ("WARMUP_ASINFO", "VIGIA_SERVIDOR", "AUTOCARGA_FACTURAS",
                 "PDF_NAVEGADOR_PERSISTENTE"):
         os.environ[var] = "0"
+    # Las hojas del PDF las imprime el navegador de la oficina (con fondos,
+    # igual que la pantalla); si la oficina no contesta, sale por el camino
+    # de siempre (un navegador por hoja, hoja de impresión).
+    os.environ["PDF_POR_LA_OFICINA"] = "1"
     try:
         from app import create_app
 

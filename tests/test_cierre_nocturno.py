@@ -32,9 +32,18 @@ def test_es_ultimo_dia(d, esperado):
     assert cn.es_ultimo_dia(d) is esperado
 
 
-def _stubs(monkeypatch, gastos=None, foto=None, pdf=True, boom=()):
+def _stubs(monkeypatch, gastos=None, foto=None, pdf=True, boom=(), secciones=None,
+           relojes=None):
+    import filters
     from modules.informes import cierres_paquete, queries, views
     llamadas = {"gastos": [], "foto": [], "meses_atras": []}
+    # El reloj de Ecuador: por defecto, la noche del 30/09 todo el rato.
+    fechas = list(relojes or [])
+    monkeypatch.setattr(filters, "today_ec",
+                        lambda: fechas.pop(0) if len(fechas) > 1 else (fechas[0] if fechas
+                                                                        else date(2026, 9, 30)))
+    monkeypatch.setattr(cn, "secciones_del_pdf",
+                        lambda a, m: len(cierres_paquete.PAGINAS) if secciones is None else secciones)
 
     def comp(meses_atras=1):
         llamadas["meses_atras"].append(meses_atras)
@@ -347,3 +356,94 @@ def test_la_ruta_del_ensayo_existe():
     src = inspect.getsource(hv.ensayo_cierre)
     assert "usuarios.admin" in inspect.getsource(hv).split("def ensayo_cierre")[0][-300:]
     assert "ensayo(" in src
+
+
+# ─── revisión independiente del 25/09 ───────────────────────────────────────
+
+def test_si_cruza_la_medianoche_no_saca_la_foto(monkeypatch):
+    ll = _stubs(monkeypatch, relojes=[date(2026, 9, 30), date(2026, 10, 1)])
+    r = cn.cerrar_mes_de_noche(date(2026, 9, 30))
+    assert ll["gastos"]                 # los gastos entraron antes de la medianoche
+    assert ll["foto"] == []             # la foto NO: ya sería octubre
+    assert any("medianoche" in a for a in r["alertas"])
+
+
+def test_si_ya_es_otro_dia_no_congela_nada(monkeypatch):
+    ll = _stubs(monkeypatch, relojes=[date(2026, 10, 1)])
+    r = cn.cerrar_mes_de_noche(date(2026, 9, 30))
+    assert ll["gastos"] == [] and ll["foto"] == []
+    assert len([a for a in r["alertas"] if "medianoche" in a]) == 2
+
+
+def test_pdf_incompleto_avisa(monkeypatch):
+    _stubs(monkeypatch, secciones=3)
+    r = cn.cerrar_mes_de_noche(date(2026, 9, 30))
+    assert any("3 de" in a for a in r["alertas"])
+
+
+def test_el_usuario_del_cierre_es_el_que_protege_historia():
+    from modules.informes import queries
+    assert cn.USUARIO == queries.USUARIO_CIERRE_NOCTURNO
+
+
+def test_historial_no_graba_encima_de_un_mes_cerrado(monkeypatch):
+    import db as _db
+    from modules.informes import queries
+    vistos = []
+
+    def fake_fetch_one(sql, params=None, **k):
+        vistos.append(params)
+        return {"ok": 1}
+
+    monkeypatch.setattr(_db, "fetch_one", fake_fetch_one)
+    r = queries.tomar_snapshot_mes_actual(usuario="tamara", throttle_segundos=0)
+    assert r["accion"] == "cerrado"
+    assert vistos[0][-1] == "cierre-nocturno"
+
+
+def test_consolidar_validar_y_borrar_ultima_no_tocan_el_cierre(monkeypatch):
+    import db as _db
+    from modules.informes import queries
+    sqls = []
+    monkeypatch.setattr(_db, "execute", lambda sql, params=None, **k: sqls.append((sql, params)) or 0)
+    monkeypatch.setattr(_db, "fetch_one",
+                        lambda sql, params=None, **k: sqls.append((sql, params)) or
+                        {"id_historia": 5, "fecha": date(2026, 9, 30)})
+    queries.consolidar_snapshots_mes_actual(conservar=2)
+    queries.validar_snapshot(5)
+    queries.eliminar_ultima_columna_mes_actual()
+    consolidar, validar = sqls[0], sqls[2]
+    assert "%(cierre)s" in consolidar[0] and consolidar[1]["cierre"] == "cierre-nocturno"
+    assert "usuario_crea" in validar[0] and "cierre-nocturno" in validar[1]
+    ultima = [s for s in sqls if "ORDER BY fecha_crea DESC" in s[0]][-1]
+    assert "usuario_crea" in ultima[0] and "cierre-nocturno" in ultima[1]
+
+
+def test_el_devengo_no_pisa_una_fila_pagada_o_anulada():
+    import inspect
+
+    from modules.posdat import queries as pq
+    src = inspect.getsource(pq.persistir_acumulacion_yy)
+    upd = src[src.index('"UPDATE scintela.posdat SET importe'):src.index("tocadas") + 400]
+    assert "COALESCE(banc, 0) = 0" in upd and "anulada IS NOT TRUE" in upd
+
+
+def test_bancos_y_kprovt_usan_la_fecha_de_ecuador():
+    import inspect
+
+    from modules.informes import queries
+    src = inspect.getsource(queries.saldo_bancos)
+    assert "CURRENT_DATE" not in src
+    src_bal = inspect.getsource(queries.informe_balance)
+    i = src_bal.index("KPROVT = kg tintura")
+    assert "CURRENT_DATE" not in src_bal[i:i + 900]
+
+
+def test_el_cron_pide_el_pdf_a_la_oficina(monkeypatch):
+    from modules._lib import navegador
+    pedidos = []
+    monkeypatch.setenv("PDF_POR_LA_OFICINA", "1")
+    monkeypatch.setattr(navegador, "_pedir_a_la_oficina",
+                        lambda html, **k: pedidos.append(k) or b"%PDF")
+    assert navegador.pdf("<p>x</p>", None, fondo=True) == b"%PDF"
+    assert pedidos and pedidos[0]["fondo"] is True

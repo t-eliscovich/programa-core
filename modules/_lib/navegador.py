@@ -78,6 +78,8 @@ _LOG = logging.getLogger("programa_core.navegador")
 #: Apagar el navegador persistente sin tocar código: todo vuelve a salir por
 #: `subprocess`, como antes del 26/08.
 VAR_APAGAR = "PDF_NAVEGADOR_PERSISTENTE"
+#: "1" = este proceso le pide las hojas a la oficina (como el portal).
+VAR_POR_LA_OFICINA = "PDF_POR_LA_OFICINA"
 
 #: Cuánto se le da al navegador para levantar. Lo paga el hilo de fondo, nunca
 #: un request.
@@ -792,7 +794,10 @@ def _usar(html: str, static: Path, *, medidas: tuple[int, int] | None,
     """
     import modo
 
-    if modo.es_portal():
+    # El cron del cierre nocturno (scripts/foto_diaria_cron.py) tampoco prende
+    # navegador propio: le pide la hoja a la oficina, así el PDF de cierre sale
+    # igual que desde la pantalla (con fondos) y no deja un Chrome huérfano.
+    if modo.es_portal() or os.environ.get(VAR_POR_LA_OFICINA) == "1":
         return _pedir_a_la_oficina(html, medidas=medidas, formato=formato, fondo=fondo)
     if apagado() or not _NAV.vivo():
         return None

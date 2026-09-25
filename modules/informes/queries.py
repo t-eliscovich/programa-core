@@ -397,7 +397,7 @@ def saldo_bancos() -> list[dict]:
                    -- más bajo y la utilidad caía igual. Espejamos el resto del
                    -- sistema (bancos/conciliación/sync): saldo = última fila
                    -- con fecha <= hoy.
-                   AND t.fecha <= CURRENT_DATE
+                   AND t.fecha <= (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
                  ORDER BY t.fecha DESC, t.id_transaccion DESC
                  LIMIT 1
                ), 0) AS saldo_stored,
@@ -410,13 +410,13 @@ def saldo_bancos() -> list[dict]:
                  )
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
-                   AND t.fecha <= CURRENT_DATE
+                   AND t.fecha <= (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
                ), 0) AS saldo_signed,
                COALESCE((
                  SELECT SUM(t.importe)
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
-                   AND t.fecha <= CURRENT_DATE
+                   AND t.fecha <= (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
                ), 0) AS saldo_raw,
                -- ⭐ TMT 2026-08-04 — la suma firmada con la regla ÚNICA
                -- (`bank_helpers.DOCS_ENTRADA`). Junto con la apertura
@@ -429,7 +429,7 @@ def saldo_bancos() -> list[dict]:
                           THEN t.importe ELSE -t.importe END)
                  FROM scintela.transacciones_bancarias t
                  WHERE t.no_banco = b.no_banco
-                   AND t.fecha <= CURRENT_DATE
+                   AND t.fecha <= (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
                ), 0) AS suma_firmada,
                -- ⭐ TMT 2026-08-04 — `saldo_derivado` = APERTURA + suma firmada.
                -- `saldo_signed` (arriba) suma los movimientos y nada más, así
@@ -458,7 +458,7 @@ def saldo_bancos() -> list[dict]:
                                 THEN -t.importe ELSE t.importe END)
                    FROM scintela.transacciones_bancarias t
                   WHERE t.no_banco = b.no_banco
-                    AND t.fecha <= CURRENT_DATE
+                    AND t.fecha <= (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
                ), 0) AS saldo_derivado,
                (
                  SELECT COUNT(*)
@@ -5533,8 +5533,10 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # KPROVT = kg tintura tercerizada prov 'TT' (PRG L222).
     _kprovt_row = db.fetch_one(
         "SELECT COALESCE(SUM(kg),0) AS kg FROM scintela.compra "
-        "WHERE fecha >= date_trunc('month',CURRENT_DATE) "
-        "  AND fecha <  date_trunc('month',CURRENT_DATE)+INTERVAL '1 month' "
+        # Tamara 2026-09-25: mes de ECUADOR, no el de UTC (a las 23:30 EC del
+        # último día, la fecha UTC ya es el mes nuevo y KPROVT daba 0).
+        "WHERE fecha >= date_trunc('month',(CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) "
+        "  AND fecha <  date_trunc('month',(CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)+INTERVAL '1 month' "
         "  AND UPPER(TRIM(tipo))='T' AND UPPER(TRIM(COALESCE(codigo_prov,'')))='TT' "
         "  AND COALESCE(stat,'') NOT IN ('X','Y') "
         "  AND COALESCE(usuario_crea,'') <> 'asinfo-backfill'"
@@ -8780,6 +8782,21 @@ def tomar_snapshot_mes_actual(
 
     hoy = today_ec()
 
+    # Tamara 2026-09-25: si el mes YA se cerró (cierre nocturno de la última
+    # noche), el Historial no graba otra foto encima: esa foto le ganaba al
+    # cierre en el PATANT del mes siguiente.
+    if db.fetch_one(
+        """
+        SELECT 1 AS ok FROM scintela.historia
+         WHERE EXTRACT(YEAR FROM fecha) = %s AND EXTRACT(MONTH FROM fecha) = %s
+           AND usuario_crea = %s
+         LIMIT 1
+        """,
+        (hoy.year, hoy.month, USUARIO_CIERRE_NOCTURNO),
+    ):
+        return {"accion": "cerrado", "id_historia": None,
+                "motivo": "el mes ya tiene su foto de cierre"}
+
     # Chequear throttle.
     ult = db.fetch_one(
         """
@@ -8854,8 +8871,9 @@ def validar_snapshot(id_historia: int, *, usuario: str = "web") -> dict:
          WHERE EXTRACT(YEAR FROM fecha) = EXTRACT(YEAR FROM %s::date)
            AND EXTRACT(MONTH FROM fecha) = EXTRACT(MONTH FROM %s::date)
            AND id_historia <> %s
+           AND COALESCE(usuario_crea, '') <> %s
         """,
-        (fecha, fecha, id_historia),
+        (fecha, fecha, id_historia, USUARIO_CIERRE_NOCTURNO),
     )
     return {"id_historia": id_historia, "n_borrados": int(n or 0)}
 
@@ -8871,6 +8889,10 @@ def borrar_snapshot(id_historia: int) -> int:
 #: Origen de la FOTO DIARIA del balance. Estas filas son PC-only y NO se
 #: consolidan: son la serie histórica del mes.
 USUARIO_SNAPSHOT_DIARIO = "snapshot-diario"
+#: La foto de CIERRE de la última noche (modules/informes/cierre_nocturno).
+#: Ninguna acción del Historial (consolidar, validar otra, borrar la última) la
+#: toca: es el PATANT del mes siguiente. Tamara 2026-09-25.
+USUARIO_CIERRE_NOCTURNO = "cierre-nocturno"
 
 
 def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
@@ -8904,7 +8926,7 @@ def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
         DELETE FROM scintela.historia
          WHERE EXTRACT(YEAR FROM fecha) = %(a)s
            AND EXTRACT(MONTH FROM fecha) = %(m)s
-           AND COALESCE(usuario_crea, '') <> %(diario)s
+           AND COALESCE(usuario_crea, '') NOT IN (%(diario)s, %(cierre)s)
            AND id_historia NOT IN (
                SELECT id_historia
                  FROM scintela.historia
@@ -8915,7 +8937,7 @@ def consolidar_snapshots_mes_actual(conservar: int = 2) -> int:
            )
         """,
         {"a": hoy.year, "m": hoy.month, "k": k,
-         "diario": USUARIO_SNAPSHOT_DIARIO},
+         "diario": USUARIO_SNAPSHOT_DIARIO, "cierre": USUARIO_CIERRE_NOCTURNO},
     ) or 0
 
 
@@ -8934,10 +8956,11 @@ def eliminar_ultima_columna_mes_actual() -> dict:
           FROM scintela.historia
          WHERE EXTRACT(YEAR FROM fecha) = %s
            AND EXTRACT(MONTH FROM fecha) = %s
+           AND COALESCE(usuario_crea, '') <> %s
          ORDER BY fecha_crea DESC NULLS LAST, id_historia DESC
          LIMIT 1
         """,
-        (hoy.year, hoy.month),
+        (hoy.year, hoy.month, USUARIO_CIERRE_NOCTURNO),
     )
     if not ult:
         return {"borrado": False, "motivo": "no hay columnas del mes actual"}

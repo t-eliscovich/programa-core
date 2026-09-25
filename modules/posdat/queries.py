@@ -246,7 +246,11 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
         # rowcount=0 y no se suma dos veces (el doble cobro del 01/09/2026).
         tocadas = db.execute(
             "UPDATE scintela.posdat SET importe = %s, baseline_date = %s "
-            "WHERE id_posdat = %s AND baseline_date = %s",
+            "WHERE id_posdat = %s AND baseline_date = %s "
+            # ... ni una fila que se pagó (banc≠0) o se anuló entre la
+            # lectura y el UPDATE (revisión 25/09).
+            "AND COALESCE(banc, 0) = 0 "
+            "AND (anulada IS NOT TRUE OR anulada IS NULL)",
             (round(nuevo, 2), hoy, r["id_posdat"], r["baseline_date"]),
         )
         if tocadas:
