@@ -43,6 +43,29 @@ def _t(sql: str, params, started: float) -> None:
 
 _pool: pool.ThreadedConnectionPool | None = None
 
+#: Cuántas conexiones se quedan ABIERTAS esperando, como mínimo.
+#:
+#: ⭐ TMT 2026-09-25 (dueña: "ver qué más es lento"). Medido en
+#: /admin/pantallas: la consulta del usuario —un SELECT por clave primaria—
+#: tardaba 1.072 ms. No era la consulta: era ABRIR la conexión. El pool de
+#: psycopg2 CIERRA toda conexión que le devuelven si ya tiene `minconn`
+#: guardadas, y producción corría con DB_POOL_MIN=1. O sea que con dos
+#: pantallas a la vez (o el calentador de fondo, que corre tres pasos juntos)
+#: casi cada consulta abría una conexión nueva contra el RDS —TCP + SSL +
+#: login, ~1 s— y la cerraba al terminar. Con un piso de 6 se quedan abiertas.
+#: El piso es en el CÓDIGO a propósito: el 1 viene del env de la máquina
+#: (DEPLOY_PRODUCTION.md lo pedía así) y un env viejo no puede volver a
+#: dejar el programa abriendo conexiones en cada consulta.
+POOL_MIN_PISO = 6
+
+
+def _minconn() -> int:
+    try:
+        pedido = int(os.environ.get("DB_POOL_MIN", str(POOL_MIN_PISO)))
+    except ValueError:
+        pedido = POOL_MIN_PISO
+    return max(pedido, POOL_MIN_PISO)
+
 
 def init_pool() -> None:
     """Create the connection pool. Called once from create_app()."""
@@ -55,8 +78,8 @@ def init_pool() -> None:
     # agarraban la MISMA conexión, el lookup de usuario devolvía vacío y
     # auth hacía session.clear() (logout). ThreadedConnectionPool usa lock.
     _pool = pool.ThreadedConnectionPool(
-        minconn=int(os.environ.get("DB_POOL_MIN", "1")),
-        maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
+        minconn=_minconn(),
+        maxconn=max(int(os.environ.get("DB_POOL_MAX", "10")), _minconn()),
         host=os.environ["DB_HOST"],
         port=int(os.environ.get("DB_PORT", "5432")),
         dbname=os.environ["DB_NAME"],

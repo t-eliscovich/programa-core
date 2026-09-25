@@ -17,7 +17,7 @@ Convenciones duras:
 
 Env vars que lee:
     FORMULAS_DATABASE_URL  postgresql://programa_core_reader:...@host/postgres?sslmode=require
-    FORMULAS_POOL_MIN      default 1
+    FORMULAS_POOL_MIN      default 2 (piso 2)
     FORMULAS_POOL_MAX      default 4
 """
 
@@ -52,8 +52,11 @@ def init_pool() -> None:
         return
     try:
         _pool = pool.ThreadedConnectionPool(
-            minconn=int(os.environ.get("FORMULAS_POOL_MIN", "1")),
-            maxconn=int(os.environ.get("FORMULAS_POOL_MAX", "4")),
+            # Piso de 2 abiertas: el pool CIERRA lo que le devuelven arriba
+            # de `minconn`, y con 1 cada consulta paralela del calentador
+            # abría una conexión nueva al RDS (ver POOL_MIN_PISO en db.py).
+            minconn=max(int(os.environ.get("FORMULAS_POOL_MIN", "2")), 2),
+            maxconn=max(int(os.environ.get("FORMULAS_POOL_MAX", "4")), 2),
             dsn=url,
         )
         _log.info("formulas_db pool inicializado")

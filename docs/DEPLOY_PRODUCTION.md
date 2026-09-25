@@ -68,7 +68,7 @@ DB_PORT=5432
 DB_NAME=intela
 DB_USER=postgres
 DB_PASSWORD=...
-DB_POOL_MIN=1
+DB_POOL_MIN=6
 DB_POOL_MAX=10
 
 # Seguridad
