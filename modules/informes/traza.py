@@ -1615,6 +1615,88 @@ def _unir_anticipo_de_mercaderia_ya_recibida(grupos: dict) -> None:
     sint["fundido"] = True
 
 
+def _texto_despacho(despachos: list[dict]) -> str:
+    """"DES #98951 TJC" con una guía; "4 DES · LMM, EEU ×2, ELP" con varias."""
+    if len(despachos) == 1:
+        d = despachos[0]
+        num = str(d.get("guia") or "").split("-")[-1].lstrip("0")
+        return " ".join(x for x in ("DES", f"#{num}" if num else "",
+                                     d.get("cliente") or "") if x)
+    g = {"quienes": {}, "cuantos": {}}
+    for d in despachos:
+        c = (d.get("cliente") or "").strip() or "?"
+        g["quienes"][c] = g["quienes"].get(c, 0.0) + float(d.get("kg") or 0)
+        g["cuantos"][c] = g["cuantos"].get(c, 0) + 1
+    return f"{len(despachos)} DES · {_nombres(g)}"
+
+
+def _partir_el_despacho(grupos: dict, despachos: list[dict] | None,
+                        kilos: dict | None, venta: dict | None,
+                        d_ukg: float | None = None) -> None:
+    """Lo despachado sale del renglón del stock con nombre propio.
+
+    ⭐ Tamara 25/09/2026, sobre la columna Term.: el renglón del stock pinta el
+    NETO de la ventana, y a las 10:12 del 21/09 "salió de term. −184" eran
+    820 kg despachados en cuatro guías y 636 que entraban de producción. Ahora
+    son dos renglones: las guías (−820 kg al $/kg de terminado) y el resto,
+    con su texto rehecho sin ellas. La suma de los dos es la de antes: no se
+    inventa un centavo, sólo se deja de esconder el despacho.
+
+    Necesita el Δ de kilos por etapa de la ventana (`kilos`) y el $/kg del
+    terminado (`venta["ukg"]`); sin eso, o sin renglón de stock, no toca nada.
+    """
+    if not despachos or not kilos or not venta or not venta.get("ukg"):
+        return
+    tela = next((g for g in grupos.values()
+                 if g.get("regla") == "Stock" and not g.get("fundido")), None)
+    if not tela:
+        return
+    kg = round(sum(float(d.get("kg") or 0) for d in despachos), 2)
+    if kg <= 0:
+        return
+    valor = round(-kg * float(venta["ukg"]), 2)
+    grupos[("Despacho", "#guias")] = {
+        "regla": "Despacho", "aporte": valor, "n": len(despachos),
+        "etiqueta": None, "col": "vsto",
+        # A /facturas/dia, que lista las guías del día con su factura.
+        "url": (f"/facturas/dia?fecha={despachos[0]['dia']}"
+                if despachos[0].get("dia") else None),
+        "por_col": {"vsto": valor}, "quienes": {}, "cuantos": {},
+        "evento": None, "hechos": set(), "signos": set(), "evs": {}, "etqs": [],
+        "familia": "utilidad", "bruto": abs(valor),
+        "texto_unido": _texto_despacho(despachos),
+        "titulo": " · ".join(f"{d.get('guia')} {d.get('hora')} {d.get('cliente')} "
+                             f"{_num(d.get('kg') or 0, 2)} kg" for d in despachos),
+        "kg": {"terminado_kg": -kg}, "d_ukg": None,
+        "nota": f"{_num(kg, 0)} kg a $ {_num(venta['ukg'], 4)} el kilo de terminado",
+    }
+    from modules.informes.foto import ORDEN_ETAPAS, _texto_stock
+
+    # El resto: los kilos de la ventana (o los que ya dejó el lote) menos
+    # lo despachado, y la plata que queda.
+    propios = tela.get("kg") is not None
+    base = tela["kg"] if propios else kilos
+    dkg = {et: float(base.get(f"{et}_kg") or 0) for et in ORDEN_ETAPAS}
+    dkg["terminado"] = round(dkg["terminado"] + kg, 2)
+    resto = round(tela["aporte"] - valor, 2)
+    tela["aporte"], tela["por_col"], tela["bruto"] = resto, {"vsto": resto}, abs(resto)
+    tela["kg"] = {f"{et}_kg": v for et, v in dkg.items() if abs(v) >= 1}
+    # El $/kg de la ventana va en UN renglón: el de la revaluación si está;
+    # si no, el del resto del stock (como antes, cuando pintaba el Δ entero).
+    tarifa = next((g for g in grupos.values()
+                   if g.get("regla") == "Revaluación de stock"
+                   and not g.get("fundido") and g.get("kg") is None), None)
+    if tarifa is not None:
+        tarifa["kg"], tarifa["d_ukg"] = {}, d_ukg
+        tela["d_ukg"] = None
+    elif not propios:
+        tela["d_ukg"] = d_ukg
+    tela["texto_unido"] = _abreviar_etapas(
+        _texto_stock({et: {"dkg": v} for et, v in dkg.items()}))
+    if abs(resto) < UMBRAL_VISIBLE and not tela["kg"]:
+        tela["fundido"] = True
+
+
 def _nombre_de_fabrica(concepto: str) -> str:
     """"AI 16" — el pedazo del concepto que la fábrica reconoce.
 
@@ -1799,7 +1881,10 @@ def _lista_y(items: list[str]) -> str:
 def resumir(movs: list[dict], d_utilidad: float | None,
             eventos: dict | None = None, hasta=None,
             venta: dict | None = None, causa_tarifa: str = "",
-            stock: dict | None = None) -> list[dict]:
+            stock: dict | None = None,
+            despachos: list[dict] | None = None,
+            kilos: dict | None = None,
+            d_ukg: float | None = None) -> list[dict]:
     """Los movimientos agrupados por lo que SON, no uno por documento.
 
     Tres facturas nuevas son un renglón que dice "3 facturas nuevas", no tres
@@ -1898,6 +1983,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     _unir_anticipo_de_mercaderia_ya_recibida(grupos)
     _unir_anticipo_con_mercaderia(grupos, hasta, stock)
     _unir_conversion_del_anticipo(grupos)
+    _partir_el_despacho(grupos, despachos, kilos, venta, d_ukg)
     # La venta se explica sola: el renglón de las facturas se lleva el margen.
     _nota = _nota_del_margen(venta)
     if _nota:
@@ -2061,7 +2147,8 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                               f"sin explicar por documento").strip(": ")
             if nombres and g.get("familia") != "sin_explicar":
                 g["texto"] += f" · {nombres}"
-            g["url"] = None                    # son varios: ninguna ficha sola
+            # son varios: ninguna ficha sola (el despacho lleva a /facturas/dia)
+            g["url"] = g.get("url") if g.get("regla") == "Despacho" else None
         elif g.get("familia") == "sin_explicar":
             g["texto"] = (f"{ETIQUETAS.get(g.get('col'), g.get('col') or '')}"
                           f": sin explicar por documento").strip(": ")
@@ -2109,6 +2196,11 @@ def resumir(movs: list[dict], d_utilidad: float | None,
                         "url": None, "col": None, "por_col": {}, "bruto": 0.0,
                         "familia": "sin_explicar"})
     return out
+
+
+def _despachos(desde, hasta) -> list[dict]:
+    from modules.informes import despachos_ventana
+    return despachos_ventana.de_la_ventana(desde, hasta)
 
 
 def una(id_traza: int) -> dict | None:
@@ -2190,7 +2282,9 @@ def una(id_traza: int) -> dict | None:
     fila["resumen"] = resumir(
         movs, None if fila["sin_registro"] else fila.get("d_utilidad"), idx,
         hasta=_hasta, venta=_venta, causa_tarifa=causa_tarifa(fila, _ant),
-        stock=stock_de_la_ventana(fila, _ant))
+        stock=stock_de_la_ventana(fila, _ant),
+        despachos=_despachos(_desde, _hasta), kilos=fila.get("d_kg"),
+        d_ukg=fila.get("d_ukg") if fila.get("d_ukg") is not None else _d_ukg(fila, _ant))
     fila["d_kg"] = fila.get("d_kg") or {}
     if fila.get("d_ukg") is None:
         fila["d_ukg"] = _d_ukg(fila, _ant)
