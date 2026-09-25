@@ -249,12 +249,19 @@ def devengar_posdatados_del_dia() -> bool:
     global _devengo_hecho
     try:
         from filters import today_ec
-        from modules.posdat.queries import persistir_acumulacion_yy
+        from modules.posdat.queries import (
+            cierre_del_mes_pendiente,
+            persistir_acumulacion_yy,
+        )
 
         hoy = today_ec()
         if _devengo_hecho == hoy:
             return False
-        persistir_acumulacion_yy(hoy)
+        # Día 1 antes de la foto de cierre del mes viejo: esperar (sin marcar
+        # el día como hecho, así la vuelta siguiente lo vuelve a intentar).
+        if cierre_del_mes_pendiente(hoy):
+            return False
+        persistir_acumulacion_yy()
         _devengo_hecho = hoy
         return True
     except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca

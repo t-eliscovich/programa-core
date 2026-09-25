@@ -525,23 +525,34 @@ def ejecutar_foto_diaria() -> dict:
     #     foto de la noche no puede depender de que alguien haya abierto
     #     /posdat o el balance. Idempotente y con el baseline como candado.
     try:
-        from modules.posdat.queries import persistir_acumulacion_yy
-        stats["devengo_yy_filas"] = persistir_acumulacion_yy()
-        congeladas = db.fetch_one(
-            """
-            SELECT COUNT(*) AS n
+        from modules.posdat import queries as _pq
+        stats["devengo_yy_filas"] = _pq.persistir_acumulacion_yy()
+        hoy_ec = _pq._hoy_ec()
+        filas = [dict(f) for f in (db.fetch_all(
+            f"""
+            SELECT id_posdat, prov, concepto, importe, baseline_date
               FROM scintela.posdat
              WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
                AND COALESCE(banc, 0) = 0
-               AND (anulada IS NOT TRUE OR anulada IS NULL)
-               AND baseline_date < (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
+               AND {_pq.POSDAT_NO_ANULADA_WHERE}
             """
-        )
-        n_cong = int((congeladas or {}).get("n") or 0)
-        if n_cong:
+        ) or [])]
+        _pq._resolver_cuotas(filas)
+        # Sólo cuentan las que TIENEN cuota: una fila YY sin provisión cargada
+        # no devenga nunca y no es una falla del motor.
+        congeladas = [
+            f for f in filas
+            if float(f.get("cuota_mensual") or 0) > 0
+            and f.get("baseline_date") and f["baseline_date"] < hoy_ec
+        ]
+        if congeladas and not _pq.cierre_del_mes_pendiente(hoy_ec):
+            nombres = ", ".join(
+                ((f.get("concepto") or "").strip() or (f.get("prov") or "").strip())
+                for f in congeladas[:5]
+            )
             alerts.append(
-                f"POSDATADOS: {n_cong} provisiones YY/RT quedaron sin devengar hoy "
-                "después de correr el motor — revisar /admin/debug-yy."
+                f"POSDATADOS: {len(congeladas)} provisiones YY/RT quedaron sin "
+                f"devengar hoy ({nombres}) — revisar /admin/debug-yy."
             )
     except Exception as e:  # noqa: BLE001
         alerts.append(f"devengo de posdatados YY/RT falló: {e}")

@@ -142,6 +142,37 @@ def _aplicar_display_time_yy(rows: list[dict], hoy: date | None = None) -> None:
         r["dias_offset"] = _dias_corridos(base_date, hoy)
 
 
+#: Hora de Ecuador desde la que el día 1 se devenga aunque el cierre no haya
+#: corrido (el cron es a las 06:00; si falló, el health arranque_de_mes lo canta).
+HORA_TOPE_CIERRE_EC = 12
+
+
+def cierre_del_mes_pendiente(hoy: date, ahora_utc: datetime | None = None) -> bool:
+    """¿Es día 1 y todavía no se sacó la foto de cierre del mes anterior?
+
+    Tamara 2026-09-25: el cron del día 1 (06:00 EC, procesa_provisiones_mensual)
+    saca la foto de cierre del mes que terminó con el balance EN VIVO. Si el
+    devengo del día 1 ya estuviera guardado en ese momento, el cierre del mes
+    viejo cargaría una cuota diaria del mes NUEVO. Hasta que la foto de cierre
+    esté hecha (o hasta el mediodía EC, si el cron falló), el día 1 no se
+    guarda; la pantalla lo sigue mostrando igual (display-time).
+    """
+    if hoy.day != 1:
+        return False
+    ahora_ec = (ahora_utc or datetime.utcnow()) - timedelta(hours=5)
+    if ahora_ec.date() == hoy and ahora_ec.hour >= HORA_TOPE_CIERRE_EC:
+        return False
+    try:
+        fila = db.fetch_one(
+            "SELECT 1 AS ok FROM scintela.ejecuciones_tareas "
+            "WHERE tarea = 'snapshot_historia' AND periodo = %s AND estado = 'O'",
+            (hoy.strftime("%Y-%m"),),
+        )
+    except Exception:  # noqa: BLE001 -- sin tabla: no frenar el devengo
+        return False
+    return not fila
+
+
 def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     """Persiste la acumulación YY/RT en el importe GUARDADO, igual que el dBase
     (MENU.PRG: REPLACE IMPORTE + cuota DAILY, perpetuo).
@@ -162,7 +193,10 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
     # Acumulación SIEMPRE activa (switch eliminado 2026-07-23).
     if not _baseline_col_exists():
         return 0
+    es_hoy = hoy is None or hoy == _hoy_ec()
     hoy = hoy or _hoy_ec()
+    if es_hoy and cierre_del_mes_pendiente(hoy):
+        return 0
     # TMT 2026-07-24: persist es el ÚNICO motor de devengo (se retiró el
     # auto-run de correr_provisiones_diarias, que usaba un marcador GLOBAL y le
     # apilaba la cuota a las ediciones manuales — "se cambia y no se mantiene").
