@@ -1667,8 +1667,9 @@ def _partir_el_despacho(grupos: dict, despachos: list[dict] | None,
         "texto_unido": _texto_despacho(despachos),
         "titulo": " · ".join(f"{d.get('guia')} {d.get('hora')} {d.get('cliente')} "
                              f"{_num(d.get('kg') or 0, 2)} kg" for d in despachos),
+        # Sin nota: Tamara 25/09, *"mucha info… el valor en dólares no hace
+        # falta y los kg se ven en la parte derecha"*.
         "kg": {"terminado_kg": -kg}, "d_ukg": None,
-        "nota": f"{_num(kg, 0)} kg a $ {_num(venta['ukg'], 4)} el kilo de terminado",
     }
     from modules.informes.foto import ORDEN_ETAPAS, _texto_stock
 

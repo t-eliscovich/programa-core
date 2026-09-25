@@ -84,3 +84,10 @@ def test_si_asinfo_no_contesta_la_traza_sigue():
             patch("modules.facturas.dia_despacho._guias", side_effect=RuntimeError("x")):
         assert dv.de_la_ventana("2026-09-21T15:00:00+00:00",
                                 "2026-09-21T15:05:00+00:00") == []
+
+
+def test_el_despacho_no_lleva_nota():
+    """Tamara 25/09: los kg ya se ven a la derecha y el $ no hace falta."""
+    out = t.resumir(_movs(-920.0), -920.0, {}, venta={"kg": 0, "us": 0, "ukg": UKG},
+                    despachos=GUIAS, kilos={"terminado_kg": -184.0})
+    assert not out[0].get("nota")
