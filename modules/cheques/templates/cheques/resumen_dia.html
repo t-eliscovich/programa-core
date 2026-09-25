@@ -3,89 +3,136 @@
 
 {% block content %}
 <style>
-  /* CSS custom (el tailwind.css del repo es un build JIT congelado). */
-  @media print {
-    .no-print { display: none !important; }
-    body { background: #fff !important; color: #000 !important; }
-    /* TMT 2026-07-07: mismo trato gris que el estado de cuenta impreso —
-       el divisor superior (border-slate-800) sale gris, no negro. */
-    .hoja .border-b-2 { border-bottom-color: #9ca3af !important; }
-    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important;
-            max-width: none !important; padding: 0 !important; }
-    .hoja tbody tr { page-break-inside: avoid; }
-    @page { margin: 1.2cm; size: auto; }
+  /* CSS custom (el tailwind.css del repo es un build JIT congelado).
 
-    /* TMT 2026-07-07 feedback dueña sobre el PDF impreso: "más finitas las
-       líneas, sin color, solo código de cliente". Filas compactas, líneas
-       hairline gris, todo B/N, sin nombre de cliente (solo código). */
-    .cli-nombre { display: none !important; }
-    .hoja table.principal { font-size: 8pt !important; }
-    .hoja table.principal td, .hoja table.principal th {
-      padding: 1px 3px !important;
-      border-bottom: 0.3pt solid #ccc !important;
-    }
-    .hoja table.principal thead th { border-bottom: 0.8pt solid #9ca3af !important; }
-    .hoja tfoot { display: table-row-group !important; }   /* total UNA vez al final */
-    .hoja tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; }
-    .apps { font-size: 7.5pt !important; }
-    .facts { font-size: 7pt !important; }
-    .medio { font-size: 8pt !important; }
-    /* TMT 2026-07-07 dueña: "quita los recuadros de la A y la T cuando
-       imprimo" — en papel la letra sola, sin borde ni fondo. */
-    .badge, .badge-t, .badge-a { color: #000 !important; border: none !important;
-                                 background: none !important; padding: 0 !important;
-                                 font-weight: 700 !important; }
-    .saldo-neg, .neg { color: #000 !important; }
-  }
-  /* TMT 2026-08-03 (dueña: "estéticamente mejoralo, que midan lo mismo") —
-     ver el comentario gemelo en ingresados_dia.html. */
+     TMT 2026-09-25 (dueña: "más consistencia en títulos y letras" + "que la
+     impresión salga bien"). UNA sola escala de letra, pensada de a pares:
+
+       · pantalla: dato 12px · secundario 11px gris · rótulo 10px MAYÚSCULA
+       · papel:    dato 8pt  · secundario 7.5pt     · rótulo 7pt MAYÚSCULA
+
+     Monoespaciada SOLO para números (hora, N.º, importes, facturas); el texto
+     (medio, banco, cliente) va en la letra normal. Los anchos de columna
+     viven en CLASES (.c-hora, .c-medio…) y no en style= inline, para que el
+     @media print pueda achicarlos: en A4 vertical entran ~700px, y con los
+     anchos de pantalla el navegador achicaba la hoja entera. */
   .ancho-informe { max-width:980px; margin-left:0; margin-right:0; }
   .hoja { background:#fff; border:1px solid #cbd5e1; box-shadow:0 1px 4px rgba(0,0,0,.04);
-          padding:1.25rem 1.5rem; margin:1rem 0; border-radius:4px; }
-  .hoja table.principal { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:12px; }
-  .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px 5px; text-align:left;
-             font-size:10px; text-transform:uppercase; letter-spacing:.04em; color:#475569; }
-  .hoja table.principal td { padding:5px 5px; border-bottom:1px solid #e2e8f0; font-size:12px;
-             vertical-align:top; }
-  .hoja td.num, .hoja th.num { text-align:right; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-             white-space:nowrap; }
-  .hoja tfoot td { border-top:2px solid #1e293b; border-bottom:none; font-weight:700;
-             font-size:13px; padding-top:8px; }
-  .facts { color:#64748b; font-size:10.5px; }
-  .mono  { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
-  .kpis { display:flex; gap:28px; flex-wrap:wrap; margin-top:8px; }
-  .kpi { font-size:11px; color:#475569; text-transform:uppercase; letter-spacing:.03em; }
-  .kpi b { font-size:16px; display:block; font-family:ui-monospace,monospace; color:#0f172a; }
-  .medio { font-weight:600; font-size:11px; white-space:nowrap; }
+          padding:1.25rem 1.5rem; margin:1rem 0; border-radius:4px; color:#0f172a; }
+  .hoja .enc { display:flex; justify-content:space-between; align-items:flex-start;
+               padding-bottom:10px; border-bottom:2px solid #1e293b; margin-bottom:10px; }
+  .hoja .enc-tit { font-size:17px; font-weight:700; text-transform:uppercase; letter-spacing:.03em; }
+  .hoja .enc-sub, .hoja .enc-fecha { font-size:12px; color:#475569; }
+  /* TMT 2026-09-25, 2ª vuelta (dueña: "el número de factura sigue en
+     negrita, los títulos en otro tamaño… hacelo más ameno a la vista").
+     UNA sola letra para todo, la del programa, con los números en cifras de
+     ancho fijo (tabular-nums) para que encolumnen igual que con la
+     monoespaciada, pero sin su aspecto pesado. */
+  .hoja { font-variant-numeric: tabular-nums; }
+  .mono { font-variant-numeric: tabular-nums; }
 
-  /* Sub-líneas de facturas dentro de la fila del ingreso (estilo tirilla dBase:
-     fecha · numf · importe fact · abonó · saldo resultante). */
-  /* TMT 2026-07-07 v2 (dueña: "no está bien encolumnada"): cada .apps es una
-     mini-tabla independiente → sin anchos fijos cada fila encolumnaba distinto.
-     Anchos FIJOS por celda para que TODAS las filas alineen igual (sin
-     width:100%, la tabla ocupa lo que suman las celdas). */
-  .apps { display:table; table-layout:fixed; font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-          font-size:11px; color:#334155; border-collapse:collapse; }
-  .app  { display:table-row; }
-  .app > span { display:table-cell; padding:0 0 1px 8px; text-align:right; white-space:nowrap; }
-  .app > span.fnumf  { width:64px; padding-left:0; text-align:left; font-weight:600; }
-  .app > span:nth-child(2), .app > span:nth-child(3), .app > span:nth-child(4) { width:80px; }
-  .app > span.fbadge { width:16px; text-align:center; padding-left:6px; }
-  .saldo-cero { font-weight:700; }
-  .saldo-neg  { font-weight:700; color:#b91c1c; }         /* saldo a favor */
+  .kpis { display:flex; gap:28px; flex-wrap:wrap; }
+  .kpi { font-size:10px; color:#475569; text-transform:uppercase; letter-spacing:.04em; }
+  .kpi b { display:block; font-size:16px; font-weight:600;
+           color:#0f172a; letter-spacing:0; margin-top:1px; }
+
+  .hoja table.principal { width:100%; table-layout:fixed; border-collapse:collapse; margin-top:14px; }
+  .hoja table.principal th { border-bottom:2px solid #1e293b; padding:5px 6px; text-align:left;
+             vertical-align:bottom; font-size:10px; font-weight:600; text-transform:uppercase;
+             letter-spacing:.04em; color:#475569; white-space:nowrap; }
+  .hoja table.principal td { padding:6px 6px; border-bottom:1px solid #e2e8f0; font-size:12px;
+             font-weight:400; color:#0f172a; vertical-align:top; }
+  .hoja table.principal td.num, .hoja table.principal th.num { text-align:right; white-space:nowrap; }
+  .hoja table.principal tfoot td { border-top:2px solid #1e293b; border-bottom:none; font-weight:600; padding-top:8px; }
+
+  /* TMT 2026-09-25, 3ª vuelta (dueña: "las columnas están raras, no están
+     alineadas con los datos"). Las facturas que paga cada cobro eran una
+     mini-tabla METIDA en una celda, con su propio subtítulo: el título y el
+     número vivían en dos tablas distintas y se corrían. Ahora es UNA tabla:
+     cada factura es un renglón con sus columnas (Factura · Total · Abonó ·
+     Saldo) y los datos del cobro ocupan los renglones de sus facturas
+     (rowspan). Título y dato comparten columna, en pantalla y en papel.
+     Cada cobro es un <tbody> propio: la raya va entre cobros, no entre
+     facturas del mismo cobro. La letra T/A tiene su columna angosta, así el
+     importe queda alineado con su título. */
+  /* ⚠ El ancho de una columna NO incluye el relleno de la celda: la hoja
+     mide lo que suman los anchos MÁS 12px por columna (4px las de la letra).
+     Si se agranda una, achicar otra — si no, la tabla se sale de la hoja. */
+  .c-hora { width:40px; } .c-medio { width:76px; } .c-banco { width:86px; }
+  .c-doc { width:68px; }  .c-cli { width:74px; }  .c-imp { width:70px; }
+  .c-letra { width:22px; } .c-fac { width:128px; } .c-monto { width:64px; }
+  .hoja table.principal td.letra, .hoja table.principal th.letra { text-align:center; padding-left:2px; padding-right:2px; }
+  .hoja table.principal tbody.cobro td { border-top:none !important; border-bottom:none !important; padding-top:2px; padding-bottom:2px; }
+  .hoja table.principal tbody.cobro tr:first-child td { padding-top:7px; }
+  .hoja table.principal tbody.cobro tr:last-child td { padding-bottom:7px; }
+  .hoja table.principal tbody.cobro { border-bottom:1px solid #e2e8f0; }
+  /* base.html le pone raya y hover a cada <tr>: acá las facturas del mismo
+     cobro van juntas, sin raya entre ellas. */
+  main .hoja table.principal tbody.cobro tr { border-bottom:none !important; border-top:none !important; }
+  main .hoja table.principal tbody.cobro tr:hover { background:none; }
+  .hoja table.principal td.fac-sep { padding-left:14px; }   /* aire entre Importe y Factura */
+
+  .sec { display:block; font-size:11px; color:#64748b; }       /* línea secundaria */
+  .sec.nw { white-space:nowrap; }
+  .corta { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .medio { white-space:nowrap; }
+  .saldo-neg  { color:#b91c1c; }         /* saldo a favor */
   .badge { display:inline-block; min-width:16px; text-align:center; font-size:10px;
            font-weight:700; border-radius:3px; padding:0 4px; border:1px solid; }
   .badge-t { color:#047857; border-color:#047857; background:#ecfdf5; }
   .badge-a { color:#b45309; border-color:#b45309; background:#fffbeb; }
   .neg { color:#b91c1c; }
-  /* TMT 2026-08-06 (Alex): observación libre de Alex. Va al pie de la celda
-     "Facturas que paga" (última col — la única que ya expande varias líneas),
-     en cursiva chica y gris, para no descuadrar las columnas de la izquierda.
-     El @media print la deja negra chica igual que el resto del texto de la hoja. */
-  .obs { display:block; font-size:10.5px; color:#475569; font-style:italic;
-         margin-top:3px; white-space:normal; word-wrap:break-word; }
+  /* TMT 2026-08-06 (Alex): observación libre, al pie de la celda de facturas. */
+  .obs { display:block; font-size:11px; color:#475569; font-style:italic;
+         white-space:normal; word-wrap:break-word; }
+  .leyenda { font-size:11px; color:#64748b; margin-top:10px; }
+
   @media print {
-    .obs { font-size: 7.5pt !important; color: #000 !important; font-style: italic; }
+    .no-print { display: none !important; }
+    body { background: #fff !important; color: #000 !important; }
+    @page { margin: 1.2cm; size: A4 portrait; }
+    .hoja { border: none !important; box-shadow: none !important; margin: 0 !important;
+            max-width: none !important; padding: 0 !important; color:#000 !important; }
+    .hoja .enc { border-bottom: 0.8pt solid #9ca3af !important; padding-bottom:4pt; margin-bottom:6pt; }
+    .hoja .enc-tit { font-size: 12pt !important; }
+    .hoja .enc-sub, .hoja .enc-fecha { font-size: 8pt !important; color:#000 !important; }
+    .kpi { font-size: 7pt !important; color:#000 !important; }
+    .kpi b { font-size: 10pt !important; }
+    .kpis { gap: 18pt !important; }
+
+    /* TMT 2026-07-07 dueña: "más finitas las líneas, sin color, solo código
+       de cliente". Hairlines grises, todo B/N, sin nombre de cliente. */
+    .cli-nombre { display: none !important; }
+    .hoja table.principal { margin-top: 8pt !important; }
+    .hoja table.principal th { font-size: 7pt !important; color:#000 !important;
+            padding: 2pt 3pt !important; border-bottom: 0.8pt solid #9ca3af !important; }
+    .hoja table.principal td { font-size: 8pt !important; padding: 2pt 3pt !important;
+            border-bottom: 0.3pt solid #ccc !important; }
+    .hoja tfoot { display: table-row-group !important; }   /* total UNA vez al final */
+    .hoja tfoot td { border-top: 0.8pt solid #9ca3af !important; border-bottom: none !important; }
+    .sec, .obs, .leyenda { font-size: 7.5pt !important; color:#000 !important; }
+
+    /* Anchos para A4 vertical (~527pt útiles): el cliente va sólo con código. */
+    /* 527pt útiles − 6pt de relleno por columna (1pt las de la letra). */
+    .c-hora { width:23pt; } .c-medio { width:50pt; } .c-banco { width:54pt; }
+    .c-doc { width:40pt; }  .c-cli { width:26pt; }  .c-imp { width:43pt; }
+    .c-letra { width:8pt; } .c-fac { width:80pt; } .c-monto { width:40pt; }
+    .hoja table.principal td.letra, .hoja table.principal th.letra { padding-left: 0.5pt !important; padding-right: 0.5pt !important; }
+    .hoja table.principal tbody.cobro td { border-top: none !important; border-bottom: none !important; padding-top: 0.5pt !important;
+                                           padding-bottom: 0.5pt !important; }
+    .hoja table.principal tbody.cobro tr:first-child td { padding-top: 2pt !important; }
+    .hoja table.principal tbody.cobro tr:last-child td { padding-bottom: 2pt !important; }
+    .hoja table.principal tbody.cobro { border-bottom: 0.3pt solid #ccc !important; }
+    .hoja table.principal td.fac-sep { padding-left: 6pt !important; }
+    .hoja tbody.cobro { page-break-inside: avoid; }
+
+    /* TMT 2026-07-07 dueña: "quita los recuadros de la A y la T cuando
+       imprimo" — en papel la letra sola, sin borde ni fondo. */
+    .badge, .badge-t, .badge-a { color: #000 !important; border: none !important;
+                                 background: none !important; padding: 0 !important;
+                                 font-weight: 700 !important; font-size: 7.5pt !important; }
+    .saldo-neg, .neg { color: #000 !important; }
+    .obs { font-style: italic; }
   }
 </style>
 
@@ -98,16 +145,16 @@
 {% endif %}
 
 <div class="hoja ancho-informe">
-  <div class="flex items-start justify-between mb-2 pb-3 border-b-2 border-slate-800">
+  <div class="enc">
     <div>
-      <div class="text-lg font-bold uppercase tracking-wide">Depósitos y efectivo</div>
-      <div class="text-sm text-slate-600">INTELA CIA. LTDA.</div>
+      <div class="enc-tit">Depósitos y efectivo</div>
+      <div class="enc-sub">INTELA CIA. LTDA.</div>
     </div>
-    <div class="text-right text-sm text-slate-600">{{ fecha | fecha_es }}</div>
+    <div class="enc-fecha">{{ fecha | fecha_es }}</div>
   </div>
 
   {% if not resumen or not resumen.ingresos %}
-    <div class="text-center py-10 text-slate-500">Sin cobranza registrada para esta fecha.</div>
+    <div style="text-align:center; padding:40px 0; color:#64748b;">Sin cobranza registrada para esta fecha.</div>
   {% else %}
     <div class="kpis">
       <div class="kpi">Cheques ({{ resumen.n_cheques }})<b>{{ resumen.total_cheques | money_es }}</b></div>
@@ -116,140 +163,143 @@
       <div class="kpi">Total del día<b>{{ resumen.total_general | money_es }}</b></div>
     </div>
 
-    <table class="principal">
+    {# Sin flechitas de ordenar (data-no-sort-table): en esta hoja se leían
+       como ":" al lado de cada título, y el orden que importa es el de carga. #}
+    <table class="principal" data-no-sort-table>
+      <colgroup>
+        <col class="c-hora"><col class="c-medio"><col class="c-banco"><col class="c-doc">
+        <col class="c-cli"><col class="c-imp"><col class="c-letra">
+        <col class="c-fac"><col class="c-monto"><col class="c-monto"><col class="c-monto"><col class="c-letra">
+      </colgroup>
       <thead>
         <tr>
-          <th style="width:46px">Hora</th>
-          <th style="width:78px">Medio</th>
-          <th style="width:74px">Doc.</th>
-          <th style="width:150px">Cliente</th>
-          <th class="num" style="width:100px">Importe</th>
-          <th>
-            <div>Facturas que paga</div>
-            <div class="facts mono" style="margin-top:2px; text-transform:none; letter-spacing:0; font-weight:400; display:table; table-layout:fixed;">
-              <span style="display:table-cell; width:64px; text-align:left;">N.º fact.</span>
-              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">importe</span>
-              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">abonó</span>
-              <span style="display:table-cell; width:80px; text-align:right; padding-left:8px;">saldo</span>
-              <span style="display:table-cell; width:16px;"></span>
-            </div>
-          </th>
+          <th>Hora</th>
+          <th>Medio</th>
+          <th>Banco</th>
+          <th>Número</th>
+          <th>Cliente</th>
+          <th class="num">Importe</th>
+          <th class="letra"></th>
+          <th class="fac-sep">Factura</th>
+          <th class="num">Total</th>
+          <th class="num">Abonó</th>
+          <th class="num">Saldo</th>
+          <th class="letra"></th>
         </tr>
       </thead>
-      <tbody>
-        {% for c in resumen.ingresos %}
+      {% for c in resumen.ingresos %}
+        {% set nro = (c.no_cheque or '') | cleanstr | trim %}
+        {% set nro = '' if nro in ('0', '') else nro %}
+        {# Renglones de la derecha: una factura por renglón, o un texto. #}
+        {% set filas = [] %}
+        {% if c.aplicaciones %}
+          {% for a in c.aplicaciones %}
+            {% set saldo = a.saldo_f if a.saldo_f is not none else a.fact_saldo %}
+            {% if filas.append({'numf': a.numf_completo or a.numf or '—', 'total': a.fact_importe,
+                                 'abono': a.aplicado, 'saldo': saldo,
+                                 'st': (a.stat_f or '') | upper | trim}) %}{% endif %}
+          {% endfor %}
+          {% if c.total_aplicado and (c.importe|float - c.total_aplicado)|abs > 0.01 %}
+            {% if filas.append({'texto': 'aplicó ' ~ (c.total_aplicado | money_es) ~ ' de ' ~ (c.importe | money_es)}) %}{% endif %}
+          {% endif %}
+        {% elif c.explicacion and c.explicacion.facturas %}
+          {# TMT 2026-08-04 (dueña): "aunque se totalice la cuenta quiero que
+             en cobranza quede guardado qué factura se pagó". El vínculo vivo
+             lo borró el TOTALIZAR, pero mov_doble guardó numf + importe + el
+             saldo que quedó AL APLICAR — se imprime igual. #}
+          {% for a in c.explicacion.facturas %}
+            {% if filas.append({'numf': a.numf or '—', 'total': a.fact_importe, 'abono': a.importe,
+                                 'saldo': a.saldo_post, 'st': (a.stat_post or '') | upper | trim}) %}{% endif %}
+          {% endfor %}
+          {% if filas.append({'texto': ((c.concepto | cleanstr) ~ ' · ' if c.concepto else '') ~ c.explicacion.texto}) %}{% endif %}
+        {% elif c.concepto %}
+          {% if filas.append({'texto': c.concepto | cleanstr}) %}{% endif %}
+          {% if c.explicacion %}{% if filas.append({'texto': c.explicacion.texto}) %}{% endif %}{% endif %}
+        {% elif c.explicacion %}
+          {% if filas.append({'texto': c.explicacion.texto}) %}{% endif %}
+        {% elif c.medio == 'ANTICIPO' %}
+          {% if filas.append({'texto': 'anticipo · saldo a favor del cliente'}) %}{% endif %}
+        {% else %}
+          {% if filas.append({'texto': '— sin aplicar a facturas'}) %}{% endif %}
+        {% endif %}
+        {% if c.nota_usuario %}
+          {# TMT 2026-08-06 (Alex): observación libre, al pie de sus facturas. #}
+          {% if filas.append({'obs': c.nota_usuario | cleanstr}) %}{% endif %}
+        {% endif %}
+        {% set n = filas | length %}
+      <tbody class="cobro">
+        {% for f in filas %}
         <tr>
-          <td class="facts mono">
+          {% if loop.first %}
+          <td rowspan="{{ n }}">
             {{ c.fecha_crea | hora_ec('%H:%M') if c.fecha_crea else '' }}
-            {# TMT 2026-08-03 dueña: "ponele solo la clave que andres tapa algo
-               ahí" — la columna Hora mide 46px y table-layout es fixed, así que
-               un usuario largo se derramaba sobre MEDIO. Va la CLAVE (la misma
-               que usa el dBase: 1-3 letras del operador; el alta de PC la
-               guarda en cheque.clave). Fallback: las 3 primeras del usuario. #}
-            <div title="{{ (c.usuario_crea or '') | cleanstr }}">{{ ((c.clave or '') | cleanstr or (c.usuario_crea or '') | cleanstr | truncate(3, True, '')) | upper }}</div>
+            {# TMT 2026-08-03 dueña: la CLAVE del operador (1-3 letras, la
+               misma del dBase; el alta de PC la guarda en cheque.clave).
+               Fallback: las 3 primeras del usuario. #}
+            <span class="sec" title="{{ (c.usuario_crea or '') | cleanstr }}">{{ ((c.clave or '') | cleanstr or (c.usuario_crea or '') | cleanstr | truncate(3, True, '')) | upper }}</span>
           </td>
-          <td>
+          <td rowspan="{{ n }}">
             <span class="medio">{{ c.medio }}</span>
-            {% if c.medio == 'CHEQUE' %}
-              <div class="facts">{{ c.banco_emisor | cleanstr }}</div>
-              {% if c.fechad and c.fechad != c.fecha %}
-                <div class="facts">dep. {{ c.fechad | fecha_es }}</div>
-              {% endif %}
+            {% if c.medio == 'CHEQUE' and c.fechad and c.fechad != c.fecha %}
+              <span class="sec nw">dep. {{ c.fechad | fecha_es }}</span>
             {% endif %}
           </td>
-          <td class="mono" style="font-size:11px">
-            {% if c.no_cheque %}<div>{{ c.no_cheque }}</div>{% endif %}
-            {% if c.doc_banco %}<div class="facts">{{ c.doc_banco | cleanstr }}</div>{% endif %}
+          <td rowspan="{{ n }}">
+            {# TMT 2026-09-25 dueña: "agregar banco a la cobranza diaria,
+               banco de origen" — el banco CONTRA EL QUE SE GIRA el cheque.
+               En un depósito o en efectivo el medio ya dice a dónde entró. #}
+            {% if c.medio == 'CHEQUE' %}{{ c.banco_emisor | cleanstr | upper }}{% endif %}
           </td>
-          <td>
-            <span class="mono" style="font-weight:600">{{ c.codigo_cli or '' }}</span>
-            <span class="facts cli-nombre">{{ c.cliente | cleanstr | truncate(26, True, '…') }}</span>
+          <td rowspan="{{ n }}">
+            {% if nro %}<div>{{ nro }}</div>{% endif %}
+            {% if c.doc_banco %}<span class="{{ 'sec' if nro else '' }}">{{ c.doc_banco | cleanstr }}</span>{% endif %}
           </td>
-          <td class="num {{ 'neg' if c.importe and c.importe|float < 0 else '' }}">
-            {{ c.importe | money_es }}
+          <td rowspan="{{ n }}">
+            <span class="cli-cod">{{ c.codigo_cli or '' }}</span>
+            <span class="sec corta cli-nombre" title="{{ c.cliente | cleanstr }}">{{ c.cliente | cleanstr }}</span>
+          </td>
+          <td rowspan="{{ n }}" class="num {{ 'neg' if c.importe and c.importe|float < 0 else '' }}">{{ c.importe | money_es }}</td>
+          <td rowspan="{{ n }}" class="letra">
             {% if c.paga %}
-              <span class="badge {{ 'badge-t' if c.paga == 'T' else 'badge-a' }}" style="margin-left:4px"
+              <span class="badge {{ 'badge-t' if c.paga == 'T' else 'badge-a' }}"
                     title="{{ 'Totalizó todas las facturas' if c.paga == 'T' else 'Abonó — queda saldo pendiente' }}">{{ c.paga }}</span>
             {% endif %}
           </td>
-          <td>
-            {% if c.aplicaciones %}
-              <div class="apps">
-                {% for a in c.aplicaciones %}
-                  {% set saldo = a.saldo_f if a.saldo_f is not none else a.fact_saldo %}
-                  {% set st = (a.stat_f or '') | upper | trim %}
-                  <div class="app">
-                    <span class="fnumf">{{ a.numf_completo or a.numf or '—' }}</span>
-                    <span>{{ a.fact_importe | money_es }}</span>
-                    <span>{{ a.aplicado | money_es }}</span>
-                    <span class="{{ 'saldo-neg' if saldo is not none and saldo|float < -0.005 else ('saldo-cero' if saldo is not none and saldo|float|abs <= 0.005 else '') }}">{{ saldo | money_es }}</span>
-                    <span class="fbadge">
-                      {% if st == 'T' %}<span class="badge badge-t" title="Totalizó — factura cancelada">T</span>
-                      {% elif st %}<span class="badge badge-a" title="Abonó — queda saldo">A</span>{% endif %}
-                    </span>
-                  </div>
-                {% endfor %}
-              </div>
-              {% if c.total_aplicado and (c.importe|float - c.total_aplicado)|abs > 0.01 %}
-                <div class="facts" style="margin-top:1px">aplicó {{ c.total_aplicado | money_es }} de {{ c.importe | money_es }}</div>
-              {% endif %}
-            {% elif c.explicacion and c.explicacion.facturas %}
-              {# TMT 2026-08-04 (dueña): "aunque se totalice la cuenta quiero
-                 que en cobranza quede guardado qué factura se pagó". El
-                 vínculo vivo lo borró el TOTALIZAR, pero mov_doble guardó
-                 numf + importe + el saldo que quedó AL APLICAR — se imprime
-                 igual que una aplicación normal, marcada como histórica. #}
-              <div class="apps">
-                {% for a in c.explicacion.facturas %}
-                  <div class="app">
-                    <span class="fnumf">{{ a.numf or '—' }}</span>
-                    <span>{{ a.fact_importe | money_es if a.fact_importe is not none else '' }}</span>
-                    <span>{{ a.importe | money_es }}</span>
-                    <span>{{ a.saldo_post | money_es if a.saldo_post is not none else '' }}</span>
-                    <span class="fbadge">
-                      {% if (a.stat_post or '') | upper == 'T' %}<span class="badge badge-t" title="Totalizó — factura cancelada">T</span>
-                      {% elif a.stat_post %}<span class="badge badge-a" title="Abonó — queda saldo">A</span>{% endif %}
-                    </span>
-                  </div>
-                {% endfor %}
-              </div>
-              <div class="facts" style="margin-top:1px">
-                {%- if c.concepto %}{{ c.concepto | cleanstr }} · {% endif -%}
-                {{ c.explicacion.texto }}
-              </div>
-            {% elif c.concepto %}
-              <span class="facts">{{ c.concepto | cleanstr }}</span>
-              {% if c.explicacion %}<div class="facts">{{ c.explicacion.texto }}</div>{% endif %}
-            {% elif c.explicacion %}
-              <span class="facts">{{ c.explicacion.texto }}</span>
-            {% elif c.medio == 'ANTICIPO' %}
-              <span class="facts">anticipo · saldo a favor del cliente</span>
-            {% else %}
-              <span class="facts">— sin aplicar a facturas</span>
-            {% endif %}
-            {% if c.nota_usuario %}
-              <span class="obs" data-testid="res-obs">{{ c.nota_usuario | cleanstr }}</span>
-            {% endif %}
+          {% endif %}
+          {% if f.obs is defined %}
+          <td colspan="5" class="fac-sep"><span class="obs" data-testid="res-obs">{{ f.obs }}</span></td>
+          {% elif f.texto is defined %}
+          <td colspan="5" class="fac-sep"><span class="sec">{{ f.texto }}</span></td>
+          {% else %}
+          <td class="fac-sep" style="white-space:nowrap">{{ f.numf }}</td>
+          <td class="num">{{ f.total | money_es if f.total is not none else '' }}</td>
+          <td class="num">{{ f.abono | money_es }}</td>
+          <td class="num {{ 'saldo-neg' if f.saldo is not none and f.saldo|float < -0.005 else '' }}">{{ f.saldo | money_es if f.saldo is not none else '' }}</td>
+          <td class="letra">
+            {% if f.st == 'T' %}<span class="badge badge-t" title="Totalizó — factura cancelada">T</span>
+            {% elif f.st %}<span class="badge badge-a" title="Abonó — queda saldo">A</span>{% endif %}
           </td>
+          {% endif %}
         </tr>
         {% endfor %}
       </tbody>
+      {% endfor %}
       <tfoot>
-        <tr>
-          <td colspan="4">TOTAL DEL DÍA — {{ resumen.ingresos | length }} ingreso{{ 's' if resumen.ingresos|length != 1 }}
-            <span class="facts" style="font-weight:400">({{ resumen.n_cheques }} cheq. · {{ resumen.n_depositos }} dep. · {{ resumen.n_efectivo }} efect.)</span>
+        <tr class="no-sort">
+          <td colspan="5">Total del día · {{ resumen.ingresos | length }} ingreso{{ 's' if resumen.ingresos|length != 1 }}
+            <span class="sec" style="display:inline; font-weight:400">({{ resumen.n_cheques }} cheq. · {{ resumen.n_depositos }} dep. · {{ resumen.n_efectivo }} efect.)</span>
           </td>
           <td class="num">{{ resumen.total_general | money_es }}</td>
-          <td></td>
+          <td colspan="6"></td>
         </tr>
       </tfoot>
     </table>
 
-    <div class="facts" style="margin-top:10px">
+    <div class="leyenda">
       <span class="badge badge-t">T</span> totalizó (la factura quedó cancelada) ·
       <span class="badge badge-a">A</span> abonó (queda saldo) ·
       saldo <span class="saldo-neg">negativo</span> = saldo a favor del cliente ·
-      el saldo mostrado es el que quedó AL APLICAR el cobro.
+      el saldo es el que quedó al aplicar el cobro.
     </div>
   {% endif %}
 </div>

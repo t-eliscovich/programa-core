@@ -261,6 +261,8 @@ def _ids_que_devuelve(sql: str, fecha_iso: str) -> set[int]:
         "fechaing TEXT, fechaout TEXT, banco TEXT, codigo_cli TEXT)"
     )
     con.execute("CREATE TABLE cliente (codigo_cli TEXT, nombre TEXT)")
+    # El banco del cheque sale del catálogo (SQL_BANCO_EMISOR, 25/09/2026).
+    con.execute("CREATE TABLE banco (no_banco INT, nombre TEXT)")
     for idc, usr, fecha, frec, fing, fcrea in _CHEQUES_SQLITE:
         con.execute(
             "INSERT INTO cheque (id_cheque, importe, fecha, fechad, no_banco, "
@@ -408,3 +410,63 @@ def test_render_mtm_dice_la_factura_y_no_sin_aplicar(client, fake_db, monkeypatc
     assert "TOTALIZAR" in html              # y por qué el vínculo no está
     assert "1.759,28" in html               # el saldo que quedó AL APLICAR
     assert "2.059,28" in html               # importe de la factura (columna llena)
+
+
+def test_resumen_dia_nombra_el_banco_del_cheque_desde_el_catalogo(monkeypatch):
+    """TMT 2026-09-25 (dueña: "agregar banco a la cobranza diaria, banco de
+    origen"). `cheque.banco` (texto) viene NULL en todo lo que carga PC; el
+    banco vive en `no_banco` contra `scintela.banco`. Antes la línea salía
+    vacía."""
+    import re
+    import sqlite3
+
+    sql = _sql_del_resumen(monkeypatch)
+    con = sqlite3.connect(":memory:")
+    con.execute(
+        "CREATE TABLE cheque (id_cheque INT, no_cheque TEXT, importe REAL, "
+        "fecha TEXT, fechad TEXT, no_banco INT, stat TEXT, doc_banco TEXT, "
+        "concepto TEXT, nota_usuario TEXT, fecha_crea TEXT, usuario_crea TEXT, "
+        "clave TEXT, fecha_recibido TEXT, fechaing TEXT, banco TEXT, "
+        "codigo_cli TEXT)")
+    con.execute("CREATE TABLE cliente (codigo_cli TEXT, nombre TEXT)")
+    con.execute("CREATE TABLE banco (no_banco INT, nombre TEXT)")
+    con.execute("INSERT INTO banco VALUES (12, 'GUAYAQUIL')")
+    con.execute(
+        "INSERT INTO cheque (id_cheque, importe, fecha, no_banco, stat, "
+        "fecha_recibido, banco, codigo_cli) "
+        "VALUES (1, 100, '2026-09-25', 12, 'Z', '2026-09-25', NULL, 'TNZ')")
+    q = re.sub(r"\s+", " ", sql.replace("scintela.", "").replace("%s", "?"))
+    cur = con.execute(q, ("2026-09-25",))
+    cols = [d[0] for d in cur.description]
+    fila = dict(zip(cols, cur.fetchone(), strict=True))
+    assert fila["banco_emisor"] == "GUAYAQUIL"
+
+
+def test_resumen_dia_tiene_columna_banco():
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent
+            / "modules/cheques/templates/cheques/resumen_dia.html").read_text("utf-8")
+    assert "<th>Banco</th>" in html
+    # los anchos van en clases (<colgroup>) para que el papel los pueda achicar
+    assert '<col class="c-banco">' in html
+    assert 'style="width:' not in html.split("<thead>")[1].split("</thead>")[0]
+
+
+def test_resumen_dia_facturas_son_columnas_de_la_misma_tabla():
+    """TMT 2026-09-25 (dueña: "las columnas no están alineadas con los
+    datos"). Las facturas que paga cada cobro eran una mini-tabla dentro de
+    una celda, con su subtítulo aparte: título y número se corrían. Ahora
+    cada factura es un renglón de LA tabla, con sus propias columnas."""
+    from pathlib import Path
+
+    html = (Path(__file__).resolve().parent.parent
+            / "modules/cheques/templates/cheques/resumen_dia.html").read_text("utf-8")
+    assert 'class="apps' not in html
+    thead = html.split("<thead>")[1].split("</thead>")[0]
+    for titulo in ("Factura</th>", ">Total</th>", ">Abonó</th>", ">Saldo</th>"):
+        assert titulo in thead
+    assert '<tbody class="cobro">' in html
+    assert 'rowspan="{{ n }}"' in html
+    # sin flechitas de ordenar: se leían como ":" al lado de los títulos
+    assert "data-no-sort-table" in html

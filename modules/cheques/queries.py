@@ -219,6 +219,28 @@ SQL_DIA_INGRESO = """CASE
                      END"""
 
 
+#: Nombre del BANCO DEL CHEQUE (el de origen, contra el que se gira).
+#: TMT 2026-08-03 (dueña: "banco es el banco del cheque, y estás seguro que
+#: esto está bien??"). `cheque.banco` es TEXTO y viene NULL en casi todo lo
+#: que carga PC — el banco real vive en `no_banco` contra el catálogo
+#: `scintela.banco`, así que leerlo solo dejaba la columna vacía. El 98 con
+#: rótulo ANTICIPO (o importe negativo) se nombra ANTICIPO: el catálogo tiene
+#: 98=UKN legacy y ganaba ese nombre. Lo usan la lista de ingresados y el
+#: resumen de cobranza del día (TMT 2026-09-25).
+SQL_BANCO_EMISOR = """CASE
+                 WHEN c.no_banco = 98
+                      AND (UPPER(TRIM(COALESCE(c.banco, ''))) = 'ANTICIPO'
+                           OR COALESCE(c.importe, 0) < 0)
+                 THEN 'ANTICIPO'
+                 ELSE COALESCE(
+                   (SELECT bco.nombre FROM scintela.banco bco
+                     WHERE bco.no_banco = c.no_banco LIMIT 1),
+                   NULLIF(TRIM(COALESCE(c.banco, '')), ''),
+                   ''
+                 )
+               END"""
+
+
 # scintela.cliente.observacion es varchar(200). Al trazar rebotes en la
 # observacion del cliente hay que capar la longitud: con 3-4 rebotes acumulados
 # (cada marca ~60 chars) se desborda. Cap del lado SQL con RIGHT(..., 200).
@@ -7169,6 +7191,12 @@ def resumen_cobranza_dia(fecha) -> dict:
     # SELECT porque el deploy no aplica 0170_cheque_nota_usuario.sql solo.
     _concepto_cobro.bootstrap_columna()
     _nota_usuario.bootstrap_columna()
+    # TMT 2026-09-25 (dueña: "agregar banco a la cobranza diaria, banco de
+    # origen"). El banco se leía de `c.banco` (texto), que viene NULL en todo
+    # lo que carga PC: la línea salía vacía. Ahora usa el mismo resolver que
+    # la lista de ingresados (SQL_BANCO_EMISOR, contra el catálogo).
+    # ⚠ Sin comentarios `--` adentro del SQL: los tests lo corren en SQLite
+    # con los saltos de línea colapsados y el comentario se come el resto.
     rows = (
         db.fetch_all(
             """
@@ -7177,7 +7205,7 @@ def resumen_cobranza_dia(fecha) -> dict:
                    c.nota_usuario,
                    c.fecha_crea, c.usuario_crea, c.clave,
                    c.fecha_recibido, c.fechaing,
-                   COALESCE(c.banco, '') AS banco_emisor,
+                   __BANCO_EMISOR__ AS banco_emisor,
                    c.codigo_cli,
                    COALESCE(cl.nombre, '') AS cliente
               FROM scintela.cheque c
@@ -7185,7 +7213,8 @@ def resumen_cobranza_dia(fecha) -> dict:
              WHERE __DIA_INGRESO__ = %s
                AND COALESCE(c.stat, '') NOT IN ('X', 'Y')
              ORDER BY c.id_cheque
-            """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO),
+            """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO)
+            .replace("__BANCO_EMISOR__", SQL_BANCO_EMISOR),
             (fecha,),
         )
         or []
@@ -7343,18 +7372,7 @@ def cheques_ingresados_dia(fecha) -> dict:
                -- leerlo solo dejaba la columna vacía. Misma resolución que
                -- usa buscar() para la lista, incluido el 98 = ANTICIPO (el
                -- catálogo tiene 98=UKN legacy y ganaba el nombre del catálogo).
-               CASE
-                 WHEN c.no_banco = 98
-                      AND (UPPER(TRIM(COALESCE(c.banco, ''))) = 'ANTICIPO'
-                           OR COALESCE(c.importe, 0) < 0)
-                 THEN 'ANTICIPO'
-                 ELSE COALESCE(
-                   (SELECT bco.nombre FROM scintela.banco bco
-                     WHERE bco.no_banco = c.no_banco LIMIT 1),
-                   NULLIF(TRIM(COALESCE(c.banco, '')), ''),
-                   ''
-                 )
-               END AS banco_emisor,
+               __BANCO_EMISOR__ AS banco_emisor,
                COALESCE(cl.nombre, '') AS cliente
           FROM scintela.cheque c
           LEFT JOIN scintela.cliente cl ON cl.codigo_cli = c.codigo_cli
@@ -7364,7 +7382,7 @@ def cheques_ingresados_dia(fecha) -> dict:
          ORDER BY c.importe DESC NULLS LAST, c.id_cheque ASC
     """.replace("__DIA_INGRESO__", SQL_DIA_INGRESO).replace(
         "__ES_CHEQUE__", SQL_ES_CHEQUE
-    )
+    ).replace("__BANCO_EMISOR__", SQL_BANCO_EMISOR)
     todos = db.fetch_all(sql, {"fecha": fecha}) or []
     filas = [f for f in todos if (f.get("stat") or "").strip().upper() == "Z"]
     fuera = [f for f in todos if f not in filas]

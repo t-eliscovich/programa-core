@@ -34,8 +34,8 @@
     .print-header {
       display: block !important;
       border-bottom: 1.5pt solid #9ca3af !important;
-      padding: 0 0 4pt 0 !important;
-      margin: 0 0 6pt 0 !important;
+      padding: 0 0 3pt 0 !important;
+      margin: 0 0 4pt 0 !important;
     }
     .print-header .ph-top { display: flex !important; justify-content: space-between !important;
                             align-items: baseline !important; }
@@ -586,7 +586,11 @@
       </button>
     </form>
     {% endif %}
-    {% for tz in totalizares %}
+    {# TMT 2026-09-25 (dueña: "ocupa mucho espacio las totalizaciones. que
+       muestre la última y una flechita para ver anteriores"). Seis renglones
+       de "Se totalizó el…" empujaban la cuenta media pantalla para abajo. Va
+       la ÚLTIMA a la vista y el resto adentro de un desplegable. #}
+    {% macro _tz_fila(tz) %}
     <details class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded mb-2">
       <summary class="cursor-pointer px-3 py-2 text-sm text-slate-700 dark:text-slate-300">
         Se totalizó el <strong>{{ tz.fecha | fecha_es }}</strong>
@@ -644,7 +648,18 @@
       </p>
       {% endif %}
     </details>
-    {% endfor %}
+    {% endmacro %}
+    {{ _tz_fila(totalizares[0]) }}
+    {% if totalizares | length > 1 %}
+    <details class="ec-tz-anteriores">
+      <summary class="cursor-pointer select-none text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 px-1 py-1">
+        Ver {{ totalizares | length - 1 }} totalizacion{{ '' if totalizares | length == 2 else 'es' }} anterior{{ '' if totalizares | length == 2 else 'es' }}
+      </summary>
+      <div class="mt-1">
+        {% for tz in totalizares[1:] %}{{ _tz_fila(tz) }}{% endfor %}
+      </div>
+    </details>
+    {% endif %}
   </div>
   {% endif %}
 

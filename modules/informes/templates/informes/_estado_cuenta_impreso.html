@@ -9,7 +9,7 @@
   {# Facturas #}
   {# TMT 2026-07-09 (dueña): en modo interactivo, botón para ver las
      totalizadas (T) y poder reabrirlas con el lapicito. #}
-  <div class="flex items-center justify-between mb-2 ec-bloque-facturas">
+  <div class="flex items-center justify-between mb-2 ec-bloque-facturas ec-tit-facturas">
     <h2 class="text-lg font-semibold">Facturas</h2>
     {% if interactivo|default(false) and facturas_totalizadas|default(none) %}
     <button type="button" data-on="0"
@@ -298,8 +298,18 @@
   {# Cheques — TMT 2026-07-07 dueña v2: "en imprimir estado de cuenta volvé a
      poner los cheques abajo" → se quita el no-print; se imprimen al final,
      después de la tabla de facturas. #}
-  <h2 class="text-lg font-semibold mb-2 mt-6 ec-bloque-cheques">Cheques</h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden ec-bloque-cheques">
+  {# TMT 2026-09-25 (dueña: "la impresión del estado de cuenta tiene mucho
+     espacio en blanco y consume mucho papel"). Un cliente SIN cheques por
+     cobrar imprimía igual el título, el encabezado de la tabla y un renglón
+     "Sin cheques en cartera" — cuatro renglones de papel por cliente que en
+     la impresión por grupo se multiplican. `ec-ch-vacio` saca el bloque del
+     papel (en pantalla sigue) y en su lugar va UN renglón chico que lo dice
+     (dueña: "que diga sin cheques en cartera, así no se lo saltea directo").
+     En el modo "sólo cheques" se deja el bloque, para que la hoja no salga
+     en blanco. #}
+  {% set _ch_vacio = ' ec-ch-vacio' if not (data.cheques | selectattr('por_cobrar') | list) else '' %}
+  <h2 class="text-lg font-semibold mb-2 mt-6 ec-bloque-cheques{{ _ch_vacio }}">Cheques</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden ec-bloque-cheques{{ _ch_vacio }}">
     <table class="w-full text-sm">
       <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
         <tr>
@@ -506,6 +516,10 @@
     </div>
   </div>
 
+  {% if _ch_vacio %}
+  <div class="ec-ch-vacio-linea">Cheques: sin cheques en cartera.</div>
+  {% endif %}
+
   {# TMT 2026-08-03: el TOTAL (saldo + cheques en cartera) se movió arriba,
      pegado a las facturas, como lo cierra el dBase. Antes estaba acá abajo y
      no salía al imprimir sólo la hoja de facturas. #}
@@ -521,6 +535,9 @@
    de impresión"— porque este parcial es el cuerpo del estado de cuenta y lo
    incluyen tanto la pantalla individual como la impresión en lote. #}
 <style>
+  /* El renglón "sin cheques en cartera" es sólo del papel: en pantalla ya se
+     ve el bloque entero con su mensaje. */
+  .ec-ch-vacio-linea { display: none; }
   /* En PANTALLA la tabla de facturas queda como estaba: los anchos del
      `colgroup` son para el PAPEL. */
   @media screen {
@@ -581,6 +598,28 @@
         /* Un poco más de aire recuperado sin tocar el cuerpo de letra. */
         main .ec-bloque-facturas { margin-bottom: 3pt !important; }
         main .cli-block h2 { margin: 3pt 0 1pt 0 !important; }
+
+        /* TMT 2026-09-25 (dueña: "tiene mucho espacio en blanco y consume
+           mucho papel — fijate para cuando imprimimos todo el grupo y para
+           cuando se imprime de a uno"). Lo que sobraba NO era el renglón (ya
+           está a 7pt) sino lo que va ENTRE bloques:
+             · el título "Facturas": la tabla ya arranca con FECHA · NÚMERO ·
+               IMPORTE y el encabezado del cliente dice el saldo — en papel es
+               un renglón que no dice nada nuevo;
+             · el bloque de cheques vacío (ver `ec-ch-vacio` arriba);
+             · los márgenes de Tailwind del título "Cheques" (mt-6 mb-2 = 32px). */
+        main .ec-tit-facturas { display: none !important; }
+        body:not(.ec-print-cheques) main .ec-ch-vacio { display: none !important; }
+        main .ec-ch-vacio-linea { display: block !important; font-size: 7pt !important;
+                                  margin: 3pt 0 0 0 !important; color: #000 !important; }
+        body.ec-print-cheques main .ec-ch-vacio-linea,
+        body.ec-print-facturas main .ec-ch-vacio-linea { display: none !important; }
+        main h2.ec-bloque-cheques { margin: 5pt 0 1pt 0 !important; font-size: 8pt !important;
+                                    line-height: 1.2 !important; }
+        /* El `text-lg` de Tailwind trae su propio interlineado de 28px: con
+           la letra en 8pt el título seguía ocupando lo mismo. Igual en el
+           cierre (Cheques a depositar / TOTAL), que heredaba el de `text-base`. */
+        main .ec-cierre, main .ec-cierre > div, main .ec-cierre span { line-height: 1.25 !important; }
 
         /* La franja de cuatro números (A depositar / Depositados / Protestados
            / Endosados) NO va al papel. Son 64 px —media docena de filas— y
