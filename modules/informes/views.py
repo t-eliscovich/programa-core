@@ -4013,6 +4013,7 @@ def estado_cuenta_lote_imprimir():
     # Códigos de la selección, en orden de impresión.
     codes: list[str] = []
     titulo = ""
+    grupos: list[dict] = []  # sólo "grupo": para el resumen de cada grupo
     if por == "todos":
         # TMT 2026-08-17 (dueña, pestaña "Todos"): todos los que deben, sin
         # agrupar y en orden alfabético por código.
@@ -4020,10 +4021,18 @@ def estado_cuenta_lote_imprimir():
         codes = [r["codigo_cli"] for r in sub]
         titulo = "Todos los clientes con saldo"
     elif por == "grupo":
+        # TMT 2026-09-25 (dueña): *"una visual de estado por grupo y luego uno
+        # por cliente"*. Cada grupo arranca con su RESUMEN (un renglón por
+        # cliente: saldo, cheques y total, iguales a la ficha) y después va el
+        # estado completo de cada uno, como el individual. Saldos de la ficha
+        # (`con_totales_de_la_ficha`) para que el orden sea el de la pantalla.
+        _con, _e_tot = _safe(lambda: queries.con_totales_de_la_ficha(filas), None)
+        if _con is not None and not _e_tot:
+            filas = _con
         gmap: dict = {}
         for r in filas:
             k, label = _ec_group_key("grupo", r)
-            g = gmap.setdefault(k, {"label": label, "clientes": [], "saldo": 0.0})
+            g = gmap.setdefault(k, {"codigo": k, "label": label, "clientes": [], "saldo": 0.0})
             g["clientes"].append(r)
             g["saldo"] += float(r.get("saldo") or 0)
         grupos = [g for g in gmap.values() if len(g["clientes"]) >= 2]
@@ -4073,12 +4082,42 @@ def estado_cuenta_lote_imprimir():
         if d and d.get("cliente"):
             clientes.append(d)
 
+    # Resumen de cada grupo con los MISMOS totales que la hoja de cada cliente
+    # (salen del mismo lote, así el resumen y las hojas no pueden diferir).
+    resumen_grupos: dict[str, dict] = {}
+    if grupos:
+        por_cod = {d["cliente"]["codigo_cli"]: d for d in clientes}
+        for g in grupos:
+            filas_g = []
+            for c in g["clientes"]:
+                d = por_cod.get(c["codigo_cli"])
+                if not d:
+                    continue
+                t = d.get("totales") or {}
+                saldo = t.get("saldo_neto")
+                saldo = float(t.get("saldo") or 0) if saldo is None else float(saldo)
+                cheques = float(t.get("cheques_por_cobrar") or 0)
+                filas_g.append({"codigo_cli": c["codigo_cli"],
+                                "nombre": d["cliente"].get("nombre"),
+                                "saldo": saldo, "cheques": cheques,
+                                "total": saldo + cheques})
+            if not filas_g:
+                continue
+            resumen_grupos[filas_g[0]["codigo_cli"]] = {
+                "codigo": g["codigo"],
+                "clientes": filas_g,
+                "saldo": sum(f["saldo"] for f in filas_g),
+                "cheques": sum(f["cheques"] for f in filas_g),
+                "total": sum(f["total"] for f in filas_g),
+            }
+
     return render_template(
         "informes/estado_cuenta_lote_print.html",
         clientes=clientes,
         titulo=titulo,
         por=por,
         n=len(clientes),
+        resumen_grupos=resumen_grupos,
     )
 
 

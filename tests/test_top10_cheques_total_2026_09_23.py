@@ -85,3 +85,29 @@ def test_con_totales_de_la_ficha_pisa_saldo_y_agrega_cheques_y_total():
 
 def test_con_totales_de_la_ficha_sin_filas():
     assert iq.con_totales_de_la_ficha([]) == []
+
+
+# ---------------------------------------------------------------------------
+# Impresión por grupos: resumen del grupo y después cada cliente (25/09)
+# ---------------------------------------------------------------------------
+
+from pathlib import Path  # noqa: E402
+
+_LOTE = (Path(__file__).resolve().parents[1] / "modules" / "informes" / "templates"
+         / "informes" / "estado_cuenta_lote_print.html").read_text(encoding="utf-8")
+
+
+def test_lote_por_grupo_pone_el_resumen_antes_de_la_primera_hoja():
+    i_res = _LOTE.find('class="grp-resumen"')
+    i_hoja = _LOTE.find('<section class="cli-block"')
+    assert 0 < i_res < i_hoja, "el resumen del grupo tiene que ir ANTES de la hoja"
+    for col in ("Saldo", "Cheques", "Total", "Total del grupo"):
+        assert f">{col}<" in _LOTE
+
+
+def test_resumen_del_grupo_sale_de_los_totales_de_la_hoja():
+    from modules.informes import views as iv
+    src = inspect.getsource(iv.estado_cuenta_lote_imprimir)
+    # Mismos totales que la hoja de cada cliente (el lote), no otra suma.
+    assert 'cheques_por_cobrar' in src and 'saldo_neto' in src
+    assert "resumen_grupos=resumen_grupos" in src

@@ -106,6 +106,43 @@
   }
 </style>
 
+<style>
+  /* TMT 2026-09-25: resumen de cada grupo (sólo impresión por grupos).
+     Bloque APARTE: el de arriba se copia tal cual al portal de vendedores
+     (test_la_hoja_del_portal_usa_la_misma_css_que_la_oficina) y el portal
+     no imprime grupos. */
+  .grp-resumen { margin: 0 0 .75rem 0; }
+  .grp-resumen .grp-tit { font-weight: 700; font-size: 1.05rem; margin-bottom: .25rem; }
+  .grp-resumen .grp-sub { font-weight: 400; font-size: .85rem; color: #64748b; }
+  .grp-tabla { border-collapse: collapse; font-size: .85rem; min-width: 60%; }
+  .grp-tabla th, .grp-tabla td { padding: .15rem .6rem; text-align: right; white-space: nowrap;
+                                 font-variant-numeric: tabular-nums; border-bottom: 1px solid #e2e8f0; }
+  .grp-tabla th { font-size: .7rem; text-transform: uppercase; color: #64748b; border-bottom: 1px solid #94a3b8; }
+  .grp-tabla .l { text-align: left; }
+  .grp-tabla tfoot td { font-weight: 700; border-top: 1px solid #94a3b8; border-bottom: 0; }
+  @media print {
+    /* SIN hoja nueva por grupo (dueña 25/09: "consume mucho papel"): una
+       raya gruesa separa un grupo del anterior y el resumen no queda colgado
+       al pie sin la hoja que le sigue. */
+    .grp-resumen { margin: 10pt 0 4pt 0 !important; padding-top: 4pt !important;
+                   border-top: 1.5pt solid #000 !important; page-break-after: avoid;
+                   page-break-inside: avoid; }
+    .grp-resumen:first-of-type { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+    .grp-resumen .grp-tit { font-size: 11pt !important; }
+    .grp-resumen .grp-sub { font-size: 8pt !important; color: #000 !important; }
+    .grp-tabla { font-size: 7.5pt !important; }
+    .grp-tabla th, .grp-tabla td { padding: 0.5pt 4pt !important; border-color: #9ca3af !important; }
+    .grp-tabla th { font-size: 6.5pt !important; color: #000 !important; }
+    /* La hoja que sigue al resumen no lleva raya ni margen arriba. */
+    .grp-resumen + .cli-block { margin-top: 0 !important; padding-top: 0 !important; border-top: 0 !important; }
+  }
+  @media screen {
+    .grp-resumen { border-top: 3px solid #94a3b8; margin-top: 2.5rem; padding-top: 1rem; }
+    .grp-resumen:first-of-type { border-top: 0; margin-top: 0; padding-top: 0; }
+    .grp-resumen + .cli-block { border-top: 0; margin-top: .75rem; padding-top: 0; }
+  }
+</style>
+
 <div class="max-w-6xl">
   {# Barra de acción — no va en papel. #}
   <div class="no-print mb-5 flex items-center justify-between gap-4 flex-wrap">
@@ -148,6 +185,37 @@
        tener 69 clientes y la mitad sin cheques → 30 hojas con un "Sin cheques"
        adentro. #}
     {% set _ch_cobrar = c.cheques | selectattr('por_cobrar') | list %}
+    {# TMT 2026-09-25 (dueña): impresión por GRUPOS = *"una visual de estado
+       por grupo y luego uno por cliente"*. Antes de la primera hoja de cada
+       grupo va su resumen: un renglón por cliente con saldo, cheques y total
+       (los mismos números que el encabezado de cada hoja) y el total del
+       grupo. Después, la hoja completa de cada cliente, igual que la
+       individual. #}
+    {% set _rg = (resumen_grupos or {}).get(data.cliente.codigo_cli) %}
+    {% if _rg %}
+    <section class="grp-resumen">
+      <div class="grp-tit">Grupo {{ _rg.codigo }}
+        <span class="grp-sub">· {{ _rg.clientes | length }} clientes</span></div>
+      <table class="grp-tabla">
+        <thead>
+          <tr><th class="l">Código</th><th class="l">Cliente</th>
+              <th>Saldo</th><th>Cheques</th><th>Total</th></tr>
+        </thead>
+        <tbody>
+          {% for f in _rg.clientes %}
+          <tr><td class="l">{{ f.codigo_cli }}</td><td class="l">{{ f.nombre | cleanstr }}</td>
+              <td>{{ f.saldo | money_es }}</td><td>{{ f.cheques | money_es }}</td>
+              <td>{{ f.total | money_es }}</td></tr>
+          {% endfor %}
+        </tbody>
+        <tfoot>
+          <tr><td class="l" colspan="2">Total del grupo</td>
+              <td>{{ _rg.saldo | money_es }}</td><td>{{ _rg.cheques | money_es }}</td>
+              <td>{{ _rg.total | money_es }}</td></tr>
+        </tfoot>
+      </table>
+    </section>
+    {% endif %}
     <section class="cli-block" data-n-ch-cobrar="{{ _ch_cobrar | length }}">
       <div class="print-head">
         <span class="ph-nombre">{{ data.cliente.nombre | cleanstr }} ({{ data.cliente.codigo_cli }})</span>
