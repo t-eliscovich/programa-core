@@ -2739,10 +2739,55 @@ def despacho_fisico_mes(yy: int, mm: int, id_bodega: int = 53) -> float:
 
 
 _DESPACHO_HOY_TTL_SECS = 120  # el recuadro del inicio se refresca cada minuto
+#: Hasta esta edad, un número vencido se DEVUELVE AL TOQUE y se refresca por
+#: atrás (ver abajo). Más viejo que esto, se espera a Asinfo como antes.
+_DESPACHO_HOY_REFRESCO_ATRAS_SECS = 15 * 60
 _DESPACHO_HOY_CACHE: dict = {}
+_DESPACHO_HOY_REFRESCANDO: set = set()
+_DESPACHO_HOY_LOCK = _threading.Lock()
 
 
-def despacho_fisico_dia_info(fecha, id_bodega: int = 53) -> dict:
+def _leer_despacho_dia(dia: str, id_bodega: int) -> float | None:
+    """Una lectura a Asinfo. None si no contestó (nunca un cero inventado)."""
+    sql = f"""
+        SELECT SUM(ISNULL(dd.cantidad, 0)) AS kg
+          FROM despacho_cliente dc
+          JOIN detalle_despacho_cliente dd
+            ON dd.id_despacho_cliente = dc.id_despacho_cliente
+         WHERE dc.fecha = '{dia}'
+           AND dc.fecha_anulacion IS NULL
+           AND dd.id_bodega = {int(id_bodega)}
+    """
+    try:
+        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
+    except Exception:  # noqa: BLE001 -- fail-soft: la pantalla no se cae
+        return None
+    if not rows:
+        return None
+    return round(float((rows[0] or {}).get("kg") or 0.0), 2)
+
+
+def _refrescar_despacho_dia_atras(dia: str, id_bodega: int) -> None:
+    """Relee el despachado en un hilo aparte, UNO a la vez por día/bodega."""
+    clave = (dia, int(id_bodega))
+    with _DESPACHO_HOY_LOCK:
+        if clave in _DESPACHO_HOY_REFRESCANDO:
+            return
+        _DESPACHO_HOY_REFRESCANDO.add(clave)
+
+    def _correr():
+        try:
+            kg = _leer_despacho_dia(dia, id_bodega)
+            if kg is not None:
+                _DESPACHO_HOY_CACHE[clave] = (_time.time(), kg)
+        finally:
+            with _DESPACHO_HOY_LOCK:
+                _DESPACHO_HOY_REFRESCANDO.discard(clave)
+
+    _threading.Thread(target=_correr, name="despacho-hoy", daemon=True).start()
+
+
+def despacho_fisico_dia_info(fecha, id_bodega: int = 53, forzar: bool = False) -> dict:
     """{kg, medido_ts, fresco} de lo despachado a cliente EN UN DÍA.
 
     TMT 2026-08-13 (dueña): *"podemos poner otro número que sea el despachado,
@@ -2761,37 +2806,37 @@ def despacho_fisico_dia_info(fecha, id_bodega: int = 53) -> dict:
     se despachó nada". Un fracaso NUNCA se guarda como valor (lección del
     29/07: cachear el fracaso de Metabase dejó la utilidad rota por horas).
     `kg=None` sólo cuando todavía no hubo ninguna lectura buena del día.
+
+    ⭐ TMT 2026-09-25 (dueña: *"despachado tarda mucho"*). El número vencía a
+    los 2 minutos y NADIE lo recalentaba: el calentador no lo tenía en su
+    lista. Así que cada vez que alguien abría la campanita o el inicio pasados
+    esos 2 minutos, la pantalla esperaba a que Asinfo contestara por la VPN —
+    y justo compitiendo con el calentador por Metabase. Dos arreglos:
+      · el calentador lo relee en cada vuelta (`forzar=True`);
+      · si el número guardado venció hace poco (< 15 min), se devuelve AL
+        TOQUE y se relee por atrás, para la próxima. Más viejo que eso, se
+        espera a Asinfo como antes: mostrar un número de hace una hora como
+        si fuera de ahora sería peor que esperar.
     """
     dia = str(fecha)[:10]
     cache_key = (dia, int(id_bodega))
     now = _time.time()
     cached = _DESPACHO_HOY_CACHE.get(cache_key)
-    if cached and (now - cached[0]) < _DESPACHO_HOY_TTL_SECS:
-        return {"kg": cached[1], "medido_ts": cached[0], "fresco": True}
+    if cached and not forzar:
+        edad = now - cached[0]
+        if edad < _DESPACHO_HOY_TTL_SECS:
+            return {"kg": cached[1], "medido_ts": cached[0], "fresco": True}
+        if edad < _DESPACHO_HOY_REFRESCO_ATRAS_SECS:
+            _refrescar_despacho_dia_atras(dia, id_bodega)
+            return {"kg": cached[1], "medido_ts": cached[0], "fresco": True}
 
-    def _viejo() -> dict:
+    kg = _leer_despacho_dia(dia, id_bodega)
+    if kg is None:
         if cached:
             return {"kg": cached[1], "medido_ts": cached[0], "fresco": False}
         return {"kg": None, "medido_ts": None, "fresco": False}
-
-    sql = f"""
-        SELECT SUM(ISNULL(dd.cantidad, 0)) AS kg
-          FROM despacho_cliente dc
-          JOIN detalle_despacho_cliente dd
-            ON dd.id_despacho_cliente = dc.id_despacho_cliente
-         WHERE dc.fecha = '{dia}'
-           AND dc.fecha_anulacion IS NULL
-           AND dd.id_bodega = {int(id_bodega)}
-    """
-    try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=10)
-    except Exception:  # noqa: BLE001 -- fail-soft: la pantalla no se cae
-        return _viejo()
-    if not rows:
-        return _viejo()
-    out = round(float((rows[0] or {}).get("kg") or 0.0), 2)
-    _DESPACHO_HOY_CACHE[cache_key] = (now, out)
-    return {"kg": out, "medido_ts": now, "fresco": True}
+    _DESPACHO_HOY_CACHE[cache_key] = (now, kg)
+    return {"kg": kg, "medido_ts": now, "fresco": True}
 
 
 def despacho_fisico_dia(fecha, id_bodega: int = 53) -> float:

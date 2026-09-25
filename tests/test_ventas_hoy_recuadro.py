@@ -356,3 +356,50 @@ def test_el_festejo_nace_apagado_y_lo_prende_el_fetch():
     html = _landing_html()
     assert "'' if _kg_barra >= 20000 else 'display:none'" in html
     assert "q('fiesta').style.display" in html
+
+
+# ── TMT 2026-09-25 (dueña: "despachado tarda mucho") ────────────────────────
+
+def test_vencido_hace_poco_sale_al_toque_y_se_relee_por_atras():
+    """Pasados los 2 min, la pantalla NO espera a Asinfo: muestra lo último y
+    lo relee en un hilo aparte, para la próxima apertura."""
+    import threading as _th
+
+    with patch.object(metabase_client, "fetch_dataset",
+                      return_value=[{"kg": 100.0}]):
+        service.despacho_fisico_dia_info(DIA)
+    _envejecer(200)          # vencido (TTL 120 s) pero reciente (< 15 min)
+    listo = _th.Event()
+
+    def _lento(*a, **k):
+        listo.set()
+        return [{"kg": 250.0}]
+
+    with patch.object(metabase_client, "fetch_dataset", side_effect=_lento):
+        info = service.despacho_fisico_dia_info(DIA)
+        assert info["kg"] == 100.0          # lo de antes, sin esperar
+        assert listo.wait(2)                # …y se releyó por atrás
+        for _ in range(50):
+            if service._DESPACHO_HOY_CACHE[CLAVE][1] == 250.0:
+                break
+            import time as _t
+            _t.sleep(0.02)
+    assert service._DESPACHO_HOY_CACHE[CLAVE][1] == 250.0
+
+
+def test_forzar_relee_aunque_el_cache_este_fresco():
+    """El calentador lo relee en cada vuelta."""
+    with patch.object(metabase_client, "fetch_dataset",
+                      return_value=[{"kg": 100.0}]):
+        service.despacho_fisico_dia_info(DIA)
+    with patch.object(metabase_client, "fetch_dataset",
+                      return_value=[{"kg": 180.0}]) as m:
+        info = service.despacho_fisico_dia_info(DIA, forzar=True)
+    assert m.call_count == 1 and info["kg"] == 180.0
+
+
+def test_el_calentador_recalienta_el_despachado_de_hoy():
+    from pathlib import Path
+
+    src = Path("modules/_lib/warmup.py").read_text(encoding="utf-8")
+    assert '("despacho_hoy", lambda: asvc.despacho_fisico_dia_info(hoy, forzar=True))' in src

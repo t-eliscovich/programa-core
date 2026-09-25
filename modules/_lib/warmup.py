@@ -85,6 +85,11 @@ def _warm_once() -> None:
         # hilo de atrás, y los dos pasos que siguen le dan HIT.
         # TMT 2026-08-26 (dueña): *"resultados tarda en cargar"*.
         ("balance_alineado", lambda: asvc.alinear_lecturas_del_balance()),
+        # TMT 2026-09-25 (dueña: "despachado tarda mucho"): el despachado de
+        # HOY (campanita + inicio) no estaba acá y vencía a los 2 min — cada
+        # apertura esperaba a Asinfo. Primero en la cola del pool: es una
+        # consulta chica y es la que más se mira.
+        ("despacho_hoy", lambda: asvc.despacho_fisico_dia_info(hoy, forzar=True)),
         ("inventario_por_etapa", lambda: asvc.inventario_por_etapa()),
         ("inventario_asof", lambda: asvc.inventario_por_etapa_a_fecha(corte)),
         ("mov_bodega_51", lambda: asvc.movimiento_bodega_mes(51, corte)),
