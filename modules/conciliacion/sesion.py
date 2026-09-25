@@ -568,22 +568,63 @@ def crear_sesion(
         # TMT 2026-07-31: preservar las filas marcadas `_borrado` (cargar_movs
         # las filtra). Si el archivo vuelve a traer una borrada, el dedupe no la
         # ve y la re-agrega — que es justo lo que se espera al re-subir.
-        borradas = [d for d in _payload_list(abierta) if d.get("_borrado")]
-        existentes = cargar_movs(abierta)
-        merged = existentes + nuevos
-        payload = json.dumps([_mov_to_dict(m) for m in merged] + borradas)
-        nombre = (extracto_nombre or abierta.get("extracto_nombre") or "")[:200]
-        db.execute(
-            """
-            UPDATE scintela.banco_conciliacion_sesion
-               SET extracto_payload = %s::jsonb,
-                   extracto_nombre = %s,
-                   extracto_hash = COALESCE(%s, extracto_hash)
-             WHERE id = %s
-            """,
-            (payload, nombre, extracto_hash, int(abierta["id"])),
+        #
+        # TMT 2026-09-25 (Alex: el extracto del 24-25/09 apareció DOS veces en
+        # la sesión). El filtro de arriba mira la sesión ANTES de escribir: si
+        # entran dos subidas juntas (doble click en "Procesar →", dos pestañas,
+        # el server lento), las dos ven la sesión sin las filas y las dos las
+        # agregan. Ahora el guardado es "sólo si nadie la tocó": el UPDATE
+        # exige que el payload siga siendo el que leímos; si otro lo cambió
+        # en el medio, se relee la sesión, se vuelve a sacar lo que ya está y
+        # se reintenta. La segunda subida termina agregando cero filas.
+        pendientes = list(nuevos)
+        for _intento in range(5):
+            payload_viejo = _payload_list(abierta)
+            borradas = [d for d in payload_viejo if d.get("_borrado")]
+            existentes = cargar_movs(abierta)
+            ya_en_sesion = {
+                _firma_mov(m.documento, getattr(m, "codigo", ""),
+                           m.tipo, m.monto, m.fecha)
+                for m in existentes if m.documento
+            }
+            filtrados = []
+            for m in pendientes:
+                if m.documento and _firma_mov(
+                        m.documento, getattr(m, "codigo", ""),
+                        m.tipo, m.monto, m.fecha) in ya_en_sesion:
+                    skipped += 1
+                    continue
+                filtrados.append(m)
+            pendientes = filtrados
+            merged = existentes + pendientes
+            payload = json.dumps([_mov_to_dict(m) for m in merged] + borradas)
+            nombre = (extracto_nombre or abierta.get("extracto_nombre") or "")[:200]
+            rc = db.execute(
+                """
+                UPDATE scintela.banco_conciliacion_sesion
+                   SET extracto_payload = %s::jsonb,
+                       extracto_nombre = %s,
+                       extracto_hash = COALESCE(%s, extracto_hash)
+                 WHERE id = %s
+                   AND COALESCE(extracto_payload, '[]'::jsonb) = %s::jsonb
+                """,
+                (payload, nombre, extracto_hash, int(abierta["id"]),
+                 json.dumps(payload_viejo)),
+            )
+            if rc:
+                return (int(abierta["id"]), len(pendientes), skipped)
+            # Otro guardó en el medio: releer y volver a filtrar.
+            releida = sesion_por_id(int(abierta["id"]))
+            if not releida or releida.get("cerrada_en"):
+                raise RuntimeError(
+                    "La sesión de conciliación se cerró mientras se subía el "
+                    "extracto. Volvé a subirlo."
+                )
+            abierta = releida
+        raise RuntimeError(
+            "No pude guardar el extracto: la sesión se estaba modificando al "
+            "mismo tiempo. Volvé a subirlo (lo que ya esté cargado no se duplica)."
         )
-        return (int(abierta["id"]), len(nuevos), skipped)
 
     # No hay sesión abierta → crear una.
     # TMT 2026-08-13: se crea IGUAL aunque `nuevos` esté vacío (todas las
@@ -689,29 +730,61 @@ def movs_borrados(sesion: dict) -> list[dict]:
     return out
 
 
-def restaurar_movs_extracto(sesion_id: int) -> int:
-    """Des-borra TODAS las filas del extracto marcadas en la sesión."""
+def restaurar_movs_extracto(sesion_id: int) -> tuple[int, int]:
+    """Des-borra las filas del extracto marcadas en la sesión.
+
+    Devuelve (restauradas, ya_estaban).
+
+    TMT 2026-09-25 (Alex: el extracto apareció duplicado). Si después de
+    borrar con la ✕ se vuelve a subir el archivo, la fila entra de nuevo
+    (viva). Restaurar la borrada encima la dejaba DOS veces. Ahora una
+    borrada cuya firma ya está viva en la sesión NO se restaura: queda
+    borrada y se cuenta en `ya_estaban`. Dos borradas iguales entre sí
+    (el extracto traía la fila dos veces de verdad) sí vuelven las dos.
+    """
     if not sesion_id:
-        return 0
+        return (0, 0)
     row = db.fetch_one(
         "SELECT id, extracto_payload FROM scintela.banco_conciliacion_sesion "
         "WHERE id = %s AND cerrada_en IS NULL",
         (int(sesion_id),),
     )
     if not row:
-        return 0
+        return (0, 0)
     payload = _payload_list(row)
-    n = 0
+    vivas = {firma_payload(d) for d in payload if not d.get("_borrado")}
+    n = ya = 0
     for d in payload:
-        if d.pop("_borrado", None):
-            n += 1
+        if not d.get("_borrado"):
+            continue
+        if firma_payload(d) in vivas:
+            ya += 1
+            continue
+        d.pop("_borrado", None)
+        n += 1
     if n:
         db.execute(
             "UPDATE scintela.banco_conciliacion_sesion "
             "   SET extracto_payload = %s::jsonb WHERE id = %s",
             (json.dumps(payload), int(sesion_id)),
         )
-    return n
+    return (n, ya)
+
+
+def firma_payload(d: dict) -> str:
+    """Firma fecha|documento|monto|tipo de una fila CRUDA del payload.
+
+    La misma que `firma_mov` y que el `data-sig` del template, pero sobre el
+    dict guardado (antes de pasarlo a MovBanco).
+    """
+    try:
+        monto = f"{float(d.get('monto') or 0):.2f}"
+    except (TypeError, ValueError):
+        monto = "0.00"
+    return (
+        f"{str(d.get('fecha') or '')[:10]}|{(d.get('documento') or '').strip().upper()}|"
+        f"{monto}|{(d.get('tipo') or '').strip().upper()[:1]}"
+    )
 
 
 # ─── Bucketización del resultado del matcher ──────────────────────────

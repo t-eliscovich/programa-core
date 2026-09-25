@@ -204,7 +204,11 @@
      (sesión persistente + 3 tabs + Terminar y guardar). El endpoint
      /conciliacion/hub POST queda como rollback de emergencia si algo
      falla — se accede sin pasar por la UI. #}
+  {# TMT 2026-09-25 (Alex: el extracto quedó dos veces en la sesión): un
+     segundo click mientras el server procesa mandaba el archivo OTRA vez.
+     Al primer envío se apagan los dos botones. #}
   <form method="POST" action="{{ url_for('conciliacion.banco_crear_sesion') }}" enctype="multipart/form-data"
+        onsubmit="if(this.dataset.enviado){return false;} this.dataset.enviado='1'; var s=event.submitter; this.querySelectorAll('button[type=submit]').forEach(function(b){b.disabled=true;}); if(s){s.textContent='Procesando…';} return true;"
         class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-5 space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
 

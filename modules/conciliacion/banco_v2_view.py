@@ -819,13 +819,18 @@ def banco_crear_sesion():
         )
         return redirect(url_for("conciliacion.hub"))
 
-    sesion_id, n_added, n_skipped = _sesion.crear_sesion(
-        no_banco=no_banco,
-        usuario=usuario,
-        movs=movs,
-        extracto_hash=None,  # ya no se usa para dedupe
-        extracto_nombre=f.filename,
-    )
+    try:
+        sesion_id, n_added, n_skipped = _sesion.crear_sesion(
+            no_banco=no_banco,
+            usuario=usuario,
+            movs=movs,
+            extracto_hash=None,  # ya no se usa para dedupe
+            extracto_nombre=f.filename,
+        )
+    except RuntimeError as e:
+        # TMT 2026-09-25: dos subidas a la vez — la segunda no pudo guardar.
+        flash(str(e), "warn")
+        return redirect(url_for("conciliacion.hub"))
 
     # TMT 2026-06-26 (dueña: el saldo objetivo tomaba un valor del medio del
     # día / de un día viejo). Capturamos el saldo REAL del extracto = saldo de
@@ -4227,9 +4232,16 @@ def banco_restaurar_extracto():
         url_for("conciliacion.banco_post_procesar", sesion_id=sesion_id)
         if sesion_id else url_for("conciliacion.banco_post_procesar")
     )
-    n = _sesion.restaurar_movs_extracto(sesion_id)
+    n, ya = _sesion.restaurar_movs_extracto(sesion_id)
+    # TMT 2026-09-25: las que ya estaban vivas (se volvió a subir el archivo)
+    # no se restauran — si no, quedaban dos veces.
+    _ya_txt = (f" {ya} no se restauraron porque ya estaban en la lista."
+               if ya else "")
     if n:
-        flash(f"{n} fila(s) del extracto restaurada(s).", "ok")
+        flash(f"{n} fila(s) del extracto restaurada(s).{_ya_txt}", "ok")
+    elif ya:
+        flash(f"No se restauró nada: las {ya} fila(s) borradas ya estaban "
+              "en la lista.", "warn")
     else:
         flash("No había filas borradas para restaurar.", "warn")
     return redirect(_back)
