@@ -227,9 +227,45 @@ def _warm_once() -> None:
         pass
 
 
+#: Último día (Ecuador) en que el servidor ya devengó los posdatados YY/RT.
+_devengo_hecho = None
+
+
+def devengar_posdatados_del_dia() -> bool:
+    """Devenga las provisiones YY/RT de hoy desde el SERVIDOR, sin esperar a
+    que alguien abra /posdat o el balance.
+
+    Tamara 2026-09-25: *"no debería depender de nosotros, debería estar más a
+    fondo en el sistema"*. Hasta hoy `persistir_acumulacion_yy` corría sólo al
+    abrir esas dos pantallas: la plata no se perdía (el motor pone al día
+    todos los días desde el baseline), pero un día que nadie las abría la
+    traza y la foto de la noche no la veían, y aparecía de golpe al día
+    siguiente — el último día del mes, en el mes equivocado.
+
+    Una vez por día (el motor es idempotente por fila y el UPDATE va con el
+    baseline leído, así que si otro lo corrió a la vez no se suma dos
+    veces). Si falla, reintenta en la vuelta siguiente. Nunca lanza.
+    """
+    global _devengo_hecho
+    try:
+        from filters import today_ec
+        from modules.posdat.queries import persistir_acumulacion_yy
+
+        hoy = today_ec()
+        if _devengo_hecho == hoy:
+            return False
+        persistir_acumulacion_yy(hoy)
+        _devengo_hecho = hoy
+        return True
+    except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
+        _LOG.warning("devengo posdatados del día falló: %s", e)
+        return False
+
+
 def _loop() -> None:
     time.sleep(5)  # dejar terminar el arranque de la app
     while True:
+        devengar_posdatados_del_dia()
         t0 = time.time()
         try:
             _warm_once()

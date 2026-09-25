@@ -71,10 +71,12 @@ def test_persist_acumula_cuota_por_dias_habiles(monkeypatch):
     )
     n = pq.persistir_acumulacion_yy(hoy=date(2026, 6, 10))
     assert n == 1
-    importe, baseline, id_ = updates[0]
+    importe, baseline, id_, baseline_leido = updates[0]
     assert importe == pytest.approx(-17300.0 + 7700.0 * 2)  # -1900
     assert baseline == date(2026, 6, 10)
     assert id_ == 132
+    # Candado (2026-09-25): sólo pisa si nadie devengó la fila en el medio.
+    assert baseline_leido == date(2026, 6, 8)
 
 
 def test_persist_rt_usa_cuota_hardcodeada_8400(monkeypatch):

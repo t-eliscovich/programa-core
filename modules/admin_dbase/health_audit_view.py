@@ -521,6 +521,31 @@ def ejecutar_foto_diaria() -> dict:
     except Exception as e:  # noqa: BLE001
         alerts.append(f"rollover/writeback iniciales falló: {e}")
 
+    # 1b) DEVENGO de las provisiones YY/RT del día (Tamara 2026-09-25): la
+    #     foto de la noche no puede depender de que alguien haya abierto
+    #     /posdat o el balance. Idempotente y con el baseline como candado.
+    try:
+        from modules.posdat.queries import persistir_acumulacion_yy
+        stats["devengo_yy_filas"] = persistir_acumulacion_yy()
+        congeladas = db.fetch_one(
+            """
+            SELECT COUNT(*) AS n
+              FROM scintela.posdat
+             WHERE UPPER(TRIM(prov)) IN ('YY', 'RT')
+               AND COALESCE(banc, 0) = 0
+               AND (anulada IS NOT TRUE OR anulada IS NULL)
+               AND baseline_date < (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date
+            """
+        )
+        n_cong = int((congeladas or {}).get("n") or 0)
+        if n_cong:
+            alerts.append(
+                f"POSDATADOS: {n_cong} provisiones YY/RT quedaron sin devengar hoy "
+                "después de correr el motor — revisar /admin/debug-yy."
+            )
+    except Exception as e:  # noqa: BLE001
+        alerts.append(f"devengo de posdatados YY/RT falló: {e}")
+
     # 2) FOTO DIARIA
     try:
         snap = crear_snapshot_diario()

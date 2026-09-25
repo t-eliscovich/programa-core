@@ -205,12 +205,18 @@ def persistir_acumulacion_yy(hoy: date | None = None) -> int:
         if devengado <= 0:
             continue
         nuevo = float(r["importe"] or 0) + devengado
-        db.execute(
+        # Tamara 2026-09-25 — el devengo ahora lo dispara TAMBIÉN el servidor
+        # (warmup + foto de la noche), no sólo quien abre /posdat o el balance.
+        # Con varios que pueden correrlo a la vez, el UPDATE sólo pisa si el
+        # baseline sigue siendo el que leímos: si otro ya devengó esa fila,
+        # rowcount=0 y no se suma dos veces (el doble cobro del 01/09/2026).
+        tocadas = db.execute(
             "UPDATE scintela.posdat SET importe = %s, baseline_date = %s "
-            "WHERE id_posdat = %s",
-            (round(nuevo, 2), hoy, r["id_posdat"]),
+            "WHERE id_posdat = %s AND baseline_date = %s",
+            (round(nuevo, 2), hoy, r["id_posdat"], r["baseline_date"]),
         )
-        n += 1
+        if tocadas:
+            n += 1
     return n
 
 # ---------------------------------------------------------------------------
