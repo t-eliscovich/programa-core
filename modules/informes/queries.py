@@ -662,11 +662,12 @@ def activos_totales() -> dict:
     # tipados quedan fuera, idéntico al legacy. `valor_calc` = valor en libros
     # prorrateado al día (NUNCA `inicial`). Excluye los soft-borrados (papelera).
     from modules.activos.queries import borrado_where_sql as _borr
+    from modules.activos.queries import coef_hoy_sql as _coef
     from modules.activos.queries import cuota_pendiente_sql as _pend
     row = db.fetch_one(
         f"""
         WITH coef AS (
-          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
+          SELECT {_coef()} AS c
         ),
         v AS (
           SELECT

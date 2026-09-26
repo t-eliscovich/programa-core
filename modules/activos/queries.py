@@ -186,6 +186,33 @@ def cuota_pendiente_sql(alias: str = "", hoy_sql: str = HOY_EC_SQL) -> str:
     )
 
 
+#: La hora de Ecuador en SQL (timestamp sin zona; la sesión corre en UTC).
+AHORA_EC_SQL = "(CURRENT_TIMESTAMP - INTERVAL '5 hours')::timestamp"
+
+
+def coef_hoy_sql(hoy_sql: str = HOY_EC_SQL, ahora_sql: str = AHORA_EC_SQL) -> str:
+    """Qué parte de la cuota del mes en curso ya corrió, en SQL.
+
+    Es `scintela.coef_amortizacion(hoy)` con UNA excepción, la del día 1:
+    Tamara 2026-09-26 (*"unifiquemos ambas"*) — la depreciación del día 1
+    entra JUNTO con la provisión del día 1, o sea recién cuando está la foto
+    de cierre del mes anterior (la tarea de las 06:00 EC deja
+    `snapshot_historia` en 'O' en `ejecuciones_tareas`) o, si esa tarea
+    falla, a las 12:00 EC. Hasta entonces el coeficiente es 0 y el valor en
+    libros queda en el del último día del mes (con la cuota pendiente de
+    `cuota_pendiente_sql`). Misma regla que
+    `modules.posdat.queries.cierre_del_mes_pendiente`.
+    """
+    return (
+        f"(CASE WHEN EXTRACT(DAY FROM {hoy_sql}) = 1"
+        f" AND {ahora_sql} < {hoy_sql} + INTERVAL '12 hours'"
+        f" AND NOT EXISTS (SELECT 1 FROM scintela.ejecuciones_tareas et"
+        f" WHERE et.tarea = 'snapshot_historia'"
+        f" AND et.periodo = to_char({hoy_sql}, 'YYYY-MM') AND et.estado = 'O')"
+        f" THEN 0 ELSE scintela.coef_amortizacion({hoy_sql}) END)"
+    )
+
+
 #: El mes de alta en Ecuador (año*100+mes), para `ult_mes_amortizado` al crear.
 MES_EC_SQL = ("(EXTRACT(YEAR FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours'))::int * 100"
               " + EXTRACT(MONTH FROM (CURRENT_TIMESTAMP - INTERVAL '5 hours'))::int)")
@@ -241,10 +268,11 @@ def buscar(
         orden_manual_select   = ""
         orden_manual_order_by = ""
     pend_a = cuota_pendiente_sql("a")        # mes que terminó, si falta sumarlo
+    coef_hoy = coef_hoy_sql()                # el día 1 espera la foto de cierre
     borrado_where = borrado_where_sql("a")   # excluye soft-borrados
     sql = f"""
         WITH coef AS (
-          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
+          SELECT {coef_hoy} AS c
         )
         SELECT a.id_activos,
                a.fecha,
@@ -350,7 +378,7 @@ def resumen() -> dict:
     row = db.fetch_one(
         """
         WITH coef AS (
-          SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
+          SELECT {coef} AS c
         )
         SELECT COUNT(*)                                            AS n,
                COALESCE(SUM(inicial), 0)                           AS inicial,
@@ -380,7 +408,8 @@ def resumen() -> dict:
                )                                                   AS n_vivos
         FROM scintela.activos
         WHERE TRUE {borrado}
-        """.format(borrado=borrado_where_sql(), pend=cuota_pendiente_sql())
+        """.format(borrado=borrado_where_sql(), pend=cuota_pendiente_sql(),
+                 coef=coef_hoy_sql())
     )
     if not row:
         return {

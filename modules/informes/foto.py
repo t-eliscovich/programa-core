@@ -326,12 +326,15 @@ def _det_activos(cual: str) -> list[dict]:
     tipos = ("M", "C", "K") if cual == "umaq" else ("I", "T")
     try:
         from modules.activos.queries import borrado_where_sql as _borr
+        from modules.activos.queries import coef_hoy_sql as _coef
         from modules.activos.queries import cuota_pendiente_sql as _pend
         borr = _borr()
         pend = _pend()
+        coef = _coef()
     except Exception:  # noqa: BLE001
         borr = ""
         pend = "0"
+        coef = "scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date)"
     return [
         {"doc_id": f"a{r['id_activos']}",
          "etiqueta": f"{(r.get('concepto') or '').strip()[:60]}",
@@ -339,7 +342,7 @@ def _det_activos(cual: str) -> list[dict]:
         for r in _rows(
             f"""
             WITH coef AS (
-              SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) AS c
+              SELECT {coef} AS c
             )
             SELECT id_activos, concepto,
                    GREATEST(COALESCE(inicial, 0)

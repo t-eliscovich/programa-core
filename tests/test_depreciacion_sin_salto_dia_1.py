@@ -52,3 +52,37 @@ def test_los_activos_nuevos_nacen_marcados_con_su_mes():
     src = inspect.getsource(aq)
     assert src.count("ult_mes_amortizado)") >= 2
     assert src.count('""" + MES_EC_SQL + """') == 2
+
+
+# ─── 26/09: la depreciación del día 1 entra junto con la provisión ──────────
+# Simulado en Postgres real con coef_amortizacion (mig 0221): 30/09 23:30,
+# 01/10 00:05, 03:00 y 06:00 (amortización hecha, falta la foto) dan el MISMO
+# valor; con la foto de cierre en 'O' baja cuota/31; si la tarea falló, baja
+# a las 12:00; el 02/10 baja otro día.
+
+def test_coef_del_dia_1_espera_la_foto_de_cierre_o_el_mediodia():
+    sql = aq.coef_hoy_sql("DATE '2026-10-01'", "TIMESTAMP '2026-10-01 03:00'")
+    assert "EXTRACT(DAY FROM DATE '2026-10-01') = 1" in sql
+    assert "TIMESTAMP '2026-10-01 03:00' < DATE '2026-10-01' + INTERVAL '12 hours'" in sql
+    assert "et.tarea = 'snapshot_historia'" in sql and "et.estado = 'O'" in sql
+    assert "to_char(DATE '2026-10-01', 'YYYY-MM')" in sql
+    assert "THEN 0 ELSE scintela.coef_amortizacion(DATE '2026-10-01') END" in sql
+
+
+def test_misma_regla_que_la_provision_del_dia_1():
+    from modules.posdat import queries as pq
+    src = inspect.getsource(pq.cierre_del_mes_pendiente)
+    assert "HORA_TOPE_CIERRE_EC" in src and pq.HORA_TOPE_CIERRE_EC == 12
+    assert "snapshot_historia" in src
+    assert "'12 hours'" in aq.coef_hoy_sql()
+
+
+def test_valor_en_libros_usa_el_coef_del_dia_1():
+    from modules.informes import foto
+    from modules.informes import queries as iq
+    assert "SELECT {_coef()} AS c" in inspect.getsource(iq)
+    assert "SELECT {coef} AS c" in inspect.getsource(foto)
+    src = inspect.getsource(aq)
+    assert "SELECT {coef_hoy} AS c" in src and "SELECT {coef} AS c" in src
+    # ninguna lectura del valor en libros quedó con el coef crudo
+    assert "SELECT scintela.coef_amortizacion((CURRENT_TIMESTAMP" not in src
