@@ -1715,11 +1715,47 @@ def _evaluar_espejos_huerfanos(filas: list[dict]) -> tuple[list[dict], dict]:
             "por_que": "el espejo NB=98 es la contrapartida del saldo a favor. "
                        "Sin su padre no compensa nada: el cliente figura con "
                        "plata a favor que no existe. Se anula por "
-                       "/cheques/<id>/anular-error-carga.",
+                       "/cheques/<id>/anular-error-carga. (El RESTO que deja "
+                       "un neteo no entra acá: es saldo a favor real y no se "
+                       "toca.)",
             "donde_mirar": sorted({str(f.get("codigo_cli") or "?") for f in filas}),
             "filas": filas,
         })
     return alerts, {"n_espejos_huerfanos": len(filas), "total_us": total}
+
+
+# El RESTO de un neteo NO es huérfano (TMT 26/09/2026, MMM y MSJ). Cuando los
+# anticipos suman más que los cheques, `netear_cheques_con_anticipos` crea un
+# espejo NB=98 "RESTO" con el sobrante y le pone de padre el PRIMER anticipo
+# neteado — que queda en X por ese mismo neteo, a propósito. El vigía lo leía
+# como "espejo vivo con padre muerto" y mandaba a anularlo: eso le borraba al
+# cliente un saldo a favor REAL. Se reconoce por el evento `neteo_estado_cuenta`
+# ACTIVO que lo nombra como `id_residuo` (no por el rótulo "RESTO"): si el
+# neteo se deshace, `deshacer_neteo` anula el RESTO; si quedara vivo igual, el
+# evento ya no está activo y el vigía vuelve a cantarlo.
+_SQL_ESPEJOS_HUERFANOS = """
+    SELECT e.id_cheque, e.fecha::text AS fecha, e.codigo_cli, e.importe,
+           e.stat, e.id_cheque_padre, p.stat AS stat_padre,
+           COALESCE(e.usuario_crea, '') AS usuario_crea
+      FROM scintela.cheque e
+      JOIN scintela.cheque p ON p.id_cheque = e.id_cheque_padre
+     WHERE e.no_banco IN (97, 98)
+       AND COALESCE(e.importe, 0) < 0
+       AND TRIM(COALESCE(e.stat, '')) IN ('Z','P','D','1','2','3')
+       AND TRIM(COALESCE(p.stat, '')) IN ('X','T','R')
+       AND NOT EXISTS (
+             SELECT 1 FROM scintela.mov_doble m
+              WHERE m.tipo = 'neteo_estado_cuenta'
+                AND m.estado = 'activo'
+                AND m.metadata ->> 'id_residuo' = e.id_cheque::text)
+     ORDER BY e.fecha, e.id_cheque
+     LIMIT 50
+"""
+
+
+def espejos_huerfanos_filas(conn=None) -> list[dict]:
+    """Los espejos vivos con el padre muerto (sin contar el RESTO de un neteo)."""
+    return db.fetch_all(_SQL_ESPEJOS_HUERFANOS, conn=conn) or []
 
 
 @bp.route("/espejo-huerfano", methods=["GET"])
@@ -1727,22 +1763,7 @@ def _evaluar_espejos_huerfanos(filas: list[dict]) -> tuple[list[dict], dict]:
 @requiere_permiso("usuarios.admin")
 def espejo_huerfano():
     """¿Quedó algún espejo de anticipo vivo con el padre muerto?"""
-    filas = db.fetch_all(
-        """
-        SELECT e.id_cheque, e.fecha::text AS fecha, e.codigo_cli, e.importe,
-               e.stat, e.id_cheque_padre, p.stat AS stat_padre,
-               COALESCE(e.usuario_crea, '') AS usuario_crea
-          FROM scintela.cheque e
-          JOIN scintela.cheque p ON p.id_cheque = e.id_cheque_padre
-         WHERE e.no_banco IN (97, 98)
-           AND COALESCE(e.importe, 0) < 0
-           AND TRIM(COALESCE(e.stat, '')) IN ('Z','P','D','1','2','3')
-           AND TRIM(COALESCE(p.stat, '')) IN ('X','T','R')
-         ORDER BY e.fecha, e.id_cheque
-         LIMIT 50
-        """,
-    ) or []
-    alerts, stats = _evaluar_espejos_huerfanos(filas)
+    alerts, stats = _evaluar_espejos_huerfanos(espejos_huerfanos_filas())
     return jsonify({"ok": not alerts, "alerts": alerts, "stats": stats})
 
 
