@@ -48,12 +48,28 @@
 
 <header class="appbar">{% block appbar %}{% endblock %}</header>
 
-<main>{% block content %}{% endblock %}</main>
+{# ⭐ LA CAMPANITA (dueña 28/09/2026: "poneles una campanita"). El primer día
+   cuatro de seis vendedores no vieron las sugerencias porque entraron directo
+   a Clientes o a Pedidos. Aparece en todas las pantallas —menos en el Inicio,
+   donde ya está la tarjeta— hasta que abre el Inicio ese día. El numerito en
+   la pestaña Inicio dice lo mismo desde abajo. #}
+{% set n_campanita = campanita_competencia() if campanita_competencia is defined else 0 %}
+{% set qp = ('?vend=' ~ vend) if preview else '' %}
+<main>
+{% if n_campanita and seccion != 'inicio' %}
+  <a class="campanita" href="{{ url_for('mi_cartera.inicio') }}{{ qp }}#competencia">
+    <span class="cp-i" aria-hidden="true">🔔</span>
+    <span class="cp-t"><b>{{ n_campanita }} sugerencia{{ '' if n_campanita == 1 else 's' }}</b> de la competencia para hoy</span>
+    <span class="cp-v">Ver →</span>
+  </a>
+{% endif %}
+{% block content %}{% endblock %}
+</main>
 
 <nav class="tabbar">
   {% set qp = ('?vend=' ~ vend) if preview else '' %}
   <a href="{{ url_for('mi_cartera.inicio') }}{{ qp }}"
-     class="{% if seccion == 'inicio' %}on{% endif %}"><em>◉</em>Inicio</a>
+     class="{% if seccion == 'inicio' %}on{% endif %}"><em>◉{% if n_campanita %}<i class="cp-n">{{ n_campanita }}</i>{% endif %}</em>Inicio</a>
   <a href="{{ url_for('mi_cartera.clientes') }}{{ qp }}"
      class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
   {# ⭐ La sexta pestaña, 27/08/2026 (dueña): SUS pedidos, con el dueño tal

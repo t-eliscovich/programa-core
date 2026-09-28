@@ -386,6 +386,18 @@ font-size:12px;color:var(--g)}
   {% endif %}
 </header>
 <main>
+{# La campanita de la competencia, también acá: es la pantalla a la que el
+   vendedor viene a mirar la carrera (ver mi_cartera/base.html). #}
+{% if (g.user or {}).get('vend') and campanita_competencia is defined %}
+  {% set n_campanita = campanita_competencia() %}
+  {% if n_campanita %}
+  <a href="/mi-cartera#competencia" style="display:flex;align-items:center;gap:8px;margin:0 0 12px;padding:10px 12px;border-radius:12px;background:#FFF7E6;border:1px solid #F5D9A6;color:inherit;text-decoration:none;font-size:13px">
+    <span aria-hidden="true" style="flex:0 0 auto;font-size:16px">🔔</span>
+    <span style="flex:1 1 auto;min-width:0"><b>{{ n_campanita }} sugerencia{{ '' if n_campanita == 1 else 's' }}</b> de la competencia para hoy</span>
+    <span style="flex:0 0 auto;font-weight:700;color:#9A5B00;white-space:nowrap">Ver →</span>
+  </a>
+  {% endif %}
+{% endif %}
 {% with mensajes = get_flashed_messages(with_categories=true) %}
   {% for categoria, texto in mensajes %}
     <div class="{{ 'error' if categoria == 'error' else 'nota' }}">{{ texto }}</div>

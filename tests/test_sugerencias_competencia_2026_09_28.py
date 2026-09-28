@@ -207,3 +207,41 @@ def test_el_nombre_en_uso_de_la_app():
     assert NOMBRES["mi_cartera.sugerencia_whatsapp"] == "WhatsApp de una sugerencia"
     # No es una impresión: se cuenta aparte, en su tabla.
     assert not es_papel("mi_cartera.sugerencia_whatsapp")
+
+
+# ── La campanita ────────────────────────────────────────────────────────────
+
+def test_campanita_en_clientes_y_numerito_en_inicio(vendedor, monkeypatch):
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(s, "pendientes", lambda vend, hoy: 5 if vend == "FL1" else 0)
+    html = vendedor.get("/mi-cartera/clientes").data.decode()
+    assert "5 sugerencias</b> de la competencia para hoy" in html
+    assert "/mi-cartera#competencia" in html
+    assert '<i class="cp-n">5</i>' in html
+
+
+def test_en_el_inicio_no_va_el_aviso_porque_ya_esta_la_tarjeta(vendedor, monkeypatch):
+    _inicio_vacio(monkeypatch)
+    monkeypatch.setattr(s, "del_dia", lambda vend, hoy: [])
+    monkeypatch.setattr(s, "pendientes", lambda vend, hoy: 5)
+    html = vendedor.get("/mi-cartera").data.decode()
+    assert 'class="campanita"' not in html
+
+
+def test_sin_pendientes_no_hay_campanita(vendedor, monkeypatch):
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
+    monkeypatch.setattr(s, "pendientes", lambda vend, hoy: 0)
+    html = vendedor.get("/mi-cartera/clientes").data.decode()
+    assert 'class="campanita"' not in html and "cp-n" not in html.split("</style>")[-1]
+
+
+def test_pendientes_se_apaga_cuando_abrio_el_inicio(monkeypatch):
+    import db
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: {"si": 1})
+    monkeypatch.setattr(s, "del_dia", lambda *a: [1, 2, 3, 4, 5])
+    assert s.pendientes("FL1", date(2026, 9, 29)) == 0
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: None)
+    assert s.pendientes("FL1", date(2026, 9, 29)) == 5
+    assert s.pendientes("", date(2026, 9, 29)) == 0
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: 1 / 0)
+    assert s.pendientes("FL1", date(2026, 9, 29)) == 0

@@ -38,7 +38,7 @@
   .sug .wa small,.sug .sin small{font-size:11px;color:var(--ink-3);white-space:nowrap}
   .sug .sin{flex:0 0 auto;text-align:center}
 </style>
-<div class="card sug-card">
+<div class="card sug-card" id="competencia">
   <div class="card-t">Competencia · {{ sugerencias|length }} sugerencia{{ '' if sugerencias|length == 1 else 's' }} para hoy</div>
   {% for s in sugerencias %}
   <div class="sug">

@@ -333,3 +333,32 @@ def anotar_whatsapp(vend: str, fecha: date, orden: int) -> None:
                   whatsapp_primero = COALESCE(whatsapp_primero, now())
             WHERE fecha = %s AND vend = %s AND orden = %s""",
         (fecha, vend, orden))
+
+
+def pendientes(vend: str, hoy: date) -> int:
+    """La CAMPANITA (dueña 28/09/2026: *"poneles una campanita"*).
+
+    El primer día, de seis vendedores sólo dos abrieron el Inicio: los otros
+    entraron directo a Clientes o a Pedidos y nunca vieron la tarjeta. La
+    campanita va en TODAS sus pantallas —Mi Cartera y Competencia— y dice
+    cuántas sugerencias hay hoy, hasta que abre el Inicio ese día (abrirlo es
+    verlas: la tarjeta está arriba de todo).
+
+    "Abrió el Inicio" sale de `uso_pantalla`, lo mismo que mide «Uso de la
+    app». Best-effort: si algo falla, 0 y no hay campanita.
+    """
+    vend = (vend or "").upper().strip()
+    if not vend:
+        return 0
+    try:
+        vio = db.fetch_one(
+            """SELECT 1 AS si FROM scintela.uso_pantalla
+                WHERE vend = %(v)s AND pantalla = 'mi_cartera.inicio'
+                  AND (ts AT TIME ZONE 'America/Guayaquil')::date = %(h)s
+                LIMIT 1""", {"v": vend, "h": hoy})
+        if vio:
+            return 0
+        return len(del_dia(vend, hoy))
+    except Exception:  # noqa: BLE001
+        _LOG.debug("campanita de %s", vend, exc_info=True)
+        return 0

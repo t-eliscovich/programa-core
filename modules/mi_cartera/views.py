@@ -118,6 +118,20 @@ def _anio_vs_meta(vend: str, hoy) -> dict:
     }
 
 
+@mi_cartera_bp.app_context_processor
+def _campanita_competencia():
+    """`campanita_competencia()` en los templates: cuántas sugerencias de hoy
+    le faltan ver al vendedor (ver `sugerencias.pendientes`). Va como FUNCIÓN,
+    igual que la campanita de la oficina: sólo toca la base en las pantallas
+    que la dibujan (Mi Cartera y la sección Competencia del vendedor)."""
+    def _n() -> int:
+        vend = vendedor_de(g.get("user"))
+        if not vend and tiene_permiso("*"):
+            vend = (request.args.get("vend") or "").strip().upper()
+        return sugerencias.pendientes(vend, today_ec()) if vend else 0
+    return {"campanita_competencia": _n}
+
+
 @mi_cartera_bp.route("/mi-cartera")
 @requiere_login
 @requiere_permiso("micartera.ver")
