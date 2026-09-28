@@ -473,3 +473,56 @@ def no_abiertos(vend: str, usuario: str, desde: date, hasta: date) -> list[dict]
         """,
         params,
     )
+
+
+#: Cuántos días después de la sugerencia una compra de esa tela y color se
+#: le atribuye.
+DIAS_PARA_COMPRAR = 14
+
+
+def sugerencias(desde: date, hasta: date) -> list[dict]:
+    """Las 5 sugerencias diarias de la competencia, por vendedor.
+
+    Dueña 28/09/2026: *"agrega para trackear en uso de la app esto"*. Qué se
+    mide, de izquierda a derecha, que es el embudo:
+
+    * **Días**: días con sugerencias armadas.
+    * **Las vio**: días en que además abrió el Inicio (las sugerencias están
+      arriba de todo, así que abrirlo es verlas).
+    * **WhatsApp**: sugerencias en las que apretó el botón al menos una vez.
+    * **Compraron**: sugerencias donde ese cliente compró esa tela en alguno
+      de los colores sugeridos dentro de los `DIAS_PARA_COMPRAR` días — con o
+      sin WhatsApp: el vendedor también puede llamar o pasar.
+    """
+    return db.fetch_all(
+        f"""
+        WITH s AS (
+            SELECT s.*,
+                   EXISTS (SELECT 1 FROM scintela.uso_pantalla u
+                            WHERE u.vend = s.vend AND u.pantalla = 'mi_cartera.inicio'
+                              AND ({_TS_USO})::date = s.fecha) AS vista,
+                   (SELECT COALESCE(SUM(v.kg), 0)
+                      FROM scintela.parado_venta v
+                      JOIN scintela.factura f ON f.numf = v.numf AND f.fecha = v.fecha
+                     WHERE v.cuenta AND v.kg > 0
+                       AND UPPER(TRIM(f.codigo_cli)) = UPPER(TRIM(s.codigo_cli))
+                       AND v.subcategoria = s.tela
+                       AND v.color IN (SELECT x->>'color'
+                                         FROM jsonb_array_elements(s.colores) x)
+                       AND v.fecha BETWEEN s.fecha
+                                       AND s.fecha + {DIAS_PARA_COMPRAR}) AS kg_comprado
+              FROM scintela.sugerencia_dia s
+             WHERE s.fecha BETWEEN %(d)s AND %(h)s
+        )
+        SELECT vend,
+               COUNT(DISTINCT fecha)                              AS dias,
+               COUNT(DISTINCT fecha) FILTER (WHERE vista)         AS dias_vistas,
+               COUNT(*)                                           AS sugerencias,
+               COUNT(*) FILTER (WHERE whatsapp IS NOT NULL)       AS con_celular,
+               COUNT(*) FILTER (WHERE whatsapp_veces > 0)         AS whatsapp,
+               COUNT(*) FILTER (WHERE kg_comprado > 0)            AS compraron,
+               COALESCE(SUM(kg_comprado), 0)                      AS kg_comprado
+          FROM s
+         GROUP BY vend
+         ORDER BY vend
+        """, {"d": desde, "h": hasta}) or []

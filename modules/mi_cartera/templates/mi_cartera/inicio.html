@@ -14,6 +14,53 @@
 
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
+
+{# ⭐ LAS 5 DE LA COMPETENCIA, arriba de todo (dueña 28/09/2026: "un anuncio
+   5 sugerencias para la competencia. esta tela en estos colores a x
+   persona"). Cambian una vez por día — ver `mi_cartera/sugerencias.py`.
+   Sin bajada: el título solo (dueña: "remove el 'tus clientes compran estas
+   telas'"). El código va EN LA LÍNEA del nombre, como la oficina nombra al
+   cliente ("código en la misma línea"). La marca "seg" es para el vendedor;
+   el mensaje de WhatsApp no la dice. #}
+{% if sugerencias %}
+<style>
+  .sug-card{border:2px solid rgba(37,165,95,.2)}
+  .sug{display:flex;gap:10px;align-items:center;padding:10px 0;border-top:1px solid var(--line,#EEF0F3)}
+  .card-t + .sug{border-top:0;padding-top:2px}
+  .sug .nm{flex:1 1 auto;min-width:0}
+  .sug .nm b{display:block;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug .tela{font-size:12.5px;font-weight:600;color:var(--ink-2);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sug .cols{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+  .sug .c{font-size:11.5px;background:#F2F4F7;border-radius:6px;padding:1px 6px;white-space:nowrap}
+  .sug .c.s{background:#FFF4E5;color:#9A5B00}
+  .sug .wa{flex:0 0 auto;display:flex;flex-direction:column;align-items:center;gap:2px;text-decoration:none}
+  .sug .wa .b{background:#25A55F;color:#fff;font-weight:700;font-size:12.5px;border-radius:10px;padding:8px 10px;white-space:nowrap}
+  .sug .wa small,.sug .sin small{font-size:11px;color:var(--ink-3);white-space:nowrap}
+  .sug .sin{flex:0 0 auto;text-align:center}
+</style>
+<div class="card sug-card">
+  <div class="card-t">Competencia · {{ sugerencias|length }} sugerencia{{ '' if sugerencias|length == 1 else 's' }} para hoy</div>
+  {% for s in sugerencias %}
+  <div class="sug">
+    <div class="nm">
+      <b>{{ s.codigo_cli }} · {{ s.nombre }}</b>
+      <div class="tela">{{ s.tela }}</div>
+      <div class="cols">
+        {% for c in s.colores %}<span class="c{{ ' s' if c.segunda }}">{{ c.color }}{{ ' seg' if c.segunda }} · {{ c.kg|num_es(0) }} kg</span>{% endfor %}
+      </div>
+    </div>
+    {% if s.link %}
+      <a class="wa" target="_blank" rel="noopener"
+         href="/mi-cartera/sugerencia/{{ hoy_iso }}/{{ s.orden }}/whatsapp{{ ('?vend=' ~ vend) if preview else '' }}">
+        <span class="b">WhatsApp</span><small>~{{ s.kg_posible|num_es(0) }} kg</small>
+      </a>
+    {% else %}
+      <div class="sin"><small>sin celular</small><br><small>~{{ s.kg_posible|num_es(0) }} kg</small></div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 <div class="seg">
   {% for p, rot in [('semana','Semana'), ('mes','Mes'), ('anio','Año')] %}
     <a href="?periodo={{ p }}{{ qv }}" class="{% if periodo == p %}on{% endif %}">{{ rot }}</a>

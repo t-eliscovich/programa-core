@@ -197,6 +197,7 @@ def lista():
     filas, top = [], []
     clientes, top_clientes = [], []
     intela, top_intela = [], []
+    sugerencias: list[dict] = []
     tarjetas: list[dict] = []
     try:
         if tab == "clientes":
@@ -210,6 +211,10 @@ def lista():
         else:
             filas = queries.resumen(desde, hasta)
             top = queries.pantallas(desde, hasta, ambito="vendedor")
+            try:
+                sugerencias = queries.sugerencias(desde, hasta)
+            except Exception as e:  # noqa: BLE001 — la tabla nace con la mig 0252
+                _LOG.warning("uso.sugerencias() falló: %s", e)
             tarjetas = _tarjetas_vendedores(filas)
     except Exception as e:  # noqa: BLE001 — la tabla puede no existir todavía
         _LOG.exception("uso.resumen() falló (tab=%s): %s", tab, e)
@@ -230,6 +235,7 @@ def lista():
         filas=filas, top=top,
         clientes=clientes, top_clientes=top_clientes,
         intela=intela, top_intela=top_intela,
+        sugerencias=sugerencias,
         error=error,
         desde=desde, hasta=hasta,
         dias=(hasta - desde).days + 1,

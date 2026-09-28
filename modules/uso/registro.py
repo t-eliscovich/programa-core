@@ -76,6 +76,7 @@ NOMBRES: dict[str, str] = {
     "mi_cartera.comision": "Su comisión",
     "mi_cartera.metas": "Metas de venta",
     "mi_cartera.prueba_envio": "Prueba de envío",
+    "mi_cartera.sugerencia_whatsapp": "WhatsApp de una sugerencia",
     "analisis.competencia": "Competencia",
     "analisis.mis_telas": "Telas paradas de sus clientes",
     "analisis.mis_telas_csv": "Telas paradas en Excel",

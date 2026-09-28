@@ -42,7 +42,7 @@ from modules.pedidos import service as pedidos_service
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
-from . import queries
+from . import queries, sugerencias
 
 mi_cartera_bp = Blueprint("mi_cartera", __name__, template_folder="templates")
 
@@ -178,6 +178,10 @@ def inicio():
     pend = queries.por_cobrar(vend)
     return render_template(
         "mi_cartera/inicio.html",
+        # Las 5 de la competencia: se arman una vez por día y se guardan
+        # (ver `sugerencias.py`). Si algo falla viene [] y no hay tarjeta.
+        sugerencias=sugerencias.del_dia(vend, hoy),
+        hoy_iso=hoy.isoformat(),
         periodo=periodo,
         etiqueta=etiqueta,
         vendido=vendido,
@@ -938,3 +942,46 @@ def pedidos_cancelar_memo():
         flash("No pude hablar con formulas_app — el memo NO se canceló. "
               "Probá de nuevo en un rato.", "error")
     return redirect(_url_mis_pedidos())
+
+
+@mi_cartera_bp.route("/mi-cartera/sugerencia/<fecha>/<int:orden>/whatsapp")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def sugerencia_whatsapp(fecha: str, orden: int):
+    """El botón WhatsApp de una sugerencia: anota el click y abre WhatsApp.
+
+    Dueña 28/09/2026: *"agrega para trackear en uso de la app esto"*. Pasa
+    por acá y no va directo a wa.me para poder contar quién apretó qué. Se
+    anota en la sugerencia (`whatsapp_veces`) y en `uso_pantalla`, así sale
+    también en «Uso de la app» junto con el resto de lo que hace el vendedor.
+
+    ⚠ El preview de la dueña (`?vend=`) NO se anota: los números son del
+    vendedor, igual que en el resto de «Uso de la app».
+    """
+    from modules.uso.registro import dispositivo_de
+
+    vend = _vend_actual()
+    try:
+        dia = date.fromisoformat(fecha)
+    except ValueError:
+        abort(404)
+    sug = sugerencias.una(vend, dia, orden)
+    if not sug or not sug.get("link"):
+        abort(404)
+    real = vendedor_de(g.get("user"))
+    if real:
+        try:
+            sugerencias.anotar_whatsapp(vend, dia, orden)
+            import db
+            db.execute(
+                """INSERT INTO scintela.uso_pantalla
+                       (usuario, vend, ruta, pantalla, codigo_cli, dispositivo, ip)
+                   VALUES (%s, %s, %s, %s, %s, %s, %s)""",
+                (((g.get("user") or {}).get("username") or "anon")[:40],
+                 real[:10], (request.path or "")[:200],
+                 "mi_cartera.sugerencia_whatsapp", (sug["codigo_cli"] or "")[:20],
+                 dispositivo_de(request.headers.get("User-Agent")),
+                 (request.remote_addr or "")[:45] or None))
+        except Exception:  # noqa: BLE001 — medir nunca frena el WhatsApp
+            pass
+    return redirect(sug["link"])

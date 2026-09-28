@@ -107,6 +107,46 @@
     ficha, sobre los que tiene asignados. <strong>Cambios</strong>: lo que
     guardó, sale de la bitácora. Las visitas se anotan desde el 26/08/2026 — antes no hay nada.
   </div>
+  {# ── Las 5 sugerencias de la competencia (dueña 28/09/2026: "agrega para
+     trackear en uso de la app esto"). Se lee como embudo: se armaron → las
+     vio → apretó WhatsApp → el cliente compró. #}
+  {% if sugerencias %}
+  <h2 class="mt-6 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Sugerencias de la competencia</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Vendedor</th>
+          <th class="px-3 py-2 text-right">Días</th>
+          <th class="px-3 py-2 text-right">Las vio</th>
+          <th class="px-3 py-2 text-right">Sugerencias</th>
+          <th class="px-3 py-2 text-right">WhatsApp</th>
+          <th class="px-3 py-2 text-right">Compraron</th>
+          <th class="px-3 py-2 text-right">Kg vendidos</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for s in sugerencias %}
+        <tr>
+          <td class="px-3 py-2 font-semibold text-slate-900 dark:text-slate-100">{{ s.vend }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.dias }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.dias_vistas }}<span class="text-slate-400"> días</span></td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.sugerencias }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.whatsapp }}<span class="text-slate-400"> de {{ s.con_celular }}</span></td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.compraron }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ s.kg_comprado | num_es(0) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="mt-3 text-xs text-slate-500">
+    <strong>Las vio</strong>: días que abrió el Inicio. <strong>WhatsApp</strong>:
+    sugerencias en las que apretó el botón, de las que tenían celular.
+    <strong>Compraron</strong>: el cliente compró esa tela en uno de los
+    colores sugeridos en los 14 días siguientes, con o sin WhatsApp.
+  </div>
+  {% endif %}
   {% set top_activo = top %}
   {% set etiqueta_top = 'Vendedores' %}
   {% endif %}
