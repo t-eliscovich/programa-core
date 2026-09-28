@@ -1867,8 +1867,44 @@ def causa_tarifa(fila: dict | None, anterior: dict | None) -> str:
         # Las dos fotos tienen desglose y ningún insumo se movió: el $/kg se
         # corrió porque cambió la mezcla de kilos (los de bodega van al
         # promedio, los que están en máquina a la apertura). No entró plata.
-        return "sin compras nuevas · kilos entre bodega y máquinas"
+        return TXT_MEZCLA
     return " y ".join(partes)
+
+
+# El $/kg del hilado se corrió sin que entrara plata: es la mezcla de kilos
+# (bodega al promedio, máquina a la apertura). No es una noticia propia.
+TXT_MEZCLA = "sin compras nuevas · kilos entre bodega y máquinas"
+
+
+def _unir_la_mezcla_al_stock(grupos: dict, causa: str) -> None:
+    """La revaluación "sin compras nuevas" va adentro del renglón del stock.
+
+    Tamara 28/09/2026, ventana de las 06:58: *"no me gusta este renglón,
+    acumulalo con el otro"*. Salían "hil. y tej. → term." −5.040 y abajo
+    "sin compras nuevas · kilos entre bodega y máquinas · cambió el $/kg de 3
+    etapas" −270. Si no entró plata, el $/kg se movió POR esos mismos kilos:
+    es un solo movimiento y va en un solo renglón. Con una causa de verdad
+    (importación, recargo, compra) la revaluación sigue aparte, con nombre.
+    """
+    if causa != TXT_MEZCLA:
+        return
+    tela = next((g for g in grupos.values()
+                 if g.get("regla") == "Stock" and not g.get("fundido")), None)
+    tarifa = next((g for g in grupos.values()
+                   if g.get("regla") == "Revaluación de stock"
+                   and not g.get("fundido") and not g.get("texto_unido")
+                   and g.get("pegado_a") is None), None)
+    if not tela or not tarifa:
+        return
+    tela["aporte"] = round(tela["aporte"] + tarifa["aporte"], 2)
+    for c, v in tarifa["por_col"].items():
+        tela["por_col"][c] = round(tela["por_col"].get(c, 0.0) + v, 2)
+    tela["bruto"] = max((abs(v) for v in tela["por_col"].values()), default=0.0)
+    tela["n"] += tarifa["n"]
+    # Si el stock ya pinta sus propios kilos, se lleva también el $/kg.
+    if tela.get("kg") is not None and tarifa.get("kg") is not None:
+        tela["d_ukg"] = tarifa.get("d_ukg")
+    tarifa["fundido"] = True
 
 
 def _lista_y(items: list[str]) -> str:
@@ -1985,6 +2021,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     _unir_anticipo_con_mercaderia(grupos, hasta, stock)
     _unir_conversion_del_anticipo(grupos)
     _partir_el_despacho(grupos, despachos, kilos, venta, d_ukg)
+    _unir_la_mezcla_al_stock(grupos, causa_tarifa)
     # La venta se explica sola: el renglón de las facturas se lleva el margen.
     _nota = _nota_del_margen(venta)
     if _nota:
