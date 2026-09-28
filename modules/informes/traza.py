@@ -1900,7 +1900,8 @@ def _unir_la_mezcla_al_stock(grupos: dict, causa: str) -> None:
     for c, v in tarifa["por_col"].items():
         tela["por_col"][c] = round(tela["por_col"].get(c, 0.0) + v, 2)
     tela["bruto"] = max((abs(v) for v in tela["por_col"].values()), default=0.0)
-    tela["n"] += tarifa["n"]
+    # `n` no se suma: con 2 el renglón se llamaría "2 movimientos de stock"
+    # y lo que tiene que decir es qué kilos se movieron.
     # Si el stock ya pinta sus propios kilos, se lleva también el $/kg.
     if tela.get("kg") is not None and tarifa.get("kg") is not None:
         tela["d_ukg"] = tarifa.get("d_ukg")

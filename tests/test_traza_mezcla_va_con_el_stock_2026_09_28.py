@@ -25,7 +25,7 @@ def test_sin_compras_nuevas_se_suma_al_stock():
     assert len(out) == 1
     assert out[0]["aporte"] == -5310.0
     assert out[0]["por_col"] == {"vsto": -5310.0}
-    assert "sin compras nuevas" not in out[0]["texto"]
+    assert out[0]["texto"] == "hil. y tej. → term."
 
 
 def test_con_causa_de_verdad_sigue_aparte():
