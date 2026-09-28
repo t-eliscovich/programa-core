@@ -351,14 +351,20 @@ def pendientes(vend: str, hoy: date) -> int:
     if not vend:
         return 0
     try:
-        vio = db.fetch_one(
-            """SELECT 1 AS si FROM scintela.uso_pantalla
-                WHERE vend = %(v)s AND pantalla = 'mi_cartera.inicio'
-                  AND (ts AT TIME ZONE 'America/Guayaquil')::date = %(h)s
-                LIMIT 1""", {"v": vend, "h": hoy})
-        if vio:
+        hay = del_dia(vend, hoy)
+        if not hay:
             return 0
-        return len(del_dia(vend, hoy))
+        # ⚠ Abrir el Inicio DESPUÉS de que se armaron: el 28/09 FL1, RMY y
+        # EDG lo habían abierto a la mañana, antes de que existieran, y con
+        # "lo abrió hoy" a secas la campanita no les salía nunca.
+        vio = db.fetch_one(
+            """SELECT 1 AS si FROM scintela.uso_pantalla u
+                WHERE u.vend = %(v)s AND u.pantalla = 'mi_cartera.inicio'
+                  AND u.ts >= (SELECT MIN(s.creado_en)
+                                 FROM scintela.sugerencia_dia s
+                                WHERE s.fecha = %(h)s AND s.vend = %(v)s)
+                LIMIT 1""", {"v": vend, "h": hoy})
+        return 0 if vio else len(hay)
     except Exception:  # noqa: BLE001
         _LOG.debug("campanita de %s", vend, exc_info=True)
         return 0

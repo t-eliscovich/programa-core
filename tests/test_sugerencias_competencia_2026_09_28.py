@@ -245,3 +245,18 @@ def test_pendientes_se_apaga_cuando_abrio_el_inicio(monkeypatch):
     assert s.pendientes("", date(2026, 9, 29)) == 0
     monkeypatch.setattr(db, "fetch_one", lambda *a, **k: 1 / 0)
     assert s.pendientes("FL1", date(2026, 9, 29)) == 0
+    # Sin sugerencias hoy, no hay campanita.
+    monkeypatch.setattr(db, "fetch_one", lambda *a, **k: None)
+    monkeypatch.setattr(s, "del_dia", lambda *a: [])
+    assert s.pendientes("FL1", date(2026, 9, 29)) == 0
+
+
+def test_la_campanita_cuenta_solo_lo_que_abrio_despues_de_armarlas(monkeypatch):
+    """El 28/09 FL1, RMY y EDG habían abierto el Inicio a la mañana, antes de
+    que existieran las sugerencias, y la campanita no les salía."""
+    import db
+    vistos = []
+    monkeypatch.setattr(db, "fetch_one", lambda sql, p=None, **k: vistos.append(sql))
+    monkeypatch.setattr(s, "del_dia", lambda *a: [1])
+    s.pendientes("FL1", date(2026, 9, 28))
+    assert "creado_en" in vistos[0]
