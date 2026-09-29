@@ -260,3 +260,39 @@ def test_la_campanita_cuenta_solo_lo_que_abrio_despues_de_armarlas(monkeypatch):
     monkeypatch.setattr(s, "del_dia", lambda *a: [1])
     s.pendientes("FL1", date(2026, 9, 28))
     assert "creado_en" in vistos[0]
+
+
+# ── Que cambie cada día (29/09/2026) ────────────────────────────────────────
+
+def _muchos():
+    return [{"codigo_cli": f"C{i}", "tela": t, "kg": 3000 - 100 * i}
+            for i, t in enumerate(["Microfibra", "Fleece 102", "Beltis"] * 4)]
+
+
+def test_un_cliente_que_salio_ayer_no_vuelve_si_hay_otros():
+    telas = {"Microfibra", "Fleece 102", "Beltis"}
+    ayer = s.elegir(_saldo(), [], _muchos(), telas)
+    rec = {o["codigo_cli"]: 1 for o in ayer}
+    hoy = s.elegir(_saldo(), [], _muchos(), telas, recientes=rec)
+    assert len(hoy) == 5
+    assert not ({o["codigo_cli"] for o in ayer} & {o["codigo_cli"] for o in hoy})
+
+
+def test_si_no_alcanzan_vuelve_primero_el_que_salio_hace_mas():
+    llam = [{"codigo_cli": c, "tela": "Microfibra", "kg": 900} for c in ("A", "B")]
+    llam += [{"codigo_cli": "C", "tela": "Fleece 102", "kg": 900}]
+    out = s.elegir(_saldo(), [], llam, {"Microfibra", "Fleece 102"},
+                   recientes={"A": 1, "B": 3})
+    assert [o["codigo_cli"] for o in sorted(out, key=lambda o: o["codigo_cli"])] == ["A", "B", "C"]
+    # Con lugar para dos: el nuevo (C) y el que salió hace más (B).
+    out = s.elegir(_saldo(), [], llam, {"Microfibra", "Fleece 102"}, cuantas=2,
+                   recientes={"A": 1, "B": 3})
+    assert {o["codigo_cli"] for o in out} == {"C", "B"}
+
+
+def test_hace_mas_de_tres_dias_ya_no_cuenta():
+    llam = [{"codigo_cli": "A", "tela": "Microfibra", "kg": 900},
+            {"codigo_cli": "B", "tela": "Fleece 102", "kg": 100}]
+    out = s.elegir(_saldo(), [], llam, {"Microfibra", "Fleece 102"}, cuantas=1,
+                   recientes={"A": 4})
+    assert [o["codigo_cli"] for o in out] == ["A"]

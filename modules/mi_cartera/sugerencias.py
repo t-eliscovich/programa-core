@@ -66,6 +66,8 @@ MESES_DE_COMPRA = 2
 #: Piso de lo que puede llevar, para que un cliente chico no quede en cero.
 KG_PISO = 10.0
 MAX_POR_TELA = 2
+#: Un cliente que salió no vuelve a salir por estos días (si hay otros).
+DIAS_SIN_REPETIR = 3
 
 _EMPRESA = re.compile(r"\b(S\.?A\.?S?|C(I|Í)A\.?|LTDA\.?|COMERCIAL\w*|EMPRESA|TEXTIL\w*)\b",
                       re.I)
@@ -77,7 +79,8 @@ def elegir(saldo: dict[str, list[dict]],
            compras: list[dict],
            llamados: list[dict],
            telas_que_vendio: set[str],
-           cuantas: int = CUANTAS) -> list[dict]:
+           cuantas: int = CUANTAS,
+           recientes: dict[str, int] | None = None) -> list[dict]:
     """Las `cuantas` sugerencias de un vendedor.
 
     - `saldo`: tela → [{color, nombre, kg, segunda}] de lo que hay hoy.
@@ -86,6 +89,9 @@ def elegir(saldo: dict[str, list[dict]],
     - `llamados`: [{codigo_cli, tela, kg}] lo que SUS clientes compraron de
       cada tela en el último año.
     - `telas_que_vendio`: las telas que el vendedor vendió en la carrera.
+    - `recientes`: cliente → hace cuántos días le salió por última vez. El
+      que salió en los últimos `DIAS_SIN_REPETIR` días va al final, y
+      entre ésos primero el que salió hace más.
     """
     pares: dict[tuple[str, str], dict] = {}
     for ll in llamados:
@@ -121,13 +127,26 @@ def elegir(saldo: dict[str, list[dict]],
             "vendio": p["tela"] in telas_que_vendio,
         })
 
+    # ⭐ QUE CAMBIE CADA DÍA (dueña 29/09/2026, "dale"). El 29/09 las 5 de
+    # SEP eran exactamente las del 28: sin ventas en el medio, la regla
+    # elegía lo mismo — cambiaba la fecha, no el contenido. El cliente que
+    # salió en los últimos días pasa al final de la fila; si no alcanzan los
+    # nuevos, vuelven primero los que salieron hace más tiempo.
+    recientes = {k.upper().strip(): v for k, v in (recientes or {}).items()}
+
+    def _reciente(c: dict) -> int:
+        dias = recientes.get(c["codigo_cli"].upper().strip())
+        return 0 if dias is None or dias > DIAS_SIN_REPETIR else DIAS_SIN_REPETIR + 1 - dias
+
     elegidas: list[dict] = []
     usados: set[str] = set()
     por_tela: dict[str, int] = {}
-    # Primero las telas que él vendió; recién después, el relleno.
-    for vuelta in (True, False):
-        for c in sorted((c for c in candidatas if c["vendio"] is vuelta),
-                        key=lambda c: (-c["kg_posible"], c["codigo_cli"], c["tela"])):
+    # Primero los clientes que no salieron hace poco; dentro de eso, primero
+    # las telas que él vendió y recién después el relleno.
+    for vuelta in ((0, True), (0, False), (1, True), (1, False)):
+        for c in sorted((c for c in candidatas
+                         if (_reciente(c) > 0) == bool(vuelta[0]) and c["vendio"] is vuelta[1]),
+                        key=lambda c: (_reciente(c), -c["kg_posible"], c["codigo_cli"], c["tela"])):
             if len(elegidas) >= cuantas:
                 break
             if c["codigo_cli"] in usados or por_tela.get(c["tela"], 0) >= MAX_POR_TELA:
@@ -260,9 +279,19 @@ def _fichas(codigos: list[str]) -> dict[str, dict]:
     return {f["codigo_cli"]: f for f in filas}
 
 
+def _recientes(vend: str, hoy: date) -> dict[str, int]:
+    """Cliente → hace cuántos días le salió a este vendedor por última vez."""
+    filas = db.fetch_all(
+        """SELECT UPPER(TRIM(codigo_cli)) AS codigo_cli, MAX(fecha) AS ultima
+             FROM scintela.sugerencia_dia
+            WHERE vend = %(v)s AND fecha < %(h)s AND fecha >= %(h)s - %(n)s
+            GROUP BY 1""", {"v": vend, "h": hoy, "n": DIAS_SIN_REPETIR}) or []
+    return {f["codigo_cli"]: (hoy - f["ultima"]).days for f in filas}
+
+
 def calcular(vend: str, hoy: date) -> list[dict]:
     elegidas = elegir(_saldo(), _compras(vend), _llamados(vend, hoy),
-                      _telas_que_vendio(vend))
+                      _telas_que_vendio(vend), recientes=_recientes(vend, hoy))
     fichas = _fichas([e["codigo_cli"] for e in elegidas])
     for e in elegidas:
         f = fichas.get(e["codigo_cli"].upper().strip(), {})
