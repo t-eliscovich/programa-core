@@ -505,7 +505,9 @@ def _alta(a: dict, usuario: str) -> bool:
     falta = "cupo" if a.get("desc") is not None else "cupo y descuento"
     avisar(
         fuente="clientes",
-        nivel="alerta",
+        # TMT 2026-09-29 (dueña): *"clientes nuevos avisa pero no tiene
+        # que ser para mirar, solo informativo"*. Nivel ok: no va a ⚠.
+        nivel="ok",
         titulo=f"Cliente nuevo {a['cod']} — cargarle {falta}",
         detalle=(a["nombre"] or "")[:150],
         # Directo a la pantalla de EDITAR, que es donde se carga el cupo —

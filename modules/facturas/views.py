@@ -2156,7 +2156,9 @@ def _resolver_cliente_asinfo(
             from modules.avisos.queries import avisar
             avisar(
                 fuente="clientes",
-                nivel="alerta",
+                # TMT 2026-09-29 (dueña): *"clientes nuevos avisa pero no tiene
+                # que ser para mirar, solo informativo"*. Nivel ok: no va a ⚠.
+                nivel="ok",
                 titulo=f"Cliente nuevo {nuevo} — cargarle cupo y descuento",
                 detalle=(nombre or "")[:150],
                 # Directo a EDITAR (ahí viven cupo y descuento) — misma

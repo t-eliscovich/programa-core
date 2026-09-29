@@ -172,14 +172,115 @@ def _detalle(c: dict) -> str:
             f"{_kg_txt(c['kg'])} kg{nota}")
 
 
+CLAVE = "desp-sin-factura:"
+
+
+def estado_de(numeros: list[str]) -> dict[str, dict]:
+    """{número de guía → {anulado, facturada, doc}} según Asinfo HOY.
+
+    `doc` es el primer documento vivo que consume la guía (factura o nota de
+    entrega, por el mismo join que usa /facturas/dia). `facturada` es el flag
+    de Asinfo O un documento encontrado: la NTEN-10942 del DES-000096897 vive
+    en el join aunque el flag diga otra cosa.
+
+    Lanza si Asinfo no contesta: el que llama decide (y no resuelve nada).
+    """
+    from modules._lib import metabase_client
+
+    nums = sorted({n.strip() for n in numeros
+                   if n and n.strip().replace("-", "").isalnum()})
+    if not nums:
+        return {}
+    en = ", ".join(f"'{n}'" for n in nums)
+    sql = f"""
+        SELECT dc.numero AS numero,
+               CASE WHEN dc.fecha_anulacion IS NULL THEN 0 ELSE 1 END AS anulado,
+               ISNULL(dc.indicador_generado_factura, 0) AS flag,
+               (SELECT TOP 1 fc.numero
+                  FROM detalle_despacho_cliente ddc
+                  JOIN detalle_factura_cliente dfc
+                    ON dfc.id_detalle_despacho_cliente = ddc.id_detalle_despacho_cliente
+                  JOIN factura_cliente fc
+                    ON fc.id_factura_cliente = dfc.id_factura_cliente
+                 WHERE ddc.id_despacho_cliente = dc.id_despacho_cliente
+                   AND fc.estado <> 0
+                 ORDER BY fc.numero) AS doc
+          FROM despacho_cliente dc
+         WHERE dc.numero IN ({en})
+    """
+    out = {}
+    for r in metabase_client.fetch_dataset(2, sql, max_results=500) or []:
+        num = str(r.get("numero") or "").strip()
+        if not num:
+            continue
+        doc = str(r.get("doc") or "").strip()
+        out[num] = {
+            "anulado": bool(int(r.get("anulado") or 0)),
+            "facturada": bool(int(r.get("flag") or 0)) or bool(doc),
+            "doc": doc,
+        }
+    return out
+
+
+def resolver_los_que_ya_tienen_factura() -> int:
+    """Da vuelta el aviso de cada despacho que YA tiene factura (o se anuló).
+
+    TMT 2026-09-29 (dueña, viendo DES-000098134 y DES-000096897 en ⚠ Para
+    mirar): *"estos despachos sin factura ya tienen factura. tiene que salir
+    de para mirar"*. El aviso se escribía una vez y nadie lo daba vuelta:
+    quedaba en alerta para siempre. Mismo mecanismo que los otros vigías
+    (`avisos.resolver`): pasa a ✅ con el número del documento.
+
+    Si Asinfo no contesta, no se toca nada — un despacho que no se pudo mirar
+    no está resuelto. Un número que Asinfo ya no tiene tampoco se toca.
+    """
+    from modules.avisos import queries as avisos
+
+    abiertos = avisos.abiertos_por_clave(CLAVE)
+    if not abiertos:
+        return 0
+    por_num = {}
+    for a in abiertos:
+        clave = str(a.get("clave") or "")
+        num = clave[len(CLAVE):].strip() if clave.startswith(CLAVE) else ""
+        if num:
+            por_num[num] = int(a["id_aviso"])
+    try:
+        estados = estado_de(list(por_num))
+    except Exception as e:  # noqa: BLE001 -- sin Asinfo no se resuelve nada
+        _LOG.warning("no pude mirar los despachos avisados: %s", e)
+        return 0
+    n = 0
+    for num, id_aviso in por_num.items():
+        e = estados.get(num)
+        if not e:
+            continue
+        if e["anulado"]:
+            titulo = f"{num} · se anuló en Asinfo, no lleva factura"
+        elif e["facturada"]:
+            titulo = (f"{num} · ya tiene factura {e['doc']}" if e["doc"]
+                      else f"{num} · ya tiene factura")
+        else:
+            continue
+        if avisos.resolver(id_aviso, titulo=titulo,
+                           detalle="Ya no hay nada que cargar."):
+            n += 1
+    return n
+
+
 def revisar_si_toca() -> dict:
     """A partir de las 08:00 EC, un aviso por cada despacho que amaneció sin
-    factura. Idempotente por número: cada uno se anuncia una sola vez."""
-    res = {"avisados": 0, "casos": 0, "motivo": ""}
+    factura. Idempotente por número: cada uno se anuncia una sola vez. Y en
+    cada vuelta, los ya avisados que se facturaron se dan vuelta a ✅."""
+    res = {"avisados": 0, "casos": 0, "motivo": "", "resueltos": 0}
     if os.environ.get("DESPACHO_SIN_FACTURA", "1").strip() == "0":
         res["motivo"] = "apagado"
         return res
     with _lock:
+        try:
+            res["resueltos"] = resolver_los_que_ya_tienen_factura()
+        except Exception as e:  # noqa: BLE001 -- nunca frena el aviso
+            _LOG.warning("resolver despachos falló: %s", e)
         if _ahora_ec().hour < _hora():
             res["motivo"] = f"todavía no son las {_hora()}"
             return res
@@ -209,7 +310,7 @@ def revisar_si_toca() -> dict:
                 # cuadre del día, que es donde se ve el despacho sin factura
                 # y donde se resuelve.
                 url=f"/facturas/dia?fecha={c['dia']}",
-                clave=f"desp-sin-factura:{c['numero']}",
+                clave=f"{CLAVE}{c['numero']}",
             ):
                 res["avisados"] += 1
     if res["avisados"]:

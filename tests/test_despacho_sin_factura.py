@@ -173,3 +173,80 @@ def test_medio_kilo_no_sale_como_cero():
     assert d._kg_txt(987.8) == "988"
     assert d._kg_txt(9.96) == "10,0"
     assert d._dia_es("raro") == "raro"
+
+
+# ── el aviso se da vuelta cuando el despacho ya tiene factura ───────────────
+# TMT 2026-09-29 (dueña): *"estos despachos sin factura ya tienen factura.
+# tiene que salir de para mirar"*. DES-000096897 tenía la NTEN-10942 y
+# DES-000098134 se había anulado el mismo día; los dos seguían en ⚠.
+
+ABIERTOS = [
+    {"id_aviso": 1, "clave": "desp-sin-factura:DES-000096897"},
+    {"id_aviso": 2, "clave": "desp-sin-factura:DES-000098134"},
+    {"id_aviso": 3, "clave": "desp-sin-factura:DES-000099999"},
+    {"id_aviso": 4, "clave": "desp-sin-factura:DES-000088888"},
+]
+ESTADOS = {
+    "DES-000096897": {"anulado": False, "facturada": True, "doc": "NTEN-10942"},
+    "DES-000098134": {"anulado": True, "facturada": False, "doc": ""},
+    "DES-000099999": {"anulado": False, "facturada": False, "doc": ""},
+    # DES-000088888: Asinfo no lo devuelve → no se toca
+}
+
+
+def _resolver(estados):
+    dados = []
+    with patch("modules.avisos.queries.abiertos_por_clave", return_value=ABIERTOS), \
+         patch.object(ds, "estado_de", side_effect=estados), \
+         patch("modules.avisos.queries.resolver",
+               side_effect=lambda i, **kw: dados.append((i, kw)) or True):
+        n = ds.resolver_los_que_ya_tienen_factura()
+    return n, dados
+
+
+def test_facturado_y_anulado_se_dan_vuelta():
+    n, dados = _resolver(lambda nums: ESTADOS)
+    assert n == 2
+    por_id = {i: kw["titulo"] for i, kw in dados}
+    assert por_id == {
+        1: "DES-000096897 · ya tiene factura NTEN-10942",
+        2: "DES-000098134 · se anuló en Asinfo, no lleva factura",
+    }
+
+
+def test_sin_asinfo_no_resuelve_nada():
+    def _cae(nums):
+        raise RuntimeError("metabase caído")
+    n, dados = _resolver(_cae)
+    assert n == 0 and dados == []
+
+
+def test_facturada_por_flag_sin_documento():
+    est = {"DES-000096897": {"anulado": False, "facturada": True, "doc": ""}}
+    n, dados = _resolver(lambda nums: est)
+    assert dados == [(1, {"titulo": "DES-000096897 · ya tiene factura",
+                          "detalle": "Ya no hay nada que cargar."})]
+
+
+def test_estado_de_lee_flag_y_documento():
+    filas = [
+        {"numero": "DES-1", "anulado": 0, "flag": 0, "doc": "NTEN-1"},
+        {"numero": "DES-2", "anulado": 1, "flag": 0, "doc": None},
+        {"numero": "DES-3", "anulado": 0, "flag": 1, "doc": None},
+        {"numero": "", "anulado": 0, "flag": 0, "doc": None},
+    ]
+    with patch("modules._lib.metabase_client.fetch_dataset", return_value=filas) as f:
+        out = ds.estado_de(["DES-1", "DES-2", "DES-3", "x'; drop"])
+    sql = f.call_args[0][1]
+    assert "'DES-1', 'DES-2', 'DES-3'" in sql and "drop" not in sql
+    assert out["DES-1"] == {"anulado": False, "facturada": True, "doc": "NTEN-1"}
+    assert out["DES-2"]["anulado"] is True
+    assert out["DES-3"]["facturada"] is True
+    assert ds.estado_de([]) == {}
+
+
+def test_revisar_resuelve_aunque_no_sean_las_8():
+    with patch.object(ds, "_ahora_ec", return_value=_a_las(6)), \
+         patch.object(ds, "resolver_los_que_ya_tienen_factura", return_value=2):
+        res = ds.revisar_si_toca()
+    assert res["resueltos"] == 2
