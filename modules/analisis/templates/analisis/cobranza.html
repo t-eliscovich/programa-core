@@ -1,0 +1,238 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Cobranza{% endblock %}
+{% block contenido %}
+{# ⭐ COBRANZA — sólo la dueña por ahora (30/09/2026: "hoy es para mí, después
+   vemos dónde va"). Todo sale de Programa Core, en vivo. La lógica y las
+   trampas están en modules/analisis/cobranza.py. #}
+<style>
+.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;
+padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
+.pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
+.p-rojo{color:#b3362a;background:#f7e3e0}.p-amar{color:#9a6400;background:#faefd8}
+.p-verde{color:#2a7547;background:#e1f1e7}
+.reglas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:10px 0}
+.regla{border-radius:10px;padding:14px 16px}
+.regla h3{margin:0 0 6px;font-size:15px;font-weight:600}
+.regla ul{margin:0;padding-left:18px}
+.regla li{margin:3px 0}
+.regla .cnt{margin-top:8px;font-size:13px;color:var(--g)}
+.r-rojo{background:#f7e3e0}.r-amar{background:#faefd8}.r-verde{background:#e1f1e7}
+.punt{display:inline-flex;align-items:center;gap:6px}
+.punt i{display:inline-block;width:50px;height:5px;border-radius:3px;background:#eef1f4;position:relative;overflow:hidden}
+.punt i b{position:absolute;left:0;top:0;bottom:0;background:#1f4f6e}
+.nom{display:block;font-size:12px;color:var(--g)}
+.mot{font-size:12.5px;color:var(--g);max-width:38ch}
+.sube{color:#b3362a;font-weight:600}.baja{color:#2a7547;font-weight:600}
+.filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:8px 0 10px}
+.filtros label{display:grid;gap:3px;font-size:12px;color:var(--g)}
+.filtros input,.filtros select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--l);border-radius:6px}
+.chip{font:inherit;font-size:13px;border:1px solid var(--l);background:#fff;border-radius:7px;padding:5px 11px;cursor:pointer}
+.chip[aria-pressed="true"]{border-color:#1f4f6e;background:#e3ecf3}
+#grafico svg{display:block;width:100%;height:auto}
+#grafico text{font-size:11px;fill:#6b7280}
+#grafico .ql{font-size:12px;font-weight:600;fill:#111827}
+#grafico .lab{font-size:11px;font-weight:700;fill:#111827}
+#grafico circle{stroke:#fff;stroke-width:1.5}
+</style>
+
+<div class="titulo-fila"><h2 style="margin-top:0">Cobranza</h2></div>
+<p class="sub">Quién paga, quién está atrasado y cómo viene cada cliente. Datos de
+Programa Core al {{ d.hoy.strftime('%d/%m/%Y') }}.</p>
+
+<div class="linea">
+  <span><span class="k">Cartera total</span><b>{{ d.cartera.total | num_es(0) }}</b>
+    <span class="mini">facturas {{ d.cartera.facturas | num_es(0) }} · cheques {{ d.cartera.cheques | num_es(0) }}</span></span>
+  <span><span class="k">Días de cartera</span><b>{{ d.cartera.dias or '—' }} días</b>
+    <span class="mini">cartera ÷ venta diaria de 90 días</span></span>
+  <span><span class="k">Concentración</span><b>{{ d.cartera.top10_pct }}%</b>
+    <span class="mini">en 10 clientes ({{ d.cartera.top10 | join(', ') }}…)</span></span>
+  <span><span class="k">Rebotados sin reemplazar</span><b>{{ d.cartera.rebotados | num_es(0) }}</b>
+    <span class="mini">{{ d.rebotes | selectattr('reb') | list | length }} clientes</span></span>
+</div>
+
+<h2>Qué es normal</h2>
+<p class="sub">Cómo se comportan todos los clientes con saldo. Los límites del
+semáforo salen de acá: se marca a quien se aparta de lo habitual.</p>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Medida</th><th class="n">La mitad</th><th class="n">3 de cada 4</th>
+<th class="n">9 de cada 10</th><th>Límite</th></tr></thead>
+<tbody>
+<tr><td>Factura impaga más antigua (días)</td>
+  {% for v in d.normal.edad %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
+  <td>Amarillo desde {{ d.limites.amar_dias }} · Rojo desde {{ d.limites.rojo_dias }}</td></tr>
+<tr><td>Deuda frente a su plazo habitual (veces)</td>
+  {% for v in d.normal.veces %}<td class="n">{{ v | num_es(2) if v is not none else '—' }}</td>{% endfor %}
+  <td>Amarillo desde {{ d.limites.veces | num_es(2) }}</td></tr>
+<tr><td>Cambio del plazo en el último mes (días)</td>
+  {% for v in d.normal.cambio %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
+  <td>Amarillo desde +{{ d.limites.empeoro }}</td></tr>
+<tr><td>Plazo habitual de pago (días)</td>
+  {% for v in d.normal.plazo %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
+  <td class="g">referencia de cada cliente</td></tr>
+</tbody></table></div>
+
+<h2>Semáforo</h2>
+<p class="sub">Basta una condición para quedar en ese color. Si cumple una de rojo y una de amarillo, queda en rojo.</p>
+<div class="reglas">
+  <div class="regla r-rojo"><h3>Rojo · actuar ahora</h3><ul>
+    <li>Factura impaga de más de {{ d.limites.rojo_dias }} días.</li>
+    <li>Cheque rebotado sin reemplazar hace más de {{ d.limites.rebote }} días.</li>
+    <li>Facturas impagas y ninguna compra en 90 días.</li></ul>
+    <div class="cnt"><b>{{ d.resumen.rojo.n }} clientes</b> · {{ d.resumen.rojo.saldo | num_es(0) }} · {{ d.resumen.rojo.pct }}% de la cartera</div></div>
+  <div class="regla r-amar"><h3>Amarillo · seguir de cerca</h3><ul>
+    <li>Factura impaga de más de {{ d.limites.amar_dias }} días.</li>
+    <li>Cheque rebotado reciente sin reemplazar.</li>
+    <li>Debe {{ ((d.limites.veces - 1) * 100) | round | int }}% más de lo que corresponde a su plazo habitual.</li>
+    <li>En el último mes pagó {{ d.limites.empeoro }} días o más, más lento que antes.</li></ul>
+    <div class="cnt"><b>{{ d.resumen.amar.n }} clientes</b> · {{ d.resumen.amar.saldo | num_es(0) }} · {{ d.resumen.amar.pct }}% de la cartera</div></div>
+  <div class="regla r-verde"><h3>Verde · normal</h3><ul>
+    <li>No cumple ninguna de las condiciones anteriores.</li></ul>
+    <div class="cnt"><b>{{ d.resumen.verde.n }} clientes</b> · {{ d.resumen.verde.saldo | num_es(0) }} · {{ d.resumen.verde.pct }}% de la cartera</div></div>
+</div>
+
+<h2>Cobrar primero</h2>
+<p class="sub">El puntaje (0 a 100) dice qué tan mal está cada cliente comparado con el resto:
+80 = peor que 8 de cada 10. Pesa la factura más antigua (45%), la deuda frente a su plazo
+habitual (35%) y si está pagando más lento (20%). Acá van los de puntaje 70 o más y saldo
+mayor a 20.000.</p>
+<div id="grafico"></div>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
+<tbody>
+{% for c in d.prioridad %}
+<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<td class="n">{{ c.saldo | num_es(0) }}</td>
+<td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
+<td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
+<td class="mot">{{ c.motivos[0] if c.motivos else '' }}</td></tr>
+{% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
+</tbody></table></div>
+
+<h2>Cada cliente contra sí mismo</h2>
+<p class="sub">Días desde la factura hasta que el dinero estuvo disponible, en los pagos
+recibidos cada mes. Toda la casa:
+{% for m in d.casa_meses %}<b>{{ m.mes }} {{ m.dias if m.dias is not none else '—' }} días</b>{{ ' · ' if not loop.last }}{% endfor %}.</p>
+<details class="plegable" open><summary>Los que más cambiaron (saldo mayor a 5.000)</summary>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}</th>{% endfor %}
+<th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
+<tbody>
+{% for c in d.contra_si %}
+<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+{% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
+<td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
+<td class="n">{{ c.saldo | num_es(0) }}</td></tr>
+{% endfor %}
+</tbody></table></div></details>
+
+<h2>Todos los clientes</h2>
+<div class="filtros">
+  <label>Buscar<input id="q" type="search" placeholder="Código o nombre"></label>
+  <label>Vendedor<select id="fv"><option value="">Todos</option>
+    {% for v in d.filas | map(attribute='vend') | unique | sort %}<option>{{ v }}</option>{% endfor %}</select></label>
+  <button class="chip" data-c="rojo" aria-pressed="false">Rojo</button>
+  <button class="chip" data-c="amar" aria-pressed="false">Amarillo</button>
+  <button class="chip" data-c="verde" aria-pressed="false">Verde</button>
+</div>
+<div class="caja larga"><table class="resumen" id="todos">
+<thead><tr><th>Semáforo</th><th class="n">Puntaje</th><th>Cliente</th><th>Vendedor</th>
+<th class="n">Saldo</th><th class="n">Factura más antigua</th><th class="n">Deuda / plazo</th>
+<th class="n">Tendencia</th><th>Motivo</th></tr></thead>
+<tbody>
+{% for c in d.filas %}
+<tr data-c="{{ c.color }}" data-v="{{ c.vend }}" data-q="{{ (c.cod ~ ' ' ~ c.nombre) | lower }}">
+<td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
+<td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
+<td><b>{{ c.cod }}</b>{% if c.stop == 'X' %} <span class="g">stop</span>{% endif %}<span class="nom">{{ c.nombre }}</span></td>
+<td>{{ c.vend }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
+<td class="n">{{ (c.edad_max ~ ' días') if (c.fac > 0 and c.edad_max is not none) else '—' }}</td>
+<td class="n">{{ c.veces | num_es(2) if c.veces is not none else '—' }}</td>
+<td class="n">{% if c.cambio is none %}—{% elif c.cambio > 0 %}<span class="sube">+{{ c.cambio }}</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }}</span>{% else %}0{% endif %}</td>
+<td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}</td></tr>
+{% endfor %}
+</tbody></table></div>
+<p class="sub" id="cnt"></p>
+
+<h2>Plazo por medio de pago</h2>
+<p class="sub">Pagos de los últimos 120 días. Entrega = cuándo se recibe; disponible = fecha del cheque.</p>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Medio</th><th class="n">Monto</th><th class="n">Entrega</th><th class="n">Disponible</th></tr></thead>
+<tbody>{% for m in d.medios %}<tr><td>{{ m.medio }}</td><td class="n">{{ m.plata | num_es(0) }}</td>
+<td class="n">{{ m.entrega }} días</td><td class="n">{{ m.disponible }} días</td></tr>{% endfor %}</tbody></table></div>
+
+<details class="plegable"><summary>Clientes que superan su cupo ({{ d.cupos | length }})</summary>
+<p class="sub">El semáforo no mira los cupos porque no están al día. Esta lista es para revisarlos.</p>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Cupo</th><th class="n">Saldo</th><th class="n">Excedente</th><th class="n">% del cupo</th></tr></thead>
+<tbody>{% for c in d.cupos %}<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<td class="n">{{ c.cupo | num_es(0) }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
+<td class="n">{{ (c.saldo - c.cupo) | num_es(0) }}</td><td class="n">{{ (c.uso_cupo * 100) | round | int }}%</td></tr>{% endfor %}</tbody></table></div>
+</details>
+
+<details class="plegable"><summary>Cheques rebotados ({{ d.rebotes | length }})</summary>
+<p class="sub">Pendiente = protestados sin reemplazar. Los rebotes se registran desde el 12/08/2026.</p>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Rebotes en el año</th><th class="n">Saldo</th></tr></thead>
+<tbody>{% for c in d.rebotes %}<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
+<td class="n">{{ c.reb | num_es(0) if c.reb else '—' }}</td>
+<td class="n">{{ (c.reb_dias ~ ' días') if (c.reb and c.reb_dias is not none) else '—' }}</td>
+<td class="n">{{ c.n_reb_hist or '—' }}</td><td class="n">{{ c.saldo | num_es(0) }}</td></tr>{% endfor %}</tbody></table></div>
+</details>
+
+<details class="plegable"><summary>Definiciones y limitaciones</summary>
+<ul class="sub">
+<li><b>Saldo:</b> facturas impagas más cheques por cobrar más cheques rebotados.</li>
+<li><b>Plazo habitual:</b> días promedio entre la factura y la disponibilidad del pago, sobre sus pagos de los últimos 6 meses (mínimo 2.000 pagados).</li>
+<li><b>Deuda / plazo:</b> días de compras pendientes de cobro (saldo ÷ compra diaria de 90 días) dividido su plazo habitual. 1,00 = debe lo normal para él.</li>
+<li><b>Tendencia:</b> plazo del último mes con pagos menos el promedio de los meses anteriores. Positivo = paga más lento.</li>
+<li>Los vínculos entre cobros y facturas existen desde el 14/05/2026, así que la historia es corta y crece cada mes. La foto diaria de la cartera por cliente se guarda desde el 30/09/2026.</li>
+<li>Se listan los clientes con saldo mayor a 1.000 y todos los que tienen cheques rebotados.</li>
+</ul></details>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function(){
+  // Filtros de "Todos los clientes"
+  const filas = [...document.querySelectorAll('#todos tbody tr')];
+  const col = new Set();
+  function filtrar(){
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    const v = document.getElementById('fv').value;
+    let n = 0;
+    filas.forEach(tr => {
+      const ok = (!col.size || col.has(tr.dataset.c)) && (!v || tr.dataset.v === v) && (!q || tr.dataset.q.includes(q));
+      tr.hidden = !ok; if (ok) n++;
+    });
+    document.getElementById('cnt').textContent = n + ' clientes.';
+  }
+  document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+    const c = b.dataset.c; col.has(c) ? col.delete(c) : col.add(c);
+    b.setAttribute('aria-pressed', col.has(c)); filtrar(); }));
+  ['q','fv'].forEach(id => document.getElementById(id).addEventListener('input', filtrar));
+  filtrar();
+
+  // Gráfico: puntaje (x) contra saldo (y, logarítmico)
+  const P = {{ d.filas | map(attribute='puntaje') | list | tojson }};
+  const S = {{ d.filas | map(attribute='saldo') | list | tojson }};
+  const C = {{ d.filas | map(attribute='color') | list | tojson }};
+  const K = {{ d.filas | map(attribute='cod') | list | tojson }};
+  const PRI = {{ d.prioridad[:8] | map(attribute='cod') | list | tojson }};
+  const W=760,H=340,m={l:62,r:14,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const y0=Math.log10(1000), y1=Math.log10(500000);
+  const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.log10(Math.max(v,1000))-y0)/(y1-y0)*ih;
+  const color={rojo:'#b3362a',amar:'#c98a0b',verde:'#2a7547'};
+  const fmt=n=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+  let g='';
+  [1000,5000,20000,100000,500000].forEach(v=>{g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#eef1f4"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end">${fmt(v)}</text>`;});
+  [0,20,40,60,80,100].forEach(s=>{g+=`<text x="${X(s)}" y="${H-m.b+16}" text-anchor="middle">${s}</text>`;});
+  g+=`<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">Puntaje de riesgo</text>`;
+  g+=`<rect x="${X(70)}" y="${m.t}" width="${X(100)-X(70)}" height="${Y(20000)-m.t}" fill="#f7e3e0" opacity=".6"/>`;
+  g+=`<text class="ql" x="${X(100)-6}" y="${m.t+14}" text-anchor="end">Cobrar primero</text>`;
+  const orden=P.map((_,i)=>i).sort((a,b)=>({verde:0,amar:1,rojo:2}[C[a]]-{verde:0,amar:1,rojo:2}[C[b]]));
+  orden.forEach(i=>{ if(S[i]<=0) return; g+=`<circle cx="${X(P[i])}" cy="${Y(S[i])}" r="${S[i]>=100000?6:4}" fill="${color[C[i]]}"><title>${K[i]} · saldo ${fmt(S[i])} · puntaje ${P[i]}</title></circle>`; });
+  PRI.forEach(k=>{const i=K.indexOf(k); if(i>=0) g+=`<text class="lab" x="${X(P[i])-8}" y="${Y(S[i])+4}" text-anchor="end">${k}</text>`;});
+  document.getElementById('grafico').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
+})();
+</script>
+{% endblock %}

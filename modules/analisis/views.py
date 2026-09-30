@@ -73,6 +73,15 @@ MENU = [
         "admin": True,
     },
     {
+        # ⭐ Sólo la dueña (30/09/2026: "hoy es para mí, después vemos dónde va").
+        "url": "/analisis/cobranza",
+        "titulo": "Cobranza",
+        "bajada": "Quién paga, quién está atrasado y cómo viene cada cliente "
+                  "contra sí mismo.",
+        "listo": True,
+        "admin": True,
+    },
+    {
         "url": "/analisis/clientes",
         "titulo": "Clientes",
         "bajada": "Quién se movió, quién dejó de comprar, quién se está enfriando.",
@@ -274,6 +283,19 @@ def entradas():
     entrando"*.
     """
     return render_template("analisis/entradas.html", **queries.entradas())
+
+
+@analisis_bp.route("/analisis/cobranza")
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cobranza():
+    """Análisis de cobranza: semáforo, puntaje, cada cliente contra sí mismo.
+
+    Tamara 30/09/2026. Por ahora sólo ella (wildcard): *"hoy es para mí,
+    después vemos dónde va"*. La lógica vive en `cobranza.py`.
+    """
+    from . import cobranza as _cob
+    return render_template("analisis/cobranza.html", d=_cob.datos())
 
 
 @analisis_bp.route("/analisis/vendidos.xlsx")
