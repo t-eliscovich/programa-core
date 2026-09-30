@@ -157,3 +157,21 @@ def test_ya_cargada_ignora_conversiones_deshechas():
     sus kg), no "otra parte"."""
     src = inspect.getsource(autobap._ya_cargada)
     assert "JOIN scintela.compra" in src and "'Y'" in src
+
+
+# ── 4. La tabla de compras usa la FACTURA, no la tarifa (retirada 17/09) ────
+
+def test_tabla_de_compras_local_cierra_con_ingresos():
+    """HY salía a $ 0 en 'Compras hilado': multiplicaba por una tarifa que ya
+    no existe. La plata tiene que ser la misma que la fila Ingresos."""
+    from modules.compras_locales import service as loc
+    from modules.importaciones import service as imp
+    filas = [_local(tarifa=None), _local(kg=500.0, importe_sugerido=None,
+                                         tarifa=None)]
+    with patch.object(imp, "importaciones_con_cruce", return_value=[]), \
+         patch.object(loc, "compras_locales_con_cruce", return_value=filas):
+        tabla = imp.compras_hilado_recibidas_mes(2026, 9)
+        ingresos = loc.hilado_local_recibido_mes(2026, 9)
+    assert round(tabla["total"]["importe"], 2) == round(3450.0 / 1.15, 2)
+    assert round(tabla["total"]["importe"], 2) == round(ingresos["us"], 2)
+    assert tabla["total"]["kg"] == ingresos["kg"] == 1500.0

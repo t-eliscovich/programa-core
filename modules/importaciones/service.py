@@ -785,8 +785,9 @@ def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         mes. kg = kg_map de Asinfo (MISMO que hilado_recibido_mes); $ =
         importe_programa contado UNA vez por (prov, nº, año) — igual que
         costo_hilado_recibido_mes (las partidas ---1/---2 comparten costo).
-      · Locales: compras_locales_con_cruce() recibidas en el mes; $ por tarifario
-        (kg × tarifa sin IVA), igual que hilado_local_recibido_mes.
+      · Locales: compras_locales_con_cruce() recibidas en el mes; $ = factura
+        de Asinfo sin IVA (importe_sugerido / 1,15), igual que
+        hilado_local_recibido_mes.
 
     Devuelve {"filas": [{prov,kg,importe,ukg}], "total": {kg,importe}} ordenado por
     $ desc. Fail-soft: {"filas": [], "total": {"kg":0,"importe":0}}.
@@ -834,10 +835,16 @@ def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         if not prov:
             continue
         kg = float(f.get("kg") or 0.0)
-        tar = f.get("tarifa")
         a = agg.setdefault(prov, {"kg": 0.0, "importe": 0.0})
         a["kg"] += kg
-        a["importe"] += (kg * float(tar)) if tar else 0.0
+        # TMT 2026-09-30 — la plata es la FACTURA de Asinfo sin IVA, la MISMA
+        # que suma hilado_local_recibido_mes en la fila Ingresos. Hasta hoy
+        # multiplicaba kg × tarifa, y el tarifario se retiró el 17/09: HY
+        # salía a $ 0 (22.254 kg de septiembre) y el TOTAL no cerraba con
+        # Ingresos por 70.434. Sin factura todavía: kg sin plata, igual que
+        # en Ingresos.
+        if f.get("importe_sugerido"):
+            a["importe"] += float(f["importe_sugerido"]) / _loc.IVA
     filas = [
         {"prov": p, "kg": v["kg"], "importe": v["importe"],
          "ukg": (v["importe"] / v["kg"] if v["kg"] else 0.0)}
