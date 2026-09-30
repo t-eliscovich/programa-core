@@ -3300,6 +3300,9 @@ def por_id(id_cheque: int) -> dict | None:
                -- del no_cheque). Card propio en detalle.
                c.doc_banco,
                c.nota_usuario,
+               -- TMT 2026-09-30: la bitácora, para el aviso "devuelto al
+               -- cliente → ND-…" de la ficha.
+               c.observacion,
                COALESCE(cli.nombre, '') AS cliente,
                cli.ruc, cli.telefono,
                -- TMT 2026-07-07: espejo de anticipo (NB=98 negativo o banco
@@ -3791,6 +3794,17 @@ STATS = {
 # La regla canónica: si la transición requiere data extra (fecha nueva,
 # proveedor endoso, motivo de rebote) → kind=WIZARD. Si es un cambio de
 # stat seco → kind=POST.
+
+#: La X de un cheque DEVUELTO (1/2/3): se le devuelve al cliente y la deuda
+#: pasa a una nota de débito en su cuenta. TMT 2026-09-30.
+_X_DEVOLVER_AL_CLIENTE = {
+    "stat_destino": "X",
+    "label": "Devolverle el cheque al cliente — la deuda pasa a una nota de débito",
+    "corto": "Devolver al cliente",
+    "kind": "WIZARD",
+    "endpoint": "cheques.devolver_al_cliente",
+}
+
 TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # TMT 2026-05-19 v8 — pedido dueña:
     #   1. Postergar fecha: kind='POSTERGAR' para que el template muestre
@@ -3905,12 +3919,11 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "endpoint": "cheques.postergar",
         },
         {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
-        {
-            "stat_destino": "X",
-            "label": "Anular (incobrable)",
-            "kind": "WIZARD",
-            "endpoint": "cheques.anular_error_carga",
-        },
+        # TMT 2026-09-30 (Andrés/Tamara): la X de un devuelto es DEVOLVERLE el
+        # cheque al cliente — la deuda pasa a una nota de débito en su cuenta
+        # (ver devolucion_cliente.py). Antes era "Anular (incobrable)", que
+        # reabría las facturas que pagaba (y podían ser viejísimas).
+        _X_DEVOLVER_AL_CLIENTE,
     ],
     "2": [
         {"stat_destino": "V", "label": "Protestado vuelto a depositar", "corto": "Re-depositar", "kind": "POST", "endpoint": "cheques.transicionar"},
@@ -3921,12 +3934,11 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
             "endpoint": "cheques.postergar",
         },
         {"stat_destino": "D", "label": "Pasar a Daniela", "kind": "POST", "endpoint": "cheques.transicionar"},
-        {
-            "stat_destino": "X",
-            "label": "Anular (incobrable)",
-            "kind": "WIZARD",
-            "endpoint": "cheques.anular_error_carga",
-        },
+        # TMT 2026-09-30 (Andrés/Tamara): la X de un devuelto es DEVOLVERLE el
+        # cheque al cliente — la deuda pasa a una nota de débito en su cuenta
+        # (ver devolucion_cliente.py). Antes era "Anular (incobrable)", que
+        # reabría las facturas que pagaba (y podían ser viejísimas).
+        _X_DEVOLVER_AL_CLIENTE,
     ],
     # D = Daniela.
     # TMT 2026-07-09 (dueña): agregar →B (depositar) — TRANSICIONES_VALIDAS['D']
@@ -3964,6 +3976,7 @@ TRANSICIONES_LEGALES: dict[str, list[dict]] = {
     # volver a depositar, como en el dBase.
     "3": [
         {"stat_destino": "V", "label": "Protestado vuelto a depositar", "corto": "Re-depositar", "kind": "POST", "endpoint": "cheques.transicionar"},
+        _X_DEVOLVER_AL_CLIENTE,
     ],
     "R": [],  # rebote terminal legacy
     "E": [],  # endosado — vive en /historial para reverso
@@ -5478,12 +5491,22 @@ def desaplicar_factura(
     _tx = _ctx.nullcontext(conn) if conn is not None else db.tx()
     with _tx as conn:
         ch = db.fetch_one(
-            "SELECT id_cheque, no_cheque, stat FROM scintela.cheque WHERE id_cheque = %s",
+            "SELECT id_cheque, no_cheque, stat, observacion "
+            "  FROM scintela.cheque WHERE id_cheque = %s",
             (id_cheque,),
             conn=conn,
         )
         if not ch:
             raise ValueError(f"Cheque {id_cheque} no existe.")
+        # TMT 2026-09-30: un cheque devuelto al cliente dejó su deuda en una
+        # nota de débito. Desaplicarlo (o moverlo) reabriría las facturas que
+        # pagaba y el cliente debería lo mismo dos veces.
+        if ((ch.get("stat") or "").strip().upper() == "X"
+                and "[DEV] devuelto al cliente" in (ch.get("observacion") or "")):
+            raise ValueError(
+                f"El cheque {ch.get('no_cheque') or id_cheque} se le devolvió al "
+                "cliente: su deuda está en la nota de débito. Si hay que "
+                "corregirlo, deshacé la devolución desde el Historial.")
 
         aplicaciones = (
             db.fetch_all(

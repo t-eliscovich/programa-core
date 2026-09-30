@@ -103,6 +103,7 @@ def totales_dia(fecha) -> dict:
               FROM scintela.factura
              WHERE fecha = %s
                AND COALESCE(stat, '') <> 'X'
+               AND COALESCE(tipo, '') <> 'ND'  -- nota de débito: no es venta
             """,
             (fecha,),
         ) or {}

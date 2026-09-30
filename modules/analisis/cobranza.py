@@ -101,6 +101,7 @@ ven AS (
   SELECT f.codigo_cli, SUM(f.importe) FILTER (WHERE f.importe > 0) AS venta90
     FROM scintela.factura f
    WHERE f.fecha > %(hoy)s::date - 90 AND COALESCE(f.stat,'') <> 'X'
+     AND COALESCE(f.tipo,'') <> 'ND'
      AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
    GROUP BY 1),
 pag AS (

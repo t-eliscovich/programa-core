@@ -389,6 +389,7 @@ def lista(*, anio: int | None = None, mes: int | None = None) -> list[dict]:
              WHERE f.fecha >= %(f_desde)s
                AND f.fecha < %(f_hasta)s
                AND (f.stat IS NULL OR f.stat <> 'X')
+               AND COALESCE(f.tipo, '') <> 'ND'  -- nota de débito: no es venta
                AND c.vend IS NOT NULL AND TRIM(c.vend) <> ''
              GROUP BY UPPER(TRIM(c.vend))
         )

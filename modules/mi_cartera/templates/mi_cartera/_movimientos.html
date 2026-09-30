@@ -113,7 +113,7 @@
                  hoja impresa) queda el número pelado, como estaba.
                  Una factura sin `numf` no se puede buscar en Asinfo, así que
                  tampoco se ofrece: un link que no sirve es peor que ninguno. #}
-              {% set _n = (f.numf_completo.split('-')[-1]|int) if f.numf_completo else f.numf %}
+              {% set _n = f | num_doc %}
               {% if factura_endpoint|default(none) and f.numf %}
                 {# ⭐ Va también el NÚMERO COMPLETO (26/08/2026). `numf` es el
                    número corto y NO identifica: se repite —2.064 números entre

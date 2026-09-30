@@ -11375,6 +11375,7 @@ def ventas_clientes_del_mes(anio: int | None = None, mes: int | None = None) -> 
          WHERE EXTRACT(YEAR  FROM f.fecha) = %s
            AND EXTRACT(MONTH FROM f.fecha) = %s
            AND COALESCE(f.stat, '') <> 'X'
+           AND COALESCE(f.tipo, '') <> 'ND'  -- nota de débito: no es venta
            AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY 1
          HAVING COALESCE(SUM(f.importe), 0) <> 0 OR COALESCE(SUM(f.kg), 0) <> 0
@@ -11447,6 +11448,7 @@ def ventas_por_dia(anio: int | None = None, mes: int | None = None) -> dict:
          WHERE EXTRACT(YEAR  FROM f.fecha) = %s
            AND EXTRACT(MONTH FROM f.fecha) = %s
            AND COALESCE(f.stat, '') <> 'X'
+           AND COALESCE(f.tipo, '') <> 'ND'  -- nota de débito: no es venta
            AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
          GROUP BY 1
         """,
@@ -13134,6 +13136,7 @@ def compras_resumen_cliente(codigo_cli: str) -> dict:
           FROM scintela.factura f
          WHERE UPPER(f.codigo_cli) = %s
            AND (f.stat IS NULL OR f.stat <> 'X')
+           AND COALESCE(f.tipo, '') <> 'ND'  -- nota de débito: no es venta
         """,
         (cod, cod),
     ) or {}

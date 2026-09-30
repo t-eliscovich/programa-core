@@ -3219,6 +3219,7 @@ _CASE_TIPO_UNIFICADO = """
       WHEN TRIM(COALESCE(tipo,'')) IN ('D','DE')  THEN 'D'
       WHEN TRIM(COALESCE(tipo,'')) = 'C'          THEN 'NC'
       WHEN TRIM(COALESCE(tipo,'')) = 'X'          THEN 'NCNT'
+      WHEN TRIM(COALESCE(tipo,'')) = 'ND'         THEN 'ND'
       -- El unico ambiguo: el importador viejo guardaba `tipo[:2]`, asi que
       -- NC_FINANCIERA y NCNT caian las dos en 'NC'. Las separa la mercaderia.
       WHEN TRIM(COALESCE(tipo,'')) = 'NC'

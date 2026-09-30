@@ -71,6 +71,8 @@ TIPOS_LABEL = {
     "factura_devolucion":       "Factura: devolución",
     "reverso_cheque_rebote":    "Reverso: cheque rebotado",
     "reverso_cheque_administrativo": "Reverso: cheque (admin)",
+    "cheque_devuelto_al_cliente": "Cheque devuelto al cliente → nota de débito",
+    "reverso_cheque_devuelto_al_cliente": "Reverso: cheque devuelto al cliente",
     "reverso_endoso_cheque":    "Reverso: endoso de cheque",
     "reverso_factura_anulada":  "Reverso: factura anulada",
     "reverso_compra_anulada":   "Reverso: compra anulada",

@@ -1129,6 +1129,11 @@ def _texto_del_hecho(ev: dict, md: dict, g: dict, quien: str) -> str | None:
         no, cli = _numero_en(g, "Cheque")
         txt = _unir("CH", f"#{no}" if no else "", cli or quien, "anulado")
         return txt + (" (error de carga)" if "error de carga" in concepto.lower() else "")
+    if tipo == "cheque_devuelto_al_cliente":
+        no, cli = _numero_en(g, "Cheque")
+        return _unir("CH", f"#{no or md.get('no_cheque') or ''}".rstrip("#"),
+                     md.get("codigo_cli") or cli or quien,
+                     "devuelto al cliente →", md.get("numero_nd") or "ND")
     if tipo == "reverso_cheque_aplicacion":
         no, cli = _numero_en(g, "Cheque")
         numf = _num_corto(md.get("numf")) or _numero_en(g, "Factura")[0]
@@ -1144,6 +1149,7 @@ ROTULO_JUNTADO_EXTRA = {
     "reverso_factura_anulada": "FA anuladas",
     "reverso_cheque_administrativo": "CH anulados",
     "reverso_cheque_aplicacion": "CH desaplicados",
+    "cheque_devuelto_al_cliente": "CH devueltos al cliente",
 }
 
 

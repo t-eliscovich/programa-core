@@ -447,6 +447,17 @@
     {% endif %}
   </dl>
 
+  {# TMT 2026-09-30: cheque devuelto que se le entregó al cliente — la deuda
+     vive ahora en una nota de débito de su cuenta. #}
+  {% if (ch.stat or '') | upper == 'X' and '[DEV] devuelto al cliente' in (ch.observacion or '') %}
+  {% set _nd = (ch.observacion or '').split('[DEV] devuelto al cliente → ')[-1].split(':')[0].split(' |')[0].strip() %}
+  <div class="rounded-md p-3 mb-6 text-sm" style="background:#f5f3ff;border:1px solid #ddd6fe;color:#4c1d95">
+    <strong>Devuelto al cliente.</strong> Lo que debía quedó en su cuenta como la
+    nota de débito <strong class="font-mono">{{ _nd }}</strong>
+    — <a class="underline" href="{{ url_for('informes.estado_cuenta', codigo_cli=ch.codigo_cli) }}">ver el estado de cuenta</a>.
+  </div>
+  {% endif %}
+
   {# Banner de postergación — sólo si está postergado o tiene historia de postergación #}
   {% if ch.fecha_postergacion or ch.fechad_original %}
   <div class="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md p-3 mb-6 flex items-start gap-3">
@@ -510,7 +521,10 @@
           <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ a.stat_f }}</td>
           {% if tiene_permiso('cheques.aplicar') %}
           <td class="px-3 py-2 text-right no-print">
-            {% if a.id_fact %}
+            {# TMT 2026-09-30: un cheque devuelto al cliente ya no se mueve ni se
+               desaplica — su deuda vive en la nota de débito; desaplicarlo
+               reabriría las facturas y el cliente debería dos veces. #}
+            {% if a.id_fact and (ch.stat or '') | upper != 'X' %}
             {# 🚨 TMT 2026-08-24 — "Mover" al lado de "Desaplicar", en la misma
                fila. Quien está mirando la aplicación equivocada tiene ahí las
                DOS salidas: sacarla, o mandarla a la factura que corresponde.

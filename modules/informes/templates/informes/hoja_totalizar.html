@@ -152,7 +152,7 @@
         <tr class="{{ 'primera' if i == 0 }} {{ 'fila-nc' if f.importe < 0 }}">
           {% if i == 0 %}
           <td class="fact mono" rowspan="{{ n }}">{{ f.fecha | fecha_es }}</td>
-          <td class="fact mono" rowspan="{{ n }}">{{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}{% if f.importe < 0 %} NC{% endif %}</td>
+          <td class="fact mono" rowspan="{{ n }}">{{ f | num_doc }}{% if f.importe < 0 %} NC{% endif %}</td>
           <td class="fact num imp" rowspan="{{ n }}">{{ f.importe | money_es }}</td>
           {% endif %}
           {% if i < ca | length %}

@@ -28,6 +28,10 @@ recortado.
     NC    NC financiera       — descuento/ajuste, NO mueve mercadería (kg = 0)
     NCNT  NCNT                — mercadería que vuelve, con numeración PROPIA
                                 (`NCNT-01095`)
+    ND    Nota de débito      — la crea Programa Core, NO viene de Asinfo:
+                                un cheque devuelto que se le entregó al
+                                cliente (`ND-2161`). Sin kilos y sin
+                                vencimiento; NO es venta (TMT 2026-09-30).
 
 `NC` y `NCNT` se llaman parecido y son cosas distintas: la financiera es plata
 pura (importes de centavos, kg 0); la NCNT es mercadería devuelta. `D` y `NCNT`
@@ -49,9 +53,14 @@ DEVOLUCION = "D"
 NTEN = "N"
 NC_FINANCIERA = "NC"
 NCNT = "NCNT"
+NOTA_DEBITO = "ND"
 
 # Orden en que se ofrecen en el combo.
-CODIGOS = (FACTURA, DEVOLUCION, NTEN, NC_FINANCIERA, NCNT)
+CODIGOS = (FACTURA, DEVOLUCION, NTEN, NC_FINANCIERA, NCNT, NOTA_DEBITO)
+
+#: Para sumar VENTAS: la nota de débito es plata que se debe, no mercadería
+#: vendida. Se pega en el WHERE de toda suma de "lo facturado".
+SQL_NO_ES_ND = "COALESCE(f.tipo, '') <> 'ND'"
 
 ETIQUETAS = {
     FACTURA: "Factura",
@@ -59,6 +68,7 @@ ETIQUETAS = {
     NTEN: "NTEN",
     NC_FINANCIERA: "NC financiera",
     NCNT: "NCNT",
+    NOTA_DEBITO: "Nota de débito",
 }
 
 # El color con el que la lista pinta cada letra.
@@ -68,6 +78,7 @@ COLORES = {
     NTEN: "text-sky-600",
     NC_FINANCIERA: "text-rose-600",
     NCNT: "text-rose-600",
+    NOTA_DEBITO: "text-violet-600",
 }
 
 # Cómo se llama cada uno en Asinfo (lo que devuelve asinfo.service).

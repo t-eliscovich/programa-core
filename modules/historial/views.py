@@ -1362,6 +1362,13 @@ _REVERSO_DISPATCH = {
         "cheques.deshacer_anulacion_error_carga",
         lambda r: {"id_mov_doble": r["id_mov_doble"]},
     ),
+    # Cheque devuelto que se le entregó al cliente (la deuda pasó a una nota
+    # de débito). TMT 2026-09-30. El wizard anula la ND y el cheque vuelve a
+    # devuelto; se niega si la ND ya tiene cobros.
+    "cheque_devuelto_al_cliente": (
+        "cheques.deshacer_devolucion_al_cliente",
+        lambda r: {"id_mov_doble": r["id_mov_doble"]},
+    ),
     # Cambio de estado de una factura (Z/A/T, por el selector de la fila).
     # TMT 2026-08-03 (dueña: *"totalicé mal y no me deja volver"*) — estos dos
     # estaban en _REVERSO_BLOQUEADO, mandándola al selector del estado de

@@ -4220,6 +4220,129 @@ def deshacer_anulacion_error_carga(id_mov_doble: int):
     )
 
 
+@cheques_bp.route("/cheques/<int:id_cheque>/devolver-al-cliente",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.transicionar")
+def devolver_al_cliente(id_cheque: int):
+    """Devolverle al cliente un cheque devuelto: la deuda pasa a una ND.
+
+    TMT 2026-09-30 (Andrés/Tamara). Ver modules/cheques/devolucion_cliente.py.
+    """
+    from . import devolucion_cliente as _dev
+
+    volver = url_for("cheques.detalle", id_cheque=id_cheque)
+    if request.method == "POST":
+        try:
+            res = _dev.devolver(
+                id_cheque,
+                usuario=(g.user or {}).get("username", "web"),
+                motivo=(request.form.get("motivo") or "").strip(),
+            )
+            from filters import money_es as _money_ok
+
+            flash(
+                f"Cheque {res['no_cheque']} devuelto al cliente. La deuda quedó "
+                f"en la cuenta de {res['codigo_cli']} como {res['numero_nd']} "
+                f"por $ {_money_ok(res['importe'])}.",
+                "ok",
+            )
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude devolver el cheque al cliente", e)
+        return redirect(volver)
+
+    try:
+        prev = _dev.vista_previa(id_cheque)
+    except ValueError:
+        abort(404)
+    if prev["error"]:
+        flash(prev["error"], "warn")
+        return redirect(volver)
+    ch = prev["cheque"]
+    from filters import money_es as _money
+
+    ap = prev["aplicaciones"]
+    detalle = {
+        "Cheque": (ch.get("no_cheque") or "").strip() or f"#{ch['id_cheque']}",
+        "Cliente": ch.get("codigo_cli") or "—",
+        "Importe": f"$ {_money(ch.get('importe'))}",
+        "Queda en la cuenta": (f"{prev['numero_nd']} — nota de débito por "
+                               f"$ {_money(ch.get('importe'))}, sin vencimiento"),
+        "Facturas que pagaba": (
+            ", ".join((a.get("numf_completo") or str(a.get("numf") or "s/n"))
+                      for a in ap)
+            + " — siguen pagas, no se reabren" if ap else "ninguna"),
+        "Banco": "no se toca (la nota de débito del protesto ya sacó la plata)",
+    }
+    return render_template(
+        "_confirmar_accion.html",
+        titulo=f"Devolverle el cheque {detalle['Cheque']} al cliente",
+        mensaje=(
+            "El cheque sale de la cartera (pasa a X) y lo que debía el cliente "
+            "queda como una nota de débito en su cuenta, que se cobra como "
+            "cualquier factura. Si la nota todavía no tiene cobros, se puede "
+            "deshacer."
+        ),
+        detalle_registro=detalle,
+        accion_url=url_for("cheques.devolver_al_cliente", id_cheque=id_cheque),
+        volver_url=volver,
+        motivo_requerido=True,
+        confirm_label="Devolver al cliente",
+        reversible=True,
+    )
+
+
+@cheques_bp.route("/cheques/devolucion-al-cliente/<int:id_mov_doble>/deshacer",
+                  methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("cheques.transicionar")
+def deshacer_devolucion_al_cliente(id_mov_doble: int):
+    """Vuelta atrás: anula la nota de débito y el cheque vuelve a devuelto."""
+    from . import devolucion_cliente as _dev
+
+    volver = request.values.get("next") or url_for("historial.lista")
+    if request.method == "POST":
+        try:
+            res = _dev.deshacer(
+                id_mov_doble, usuario=(g.user or {}).get("username", "web"))
+            flash(f"Listo: {res['numero_nd']} anulada y el cheque "
+                  f"{res['no_cheque']} volvió a {res['stat_restaurado']}.", "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:  # noqa: BLE001
+            flash_exc("No pude deshacer la devolución", e)
+        return redirect(request.form.get("next") or volver)
+
+    mv = db.fetch_one(
+        "SELECT tipo, metadata, importe FROM scintela.mov_doble "
+        " WHERE id_mov_doble = %s", (id_mov_doble,))
+    if not mv or mv.get("tipo") != _dev.TIPO_MOV:
+        abort(404)
+    meta = _dev._meta(mv)
+    from filters import money_es as _money
+
+    return render_template(
+        "_confirmar_accion.html",
+        titulo="Deshacer la devolución del cheque al cliente",
+        mensaje=("La nota de débito se anula y el cheque vuelve a la cartera "
+                 "como devuelto. Si la nota ya tiene cobros, no se deshace."),
+        detalle_registro={
+            "Cheque": meta.get("no_cheque") or "—",
+            "Cliente": meta.get("codigo_cli") or "—",
+            "Nota de débito": (f"{meta.get('numero_nd')} por "
+                               f"$ {_money(mv.get('importe'))}"),
+            "El cheque vuelve a": meta.get("stat_previo") or "—",
+        },
+        accion_url=url_for("cheques.deshacer_devolucion_al_cliente",
+                           id_mov_doble=id_mov_doble, next=volver),
+        volver_url=volver,
+        motivo_requerido=False,
+        confirm_label="Deshacer",
+    )
+
+
 @cheques_bp.route("/cheques/protesto/<int:id_mov_doble>/deshacer",
                   methods=["GET", "POST"])
 @requiere_login

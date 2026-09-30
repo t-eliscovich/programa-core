@@ -350,11 +350,32 @@ def _pdf_disponible() -> bool:
     return pdf_motor.disponible()
 
 
+
+def num_doc(f) -> object:
+    """El número de un documento del estado de cuenta, como se lee.
+
+    Una factura o NTEN se muestra por su número corto (`NTEN-10546` → 10546).
+    La nota de débito se muestra ENTERA (`ND-2161`): la hoja impresa no lleva
+    la columna Tipo, y "2161" solo se leería como una factura más. TMT
+    2026-09-30.
+    """
+    get = f.get if isinstance(f, dict) else (lambda k: getattr(f, k, None))
+    completo = (get("numf_completo") or "").strip()
+    if (str(get("tipo") or "").strip().upper() == "ND") and completo:
+        return completo
+    if completo:
+        try:
+            return int(completo.split("-")[-1])
+        except ValueError:
+            return completo
+    return get("numf")
+
 def register(app):
     app.jinja_env.globals["pdf_disponible"] = _pdf_disponible
     app.jinja_env.filters["wa_tel"] = wa_tel
     app.jinja_env.filters["telefonos"] = telefonos
     app.jinja_env.filters["num_es"] = num_es
+    app.jinja_env.filters["num_doc"] = num_doc
     app.jinja_env.filters["delta_es"] = delta_es
     app.jinja_env.filters["kg_es"] = kg_es
     app.jinja_env.filters["money_es"] = money_es

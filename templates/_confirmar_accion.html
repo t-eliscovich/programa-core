@@ -103,7 +103,11 @@ Variables:
       {% endif %}
 
       <p class="text-xs text-slate-500 mb-5">
+        {% if reversible|default(false) %}
+        Esta acción queda registrada en bitácora y <strong>se puede deshacer desde el Historial</strong>.
+        {% else %}
         Esta acción queda registrada en bitácora y <strong>no se puede deshacer automáticamente</strong>.
+        {% endif %}
       </p>
 
       <form method="post" action="{{ accion_url }}" class="space-y-4">

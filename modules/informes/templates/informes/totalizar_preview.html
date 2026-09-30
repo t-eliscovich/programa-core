@@ -140,7 +140,7 @@
         <tr class="{{ 'fila-nc' if f.importe < 0 }}">
           <td style="white-space:nowrap">{{ f.fecha | fecha_es }}</td>
           <td class="font-mono" style="font-size:11px; white-space:nowrap">
-            {{ (f.numf_completo.split('-')[-1] | int) if f.numf_completo else f.numf }}
+            {{ f | num_doc }}
             {% if f.importe < 0 %}<span style="color:#b45309; font-weight:600">NC</span>{% endif %}
           </td>
           <td class="num">{{ f.importe | money_es }}</td>
