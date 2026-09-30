@@ -38,46 +38,10 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 #grafico circle{stroke:#fff;stroke-width:1.5}
 </style>
 
-<div class="titulo-fila"><h2 style="margin-top:0">Cobranza</h2></div>
-<p class="sub">Quién paga, quién está atrasado y cómo viene cada cliente. Datos de
-Programa Core al {{ d.hoy.strftime('%d/%m/%Y') }}.</p>
-
-<div class="linea">
-  <span><span class="k">Cartera total</span><b>{{ d.cartera.total | num_es(0) }}</b>
-    <span class="mini">facturas {{ d.cartera.facturas | num_es(0) }} · cheques {{ d.cartera.cheques | num_es(0) }}</span></span>
-  <span><span class="k">Días de cartera</span><b>{{ d.cartera.dias or '—' }} días</b>
-    <span class="mini">cartera ÷ venta diaria de 90 días</span></span>
-  <span><span class="k">Concentración</span><b>{{ d.cartera.top10_pct }}%</b>
-    <span class="mini">en 10 clientes ({{ d.cartera.top10 | join(', ') }}…)</span></span>
-  <span><span class="k">Devueltos sin reemplazar</span><b>{{ d.cartera.rebotados | num_es(0) }}</b>
-    <span class="mini">{{ d.rebotes | selectattr('reb') | list | length }} clientes</span></span>
-</div>
-
-<h2>Qué es normal</h2>
-<p class="sub">Cómo se comportan todos los clientes con saldo. Cada número dice
-cuántos clientes lo superan: por ejemplo, 1 de cada 10 debe una factura de más de
-{{ d.normal.edad[2] if d.normal.edad[2] is not none else '—' }} días. Los límites del
-semáforo salen de acá: se marca a quien se aparta de lo habitual.</p>
-<div class="caja"><table class="resumen">
-<thead><tr><th>Medida</th><th class="n">La mitad</th><th class="n">1 de cada 4</th>
-<th class="n">1 de cada 10</th><th>Límite</th></tr></thead>
-<tbody>
-<tr><td>Factura impaga más antigua (días)</td>
-  {% for v in d.normal.edad %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
-  <td>Amarillo desde {{ d.limites.amar_dias }} · Rojo desde {{ d.limites.rojo_dias }}</td></tr>
-<tr><td>Deuda frente a su plazo habitual (veces)</td>
-  {% for v in d.normal.veces %}<td class="n">{{ v | num_es(2) if v is not none else '—' }}</td>{% endfor %}
-  <td>Amarillo desde {{ d.limites.veces | num_es(2) }}</td></tr>
-<tr><td>Cambio del plazo en el último mes (días)</td>
-  {% for v in d.normal.cambio %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
-  <td>Amarillo desde +{{ d.limites.empeoro }}</td></tr>
-<tr><td>Plazo habitual de pago (días)</td>
-  {% for v in d.normal.plazo %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
-  <td class="g">referencia de cada cliente</td></tr>
-</tbody></table></div>
-
-<h2>Semáforo</h2>
-<p class="sub">Basta una condición para quedar en ese color. Si cumple una de rojo y una de amarillo, queda en rojo.</p>
+{# Tamara 30/09: "deja en cobranza desde el semaforo. todo esto sacalo. muy
+   complicado" — se fueron la línea de cartera y Qué es normal. #}
+<h2 style="margin-top:0">Semáforo</h2>
+<p class="sub">Datos al {{ d.hoy.strftime('%d/%m/%Y') }}. Basta una condición para quedar en ese color. Si cumple una de rojo y una de amarillo, queda en rojo.</p>
 <div class="reglas">
   <div class="regla r-rojo"><h3>Rojo · actuar ahora</h3><ul>
     <li>Factura impaga de más de {{ d.limites.rojo_dias }} días.</li>
