@@ -282,6 +282,10 @@ ROLES: list[tuple[str, list[str]]] = [
             # /impersonate rechaza cualquier destino sin `vend` — verse como
             # un rol más alto sería escalada). Mig 0236.
             "vendedores.ver_como",
+            # TMT 2026-09-30 (dueña): *"habilita la cobranza a rol intela"* —
+            # /analisis/cobranza (semáforo de clientes). Permiso propio: no
+            # cuelga de analisis.ver, así Gerente no la recibe sin pedirla.
+            "analisis.cobranza",
             # TMT 2026-08-25 (dueña): *"poner esta competencia visible para
             # todos los usuarios INT también"*. La migración 0215 se lo dio a
             # INT en la base ese mismo día; acá faltaba (había quedado escrito

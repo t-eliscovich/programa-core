@@ -83,13 +83,27 @@ def test_puntaje_ordena_por_antiguedad():
     assert _uno(d, "VIE")["puntaje"] > _uno(d, "MED")["puntaje"] > _uno(d, "NUE")["puntaje"]
 
 
-def test_la_pantalla_es_solo_de_la_duena():
+def test_la_pantalla_tiene_permiso_propio():
     import inspect
 
     from modules.analisis import views
     src = inspect.getsource(views.cobranza)
-    assert 'requiere_permiso("usuarios.admin")' in src
+    assert 'requiere_permiso("analisis.cobranza")' in src
     assert all(m["url"] != "/analisis/cobranza" for m in views.MENU)
     from pathlib import Path
     base = (Path(__file__).resolve().parent.parent / "templates" / "base.html").read_text()
     assert 'href="/analisis/cobranza"' in base
+    assert "tiene_permiso('analisis.cobranza')" in base
+    from config.roles import ROLES
+    permisos = dict(ROLES)
+    assert "analisis.cobranza" in permisos["INT"]
+    assert "analisis.cobranza" not in permisos["Gerente"]
+
+
+def test_puntos_del_grafico_solo_con_saldo_y_con_motivo():
+    d = _armar([_cli("AAA", fac=5000, edad_max=160),
+                _cli("CER", fac=0, edad_max=None)])
+    ks = [p["k"] for p in d["puntos"]]
+    assert "AAA" in ks and "CER" not in ks
+    p = next(p for p in d["puntos"] if p["k"] == "AAA")
+    assert p["c"] == "rojo" and p["m"].startswith("Factura impaga")

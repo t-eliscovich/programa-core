@@ -356,6 +356,12 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
     return {
         "hoy": hoy,
         "filas": filas,
+        # Lo que dibuja el gráfico de "Cobrar primero" (sólo con saldo).
+        "puntos": [{"k": c["cod"], "n": c["nombre"], "v": c["vend"],
+                    "c": c["color"], "s": round(c["saldo"]),
+                    "p": c["puntaje"],
+                    "m": c["motivos"][0] if c["motivos"] else ""}
+                   for c in filas if c["saldo"] > 0],
         "resumen": resumen,
         "cartera": cartera,
         "normal": normal,

@@ -31,7 +31,11 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .filtros input,.filtros select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--l);border-radius:6px}
 .chip{font:inherit;font-size:13px;border:1px solid var(--l);background:#fff;border-radius:7px;padding:5px 11px;cursor:pointer}
 .chip[aria-pressed="true"]{border-color:#1f4f6e;background:#e3ecf3}
+#grafico{position:relative}
 #grafico svg{display:block;width:100%;height:auto}
+#grafico .tip{position:absolute;pointer-events:none;background:#111827;color:#fff;border-radius:7px;padding:7px 10px;font-size:12px;line-height:1.45;max-width:280px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:2}
+#grafico .tip b{font-size:13px}
+#grafico .tip .t2{color:#cbd5e1}
 #grafico text{font-size:11px;fill:#6b7280}
 #grafico .ql{font-size:12px;font-weight:600;fill:#111827}
 #grafico .lab{font-size:11px;font-weight:700;fill:#111827}
@@ -64,6 +68,14 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 80 = peor que 8 de cada 10. Pesa la factura más antigua (45%), la deuda frente a su plazo
 habitual (35%) y si está pagando más lento (20%). Acá van los de puntaje 70 o más y saldo
 mayor a 20.000.</p>
+<div class="filtros" id="filtros-grafico">
+  <label>Buscar cliente<input id="gq" type="search" placeholder="Código o nombre" list="gq-lista" autocomplete="off"></label>
+  <datalist id="gq-lista">{% for c in d.filas if c.saldo > 0 %}<option value="{{ c.cod }}">{{ c.nombre }}</option>{% endfor %}</datalist>
+  <button class="chip" data-c="rojo" aria-pressed="false">Rojo</button>
+  <button class="chip" data-c="amar" aria-pressed="false">Amarillo</button>
+  <button class="chip" data-c="verde" aria-pressed="false">Verde</button>
+  <span class="g" id="gcnt"></span>
+</div>
 <div id="grafico"></div>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
@@ -95,7 +107,7 @@ recibidos cada mes. Toda la casa:
 </tbody></table></div></details>
 
 <h2>Todos los clientes</h2>
-<div class="filtros">
+<div class="filtros" id="filtros-todos">
   <label>Buscar<input id="q" type="search" placeholder="Código o nombre"></label>
   <label>Vendedor<select id="fv"><option value="">Todos</option>
     {% for v in d.filas | map(attribute='vend') | unique | sort %}<option>{{ v }}</option>{% endfor %}</select></label>
@@ -175,33 +187,88 @@ recibidos cada mes. Toda la casa:
     });
     document.getElementById('cnt').textContent = n + ' clientes.';
   }
-  document.querySelectorAll('.chip').forEach(b => b.addEventListener('click', () => {
+  document.querySelectorAll('#filtros-todos .chip').forEach(b => b.addEventListener('click', () => {
     const c = b.dataset.c; col.has(c) ? col.delete(c) : col.add(c);
     b.setAttribute('aria-pressed', col.has(c)); filtrar(); }));
   ['q','fv'].forEach(id => document.getElementById(id).addEventListener('input', filtrar));
   filtrar();
 
-  // Gráfico: puntaje (x) contra saldo (y, logarítmico)
-  const P = {{ d.filas | map(attribute='puntaje') | list | tojson }};
-  const S = {{ d.filas | map(attribute='saldo') | list | tojson }};
-  const C = {{ d.filas | map(attribute='color') | list | tojson }};
-  const K = {{ d.filas | map(attribute='cod') | list | tojson }};
+  // Gráfico: puntaje (x) contra saldo (y, logarítmico).
+  // Tamara 30/09: el cliente aparece apenas se pasa el mouse (sin la demora
+  // del <title>), se puede buscar un cliente y filtrar por color.
+  const D = {{ d.puntos | tojson }};
   const PRI = {{ d.prioridad[:8] | map(attribute='cod') | list | tojson }};
   const W=760,H=340,m={l:62,r:14,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
   const y0=Math.log10(1000), y1=Math.log10(500000);
-  const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.log10(Math.max(v,1000))-y0)/(y1-y0)*ih;
+  const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.min(Math.log10(Math.max(v,1000)),y1)-y0)/(y1-y0)*ih;
   const color={rojo:'#b3362a',amar:'#c98a0b',verde:'#2a7547'};
+  const nomC={rojo:'Rojo',amar:'Amarillo',verde:'Verde'};
   const fmt=n=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
-  let g='';
-  [1000,5000,20000,100000,500000].forEach(v=>{g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#eef1f4"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end">${fmt(v)}</text>`;});
-  [0,20,40,60,80,100].forEach(s=>{g+=`<text x="${X(s)}" y="${H-m.b+16}" text-anchor="middle">${s}</text>`;});
-  g+=`<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">Puntaje de riesgo</text>`;
-  g+=`<rect x="${X(70)}" y="${m.t}" width="${X(100)-X(70)}" height="${Y(20000)-m.t}" fill="#f7e3e0" opacity=".6"/>`;
-  g+=`<text class="ql" x="${X(100)-6}" y="${m.t+14}" text-anchor="end">Cobrar primero</text>`;
-  const orden=P.map((_,i)=>i).sort((a,b)=>({verde:0,amar:1,rojo:2}[C[a]]-{verde:0,amar:1,rojo:2}[C[b]]));
-  orden.forEach(i=>{ if(S[i]<=0) return; g+=`<circle cx="${X(P[i])}" cy="${Y(S[i])}" r="${S[i]>=100000?6:4}" fill="${color[C[i]]}"><title>${K[i]} · saldo ${fmt(S[i])} · puntaje ${P[i]}</title></circle>`; });
-  PRI.forEach(k=>{const i=K.indexOf(k); if(i>=0) g+=`<text class="lab" x="${X(P[i])-8}" y="${Y(S[i])+4}" text-anchor="end">${k}</text>`;});
-  document.getElementById('grafico').innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
+  const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  D.forEach(p=>{p.x=X(p.p); p.y=Y(p.s); p.q=(p.k+' '+p.n).toLowerCase();});
+  const caja=document.getElementById('grafico');
+  const gcol=new Set();
+  let visibles=[];
+
+  function fondo(){
+    let g='';
+    [1000,5000,20000,100000,500000].forEach(v=>{g+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(v)}" y2="${Y(v)}" stroke="#eef1f4"/><text x="${m.l-6}" y="${Y(v)+4}" text-anchor="end">${fmt(v)}</text>`;});
+    [0,20,40,60,80,100].forEach(s=>{g+=`<text x="${X(s)}" y="${H-m.b+16}" text-anchor="middle">${s}</text>`;});
+    g+=`<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">Puntaje de riesgo</text>`;
+    g+=`<rect x="${X(70)}" y="${m.t}" width="${X(100)-X(70)}" height="${Y(20000)-m.t}" fill="#f7e3e0" opacity=".6"/>`;
+    g+=`<text class="ql" x="${X(100)-6}" y="${m.t+14}" text-anchor="end">Cobrar primero</text>`;
+    return g;
+  }
+  function tip(p){
+    return `<b>${esc(p.k)}</b> · ${esc(p.n)}<br><span class="t2">${esc(p.v)} · ${nomC[p.c]}</span><br>`+
+           `Saldo <b>${fmt(p.s)}</b> · Puntaje <b>${p.p}</b>`+(p.m?`<br><span class="t2">${esc(p.m)}</span>`:'');
+  }
+  function mostrarTip(p){
+    let t=caja.querySelector('.tip'); if(!t){t=document.createElement('div');t.className='tip';caja.appendChild(t);}
+    t.innerHTML=tip(p); t.hidden=false;
+    const r=caja.getBoundingClientRect(), k=r.width/W;
+    let x=p.x*k+12, y=p.y*k-t.offsetHeight-10;
+    if(x+t.offsetWidth>r.width) x=p.x*k-t.offsetWidth-12;
+    if(y<0) y=p.y*k+12;
+    t.style.left=x+'px'; t.style.top=y+'px';
+  }
+  function ocultarTip(){ const t=caja.querySelector('.tip'); if(t) t.hidden=true; }
+
+  function dibujar(){
+    const q=document.getElementById('gq').value.trim().toLowerCase();
+    visibles=D.filter(p=>!gcol.size||gcol.has(p.c));
+    const hit=q?visibles.filter(p=>p.q.includes(q)):[];
+    const marcados=new Set(hit);
+    const orden=[...visibles].sort((a,b)=>({verde:0,amar:1,rojo:2}[a.c]-{verde:0,amar:1,rojo:2}[b.c]));
+    let g=fondo();
+    orden.forEach(p=>{
+      const tenue=q&&!marcados.has(p);
+      g+=`<circle cx="${p.x}" cy="${p.y}" r="${p.s>=100000?6:4}" fill="${color[p.c]}"${tenue?' opacity=".12"':''}/>`;
+    });
+    hit.forEach(p=>{ g+=`<circle cx="${p.x}" cy="${p.y}" r="10" fill="none" stroke="#111827" stroke-width="2"/><text class="lab" x="${p.x-13}" y="${p.y+4}" text-anchor="end">${esc(p.k)}</text>`; });
+    if(!q) PRI.forEach(k=>{const p=visibles.find(x=>x.k===k); if(p) g+=`<text class="lab" x="${p.x-8}" y="${p.y+4}" text-anchor="end">${esc(k)}</text>`;});
+    const t=caja.querySelector('.tip');
+    caja.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
+    if(t) caja.appendChild(t);
+    document.getElementById('gcnt').textContent = q ? (hit.length ? hit.length+(hit.length===1?' cliente':' clientes') : 'Ningún cliente con saldo') : visibles.length+' clientes';
+    if(hit.length===1) mostrarTip(hit[0]); else ocultarTip();
+  }
+  caja.addEventListener('mousemove', e=>{
+    const svg=caja.querySelector('svg'); if(!svg) return;
+    const r=svg.getBoundingClientRect(), k=W/r.width;
+    const mx=(e.clientX-r.left)*k, my=(e.clientY-r.top)*k;
+    let mejor=null, dmin=14*14;
+    visibles.forEach(p=>{const d=(p.x-mx)**2+(p.y-my)**2; if(d<dmin){dmin=d;mejor=p;}});
+    caja.style.cursor=mejor?'pointer':'';
+    if(mejor) mostrarTip(mejor); else if(!document.getElementById('gq').value.trim()) ocultarTip();
+  });
+  caja.addEventListener('mouseleave', ()=>{ if(!document.getElementById('gq').value.trim()) ocultarTip(); });
+  document.querySelectorAll('#filtros-grafico .chip').forEach(b=>b.addEventListener('click',()=>{
+    const c=b.dataset.c; gcol.has(c)?gcol.delete(c):gcol.add(c);
+    b.setAttribute('aria-pressed',gcol.has(c)); dibujar(); }));
+  document.getElementById('gq').addEventListener('input', dibujar);
+  window.addEventListener('resize', ()=>{ const t=caja.querySelector('.tip'); if(t&&!t.hidden) dibujar(); });
+  dibujar();
 })();
 </script>
 {% endblock %}

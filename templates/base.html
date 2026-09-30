@@ -1522,8 +1522,8 @@
             {% endif %}
             {# TMT 2026-09-30 (dueña): el análisis de cobranza va acá y no en el
                menú de Análisis ("que no esté junto a la competencia… marea
-               todo"). Por ahora sólo ella. #}
-            {% if tiene_permiso('usuarios.admin') %}
+               todo"). La ven los `*` e INT (permiso analisis.cobranza, mig 0256). #}
+            {% if tiene_permiso('analisis.cobranza') %}
               <a href="/analisis/cobranza" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Cobranza de clientes</a>
             {% endif %}
 

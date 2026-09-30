@@ -278,12 +278,13 @@ def entradas():
 
 @analisis_bp.route("/analisis/cobranza")
 @requiere_login
-@requiere_permiso("usuarios.admin")
+@requiere_permiso("analisis.cobranza")
 def cobranza():
     """Análisis de cobranza: semáforo, puntaje, cada cliente contra sí mismo.
 
-    Tamara 30/09/2026. Por ahora sólo ella (wildcard): *"hoy es para mí,
-    después vemos dónde va"*. La lógica vive en `cobranza.py`.
+    Tamara 30/09/2026. La ven los roles con `*` y, desde el mismo día, INT
+    (*"habilita la cobranza a rol intela"*, mig 0256). La lógica vive en
+    `cobranza.py`.
     """
     from . import cobranza as _cob
     # Sin el menú de Análisis arriba (Tamara 30/09: "que no esté junto a
