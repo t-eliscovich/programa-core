@@ -49,16 +49,18 @@ Programa Core al {{ d.hoy.strftime('%d/%m/%Y') }}.</p>
     <span class="mini">cartera ÷ venta diaria de 90 días</span></span>
   <span><span class="k">Concentración</span><b>{{ d.cartera.top10_pct }}%</b>
     <span class="mini">en 10 clientes ({{ d.cartera.top10 | join(', ') }}…)</span></span>
-  <span><span class="k">Rebotados sin reemplazar</span><b>{{ d.cartera.rebotados | num_es(0) }}</b>
+  <span><span class="k">Devueltos sin reemplazar</span><b>{{ d.cartera.rebotados | num_es(0) }}</b>
     <span class="mini">{{ d.rebotes | selectattr('reb') | list | length }} clientes</span></span>
 </div>
 
 <h2>Qué es normal</h2>
-<p class="sub">Cómo se comportan todos los clientes con saldo. Los límites del
+<p class="sub">Cómo se comportan todos los clientes con saldo. Cada número dice
+cuántos clientes lo superan: por ejemplo, 1 de cada 10 debe una factura de más de
+{{ d.normal.edad[2] if d.normal.edad[2] is not none else '—' }} días. Los límites del
 semáforo salen de acá: se marca a quien se aparta de lo habitual.</p>
 <div class="caja"><table class="resumen">
-<thead><tr><th>Medida</th><th class="n">La mitad</th><th class="n">3 de cada 4</th>
-<th class="n">9 de cada 10</th><th>Límite</th></tr></thead>
+<thead><tr><th>Medida</th><th class="n">La mitad</th><th class="n">1 de cada 4</th>
+<th class="n">1 de cada 10</th><th>Límite</th></tr></thead>
 <tbody>
 <tr><td>Factura impaga más antigua (días)</td>
   {% for v in d.normal.edad %}<td class="n">{{ v if v is not none else '—' }}</td>{% endfor %}
@@ -79,12 +81,12 @@ semáforo salen de acá: se marca a quien se aparta de lo habitual.</p>
 <div class="reglas">
   <div class="regla r-rojo"><h3>Rojo · actuar ahora</h3><ul>
     <li>Factura impaga de más de {{ d.limites.rojo_dias }} días.</li>
-    <li>Cheque rebotado sin reemplazar hace más de {{ d.limites.rebote }} días.</li>
+    <li>Cheque devuelto sin reemplazar hace más de {{ d.limites.rebote }} días.</li>
     <li>Facturas impagas y ninguna compra en 90 días.</li></ul>
     <div class="cnt"><b>{{ d.resumen.rojo.n }} clientes</b> · {{ d.resumen.rojo.saldo | num_es(0) }} · {{ d.resumen.rojo.pct }}% de la cartera</div></div>
   <div class="regla r-amar"><h3>Amarillo · seguir de cerca</h3><ul>
     <li>Factura impaga de más de {{ d.limites.amar_dias }} días.</li>
-    <li>Cheque rebotado reciente sin reemplazar.</li>
+    <li>Cheque devuelto reciente sin reemplazar.</li>
     <li>Debe {{ ((d.limites.veces - 1) * 100) | round | int }}% más de lo que corresponde a su plazo habitual.</li>
     <li>En el último mes pagó {{ d.limites.empeoro }} días o más, más lento que antes.</li></ul>
     <div class="cnt"><b>{{ d.resumen.amar.n }} clientes</b> · {{ d.resumen.amar.saldo | num_es(0) }} · {{ d.resumen.amar.pct }}% de la cartera</div></div>
@@ -172,10 +174,10 @@ recibidos cada mes. Toda la casa:
 <td class="n">{{ (c.saldo - c.cupo) | num_es(0) }}</td><td class="n">{{ (c.uso_cupo * 100) | round | int }}%</td></tr>{% endfor %}</tbody></table></div>
 </details>
 
-<details class="plegable"><summary>Cheques rebotados ({{ d.rebotes | length }})</summary>
-<p class="sub">Pendiente = protestados sin reemplazar. Los rebotes se registran desde el 12/08/2026.</p>
+<details class="plegable"><summary>Cheques devueltos ({{ d.rebotes | length }})</summary>
+<p class="sub">Pendiente = devueltos sin reemplazar. Las devoluciones se registran desde el 12/08/2026.</p>
 <div class="caja"><table class="resumen">
-<thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Rebotes en el año</th><th class="n">Saldo</th></tr></thead>
+<thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Devueltos en el año</th><th class="n">Saldo</th></tr></thead>
 <tbody>{% for c in d.rebotes %}<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
 <td class="n">{{ c.reb | num_es(0) if c.reb else '—' }}</td>
 <td class="n">{{ (c.reb_dias ~ ' días') if (c.reb and c.reb_dias is not none) else '—' }}</td>
@@ -184,12 +186,12 @@ recibidos cada mes. Toda la casa:
 
 <details class="plegable"><summary>Definiciones y limitaciones</summary>
 <ul class="sub">
-<li><b>Saldo:</b> facturas impagas más cheques por cobrar más cheques rebotados.</li>
+<li><b>Saldo:</b> facturas impagas más cheques por cobrar más cheques devueltos.</li>
 <li><b>Plazo habitual:</b> días promedio entre la factura y la disponibilidad del pago, sobre sus pagos de los últimos 6 meses (mínimo 2.000 pagados).</li>
 <li><b>Deuda / plazo:</b> días de compras pendientes de cobro (saldo ÷ compra diaria de 90 días) dividido su plazo habitual. 1,00 = debe lo normal para él.</li>
 <li><b>Tendencia:</b> plazo del último mes con pagos menos el promedio de los meses anteriores. Positivo = paga más lento.</li>
 <li>Los vínculos entre cobros y facturas existen desde el 14/05/2026, así que la historia es corta y crece cada mes. La foto diaria de la cartera por cliente se guarda desde el 30/09/2026.</li>
-<li>Se listan los clientes con saldo mayor a 1.000 y todos los que tienen cheques rebotados.</li>
+<li>Se listan los clientes con saldo mayor a 1.000 y todos los que tienen cheques devueltos.</li>
 </ul></details>
 {% endblock %}
 

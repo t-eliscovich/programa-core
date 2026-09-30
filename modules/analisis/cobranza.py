@@ -11,7 +11,7 @@ transferencias).
 La pantalla tiene tres ideas:
 
 1. **Qué es normal** — los límites del semáforo salen de cómo se comportan
-   TODOS los clientes (la mitad, 3 de cada 4, 9 de cada 10), no de números
+   TODOS los clientes (la mitad, 1 de cada 4, 1 de cada 10 los superan), no de números
    inventados.
 2. **Semáforo** por reglas explicables (basta una condición).
 3. **Puntaje de riesgo** 0–100 que ordena qué tan mal está cada uno contra el
@@ -44,7 +44,7 @@ from filters import today_ec
 # ── Límites del semáforo (salen de "qué es normal", medido el 29/09/2026) ────
 ROJO_DIAS_FACTURA = 150        # ~5% de los clientes llega
 AMARILLO_DIAS_FACTURA = 100    # menos de 2 de cada 10
-AMARILLO_VECES_PLAZO = 1.25    # 3 de cada 4 deben hasta 1,2 veces lo suyo
+AMARILLO_VECES_PLAZO = 1.25    # 1 de cada 4 debe más de 1,2 veces lo suyo
 AMARILLO_EMPEORO_DIAS = 15     # 9 de cada 10 cambian menos de 16 días
 REBOTE_VIEJO_DIAS = 30
 SALDO_MINIMO = 1000            # debajo de esto no se lista (salvo rebotes)
@@ -210,7 +210,7 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
     if c["fac"] > 0 and edad is not None and edad >= ROJO_DIAS_FACTURA:
         rojo.append(f"Factura impaga de {edad} días")
     if c["reb"] > 0 and (c.get("reb_dias") or 0) > REBOTE_VIEJO_DIAS:
-        rojo.append("Cheque rebotado sin reemplazar hace más de "
+        rojo.append("Cheque devuelto sin reemplazar hace más de "
                     f"{REBOTE_VIEJO_DIAS} días")
     if c["venta90"] <= 0 and c["fac"] > 500:
         rojo.append("Tiene facturas impagas y no compró en 90 días")
@@ -219,7 +219,7 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
     if c["fac"] > 0 and edad is not None and edad >= AMARILLO_DIAS_FACTURA:
         amar.append(f"Factura impaga de {edad} días")
     if c["reb"] > 0:
-        amar.append("Cheque rebotado reciente sin reemplazar")
+        amar.append("Cheque devuelto reciente sin reemplazar")
     if c.get("veces") is not None and c["veces"] >= AMARILLO_VECES_PLAZO:
         amar.append(f"Debe {c['veces']:.2f} veces lo normal para él".replace(".", ","))
     if c.get("cambio") is not None and c["cambio"] >= AMARILLO_EMPEORO_DIAS:
