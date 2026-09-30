@@ -30,6 +30,16 @@ def _dia_comun(monkeypatch):
     monkeypatch.setattr(filters, "today_ec", lambda: date(2026, 9, 15))
 
 
+@pytest.fixture(autouse=True)
+def _sin_conexiones(monkeypatch):
+    """El script abre las conexiones de la base y de formulas_app; en los
+    tests no se abre nada de verdad."""
+    import db
+    from modules._lib import formulas_db
+    monkeypatch.setattr(db, "init_pool", lambda: None)
+    monkeypatch.setattr(formulas_db, "init_pool", lambda: None)
+
+
 def _importar_script():
     import importlib
 
@@ -96,3 +106,42 @@ def test_main_llama_ejecutar_foto_diaria_una_sola_vez(monkeypatch):
     monkeypatch.setattr(hav, "ejecutar_foto_diaria", _fake)
     mod.main()
     assert len(llamadas) == 1
+
+
+def test_main_abre_la_conexion_a_formulas_antes_de_la_foto(monkeypatch):
+    """Tamara 2026-09-30: el script corre sin la app y nadie abría la conexión
+    a formulas_app. Sin ella el Stock de Químicos caía al cálculo viejo, que no
+    resta el consumo: la foto de la noche ponía 689.100 cuando había 506.373
+    (+182.727 de utilidad inventada, justo la noche del cierre)."""
+    mod = _importar_script()
+    import db
+    import modules.admin_dbase.health_audit_view as hav
+    from modules._lib import formulas_db
+
+    orden = []
+    monkeypatch.setattr(db, "init_pool", lambda: orden.append("db"))
+    monkeypatch.setattr(formulas_db, "init_pool", lambda: orden.append("formulas"))
+
+    def _foto():
+        orden.append("foto")
+        return {"ok": True, "alerts": [], "stats": {"hoy": {}}}
+
+    monkeypatch.setattr(hav, "ejecutar_foto_diaria", _foto)
+    assert mod.main() == 0
+    assert orden == ["db", "formulas", "foto"]
+
+
+def test_si_una_conexion_no_abre_la_foto_igual_sale(monkeypatch):
+    mod = _importar_script()
+    import modules.admin_dbase.health_audit_view as hav
+    from modules._lib import formulas_db
+
+    def _explota():
+        raise RuntimeError("sin red")
+
+    monkeypatch.setattr(formulas_db, "init_pool", _explota)
+    monkeypatch.setattr(
+        hav, "ejecutar_foto_diaria",
+        lambda: {"ok": True, "alerts": [], "stats": {"hoy": {}}},
+    )
+    assert mod.main() == 0

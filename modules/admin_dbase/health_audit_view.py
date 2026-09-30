@@ -572,6 +572,8 @@ def ejecutar_foto_diaria() -> dict:
         alerts.append(f"Patrimonio de hoy <= 0 ({hoy_patr:,.0f}) — cálculo roto.")
     if hoy_ustock <= 0:
         alerts.append("Stock (USTOCK) de hoy en 0 — probable iniciales del mes sin cargar.")
+    for _av in snap.get("advertencias") or []:
+        alerts.append(f"FOTO: {_av}")
 
     # Comparar contra la foto DIARIA anterior (día previo con snapshot-diario)
     prev = db.fetch_one(

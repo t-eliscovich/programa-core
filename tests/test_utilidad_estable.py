@@ -135,3 +135,45 @@ def test_las_advertencias_del_balance_llegan_a_la_pantalla():
 
     html = Path("modules/informes/templates/informes/balance.html").read_text()
     assert "startswith('⚠ ASINFO')" in html
+
+
+def test_el_ultimo_bueno_de_quimicos_sale_de_la_traza_en_un_proceso_nuevo(monkeypatch):
+    """Tamara 2026-09-30: la foto de la noche es un proceso nuevo, sin el
+    último bueno en memoria, y caía a inicial + compras − tinto (sin tinto,
+    no resta consumo: 689.100 contra 506.373). Ahora lee la traza primero."""
+    import inspect
+
+    from modules.informes import queries as q
+
+    src = inspect.getsource(q.informe_balance)
+    assert src.index("_vqx_ultimo_bueno_guardado()") < src.index("vqx = _VQX_ULTIMO_BUENO")
+    assert "no hay un " in src
+
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: {"vqx": 506373.21})
+    assert q._vqx_ultimo_bueno_guardado() == 506373.21
+    monkeypatch.setattr(q.db, "fetch_one", lambda *a, **k: None)
+    assert q._vqx_ultimo_bueno_guardado() is None
+
+    def _explota(*a, **k):
+        raise RuntimeError("sin base")
+
+    monkeypatch.setattr(q.db, "fetch_one", _explota)
+    assert q._vqx_ultimo_bueno_guardado() is None
+
+
+def test_la_foto_diaria_avisa_si_los_quimicos_salieron_de_reserva(monkeypatch):
+    import modules.admin_dbase.health_audit_view as hav
+    from modules.informes import queries as q
+
+    aviso = "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos: se está usando el último valor bueno."
+    monkeypatch.setattr(q, "rollover_y_writeback_iniciales", lambda: {})
+    monkeypatch.setattr(q, "crear_snapshot_diario", lambda: {
+        "fecha": "2026-09-30", "patrimonio": 22_230_617.0, "ustock": 9_869_038.0,
+        "advertencias": [aviso],
+    })
+    import modules.posdat.queries as pq
+    monkeypatch.setattr(pq, "persistir_acumulacion_yy", lambda: 0)
+    monkeypatch.setattr(hav.db, "fetch_all", lambda *a, **k: [])
+    monkeypatch.setattr(hav.db, "fetch_one", lambda *a, **k: None)
+    out = hav.ejecutar_foto_diaria()
+    assert any(a == f"FOTO: {aviso}" for a in out["alerts"])

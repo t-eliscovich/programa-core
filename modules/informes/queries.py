@@ -4429,6 +4429,27 @@ def resultados_costos_tabla(
 _VQX_ULTIMO_BUENO: float | None = None
 
 
+def _vqx_ultimo_bueno_guardado() -> float | None:
+    """El último Stock de Químicos que vio la app, guardado en la traza.
+
+    Tamara 2026-09-30: `_VQX_ULTIMO_BUENO` vive en memoria, así que un
+    proceso nuevo (la foto de la noche, un reinicio) no lo tiene y bajaba al
+    cálculo viejo (inicial + compras Q − tinto), que sin tinto no resta el
+    consumo y sólo sube: 689.100 contra 506.373 reales. La traza guarda cada
+    5 minutos lo que la app mostró; se usa la última de las últimas 36 h.
+    """
+    try:
+        r = db.fetch_one(
+            "SELECT vqx FROM scintela.traza_utilidad "
+            " WHERE vqx > 0 AND creado_en >= now() - interval '36 hours' "
+            " ORDER BY creado_en DESC, id_traza DESC LIMIT 1"
+        )
+    except Exception:  # noqa: BLE001 -- fail-soft
+        return None
+    v = float((r or {}).get("vqx") or 0)
+    return v if v > 0 else None
+
+
 def informe_balance(comp_mes_override: dict | None = None) -> dict:
     """Arma el BALANCE equivalente al del INFORMES.PRG screen.
 
@@ -5443,11 +5464,23 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
                 vqx = _vqx_col   # fallback: colorante físico
     except Exception:  # noqa: BLE001 -- fail-soft, deja el VQX vivo
         pass
+    if not _vqx_bueno and not _VQX_ULTIMO_BUENO:
+        # Proceso nuevo sin último bueno en memoria: antes de caer al cálculo
+        # viejo (que sin tinto no resta el consumo), el último de la traza.
+        _vqx_guardado = _vqx_ultimo_bueno_guardado()
+        if _vqx_guardado:
+            _VQX_ULTIMO_BUENO = _vqx_guardado
     if not _vqx_bueno and _VQX_ULTIMO_BUENO:
         vqx = _VQX_ULTIMO_BUENO
         _quim_aviso = (
             "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos: se está "
             "usando el último valor bueno. El número es de hace unos minutos."
+        )
+    elif not _vqx_bueno:
+        _quim_aviso = (
+            "⚠ ASINFO/FÓRMULAS no contestó el stock de químicos y no hay un "
+            "valor bueno guardado: se usa inicial + compras − tinto, que NO "
+            "resta el consumo. El número de químicos está alto."
         )
     else:
         _quim_aviso = ""
@@ -10648,6 +10681,13 @@ def crear_snapshot_diario(usuario: str = "snapshot-diario", fecha=None) -> dict:
         "ustock": row["ustock"],
         "cart": row["cart"],
         "usuti": row["usuti"],
+        "uqui": row["uqui"],
+        # Tamara 2026-09-30: que la foto cuente si algún número salió de un
+        # camino de reserva (químicos sin formulas_app), para que el cron avise.
+        "advertencias": [
+            a for a in ((bal.get("diagnostico") or {}).get("advertencias") or [])
+            if isinstance(a, str) and a.startswith("⚠ ASINFO")
+        ],
         "razon": f"Foto diaria creada para {hoy}.",
     }
 

@@ -51,8 +51,32 @@ logging.basicConfig(
 log = logging.getLogger("foto_diaria_cron")
 
 
+def _abrir_puentes() -> None:
+    """Abre las conexiones que en la app abre `create_app()`.
+
+    Tamara 2026-09-30: este script corre SIN la app, y nadie abría la
+    conexión a formulas_app. El Stock de Químicos no contestaba y el balance
+    caía al cálculo viejo (inicial del mes anterior + compras Q − tinto), que
+    desde que se retiró el dBase no resta el consumo porque `scintela.tinto`
+    ya no recibe filas. La foto de la noche de septiembre ponía 689.100 de
+    químicos cuando había 506.373: +182.727 de utilidad que no existía, y el
+    write-back lo copiaba a `iniciales.vq`. Fail-soft: si una conexión no
+    abre, la foto sigue y el balance avisa.
+    """
+    import db
+    from modules._lib import formulas_db
+
+    for abrir in (db.init_pool, formulas_db.init_pool):
+        try:
+            abrir()
+        except Exception as e:  # noqa: BLE001
+            log.warning("no se pudo abrir %s: %s", getattr(abrir, "__module__", abrir), e)
+
+
 def main() -> int:
     from modules.admin_dbase.health_audit_view import ejecutar_foto_diaria
+
+    _abrir_puentes()
 
     resultado = ejecutar_foto_diaria()
     snap = (resultado.get("stats") or {}).get("hoy") or {}
