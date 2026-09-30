@@ -50,16 +50,16 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
     <li>Factura impaga de más de {{ d.limites.rojo_dias }} días.</li>
     <li>Cheque devuelto sin reemplazar hace más de {{ d.limites.rebote }} días.</li>
     <li>Facturas impagas y ninguna compra en 90 días.</li></ul>
-    <div class="cnt"><b>{{ d.resumen.rojo.n }} clientes</b> · {{ d.resumen.rojo.saldo | num_es(0) }} · {{ d.resumen.rojo.pct }}% de la cartera</div></div>
+    <div class="cnt" data-cnt="rojo"><b>{{ d.resumen.rojo.n }} {{ 'cliente' if d.resumen.rojo.n == 1 else 'clientes' }}</b> · {{ d.resumen.rojo.saldo | num_es(0) }} · {{ d.resumen.rojo.pct }}% de la cartera</div></div>
   <div class="regla r-amar"><h3>Amarillo · seguir de cerca</h3><ul>
     <li>Factura impaga de más de {{ d.limites.amar_dias }} días.</li>
     <li>Cheque devuelto reciente sin reemplazar.</li>
     <li>Debe {{ ((d.limites.veces - 1) * 100) | round | int }}% más de lo que corresponde a su plazo habitual.</li>
     <li>En el último mes pagó {{ d.limites.empeoro }} días o más, más lento que antes.</li></ul>
-    <div class="cnt"><b>{{ d.resumen.amar.n }} clientes</b> · {{ d.resumen.amar.saldo | num_es(0) }} · {{ d.resumen.amar.pct }}% de la cartera</div></div>
+    <div class="cnt" data-cnt="amar"><b>{{ d.resumen.amar.n }} {{ 'cliente' if d.resumen.amar.n == 1 else 'clientes' }}</b> · {{ d.resumen.amar.saldo | num_es(0) }} · {{ d.resumen.amar.pct }}% de la cartera</div></div>
   <div class="regla r-verde"><h3>Verde · normal</h3><ul>
     <li>No cumple ninguna de las condiciones anteriores.</li></ul>
-    <div class="cnt"><b>{{ d.resumen.verde.n }} clientes</b> · {{ d.resumen.verde.saldo | num_es(0) }} · {{ d.resumen.verde.pct }}% de la cartera</div></div>
+    <div class="cnt" data-cnt="verde"><b>{{ d.resumen.verde.n }} {{ 'cliente' if d.resumen.verde.n == 1 else 'clientes' }}</b> · {{ d.resumen.verde.saldo | num_es(0) }} · {{ d.resumen.verde.pct }}% de la cartera</div></div>
 </div>
 
 <h2>Cobrar primero</h2>
@@ -69,6 +69,8 @@ habitual (35%) y si está pagando más lento (20%). Acá van los de puntaje 70 o
 mayor a 20.000.</p>
 <div class="filtros" id="filtros-grafico">
   <label>Buscar cliente<input id="gq" type="search" placeholder="Código o nombre" list="gq-lista" autocomplete="off"></label>
+  <label>Vendedor<select id="fv"><option value="">Todos</option>
+    {% for v in d.filas | map(attribute='vend') | unique | sort %}<option>{{ v }}</option>{% endfor %}</select></label>
   <datalist id="gq-lista">{% for c in d.filas if c.saldo > 0 %}<option value="{{ c.cod }}">{{ c.nombre }}</option>{% endfor %}</datalist>
   <button class="chip" data-c="rojo" aria-pressed="false">Rojo</button>
   <button class="chip" data-c="amar" aria-pressed="false">Amarillo</button>
@@ -80,7 +82,7 @@ mayor a 20.000.</p>
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
 <tbody>
 {% for c in d.prioridad %}
-<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
@@ -98,7 +100,7 @@ recibidos cada mes. Toda la casa:
 <th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
 <tbody>
 {% for c in d.contra_si %}
-<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 {% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
 <td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td></tr>
@@ -108,8 +110,6 @@ recibidos cada mes. Toda la casa:
 <h2>Todos los clientes</h2>
 <div class="filtros" id="filtros-todos">
   <label>Buscar<input id="q" type="search" placeholder="Código o nombre"></label>
-  <label>Vendedor<select id="fv"><option value="">Todos</option>
-    {% for v in d.filas | map(attribute='vend') | unique | sort %}<option>{{ v }}</option>{% endfor %}</select></label>
   <button class="chip" data-c="rojo" aria-pressed="false">Rojo</button>
   <button class="chip" data-c="amar" aria-pressed="false">Amarillo</button>
   <button class="chip" data-c="verde" aria-pressed="false">Verde</button>
@@ -144,7 +144,7 @@ recibidos cada mes. Toda la casa:
 <p class="sub">El semáforo no mira los cupos porque no están al día. Esta lista es para revisarlos.</p>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Cupo</th><th class="n">Saldo</th><th class="n">Excedente</th><th class="n">% del cupo</th></tr></thead>
-<tbody>{% for c in d.cupos %}<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tbody>{% for c in d.cupos %}<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.cupo | num_es(0) }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n">{{ (c.saldo - c.cupo) | num_es(0) }}</td><td class="n">{{ (c.uso_cupo * 100) | round | int }}%</td></tr>{% endfor %}</tbody></table></div>
 </details>
@@ -153,7 +153,7 @@ recibidos cada mes. Toda la casa:
 <p class="sub">Pendiente = devueltos sin reemplazar. Las devoluciones se registran desde el 12/08/2026.</p>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Devueltos en el año</th><th class="n">Saldo</th></tr></thead>
-<tbody>{% for c in d.rebotes %}<tr><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
+<tbody>{% for c in d.rebotes %}<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
 <td class="n">{{ c.reb | num_es(0) if c.reb else '—' }}</td>
 <td class="n">{{ (c.reb_dias ~ ' días') if (c.reb and c.reb_dias is not none) else '—' }}</td>
 <td class="n">{{ c.n_reb_hist or '—' }}</td><td class="n">{{ c.saldo | num_es(0) }}</td></tr>{% endfor %}</tbody></table></div>
@@ -189,7 +189,25 @@ recibidos cada mes. Toda la casa:
   document.querySelectorAll('#filtros-todos .chip').forEach(b => b.addEventListener('click', () => {
     const c = b.dataset.c; col.has(c) ? col.delete(c) : col.add(c);
     b.setAttribute('aria-pressed', col.has(c)); filtrar(); }));
-  ['q','fv'].forEach(id => document.getElementById(id).addEventListener('input', filtrar));
+  // Tamara 30/09: "que el puntaje de riesgo y lo de abajo se filtre con el
+  // filtro del vendedor" — un solo Vendedor, arriba del gráfico, manda en
+  // el gráfico y en todas las tablas de abajo.
+  function porVendedor(){
+    const v = document.getElementById('fv').value;
+    document.querySelectorAll('tr.por-vend').forEach(tr => { tr.hidden = !!v && tr.dataset.v !== v; });
+    filtrar();
+    if (window.__dibujarGrafico) window.__dibujarGrafico();
+    const R = v ? RV[v] : R0;
+    const f = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
+    ['rojo','amar','verde'].forEach(k => {
+      const el = document.querySelector(`[data-cnt="${k}"]`);
+      if (el && R) el.innerHTML = `<b>${R[k].n} ${R[k].n===1?'cliente':'clientes'}</b> · ${f(R[k].saldo)} · ${R[k].pct}% de la cartera` + (v ? ` de ${v}` : '');
+    });
+  }
+  const R0 = {{ d.resumen | tojson }};
+  const RV = {{ d.resumen_vend | tojson }};
+  document.getElementById('q').addEventListener('input', filtrar);
+  document.getElementById('fv').addEventListener('input', porVendedor);
   filtrar();
 
   // Gráfico: puntaje (x) contra saldo (y, logarítmico).
@@ -233,7 +251,8 @@ recibidos cada mes. Toda la casa:
 
   function dibujar(){
     const q=document.getElementById('gq').value.trim().toLowerCase();
-    visibles=D.filter(p=>!gcol.size||gcol.has(p.c));
+    const fv=document.getElementById('fv').value;
+    visibles=D.filter(p=>(!gcol.size||gcol.has(p.c))&&(!fv||p.v===fv));
     const hit=q?visibles.filter(p=>p.q.includes(q)):[];
     const marcados=new Set(hit);
     const orden=[...visibles].sort((a,b)=>({verde:0,amar:1,rojo:2}[a.c]-{verde:0,amar:1,rojo:2}[b.c]));
@@ -264,6 +283,7 @@ recibidos cada mes. Toda la casa:
     const c=b.dataset.c; gcol.has(c)?gcol.delete(c):gcol.add(c);
     b.setAttribute('aria-pressed',gcol.has(c)); dibujar(); }));
   document.getElementById('gq').addEventListener('input', dibujar);
+  window.__dibujarGrafico = dibujar;
   window.addEventListener('resize', ()=>{ const t=caja.querySelector('.tip'); if(t&&!t.hidden) dibujar(); });
   dibujar();
 })();

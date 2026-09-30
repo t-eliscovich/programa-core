@@ -34,7 +34,7 @@ def test_factura_de_110_dias_es_amarillo():
 
 
 def test_rebote_reciente_es_amarillo_y_viejo_rojo():
-    d = _armar([_cli("NUE", fac=5000, edad_max=10, reb=1000, reb_dias=8),
+    d = _armar([_cli("NUE", fac=5000, edad_max=10, reb=1000, reb_dias=3),
                 _cli("VIE", fac=5000, edad_max=10, reb=1000, reb_dias=45)])
     assert _uno(d, "NUE")["color"] == "amar"
     assert _uno(d, "VIE")["color"] == "rojo"
@@ -110,7 +110,7 @@ def test_puntos_del_grafico_solo_con_saldo_y_con_motivo():
 
 
 def test_rompe_varias_reglas_muestra_todas_rojo_primero():
-    d = _armar([_cli("DOS", fac=5000, edad_max=160, reb=1000, reb_dias=8)])
+    d = _armar([_cli("DOS", fac=5000, edad_max=160, reb=1000, reb_dias=3)])
     c = _uno(d, "DOS")
     assert c["color"] == "rojo"
     assert c["motivos"] == ["Factura impaga de 160 días",
@@ -120,4 +120,17 @@ def test_rompe_varias_reglas_muestra_todas_rojo_primero():
 def test_devuelto_viejo_no_se_repite_como_reciente():
     d = _armar([_cli("VIE", fac=5000, edad_max=10, reb=1000, reb_dias=45)])
     assert _uno(d, "VIE")["motivos"] == [
-        "Cheque devuelto sin reemplazar hace más de 30 días"]
+        "Cheque devuelto sin reemplazar hace más de 7 días"]
+
+
+def test_devuelto_de_mas_de_7_dias_ya_es_rojo():
+    d = _armar([_cli("OCH", fac=5000, edad_max=10, reb=1000, reb_dias=8)])
+    assert _uno(d, "OCH")["color"] == "rojo"
+
+
+def test_resumen_por_vendedor():
+    d = _armar([_cli("AAA", fac=5000, edad_max=160, vend="PPR"),
+                _cli("BBB", fac=5000, edad_max=10, vend="EDG")])
+    assert d["resumen_vend"]["PPR"]["rojo"]["n"] == 1
+    assert d["resumen_vend"]["EDG"]["rojo"]["n"] == 0
+    assert d["resumen_vend"]["PPR"]["rojo"]["pct"] == 100

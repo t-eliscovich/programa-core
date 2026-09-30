@@ -46,7 +46,7 @@ ROJO_DIAS_FACTURA = 150        # ~5% de los clientes llega
 AMARILLO_DIAS_FACTURA = 100    # menos de 2 de cada 10
 AMARILLO_VECES_PLAZO = 1.25    # 1 de cada 4 debe más de 1,2 veces lo suyo
 AMARILLO_EMPEORO_DIAS = 15     # 9 de cada 10 cambian menos de 16 días
-REBOTE_VIEJO_DIAS = 30
+REBOTE_VIEJO_DIAS = 7   # Tamara 30/09: "en vez de 30 dias sea 7"
 SALDO_MINIMO = 1000            # debajo de esto no se lista (salvo rebotes)
 PAGADO_MINIMO_HISTORIA = 2000  # para confiar en el "plazo habitual"
 
@@ -324,13 +324,21 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
     orden = {"rojo": 0, "amar": 1, "verde": 2}
     filas.sort(key=lambda c: (orden[c["color"]], -c["puntaje"], -c["saldo"]))
 
-    total = sum(max(c["saldo"], 0) for c in filas) or 1.0
-    resumen = {k: {"n": 0, "saldo": 0.0} for k in orden}
-    for c in filas:
-        resumen[c["color"]]["n"] += 1
-        resumen[c["color"]]["saldo"] += max(c["saldo"], 0)
-    for k in resumen:
-        resumen[k]["pct"] = round(100 * resumen[k]["saldo"] / total)
+    def _resumen(lista):
+        total = sum(max(c["saldo"], 0) for c in lista) or 1.0
+        r = {k: {"n": 0, "saldo": 0.0} for k in orden}
+        for c in lista:
+            r[c["color"]]["n"] += 1
+            r[c["color"]]["saldo"] += max(c["saldo"], 0)
+        for k in r:
+            r[k]["pct"] = round(100 * r[k]["saldo"] / total)
+            r[k]["saldo"] = round(r[k]["saldo"])
+        return r
+
+    resumen = _resumen(filas)
+    # Tamara 30/09: las tarjetas del semáforo también siguen al Vendedor.
+    resumen_vend = {v: _resumen([c for c in filas if c["vend"] == v])
+                    for v in {c["vend"] for c in filas}}
 
     cartera = {k: tot[k] for k in ("facturas", "cheques", "rebotados")}
     cartera["total"] = cartera["facturas"] + cartera["cheques"] + cartera["rebotados"]
@@ -369,6 +377,7 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
                     "m": c["motivos"]}
                    for c in filas if c["saldo"] > 0],
         "resumen": resumen,
+        "resumen_vend": resumen_vend,
         "cartera": cartera,
         "normal": normal,
         "prioridad": prioridad,
