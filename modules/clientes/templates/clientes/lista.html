@@ -79,10 +79,7 @@
        pantalla: los grupos del día a día se tocan de a uno, por acá. #}
     <a href="{{ url_for('clientes.grupos') }}"
        class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Grupos</a>
-    {% if tiene_permiso('clientes.crear') %}
-    <a href="{{ url_for('clientes.nuevo') }}"
-       class="text-sm px-3 py-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white">+ Nuevo cliente</a>
-    {% endif %}
+    {# TMT 2026-09-30: sin '+ Nuevo cliente' — los clientes entran por el sync con Asinfo. #}
   </div>
 
   {% if error %}
@@ -219,24 +216,7 @@
             <a href="{{ url_for('clientes.cambiar_codigo_form', id_cliente=c.id_cliente) }}"
                class="inline-block text-slate-500 hover:text-sky-700 hover:bg-sky-50 dark:hover:bg-sky-900/20 rounded p-1 font-mono text-xs"
                title="Cambiar el código de este cliente">Abc</a>
-            {# TMT 2026-05-20 v4 — eliminar por id_cliente (PK).
-               Antes usaba codigo_cli y fallaba con 404 cuando el código
-               estaba vacío (clientes legacy). Ahora cualquier row con
-               PK es eliminable. El confirm() está en JS event listener
-               (no onsubmit inline) para que SIEMPRE pregunte. #}
-            <form method="post"
-                  action="{{ url_for('clientes.eliminar', id_cliente=c.id_cliente) }}"
-                  class="inline cli-del-form"
-                  data-label="{{ c.codigo_cli or '(sin código)' }} — {{ c.nombre or '(sin nombre)' }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <button type="submit"
-                      class="text-rose-600 hover:text-rose-800 hover:bg-rose-50 dark:hover:bg-rose-900/20 rounded p-1"
-                      title="Eliminar cliente (pregunta antes)">
-                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                  <path d="M3 6h18M8 6V4a1 1 0 011-1h6a1 1 0 011 1v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
-                </svg>
-              </button>
-            </form>
+            {# TMT 2026-09-30: sin botón Eliminar — el maestro lo manda Asinfo. #}
           </td>
           {% elif tiene_permiso('clientes.editar') %}
           <td class="px-1 py-1 no-print text-center"></td>

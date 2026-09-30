@@ -103,17 +103,7 @@
       </div>
     {% endif %}
 
-    {% if d.para_anular and puede_anular %}
-      <form method="post" action="{{ url_for('facturas.anuladas_asinfo_correr') }}">
-        <input type="hidden" name="dias" value="{{ dias }}">
-        <button class="rounded bg-rose-600 text-white px-3 py-1.5 text-sm">
-          Dar de baja ahora las {{ d.para_anular | length }} anuladas
-        </button>
-        <span class="text-xs text-slate-500 ml-2">
-          (el vigía lo hace solo cada 15 minutos; este botón no espera)
-        </span>
-      </form>
-    {% endif %}
+    {# TMT 2026-09-30: sin botón 'Dar de baja ahora' — el vigía lo hace solo cada 15 min (0 usos). #}
   {% endif %}
 </div>
 {% endblock %}

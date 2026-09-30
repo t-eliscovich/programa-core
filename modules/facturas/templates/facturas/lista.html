@@ -122,13 +122,8 @@
       </div>
     </div>
     <div class="no-print flex items-center gap-2 shrink-0">
-      {% if tiene_permiso('facturas.crear') %}
-        <a href="{{ url_for('facturas.nueva') }}"
-           class="inline-flex items-center gap-1.5 text-sm px-4 py-2 rounded-lg bg-sky-600 text-white hover:bg-sky-700 font-medium shadow-sm transition">
-          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
-          Nueva factura
-        </a>
-      {% endif %}
+      {# TMT 2026-09-30 (dueña): todo viene de Asinfo — se fueron Nueva factura,
+         Cargar CSV y la plantilla (10 usos, el último el 11/06; CSV nunca). #}
       <details class="relative">
         <summary class="list-none cursor-pointer inline-flex items-center gap-1.5 text-sm px-3 py-2 rounded-lg border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
           Más
@@ -140,22 +135,6 @@
                class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800">
               <div class="font-medium">Retenciones</div>
               <div class="text-xs text-slate-500">Retenciones emitidas a las facturas</div>
-            </a>
-          {% endif %}
-          {% if tiene_permiso('facturas.crear') %}
-            <form method="post" enctype="multipart/form-data"
-                  action="{{ url_for('facturas.cargar_csv') }}" class="block border-b border-slate-100 dark:border-slate-800">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-              <label class="cursor-pointer block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800">
-                <div class="font-medium">Cargar desde CSV…</div>
-                <div class="text-xs text-slate-500">Importar varias facturas</div>
-                <input type="file" name="archivo" accept=".csv,text/csv" class="hidden"
-                       onchange="this.form.submit()">
-              </label>
-            </form>
-            <a href="{{ url_for('facturas.cargar_csv', plantilla=1) }}"
-               class="block px-4 py-2 hover:bg-slate-50 dark:hover:bg-slate-800 border-b border-slate-100 dark:border-slate-800 text-slate-600 dark:text-slate-400">
-              <div class="font-medium">Descargar plantilla CSV</div>
             </a>
           {% endif %}
           {# TMT 2026-06-23: el export ahora arrastra TODOS los filtros activos
@@ -349,10 +328,7 @@
          class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs">
         🚚 Despachos del día
       </a>
-      <a href="{{ url_for('facturas.desde_asinfo') }}"
-         class="inline-flex items-center gap-1.5 px-3 py-1 rounded border border-slate-300 dark:border-slate-700 hover:border-sky-400 hover:bg-sky-50 dark:hover:bg-sky-900/20 text-slate-600 dark:text-slate-300 text-xs">
-        📥 Asinfo sin cargar en PC
-      </a>
+      {# TMT 2026-09-30: 'Asinfo sin cargar en PC' salió — la carga es automática. #}
       {# TMT 2026-07-28 (dueña, caso 180441): las que Asinfo ANULÓ después de
          que la auto-carga ya las había traído. El vigía las da de baja solo. #}
       <a href="{{ url_for('facturas.anuladas_asinfo') }}"

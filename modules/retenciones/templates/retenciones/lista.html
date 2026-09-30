@@ -9,9 +9,7 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Retenciones emitidas por clientes', descripcion_safe='Mostrando ' ~ (filas | length) ~ ' · Total retenido <strong>' ~ (total | money_es) ~ '</strong>') }}
     <div class="no-print flex items-center gap-2">
-      {# TMT 2026-07-20 (duena): /retenciones/emitir era huerfana — boton. #}
-      <a href="{{ url_for('retenciones.emitir') }}"
-         class="text-sm px-3 py-1.5 rounded font-medium text-white" style="background:#0369a1;">+ Emitir</a>
+      {# TMT 2026-09-30: sin '+ Emitir' (0 usos, y la pantalla está rota). #}
       {# TMT 2026-07-23 (dueña): corregir la doble aplicación de retenciones
          (el dBase ya bajaba el saldo y PC lo volvía a sumar). Preview + confirmar. #}
       {% if tiene_permiso('facturas.crear') %}
