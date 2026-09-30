@@ -373,7 +373,7 @@ font-size:12px;color:var(--g)}
 </head>
 <body>
 <header class="top">
-  <span class="marca">Análisis</span>
+  <span class="marca">{% block marca %}Análisis{% endblock %}</span>
   {% for m in menu_global %}
     <a href="{{ m.url }}" {% if request.path == m.url %}class="act"{% endif %}>{{ m.titulo }}</a>
   {% endfor %}

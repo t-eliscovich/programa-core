@@ -73,15 +73,6 @@ MENU = [
         "admin": True,
     },
     {
-        # ⭐ Sólo la dueña (30/09/2026: "hoy es para mí, después vemos dónde va").
-        "url": "/analisis/cobranza",
-        "titulo": "Cobranza",
-        "bajada": "Quién paga, quién está atrasado y cómo viene cada cliente "
-                  "contra sí mismo.",
-        "listo": True,
-        "admin": True,
-    },
-    {
         "url": "/analisis/clientes",
         "titulo": "Clientes",
         "bajada": "Quién se movió, quién dejó de comprar, quién se está enfriando.",
@@ -295,7 +286,10 @@ def cobranza():
     después vemos dónde va"*. La lógica vive en `cobranza.py`.
     """
     from . import cobranza as _cob
-    return render_template("analisis/cobranza.html", d=_cob.datos())
+    # Sin el menú de Análisis arriba (Tamara 30/09: "que no esté junto a
+    # la competencia… marea todo"): se entra desde el menú de usuario.
+    return render_template("analisis/cobranza.html", d=_cob.datos(),
+                           menu_global=[])
 
 
 @analisis_bp.route("/analisis/vendidos.xlsx")

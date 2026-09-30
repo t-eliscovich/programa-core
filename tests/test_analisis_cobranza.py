@@ -89,4 +89,7 @@ def test_la_pantalla_es_solo_de_la_duena():
     from modules.analisis import views
     src = inspect.getsource(views.cobranza)
     assert 'requiere_permiso("usuarios.admin")' in src
-    assert any(m["url"] == "/analisis/cobranza" and m.get("admin") for m in views.MENU)
+    assert all(m["url"] != "/analisis/cobranza" for m in views.MENU)
+    from pathlib import Path
+    base = (Path(__file__).resolve().parent.parent / "templates" / "base.html").read_text()
+    assert 'href="/analisis/cobranza"' in base

@@ -1520,6 +1520,12 @@
             {% if tiene_permiso('analisis.ver') %}
               <a href="/analisis" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Análisis</a>
             {% endif %}
+            {# TMT 2026-09-30 (dueña): el análisis de cobranza va acá y no en el
+               menú de Análisis ("que no esté junto a la competencia… marea
+               todo"). Por ahora sólo ella. #}
+            {% if tiene_permiso('usuarios.admin') %}
+              <a href="/analisis/cobranza" class="block px-3 py-1.5 hover:bg-slate-100 dark:hover:bg-slate-800">Cobranza de clientes</a>
+            {% endif %}
 
             {# --- Admin (sin bitácora — la grabación atrás sigue) --- #}
             {% if tiene_permiso('periodo.cerrar') or tiene_permiso('usuarios.admin') or tiene_permiso('bitacora.ver') or tiene_permiso('vendedores.ver_como') %}
