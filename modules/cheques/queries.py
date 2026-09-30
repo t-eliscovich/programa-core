@@ -5895,6 +5895,7 @@ def aplicar_a_factura(
     batch_id: str | None = None,
     conn=None,
     permitir_depositado: bool = False,
+    permitir_devuelto: bool = False,
 ) -> dict:
     """Aplicar un cheque a una o varias facturas.
 
@@ -5953,6 +5954,12 @@ def aplicar_a_factura(
         # TMT 2026-06-11: el flujo de creacion tambien aplica cheques 'C'
         # (efectivo 99, paridad dBase PASOCAJA) en la misma tx.
         stats_ok = STATS_APLICABLES + (("B", "C") if permitir_depositado else ())
+        # TMT 2026-09-30 (caso BED ch 2161): deshacer la anulación de un
+        # cheque DEVUELTO lo vuelve a '1' y tiene que volver a pagar lo que
+        # pagaba. Sólo ese camino (re-aplicar el snapshot) lo habilita: una
+        # cobranza nueva nunca se aplica con un cheque protestado.
+        if permitir_devuelto:
+            stats_ok = stats_ok + ("1", "2", "3")
         # TMT 2026-07-30 (dueña: "despues cancelalos") — banco 95 CANCELA
         # ANTICIPO. `crear()` ya anuló el 95 contra el espejo NB=98 del
         # anticipo (los dos a 'X', paridad ALTAS.PRG) DENTRO de esta misma
@@ -8401,6 +8408,10 @@ def deshacer_anulacion_error_carga(
                 # El cheque acaba de volver a su stat original en ESTA tx; si
                 # era un depósito directo, ese stat es 'B'.
                 permitir_depositado=True,
+                # ...y si era un DEVUELTO (1/2/3), vuelve a pagar lo que
+                # pagaba (TMT 2026-09-30, caso BED ch 2161: sin esto el
+                # deshacer moría con "en stat='1' no se puede aplicar").
+                permitir_devuelto=True,
             )
             n_aplic = len(snap_aplic)
 

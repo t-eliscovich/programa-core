@@ -244,3 +244,15 @@ def test_si_compensa_de_verdad_no_marca_deposito_no_restaurable(_run):
     res = q.deshacer_anulacion_error_carga(900, usuario="tamara")
     assert len(bank) == 1
     assert res["deposito_no_restaurable"] is False
+
+
+def test_un_devuelto_vuelve_a_pagar_sus_facturas(_run):
+    """Caso BED ch 2161 (30/09/2026): la anulación de un DEVUELTO (1→X) se
+    deshacía hasta la mitad — el cheque volvía a '1' y la re-aplicación moría
+    con "en stat='1' no se puede aplicar", rollback total."""
+    aplic: list = []
+    q, _ = _run(_mov(stat_previo="1", comp={},
+                     snap=[{"id_fact": 6, "importe": 190.95}]),
+                _ch(), aplicar=aplic)
+    q.deshacer_anulacion_error_carga(900)
+    assert aplic and aplic[0]["permitir_devuelto"] is True
