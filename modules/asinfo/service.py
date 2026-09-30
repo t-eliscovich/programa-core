@@ -2341,8 +2341,14 @@ def importaciones_asinfo(limite: int = 400) -> list[dict]:
           JOIN factura_proveedor fp ON fp.id_factura_proveedor = fpi.id_factura_proveedor
           LEFT JOIN empresa e ON e.id_empresa = fp.id_empresa
           LEFT JOIN recepcion_proveedor rp ON rp.id_recepcion_proveedor = fp.id_recepcion_proveedor
+                                          AND rp.fecha_anulacion IS NULL
          ORDER BY fpi.id_factura_proveedor DESC
     """
+    # 🚨 TMT 2026-09-30: `rp.fecha_anulacion IS NULL` en el JOIN. Si en Asinfo
+    # anulan la recepción de una importación, la factura sigue apuntando al BOD
+    # anulado y la importación figuraba RECIBIDA sin un kilo en bodega. Con la
+    # recepción anulada la importación vuelve a "en tránsito" hasta que la
+    # reciban de nuevo (caso AI 53, BOD-2393, 30/09).
     # TMT 2026-07-31: `_estado` en vez de `fetch_dataset` a secas. Esta lista
     # alimenta el cruce anticipo↔importación y, por ahí, la tarifa $/kg del
     # hilado — que revalúa TODO el stock. Estaba cacheada 5 min sin mirar si

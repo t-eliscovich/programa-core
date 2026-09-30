@@ -824,6 +824,10 @@ def compras_hilado_recibidas_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     for f in lfilas or []:
         if not f.get("recibida"):
             continue
+        # Recepción anulada en Asinfo: no entró (misma regla que
+        # hilado_local_recibido_mes, así Ingresos y la tabla siguen cuadrando).
+        if f.get("anulada"):
+            continue
         if not str(f.get("fecha_recepcion") or "").startswith(pref):
             continue
         prov = str(f.get("prov") or "").strip().upper()

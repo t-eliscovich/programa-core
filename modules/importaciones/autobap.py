@@ -242,13 +242,20 @@ OTRA_PARTE = " · otra parte de la importación, el hilo ya estaba cargado"
 
 
 def _ya_cargada(codigo_prov: str, ref) -> bool:
-    """¿Ya hubo una conversión de esta misma importación? Fail-soft: False."""
+    """¿Ya hubo una conversión de esta misma importación? Fail-soft: False.
+
+    Sólo cuentan las conversiones cuya compra SIGUE viva: si se deshizo (a mano
+    o porque Asinfo anuló la recepción, ver `revertir_recepciones_anuladas`),
+    la próxima conversión es la importación entera otra vez, con sus kg.
+    """
     try:
         row = db.fetch_one(
             """
-            SELECT 1 FROM scintela.autobap_log
-             WHERE tipo = 'conversion' AND codigo_prov = %s
-               AND ref_num IS NOT DISTINCT FROM %s
+            SELECT 1 FROM scintela.autobap_log l
+              JOIN scintela.compra c ON c.id_compra = l.id_compra
+             WHERE l.tipo = 'conversion' AND l.codigo_prov = %s
+               AND l.ref_num IS NOT DISTINCT FROM %s
+               AND COALESCE(c.stat, '') <> 'Y'
              LIMIT 1
             """,
             (codigo_prov, ref),
@@ -615,6 +622,167 @@ def correr(*, dry_run: bool = False, usuario: str = USUARIO_AUTOBAP,
     return res
 
 
+# ---------------------------------------------------------------------------
+# Recepción anulada en Asinfo → se deshace la conversión sola
+# ---------------------------------------------------------------------------
+#
+# 🚨 TMT 2026-09-30, AI 53. A las 10:45 Asinfo recibió la importación
+# (BOD-2393) y el automático la convirtió: −85.885 de anticipos, +85.885 de
+# hilo. A las 12:14 anularon la recepción en Asinfo: el hilo salió del stock,
+# pero la compra BAP quedó y los anticipos siguieron consumidos — la plata no
+# estaba en ningún lado y la utilidad cayó 171 mil. Dueña: *"tenemos que tener
+# un proceso para cuando pase esto"*.
+#
+# Regla: si la importación de una conversión automática ya NO figura recibida
+# en Asinfo, la conversión se deshace con el MISMO reverso del historial
+# (`dolares.reversar_conversion`: anticipos a vivos, compra borrada, mov_doble
+# reverso) y avisa en la campanita. Si después la vuelven a recibir, el motor
+# la convierte de nuevo como a cualquier otra.
+#
+# ⭐ Espera `_GRACIA_ANULADA_SECS` antes de deshacer: ese mismo día la
+# recibieron de nuevo 19 minutos después (BOD nuevo). Deshacer y rehacer por
+# un re-recibo de minutos sólo ensucia la traza y la campanita.
+# ⭐ Sólo actúa si la importación APARECE en Asinfo sin recepción. Si no aparece
+# (Asinfo contestó a medias, o cayó del TOP), no se toca: ante la duda, nada.
+
+_GRACIA_ANULADA_SECS = float(os.environ.get("AUTOBAP_GRACIA_ANULADA_SECS") or 1800)
+_DIAS_REVISION = 60
+_sin_recepcion_desde: dict[int, float] = {}
+
+
+def _conversiones_vivas() -> list[dict]:
+    """Conversiones automáticas recientes cuya compra BAP sigue viva, con el
+    id del mov_doble que las deshace. Fail-soft: []."""
+    try:
+        return db.fetch_all(
+            """
+            SELECT l.id_autobap_log, l.im_numero, l.codigo_prov, l.ref_num,
+                   l.importe, l.id_compra, md.id_mov_doble
+              FROM scintela.autobap_log l
+              JOIN scintela.compra c ON c.id_compra = l.id_compra
+              JOIN scintela.mov_doble md
+                ON md.tipo = 'bap_anticipo_a_compra'
+               AND md.destino_id = l.id_compra
+               AND md.estado = 'activo'
+             WHERE l.tipo = 'conversion'
+               AND l.im_numero IS NOT NULL
+               AND l.creado_en >= now() - make_interval(days => %s)
+               AND COALESCE(c.stat, '') <> 'Y'
+               AND UPPER(COALESCE(c.comprobante, '')) LIKE 'BAP%%'
+             ORDER BY l.id_autobap_log
+            """,
+            (_DIAS_REVISION,),
+        ) or []
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude leer las conversiones vivas: %s", e)
+        return []
+
+
+def _estado_recepcion(index: dict) -> dict[str, bool]:
+    """{im_numero: recibida} para TODAS las importaciones que devolvió Asinfo.
+    Una partida (---1/---2) cuenta como recibida si lo está cualquiera de sus
+    mitades: el anticipo pagó el grupo entero."""
+    por_im: dict[str, dict] = {}
+    for filas in (index or {}).values():
+        for r in filas or []:
+            im = str(r.get("im_numero") or "").strip()
+            if im:
+                por_im[im] = r
+    out: dict[str, bool] = {}
+    for im, r in por_im.items():
+        grupo = [str(x).strip() for x in (r.get("grupo_ims") or []) if x] or [im]
+        out[im] = any(bool((por_im.get(g) or {}).get("recibida")) for g in grupo)
+    return out
+
+
+def revertir_recepciones_anuladas(index: dict | None = None, *,
+                                  dry_run: bool = False,
+                                  usuario: str = USUARIO_AUTOBAP,
+                                  ahora: float | None = None) -> dict:
+    """Deshace las conversiones automáticas cuya recepción anularon en Asinfo.
+
+    Devuelve {revertidas, importe, esperando, detalle}. Nunca levanta.
+    """
+    from modules.dolares import queries as dol_q
+
+    from . import service as imp_service
+
+    res = {"revertidas": 0, "importe": 0.0, "esperando": [], "detalle": []}
+    if index is None:
+        try:
+            index = imp_service._index_importaciones_por_codigo()
+        except Exception as e:  # noqa: BLE001
+            _LOG.warning("revertir_recepciones_anuladas: Asinfo no contesta: %s", e)
+            return res
+    if not index:
+        return res  # Asinfo mudo → no se toca nada
+    recibidas = _estado_recepcion(index)
+    ahora = _time.monotonic() if ahora is None else ahora
+
+    vivas = _conversiones_vivas()
+    ids_vivos = {int(c["id_compra"]) for c in vivas}
+    for k in list(_sin_recepcion_desde):
+        if k not in ids_vivos:
+            _sin_recepcion_desde.pop(k, None)
+
+    for c in vivas:
+        im = str(c.get("im_numero") or "").strip()
+        idc = int(c["id_compra"])
+        if im not in recibidas or recibidas[im]:
+            _sin_recepcion_desde.pop(idc, None)
+            continue
+        desde = _sin_recepcion_desde.setdefault(idc, ahora)
+        cod = f"{c.get('codigo_prov') or ''} {c.get('ref_num') or ''}".strip()
+        if ahora - desde < _GRACIA_ANULADA_SECS:
+            res["esperando"].append(cod or im)
+            continue
+        if dry_run:
+            res["detalle"].append({"codigo": cod, "im_numero": im, "id_compra": idc})
+            continue
+        try:
+            r = dol_q.reversar_conversion(
+                int(c["id_mov_doble"]),
+                motivo=f"Asinfo anuló la recepción de {cod or im}",
+                usuario=usuario,
+            )
+        except Exception as e:  # noqa: BLE001 -- una no frena al resto
+            _LOG.warning("no pude deshacer %s (compra %s): %s", im, idc, e)
+            avisar(tipo="error", im_numero=im, codigo_prov=c.get("codigo_prov"),
+                   ref_num=c.get("ref_num"),
+                   mensaje=f"{im} de {c.get('codigo_prov')}: anularon la recepción "
+                           f"en Asinfo y no pude deshacer la compra ({e}).")
+            continue
+        _sin_recepcion_desde.pop(idc, None)
+        importe = float(c.get("importe") or 0)
+        res["revertidas"] += 1
+        res["importe"] += importe
+        res["detalle"].append({"codigo": cod, "im_numero": im, "id_compra": idc,
+                               "restaurados": r.get("restaurados")})
+        _avisar_revertida(c, cod or im, importe, r)
+    res["importe"] = round(res["importe"], 2)
+    return res
+
+
+def _avisar_revertida(c: dict, cod: str, importe: float, r: dict) -> None:
+    """Campanita: se deshizo sola. Nunca levanta."""
+    try:
+        from modules import avisos as _av
+
+        n = int(r.get("restaurados") or 0)
+        _av.avisar(
+            fuente="importaciones", nivel="alerta",
+            titulo=f"{cod} · $ {num_es(importe, 2)} · volvió a anticipos",
+            detalle=(f"Anularon la recepción en Asinfo: se deshizo la compra y "
+                     f"{n} anticipo{'' if n == 1 else 's'} "
+                     f"{'volvió' if n == 1 else 'volvieron'} a vivos. Cuando la "
+                     f"vuelvan a recibir se carga sola."),
+            importe=importe, cantidad=n, url="/dolares",
+            clave=f"importaciones:recepcion_anulada:{c.get('id_compra')}",
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude avisar la reversión %s: %s", cod, e)
+
+
 def correr_si_toca() -> dict:
     """Entrada del hilo de fondo: respeta el switch, el env y el freno de 30
     minutos. Nunca levanta."""
@@ -632,8 +800,16 @@ def correr_si_toca() -> dict:
         # ── GUARD 7: el switch ──────────────────────────────────────────────
         if not config().get("activo"):
             return res
+        # Primero lo que se deshace (recepciones anuladas), después lo que se
+        # convierte: si la re-recibieron, los anticipos ya están vivos.
+        try:
+            rev = revertir_recepciones_anuladas()
+        except Exception as e:  # noqa: BLE001
+            _LOG.warning("autobap reversión falló: %s", e)
+            rev = {}
         r = correr()
         r["corrio"] = True
+        r["revertidas"] = int((rev or {}).get("revertidas") or 0)
         return r
     except Exception as e:  # noqa: BLE001
         _LOG.warning("autobap ciclo falló: %s", e)

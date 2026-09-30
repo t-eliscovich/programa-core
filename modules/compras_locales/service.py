@@ -482,6 +482,13 @@ def hilado_local_recibido_mes(yy: int, mm: int) -> dict:
     for f in filas or []:
         if not f.get("recibida"):
             continue
+        # 🚨 TMT 2026-09-30: una recepción ANULADA en Asinfo no es hilo que
+        # entró. El BOD-2393 (AI 53, 23.953 kg) se anuló y se volvió a recibir
+        # con otro BOD; el anulado seguía sumando acá como compra local a $ 0
+        # y bajaba el $/kg de TODO el hilo (3,1817 → 3,1521, ~85 mil de
+        # utilidad falsa). El kilo sin plata es el peor insumo del promedio.
+        if f.get("anulada"):
+            continue
         if not str(f.get("fecha_recepcion") or "").startswith(pref):
             continue
         _kg = float(f.get("kg") or 0.0)
