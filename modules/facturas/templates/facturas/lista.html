@@ -230,19 +230,19 @@
     <div>
       <label class="block text-xs text-slate-500 mb-1">Monto</label>
       <input type="text" inputmode="decimal" name="monto" value="{{ monto or '' }}"
-             placeholder="729 · 729,51"
+             placeholder="729,51"
              title="Entero = el dólar entero (729 → 729,00–729,99). Con centavos = exacto (729,51)."
-             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+             class="w-24 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# Grupo 3: Fecha (desde — hasta) #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha desde</label>
-      <input type="date" name="desde" id="fecha-desde-input" value="{{ desde or '' }}"
+      <input type="date" name="desde" id="fecha-desde-input" value="{{ desde or '' }}" style="width:8rem"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     <div>
       <label class="block text-xs text-slate-500 mb-1">Fecha hasta</label>
-      <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}"
+      <input type="date" name="hasta" id="fecha-hasta-input" value="{{ hasta or '' }}" style="width:8rem"
              class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# TMT 2026-05-26 dueña: shortcut "Hoy" para filtrar el día actual sin tipear
@@ -278,15 +278,15 @@
     {# Búsqueda libre (nombre, número de factura) — opcional, separada #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Buscar (libre)</label>
-      <input type="text" name="q" value="{{ q }}" placeholder="N° factura, nombre…"
-             class="w-36 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+      <input type="text" name="q" value="{{ q }}" placeholder="N° o nombre"
+             class="w-28 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
     </div>
     {# Filtro por tipo de documento (F/D/N/NC). Siempre visible — pedido dueña
        2026-07-11 ("que tipo esté siempre"). La fuente sigue siendo el tipo de
        Asinfo hasta que se retire. #}
     <div>
       <label class="block text-xs text-slate-500 mb-1">Tipo</label>
-      <select name="tipo_ai" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
+      <select name="tipo_ai" style="width:6.5rem" class="rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1.5 text-sm">
         <option value="">Todos</option>
         {# TMT 2026-08-14: las opciones salen del vocabulario único, no
            escritas a mano — si mañana nace un tipo nuevo, aparece solo. #}
@@ -297,6 +297,8 @@
       </select>
     </div>
 
+    {# TMT 2026-09-30 (dueña): "no me gusta que el filtrar caiga un renglón
+       más abajo" — fechas y Tipo más angostos para que entre en una fila. #}
     <button class="text-sm px-4 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900">Filtrar</button>
   </form>
 
