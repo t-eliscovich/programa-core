@@ -306,82 +306,105 @@ def aging_por_grupo() -> list[dict]:
 
 
 def tomar_snapshot(fecha: date | None = None) -> dict:
-    """ITEM #4 — Toma snapshot diario de la cartera por cliente.
+    """Foto de la cartera de cada cliente en `scintela.cartera_snapshots`.
 
-    Reemplazo del legacy `F:\\LUNES\\FACTURAS`, etc. (MENU.PRG L1582-1660
-    PROCEDURE CONTROLC): el dBase copiaba la base entera a una carpeta por
-    día de la semana; acá guardamos por cliente saldo agregado + n_facturas
-    en `scintela.cartera_snapshots`.
+    Reemplazo del legacy `F:\\LUNES\\FACTURAS` (MENU.PRG PROCEDURE CONTROLC).
 
-    Idempotente: ON CONFLICT (fecha, codigo_cli) DO UPDATE — si se corre
-    dos veces el mismo día, sobreescribe.
+    TMT 2026-09-30 (Tamara, análisis de cobranza): *"cómo es normalmente y
+    cómo es ahora"* — para ver la evolución de la deuda de cada cliente hace
+    falta guardarla todos los días; lo que no se guarda se pierde. La foto
+    ahora lleva, además del saldo de facturas:
 
-    Cuenta solamente facturas vivas (`saldo > 0 AND stat IN ('Z','A','',' ')`).
-    NO descuenta cheques en cartera por cliente (eso lo hace
-    `aging_buckets()` para mostrar al usuario; el snapshot es la cartera
-    "bruta" de facturas, espejo de lo que dBase guardaba).
+    - `cheques_por_cobrar`: cheques en cartera (Z, P, D) — deuda que todavía
+      no es plata;
+    - `cheques_rebotados`: protestados sin reemplazar (1, 2, 3, R, 9);
+    - `dias_factura_mas_antigua`: días desde la fecha de la factura impaga
+      más vieja (no desde el vencimiento: el vencimiento a 90 días hace que
+      casi nada figure vencido);
+    - `saldo_mas_90_dias`: saldo de facturas con más de 90 días desde su
+      fecha.
 
-    Devuelve `{fecha, n_clientes, n_filas_insertadas, n_filas_actualizadas,
-    saldo_total}`.
+    `saldo_total` sigue siendo SÓLO facturas (lo lee /cartera/controlc).
+
+    Idempotente y REGRABABLE: borra la foto de esa fecha y la vuelve a armar
+    en la misma transacción. Así, si se corre varias veces en el día, queda
+    la última (un cliente que canceló todo a la tarde no queda con el saldo
+    de la mañana).
     """
     fecha = fecha or today_ec()
-    n_ins = 0
-    n_upd = 0
-    saldo_total = 0.0
-    # TMT 2026-05-15 (re-audit C4): SELECT + INSERTs en la MISMA tx con
-    # advisory lock para serializar dos snapshots del mismo día. Sin
-    # esto el SELECT inicial corría en autocommit y un cobro posteado
-    # entre el SELECT y el INSERT contaminaba el snapshot.
     with db.tx() as conn:
         db.execute(
             "SELECT pg_advisory_xact_lock(hashtext('cartera_snapshot'))",
             conn=conn,
         )
-        rows = db.fetch_all(
+        db.execute(
+            "DELETE FROM scintela.cartera_snapshots WHERE fecha = %s",
+            (fecha,), conn=conn,
+        )
+        db.execute(
             """
-            SELECT f.codigo_cli,
-                   COALESCE(SUM(f.saldo), 0) AS saldo_total,
-                   COUNT(*)                  AS n_facturas
-            FROM scintela.factura f
-            WHERE COALESCE(f.saldo, 0) <> 0
-              AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
-              AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
-            GROUP BY f.codigo_cli
-            """,
-            conn=conn,
-        ) or []
-
-        if not rows:
-            return {"fecha": fecha.isoformat(), "n_clientes": 0,
-                    "n_filas_insertadas": 0, "n_filas_actualizadas": 0,
-                    "saldo_total": 0.0}
-
-        for r in rows:
-            saldo_total += float(r.get("saldo_total") or 0)
-            res = db.execute_returning(
-                """
-                INSERT INTO scintela.cartera_snapshots
-                    (fecha, codigo_cli, saldo_total, n_facturas)
-                VALUES (%s, %s, %s, %s)
-                ON CONFLICT (fecha, codigo_cli) DO UPDATE
-                   SET saldo_total = EXCLUDED.saldo_total,
-                       n_facturas  = EXCLUDED.n_facturas,
-                       snapshot_ts = CURRENT_TIMESTAMP
-                RETURNING (xmax = 0) AS inserted
-                """,
-                (fecha, r["codigo_cli"], r["saldo_total"], r["n_facturas"]),
-                conn=conn,
+            INSERT INTO scintela.cartera_snapshots
+                (fecha, codigo_cli, saldo_total, n_facturas,
+                 cheques_por_cobrar, cheques_rebotados,
+                 dias_factura_mas_antigua, saldo_mas_90_dias)
+            WITH fac AS (
+                SELECT f.codigo_cli,
+                       SUM(f.saldo) AS saldo,
+                       COUNT(*)     AS n,
+                       MAX(%(hoy)s::date - f.fecha)
+                           FILTER (WHERE f.saldo > 0) AS antig,
+                       COALESCE(SUM(f.saldo)
+                           FILTER (WHERE %(hoy)s::date - f.fecha > 90), 0) AS s90
+                  FROM scintela.factura f
+                 WHERE COALESCE(f.saldo, 0) <> 0
+                   AND (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
+                   AND COALESCE(f.usuario_crea, '') <> 'asinfo-backfill'
+                 GROUP BY f.codigo_cli
+            ), ch AS (
+                SELECT c.codigo_cli,
+                       COALESCE(SUM(c.importe) FILTER (
+                           WHERE UPPER(TRIM(COALESCE(c.stat,''))) IN ('Z','P','D')), 0)
+                           AS por_cobrar,
+                       COALESCE(SUM(c.importe) FILTER (
+                           WHERE UPPER(TRIM(COALESCE(c.stat,''))) IN ('1','2','3','R','9')), 0)
+                           AS rebotados
+                  FROM scintela.cheque c
+                 WHERE c.codigo_cli IS NOT NULL
+                   AND UPPER(TRIM(COALESCE(c.stat,''))) IN ('Z','P','D','1','2','3','R','9')
+                 GROUP BY c.codigo_cli
             )
-            if res and res.get("inserted"):
-                n_ins += 1
-            else:
-                n_upd += 1
+            SELECT %(hoy)s::date,
+                   COALESCE(fac.codigo_cli, ch.codigo_cli),
+                   COALESCE(fac.saldo, 0),
+                   COALESCE(fac.n, 0),
+                   COALESCE(ch.por_cobrar, 0),
+                   COALESCE(ch.rebotados, 0),
+                   fac.antig,
+                   COALESCE(fac.s90, 0)
+              FROM fac
+              FULL JOIN ch ON ch.codigo_cli = fac.codigo_cli
+             WHERE COALESCE(fac.saldo, 0) <> 0
+                OR COALESCE(ch.por_cobrar, 0) <> 0
+                OR COALESCE(ch.rebotados, 0) <> 0
+            """,
+            {"hoy": fecha}, conn=conn,
+        )
+        tot = db.fetch_one(
+            """
+            SELECT COUNT(*) AS n, COALESCE(SUM(saldo_total), 0) AS saldo,
+                   COALESCE(SUM(cheques_por_cobrar), 0) AS cheques
+              FROM scintela.cartera_snapshots WHERE fecha = %s
+            """,
+            (fecha,), conn=conn,
+        ) or {}
+    n = int(tot.get("n") or 0)
     return {
         "fecha": fecha.isoformat(),
-        "n_clientes": len(rows),
-        "n_filas_insertadas": n_ins,
-        "n_filas_actualizadas": n_upd,
-        "saldo_total": saldo_total,
+        "n_clientes": n,
+        "n_filas_insertadas": n,
+        "n_filas_actualizadas": 0,
+        "saldo_total": float(tot.get("saldo") or 0),
+        "cheques_por_cobrar": float(tot.get("cheques") or 0),
     }
 
 
@@ -423,10 +446,9 @@ def comparar_contra_snapshot(fecha_snapshot=None) -> dict:
 
     if not fecha_snapshot:
         return {"filas": [], "fecha_snapshot": None, "totales": {},
-                "error": "No hay snapshots ANTERIORES a hoy. Corré "
-                "scripts/tomar_snapshot_cartera.py al menos un día antes "
-                "de comparar (si ya lo corriste hoy, esperá hasta mañana "
-                "o pasá ?fecha=YYYY-MM-DD explícita)."}
+                "error": "Todavía no hay una foto de la cartera de un día "
+                "anterior. El servidor toma una por día, sola: mañana ya "
+                "se puede comparar."}
 
     filas = db.fetch_all(
         """

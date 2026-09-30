@@ -10,14 +10,14 @@ USO:
     python scripts/tomar_snapshot_cartera.py --fecha 2026-05-14
     python scripts/tomar_snapshot_cartera.py --dry-run
 
-Se recomienda agendarlo en cron a las 06:00:
-    0 6 * * 1-6  cd /path/programa-core && venv/bin/python scripts/tomar_snapshot_cartera.py
+Desde el 30/09/2026 la foto la toma SOLA el servidor (ciclo de fondo,
+modules/cartera/foto_diaria.py). Este script queda para una corrida a mano.
 """
 from __future__ import annotations
 
 import argparse
 import sys
-from datetime import date, datetime
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -38,7 +38,8 @@ def main() -> int:
                    help="Sólo muestra cuántos clientes se snapshotearían.")
     args = p.parse_args()
 
-    fecha = date.today()
+    from filters import today_ec
+    fecha = today_ec()
     if args.fecha:
         try:
             fecha = datetime.fromisoformat(args.fecha).date()

@@ -311,6 +311,15 @@ def _loop() -> None:
             # días antes de la largada la foto era del 18/08 19:42. Freno
             # propio de 3 h contra `parado_refresh.actualizado`, ANALISIS_AUTO=0
             # lo apaga.
+            # TMT 2026-09-30 (Tamara, análisis de cobranza): la foto diaria de
+            # la cartera por cliente. Sin ella no hay historia de la deuda de
+            # cada cliente. Regraba la de hoy como máximo una vez por hora;
+            # CARTERA_FOTO_AUTO=0 la apaga.
+            try:
+                from modules.cartera import foto_diaria as _foto_cartera
+                _foto_cartera.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("foto de cartera (fondo): %s", e)
             try:
                 from modules.analisis import auto_refresco as _saldos
                 _saldos.correr_si_toca()
