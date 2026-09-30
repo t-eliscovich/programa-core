@@ -106,4 +106,18 @@ def test_puntos_del_grafico_solo_con_saldo_y_con_motivo():
     ks = [p["k"] for p in d["puntos"]]
     assert "AAA" in ks and "CER" not in ks
     p = next(p for p in d["puntos"] if p["k"] == "AAA")
-    assert p["c"] == "rojo" and p["m"].startswith("Factura impaga")
+    assert p["c"] == "rojo" and p["m"][0].startswith("Factura impaga")
+
+
+def test_rompe_varias_reglas_muestra_todas_rojo_primero():
+    d = _armar([_cli("DOS", fac=5000, edad_max=160, reb=1000, reb_dias=8)])
+    c = _uno(d, "DOS")
+    assert c["color"] == "rojo"
+    assert c["motivos"] == ["Factura impaga de 160 días",
+                            "Cheque devuelto reciente sin reemplazar"]
+
+
+def test_devuelto_viejo_no_se_repite_como_reciente():
+    d = _armar([_cli("VIE", fac=5000, edad_max=10, reb=1000, reb_dias=45)])
+    assert _uno(d, "VIE")["motivos"] == [
+        "Cheque devuelto sin reemplazar hace más de 30 días"]

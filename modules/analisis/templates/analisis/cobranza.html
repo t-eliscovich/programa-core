@@ -33,9 +33,8 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .chip[aria-pressed="true"]{border-color:#1f4f6e;background:#e3ecf3}
 #grafico{position:relative}
 #grafico svg{display:block;width:100%;height:auto}
-#grafico .tip{position:absolute;pointer-events:none;background:#111827;color:#fff;border-radius:7px;padding:7px 10px;font-size:12px;line-height:1.45;max-width:280px;box-shadow:0 4px 14px rgba(0,0,0,.18);z-index:2}
-#grafico .tip b{font-size:13px}
-#grafico .tip .t2{color:#cbd5e1}
+#grafico .tip{position:absolute;pointer-events:none;background:#fff;color:#111827;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;font-size:12px;white-space:nowrap;line-height:1.4;z-index:2}
+
 #grafico text{font-size:11px;fill:#6b7280}
 #grafico .ql{font-size:12px;font-weight:600;fill:#111827}
 #grafico .lab{font-size:11px;font-weight:700;fill:#111827}
@@ -85,7 +84,7 @@ mayor a 20.000.</p>
 <td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
-<td class="mot">{{ c.motivos[0] if c.motivos else '' }}</td></tr>
+<td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}</td></tr>
 {% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
 </tbody></table></div>
 
@@ -202,7 +201,6 @@ recibidos cada mes. Toda la casa:
   const y0=Math.log10(1000), y1=Math.log10(500000);
   const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.min(Math.log10(Math.max(v,1000)),y1)-y0)/(y1-y0)*ih;
   const color={rojo:'#b3362a',amar:'#c98a0b',verde:'#2a7547'};
-  const nomC={rojo:'Rojo',amar:'Amarillo',verde:'Verde'};
   const fmt=n=>Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
   const esc=t=>String(t??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
   D.forEach(p=>{p.x=X(p.p); p.y=Y(p.s); p.q=(p.k+' '+p.n).toLowerCase();});
@@ -219,17 +217,16 @@ recibidos cada mes. Toda la casa:
     g+=`<text class="ql" x="${X(100)-6}" y="${m.t+14}" text-anchor="end">Cobrar primero</text>`;
     return g;
   }
-  function tip(p){
-    return `<b>${esc(p.k)}</b> · ${esc(p.n)}<br><span class="t2">${esc(p.v)} · ${nomC[p.c]}</span><br>`+
-           `Saldo <b>${fmt(p.s)}</b> · Puntaje <b>${p.p}</b>`+(p.m?`<br><span class="t2">${esc(p.m)}</span>`:'');
-  }
+  // Tamara 30/09: "muy aparatoso el cartel… no hace falta tanta info" y
+  // "pone solo codigo y pone cuando es amarillo o rojo que hizo mal".
+  function tip(p){ return `<b>${esc(p.k)}</b>`+p.m.map(x=>`<br>${esc(x)}`).join(''); }
   function mostrarTip(p){
     let t=caja.querySelector('.tip'); if(!t){t=document.createElement('div');t.className='tip';caja.appendChild(t);}
     t.innerHTML=tip(p); t.hidden=false;
     const r=caja.getBoundingClientRect(), k=r.width/W;
-    let x=p.x*k+12, y=p.y*k-t.offsetHeight-10;
-    if(x+t.offsetWidth>r.width) x=p.x*k-t.offsetWidth-12;
-    if(y<0) y=p.y*k+12;
+    let x=p.x*k+9, y=p.y*k-t.offsetHeight-6;
+    if(x+t.offsetWidth>r.width) x=p.x*k-t.offsetWidth-9;
+    if(y<0) y=p.y*k+9;
     t.style.left=x+'px'; t.style.top=y+'px';
   }
   function ocultarTip(){ const t=caja.querySelector('.tip'); if(t) t.hidden=true; }
@@ -251,7 +248,7 @@ recibidos cada mes. Toda la casa:
     caja.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
     if(t) caja.appendChild(t);
     document.getElementById('gcnt').textContent = q ? (hit.length ? hit.length+(hit.length===1?' cliente':' clientes') : 'Ningún cliente con saldo') : visibles.length+' clientes';
-    if(hit.length===1) mostrarTip(hit[0]); else ocultarTip();
+    ocultarTip();  // el encontrado ya lleva su código al lado: no repetir
   }
   caja.addEventListener('mousemove', e=>{
     const svg=caja.querySelector('svg'); if(!svg) return;

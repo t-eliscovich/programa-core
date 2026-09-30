@@ -205,26 +205,32 @@ def _rango(v: float | None, universo: list[float]) -> float:
 
 
 def semaforo(c: dict) -> tuple[str, list[str]]:
-    """Color y motivos. Basta una condición; rojo le gana a amarillo."""
+    """Color y motivos. Basta una condición; rojo le gana a amarillo.
+
+    Tamara 30/09: *"que pasa si rompe mas de una regla?"* — el color es el
+    peor, y los motivos son TODAS las reglas que rompe (primero las de
+    rojo). La de la factura vieja va una sola vez, y el cheque devuelto
+    también: si ya es rojo por viejo, no se repite como reciente.
+    """
     rojo, amar = [], []
     edad = c.get("edad_max")
     if c["fac"] > 0 and edad is not None and edad >= ROJO_DIAS_FACTURA:
         rojo.append(f"Factura impaga de {edad} días")
+    elif c["fac"] > 0 and edad is not None and edad >= AMARILLO_DIAS_FACTURA:
+        amar.append(f"Factura impaga de {edad} días")
     if c["reb"] > 0 and (c.get("reb_dias") or 0) > REBOTE_VIEJO_DIAS:
         rojo.append("Cheque devuelto sin reemplazar hace más de "
                     f"{REBOTE_VIEJO_DIAS} días")
+    elif c["reb"] > 0:
+        amar.append("Cheque devuelto reciente sin reemplazar")
     if c["venta90"] <= 0 and c["fac"] > 500:
         rojo.append("Tiene facturas impagas y no compró en 90 días")
-    if rojo:
-        return "rojo", rojo
-    if c["fac"] > 0 and edad is not None and edad >= AMARILLO_DIAS_FACTURA:
-        amar.append(f"Factura impaga de {edad} días")
-    if c["reb"] > 0:
-        amar.append("Cheque devuelto reciente sin reemplazar")
     if c.get("veces") is not None and c["veces"] >= AMARILLO_VECES_PLAZO:
         amar.append(f"Debe {c['veces']:.2f} veces lo normal para él".replace(".", ","))
     if c.get("cambio") is not None and c["cambio"] >= AMARILLO_EMPEORO_DIAS:
         amar.append(f"Pagó a {c['ultimo']} días; antes a {c['antes']}")
+    if rojo:
+        return "rojo", rojo + amar
     if amar:
         return "amar", amar
     return "verde", []
@@ -360,7 +366,7 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
         "puntos": [{"k": c["cod"], "n": c["nombre"], "v": c["vend"],
                     "c": c["color"], "s": round(c["saldo"]),
                     "p": c["puntaje"],
-                    "m": c["motivos"][0] if c["motivos"] else ""}
+                    "m": c["motivos"]}
                    for c in filas if c["saldo"] > 0],
         "resumen": resumen,
         "cartera": cartera,
