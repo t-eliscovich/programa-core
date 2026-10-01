@@ -412,6 +412,8 @@ def marcar(d: dict, trend: dict, ahora: dict, antes: dict) -> None:
         t = trend.get(c["cod"]) or {}
         c["cae"] = cae_compra(t.get("ult"), t.get("ant"))
         c["compra_ult"], c["compra_ant"] = round(_f(t.get("ult"))), round(_f(t.get("ant")))
+        c["caida"] = (round(100 * (1 - c["compra_ult"] / c["compra_ant"]))
+                      if c["cae"] else None)
         c["flecha"] = None
         if c["color"] == "rojo" and not c.get("incobrable"):
             a, h = antes.get(c["cod"]), ahora.get(c["cod"])
@@ -424,7 +426,7 @@ def marcar(d: dict, trend: dict, ahora: dict, antes: dict) -> None:
     por = {c["cod"]: c for c in d["filas"]}
     for p in d["puntos"]:
         c = por.get(p["k"], {})
-        p["cae"] = bool(c.get("cae"))
+        p["cae"] = c.get("caida") if c.get("cae") else None
         p["fl"] = c.get("flecha")
 
 def _f(x) -> float:

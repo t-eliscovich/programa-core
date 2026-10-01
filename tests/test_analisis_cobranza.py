@@ -197,7 +197,7 @@ def test_marcar_pone_asterisco_y_flecha_solo_a_rojos():
     assert _uno(d, "ROJ")["flecha"] == "peor"
     assert _uno(d, "VER")["flecha"] is None
     p = next(p for p in d["puntos"] if p["k"] == "ROJ")
-    assert p["cae"] and p["fl"] == "peor"
+    assert p["cae"] == 89 and p["fl"] == "peor"
 
 
 def test_evolucion_pagos_salen_de_los_cheques():

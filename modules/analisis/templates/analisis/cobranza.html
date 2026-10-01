@@ -4,9 +4,11 @@
    Se entra desde el menú de usuario; arriba no va el menú de Análisis. #}
 {% block marca %}Análisis de cartera{% endblock %}  {# Tamara 01/10: "llamalo analisis de cartera" #}
 {% block contenido %}
+{# Tamara 01/10: "las flechitas y el asterisco no se ven muy bien… no se
+   entiende para quién son". Van como etiquetas con texto, pegadas al código. #}
 {% macro marcas(c) -%}
-{%- if c.cae %}<span class="cae" title="Compró {{ c.compra_ult | num_es(0) }} en los últimos 90 días contra {{ c.compra_ant | num_es(0) }} en los 90 anteriores">*</span>{% endif -%}
-{%- if c.flecha %}<span class="fl fl-{{ c.flecha }}" title="{{ {'peor':'Peor','mejor':'Mejor','igual':'Igual'}[c.flecha] }} que hace 30 días">{{ {'peor':'▲','mejor':'▼','igual':'▶'}[c.flecha] }}</span>{% endif -%}
+{%- if c.flecha %} <span class="bd bd-{{ c.flecha }}" title="Contra hace 30 días">{{ {'peor':'▲ peor','mejor':'▼ mejor','igual':'▶ igual'}[c.flecha] }}</span>{% endif -%}
+{%- if c.cae %} <span class="bd bd-cae" title="Compró {{ c.compra_ult | num_es(0) }} en los últimos 3 meses contra {{ c.compra_ant | num_es(0) }} en los 3 anteriores">compra −{{ c.caida }}%</span>{% endif -%}
 {%- endmacro %}
 
 {# ⭐ COBRANZA — sólo la dueña por ahora (30/09/2026: "hoy es para mí, después
@@ -38,9 +40,11 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .punt{display:inline-flex;align-items:center;gap:6px}
 .punt i{display:inline-block;width:50px;height:5px;border-radius:3px;background:#eef1f4;position:relative;overflow:hidden}
 .punt i b{position:absolute;left:0;top:0;bottom:0;background:#1f4f6e}
-.cae{color:#b3362a;font-weight:700;margin-left:2px;cursor:help}
-.fl{font-size:10px;margin-left:4px;cursor:help}.fl-peor{color:#b3362a}.fl-mejor{color:#2a7547}.fl-igual{color:#9aa3af}
-.ley-marcas{font-size:12px;color:var(--g);margin:2px 0 0}
+.bd{display:inline-block;font-size:11px;font-weight:600;line-height:1;padding:3px 6px;border-radius:5px;vertical-align:1px;white-space:nowrap;cursor:help}
+.bd-peor{color:#fff;background:#b3362a}.bd-mejor{color:#fff;background:#2a7547}.bd-igual{color:#374151;background:#e5e7eb}
+.bd-cae{color:#7c2d12;background:#fde7d3;border:1px solid #f5b98a}
+.bd-inc{color:#fff;background:#111827}
+.ley-marcas{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--g);margin:4px 0 0;align-items:center}
 .nom{display:block;font-size:12px;color:var(--g)}
 .mot{font-size:12.5px;color:var(--g);max-width:38ch}
 .sube{color:#b3362a;font-weight:600}.baja{color:#2a7547;font-weight:600}
@@ -113,10 +117,11 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
   <span class="g" id="gcnt"></span>
 </div>
 <div id="grafico"></div>
-<p class="ley-marcas"><span class="cae">*</span> compró 20% menos en los últimos 3 meses que en los 3 anteriores ·
-en los rojos, contra hace 30 días: <span class="fl fl-peor">▲</span> peor (debe más, o no pagó nada) ·
-<span class="fl fl-mejor">▼</span> mejor (bajó la deuda o pagó lo más viejo) · <span class="fl fl-igual">▶</span> igual ·
-<b style="color:#111827">●</b> incobrable (debe desde hace más de un año y no compró en 90 días)</p>
+<div class="ley-marcas">
+  <span><span class="bd bd-peor">▲ peor</span> <span class="bd bd-mejor">▼ mejor</span> rojos: cómo están contra hace 30 días</span>
+  <span><span class="bd bd-cae">compra −40%</span> (<b style="color:#c2410c">*</b> en el gráfico) compró menos que en los 3 meses anteriores</span>
+  <span><b style="color:#111827;font-size:15px">●</b> incobrable: debe hace más de un año y no compra</span>
+</div>
 <div id="evol" hidden></div>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
@@ -281,11 +286,30 @@ recibidos cada mes. Toda la casa:
   // Tamara 30/09: "muy aparatoso el cartel… no hace falta tanta info" y
   // "pone solo codigo y pone cuando es amarillo o rojo que hizo mal".
   const FL={peor:['▲','#b3362a','Peor que hace 30 días'],mejor:['▼','#2a7547','Mejor que hace 30 días'],igual:['▶','#9aa3af','Igual que hace 30 días']};
-  const marca=p=>(p.cae?'*':'')+(p.fl?' '+FL[p.fl][0]:'');
-  function tip(p){ return `<b>${esc(p.k)}${p.cae?'<span class="cae">*</span>':''}</b>`+p.m.map(x=>`<br>${esc(x)}`).join('')
-      +(p.fl?`<br><span style="color:${FL[p.fl][1]}">${FL[p.fl][0]} ${FL[p.fl][2]}</span>`:'')
-      +(p.cae?'<br><span class="cae">*</span> Compra 20% o más abajo que los 3 meses anteriores':'')
-      +(p.i?'<br><b>● Incobrable</b>: debe desde hace más de un año y no compra':''); }
+  // Rótulo del punto: código + flecha de color + caída de compra en naranja.
+  // (el % de caída va en el cartel y la tabla: en el gráfico tapaba códigos)
+  const etiqueta=p=>esc(p.k)+(p.fl?`<tspan fill="${FL[p.fl][1]}"> ${FL[p.fl][0]}</tspan>`:'')
+      +(p.cae?`<tspan fill="#c2410c">*</tspan>`:'');
+  // Rótulos sin pisarse: a la izquierda del punto; si choca, a la derecha;
+  // si choca igual, no se escribe (pasando el mouse se ve).
+  function rotulos(lista, sep){
+    const usados=[]; let g='';
+    const choca=b=>usados.some(u=>b[0]<u[2]&&b[2]>u[0]&&b[1]<u[3]&&b[3]>u[1]);
+    lista.forEach(p=>{
+      const w=(p.k.length+(p.fl?2:0)+(p.cae?1:0))*7.2;
+      const izq=[p.x-sep-w,p.y-8,p.x-sep,p.y+5], der=[p.x+sep,p.y-8,p.x+sep+w,p.y+5];
+      let b=null, anc='end', x=p.x-sep;
+      if(!choca(izq)&&izq[0]>m.l) b=izq; else if(!choca(der)&&der[2]<W) {b=der; anc='start'; x=p.x+sep;}
+      if(!b) return; usados.push(b);
+      g+=`<text class="lab" x="${x}" y="${p.y+4}" text-anchor="${anc}">${etiqueta(p)}</text>`;
+    });
+    return g;
+  }
+  function tip(p){ return `<b>${esc(p.k)}</b>`
+      +(p.i?' <span class="bd bd-inc">incobrable</span>':'')
+      +(p.fl?` <span class="bd bd-${p.fl}">${FL[p.fl][0]} ${p.fl}</span>`:'')
+      +(p.cae?` <span class="bd bd-cae">compra −${p.cae}%</span>`:'')
+      +p.m.map(x=>`<br>${esc(x)}`).join(''); }
   function mostrarTip(p){
     let t=caja.querySelector('.tip'); if(!t){t=document.createElement('div');t.className='tip';caja.appendChild(t);}
     t.innerHTML=tip(p); t.hidden=false;
@@ -313,8 +337,8 @@ recibidos cada mes. Toda la casa:
       const tenue=q&&!marcados.has(p);
       g+=`<circle cx="${p.x}" cy="${p.y}" r="${p.s>=100000?6:4}" fill="${p.i?'#111827':color[p.c]}"${tenue?' opacity=".12"':''}/>`;
     });
-    hit.forEach(p=>{ g+=`<circle cx="${p.x}" cy="${p.y}" r="10" fill="none" stroke="#111827" stroke-width="2"/><text class="lab" x="${p.x-13}" y="${p.y+4}" text-anchor="end">${esc(p.k+marca(p))}</text>`; });
-    if(!q) PRI.forEach(k=>{const p=visibles.find(x=>x.k===k); if(p) g+=`<text class="lab" x="${p.x-8}" y="${p.y+4}" text-anchor="end">${esc(k+marca(p))}</text>`;});
+    hit.forEach(p=>{ g+=`<circle cx="${p.x}" cy="${p.y}" r="10" fill="none" stroke="#111827" stroke-width="2"/>`; });
+    g+=rotulos(q?hit:PRI.map(k=>visibles.find(x=>x.k===k)).filter(Boolean), q?13:8);
     const t=caja.querySelector('.tip');
     caja.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
     if(t) caja.appendChild(t);
