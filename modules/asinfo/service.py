@@ -3142,15 +3142,22 @@ def ingreso_bodega_por_dia(id_bodega: int, corte) -> list[dict]:
          ORDER BY fecha DESC
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=100) or []
+        # TMT 2026-10-01 — con `fetch_dataset` pelado un mes SIN ingresos
+        # todavía (el día 1) no se cacheaba nunca: "no hubo ingresos" y
+        # "Metabase no contestó" daban el mismo []. Se volvía a preguntar en
+        # cada visita (/informes/dia y /produccion-tejeduria-asinfo, ~0,7 s
+        # cada ida). Ahora un vacío BUENO se guarda el TTL entero y un fracaso
+        # vence a los 30 s.
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=100)
+        rows = rows or []
         out = [
             {"dia": str(r.get("dia") or "")[:10],
              "kg": round(float(r.get("ingreso") or 0.0), 2)}
             for r in rows
             if float(r.get("ingreso") or 0.0) > 0.005
         ]
-        if rows:
-            _INGRESO_DIA_CACHE[cache_key] = (now, out)
+        if ok:
+            _cache_put(_INGRESO_DIA_CACHE, cache_key, out, True, _INGRESO_DIA_TTL_SECS)
         return out
     except Exception:  # noqa: BLE001 -- fail-soft
         return []
@@ -3244,7 +3251,7 @@ def _a_un_error_de(palabra: str, canonico: str) -> bool:
     if abs(len(palabra) - len(canonico)) > 1 or palabra[0] != canonico[0]:
         return False
     if len(palabra) == len(canonico):  # sustitución
-        return sum(1 for a, b in zip(palabra, canonico) if a != b) == 1
+        return sum(1 for a, b in zip(palabra, canonico, strict=False) if a != b) == 1
     corta, larga = ((palabra, canonico) if len(palabra) < len(canonico)
                     else (canonico, palabra))
     i = 0
@@ -3342,10 +3349,16 @@ def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
          ORDER BY fecha_cierre
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=2000)
+        rows, ok = metabase_client.fetch_dataset_estado(2, sql, max_results=2000)
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(vacio)
     if not rows:
+        # TMT 2026-10-01 — Asinfo CONTESTÓ y no hay órdenes cerradas en el mes
+        # (el día 1, o un mes sin cierres): eso también se guarda, si no cada
+        # visita a /produccion-tejeduria-asinfo volvía a preguntar (dos veces:
+        # la auto-carga y la pantalla). Sigue disponible=False, como siempre.
+        if ok:
+            _cache_put(_PROD_TEJ_CACHE, cache_key, dict(vacio), True, _PROD_TEJ_TTL_SECS)
         return dict(vacio)
     ofs = []
     agg: dict = {}
