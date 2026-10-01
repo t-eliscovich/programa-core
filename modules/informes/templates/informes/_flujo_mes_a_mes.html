@@ -1,0 +1,29 @@
+{# Tamara 2026-10-01 — hilado de los últimos 5 meses, meses en columnas
+   (fragmento; lo pide el desplegable "Mes a mes" de /informes/flujo-produccion). #}
+{% set _MES = ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'] %}
+{% macro _n(v) %}{% if v is none %}—{% elif v|round(0) == 0 %}—{% else %}{{ '−' if v < 0 else '' }}{{ (v|abs) | num_es(0) }}{% endif %}{% endmacro %}
+{% if not res.ok %}
+  <p class="nd" style="font-size:12.5px;">Asinfo no contestó. Probá de nuevo en un rato.</p>
+{% elif res.meses %}
+{% set _ms = res.meses %}
+<table class="mam-table" style="max-width:640px;table-layout:auto;">
+  <thead>
+    <tr>
+      <th class="lbl" data-no-sort>Hilado kg</th>
+      {% for m in _ms %}<th data-no-sort>{{ _MES[m.mes] }}{% if m.en_curso %}*{% endif %}</th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td class="lbl">Inicial</td>{% for m in _ms %}<td class="num">{{ _n(m[51].inicial) }}</td>{% endfor %}</tr>
+    <tr><td class="lbl">+ Ingresos</td>{% for m in _ms %}<td class="num">{{ _n(m[51].ingresos) }}</td>{% endfor %}</tr>
+    {% if _ms | map(attribute=51) | map(attribute='ajustes') | map('round', 0) | map('abs') | sum %}
+    <tr><td class="lbl">+ Ajustes</td>{% for m in _ms %}<td class="num">{{ _n(m[51].ajustes) }}</td>{% endfor %}</tr>
+    {% endif %}
+    <tr><td class="lbl">− Salidas</td>{% for m in _ms %}<td class="num">{{ _n(m[51].salidas) }}</td>{% endfor %}</tr>
+    <tr class="total"><td class="lbl">Final</td>{% for m in _ms %}<td class="num">{{ _n(m[51].final) }}</td>{% endfor %}</tr>
+    <tr><td class="lbl" style="color:rgb(100 116 139);">Saldo Asinfo</td>{% for m in _ms %}<td class="num" style="color:rgb(100 116 139);">{{ _n(m[51].saldo) }}</td>{% endfor %}</tr>
+    <tr><td class="lbl" style="color:rgb(180 83 9);">De más</td>{% for m in _ms %}<td class="num" style="color:rgb(180 83 9);font-weight:700;">{{ _n(m[51].de_mas) }}</td>{% endfor %}</tr>
+  </tbody>
+</table>
+{% if _ms[-1].en_curso %}<p class="nd" style="font-size:11.5px;margin-top:2px;">* a hoy</p>{% endif %}
+{% endif %}

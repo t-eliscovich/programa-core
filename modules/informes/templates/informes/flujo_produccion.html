@@ -223,6 +223,25 @@
           {# Fila AJUSTES INVENTARIO BORRADA (dueña 2026-07-21 segunda pasada:
              "tenemos que borrar la fila ajustes") — los ajustes que la planta
              registre quedan en el residuo del chequeo de coherencia. #}
+          {# Tamara 2026-10-01: en un mes CERRADO los ajustes de Asinfo
+             (AING, AEGR, transferencias...) tienen renglón propio, así la
+             columna cuadra con los movimientos: inic + ingresos + ajustes −
+             egresos = stock final. #}
+          {% if mes_cerrado %}
+          {% set _aj_h = ahl.get('ajustes_kg') or 0 %}
+          {% set _aj_c = atj.get('ajustes_kg') or 0 %}
+          {% set _aj_t = ate.get('ajustes_kg') or 0 %}
+          <tr>
+            <td class="lbl">Ajustes</td>
+            <td class="num">{% if _aj_h|round(0) %}{{ '+' if _aj_h > 0 else '−' }}{{ (_aj_h|abs) | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td></td>
+            <td class="num">{% if _aj_c|round(0) %}{{ '+' if _aj_c > 0 else '−' }}{{ (_aj_c|abs) | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num">{% if _aj_t|round(0) %}{{ '+' if _aj_t > 0 else '−' }}{{ (_aj_t|abs) | num_es(0) }}{% else %}—{% endif %}</td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           {% set _desp = mov_asinfo.get('desperdicio', {}) %}
           {% if _desp %}
           <tr>
@@ -293,7 +312,7 @@
           </tr>
           {% endif %}
           <tr class="total">
-            <td class="lbl">Stock act.</td>
+            <td class="lbl">{{ 'Stock final' if mes_cerrado else 'Stock act.' }}</td>
             <td class="num">{{ ahl.get('stock_act_kg') | num_es(0) if ahl.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ '%.3f' % (ahl.get('stock_act_ukg') or 0) if ahl.get('stock_act_ukg') else '—' }}</td>
             <td class="num">{{ ahl.get('stock_act_us') | num_es(0) if ahl.get('stock_act_us') else '—' }}</td>
@@ -302,8 +321,60 @@
             <td class="num">{{ ate.get('stock_act_kg') | num_es(0) if ate.get('stock_act_kg') else '—' }}</td>
             <td class="num">{{ aco.get('stock_act_us') | num_es(0) if aco.get('stock_act_us') else '—' }}</td>
           </tr>
+          {# Tamara 2026-10-01: el saldo de Asinfo al cierre del mes, contra el
+             stock según movimientos. La diferencia son kilos que el saldo cuenta
+             de más (falla de Asinfo desde el 13/07): queda a la vista para
+             agarrar estos errores hasta que Asinfo los arregle. #}
+          {% set _sa = mov_asinfo.get('saldo_asinfo') %}
+          {% if mes_cerrado and _sa %}
+          {% macro _de_mas(v) %}{% if v is not none and (v|abs) >= 1 %}{{ '+' if v > 0 else '−' }}{{ (v|abs) | num_es(0) }}{% else %}—{% endif %}{% endmacro %}
+          <tr>
+            <td class="lbl" style="color:rgb(100 116 139);">Saldo Asinfo</td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _sa.hilado | num_es(0) if _sa.hilado is not none else '—' }}</td>
+            <td></td><td></td><td></td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _sa.crudo | num_es(0) if _sa.crudo is not none else '—' }}</td>
+            <td class="num" style="color:rgb(100 116 139);">{{ _sa.term | num_es(0) if _sa.term is not none else '—' }}</td>
+            <td></td>
+          </tr>
+          <tr title="Saldo de Asinfo menos stock según movimientos: lotes que salieron y el saldo no bajó (o entraron dos veces).">
+            <td class="lbl" style="color:rgb(180 83 9);">De más</td>
+            <td class="num" style="color:rgb(180 83 9);background:rgb(254 243 199);font-weight:700;">{{ _de_mas(_sa.hilado_de_mas) }}</td>
+            <td></td><td></td><td></td>
+            <td class="num" style="color:rgb(180 83 9);background:rgb(254 243 199);font-weight:700;">{{ _de_mas(_sa.crudo_de_mas) }}</td>
+            <td class="num" style="color:rgb(180 83 9);background:rgb(254 243 199);font-weight:700;">{{ _de_mas(_sa.term_de_mas) }}</td>
+            <td></td>
+          </tr>
+          {% endif %}
         </tbody>
       </table>
+
+      {# Tamara 2026-10-01: la planilla de hilado mes a mes, viva. Cerrada no
+         ocupa lugar; al abrirla se pide a /informes/flujo-produccion/mes-a-mes
+         (no frena la carga de la pantalla). #}
+      <details class="no-print fp-mam" style="margin-top:6px;">
+        <summary style="cursor:pointer;font-size:12.5px;color:rgb(30 64 175);">Mes a mes</summary>
+        <div data-src="{{ url_for('informes.flujo_produccion_mes_a_mes', anio=anio, mes=mes) }}" style="margin-top:6px;">
+          <p class="nd" style="font-size:12.5px;">Cargando…</p>
+        </div>
+      </details>
+      <script>
+      (function () {
+        var d = document.querySelector('details.fp-mam');
+        if (!d) return;
+        d.addEventListener('toggle', function () {
+          if (!d.open || d.dataset.cargado) return;
+          d.dataset.cargado = '1';
+          var box = d.querySelector('[data-src]');
+          fetch(box.dataset.src, {credentials: 'same-origin'})
+            .then(function (r) { return r.text(); })
+            .then(function (h) { box.innerHTML = h; })
+            .catch(function () {
+              box.innerHTML = '<p class="nd" style="font-size:12.5px;">Asinfo no contestó.</p>';
+              delete d.dataset.cargado;
+            });
+        });
+      })();
+      </script>
 
       {# Strip "STOCK DE QUÍMICOS" ELIMINADO (dueña 2026-07-21): lo que no
          suma no se muestra — los 5 números ya están en la columna QUÍM.$

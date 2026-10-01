@@ -2,7 +2,9 @@
 
 import csv
 import io
+import os
 import re
+import threading as _threading_fp
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
@@ -2974,6 +2976,72 @@ def _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo, tol_pct=1.0):
     return checks
 
 
+def _aplicar_mes_cerrado(mov_asinfo: dict, k: dict, anio: int, mes: int) -> None:
+    """Mes CERRADO: el cuadro de movimientos sale de los MOVIMIENTOS de Asinfo
+    del mes (inventario_producto), no del saldo vivo de hoy.
+
+    Tamara 2026-10-01: mirando agosto, la última fila mostraba el stock de
+    HOY. Ahora: Stock inic. = cierre del mes anterior según movimientos;
+    Ingresos = BOD (hilo) / IFT (cruda y terminado); Ajustes = AING, AEGR,
+    TFB, ...; Egresos = SM (hilo y cruda) / DES (terminado); Stock final =
+    inicial + ingresos + ajustes − egresos. Cuadra al kilo con la planilla
+    de Tamara. Debajo, el saldo de Asinfo al cierre y los kilos que cuenta
+    de más (la falla del saldo desde el 13/07) — a la vista para agarrar
+    estos errores hasta que Asinfo los arregle.
+
+    $/kg del hilado: apertura grabada del mes (cierre del anterior) y la
+    tarifa grabada al cerrar ESTE mes (apertura del siguiente).
+    """
+    hl = mov_asinfo["hilado"]
+    tj = mov_asinfo["tejido"]
+    te = mov_asinfo["terminado"]
+    h, c, t = k[51], k[52], k[53]
+
+    _open = float(hl.get("stock_inic_ukg") or 0)
+    ny, nm = (anio + 1, 1) if mes == 12 else (anio, mes + 1)
+    try:
+        _close = float(queries.apertura_ukg_hilado(nm, ny) or 0)
+    except Exception:  # noqa: BLE001 -- fail-soft
+        _close = 0.0
+    if not _close:
+        _close = float(hl.get("egresos_ukg") or _open)
+
+    hl["stock_inic_kg"] = h["inicial"]
+    hl["stock_inic_us"] = h["inicial"] * _open
+    _ing_us = float(hl.get("ingresos_us") or 0)
+    hl["ingresos_kg"] = h["ingresos"]
+    hl["ingresos_ukg"] = (_ing_us / h["ingresos"]) if h["ingresos"] else 0.0
+    hl["ajustes_kg"] = h["ajustes"]
+    hl["egresos_kg"] = h["salidas"]
+    hl["egresos_ukg"] = _close
+    hl["egresos_us"] = h["salidas"] * _close
+    hl["stock_act_kg"] = h["final"]
+    hl["stock_act_ukg"] = _close
+    hl["stock_act_us"] = h["final"] * _close
+
+    tj["stock_inic_kg"] = c["inicial"]
+    tj["ingresos_kg"] = c["ingresos"]
+    tj["ajustes_kg"] = c["ajustes"]
+    tj["egresos_kg"] = c["salidas"]
+    tj["stock_act_kg"] = c["final"]
+
+    te["stock_inic_kg"] = t["inicial"]
+    te["ingresos_kg"] = t["ingresos"]
+    te["ajustes_kg"] = t["ajustes"]
+    te["egresos_kg"] = t["salidas"]
+    te["stock_act_kg"] = t["final"]
+
+    # En máquinas / esperando orden: no se reconstruyen a fecha pasada, y las
+    # salidas (SM) ya cuentan como egreso apenas salen de la bodega.
+    mov_asinfo["maquinas"] = {"hilado": 0.0, "crudo": 0.0,
+                              "hilado_ukg": 0.0, "hilado_us": 0.0}
+    mov_asinfo["saldo_asinfo"] = {
+        "hilado": h.get("saldo"), "crudo": c.get("saldo"), "term": t.get("saldo"),
+        "hilado_de_mas": h.get("de_mas"), "crudo_de_mas": c.get("de_mas"),
+        "term_de_mas": t.get("de_mas"),
+    }
+
+
 @informes_bp.route("/flujo-produccion")
 @requiere_login
 @requiere_permiso("informes.ver")
@@ -2998,16 +3066,99 @@ def flujo_produccion():
 
     # Cache-hit: contexto ya armado para este (anio, mes) dentro del TTL. Los
     # datos no dependen del usuario, así que se comparte entre usuarios.
-    _ck = (anio, mes)
-    _now_fp = _time_fp.time()
-    _t0_fp = _time_fp.perf_counter()
-    _cached_fp = _FLUJO_PROD_CACHE.get(_ck)
-    if _cached_fp and (_now_fp - _cached_fp[0]) < _FLUJO_PROD_TTL_SECS:
-        _ctx = _cached_fp[1]
+    _ctx = _flujo_prod_cache_get(anio, mes)
+    if _ctx is not None:
         # el context-processor de comparativa_tintoreria lee g._tint_mensual
         g._tint_mensual = _ctx.get("_tint_mensual")
         _LOG_FP.info("flujo_produccion %s/%s cache HIT", mes, anio)
+        _precalentar_mes_anterior(anio, mes)
         return render_template("informes/flujo_produccion.html", **_ctx["render"])
+
+    _render_kw, _tint_mensual, _timings = _armar_flujo_produccion(anio, mes)
+    g._tint_mensual = _tint_mensual
+    _LOG_FP.info("flujo_produccion %s/%s cache MISS %ss %s",
+                 mes, anio, _timings.get("TOTAL"), _timings)
+    _precalentar_mes_anterior(anio, mes)
+    # _perf va SOLO en la respuesta viva (no en el cache) → comentario HTML.
+    return render_template("informes/flujo_produccion.html", _perf=_timings, **_render_kw)
+
+
+@informes_bp.route("/flujo-produccion/mes-a-mes")
+@requiere_login
+@requiere_permiso("informes.ver")
+def flujo_produccion_mes_a_mes():
+    """Hilado de los ÚLTIMOS 5 MESES, meses en columnas (Tamara 2026-10-01), viva desde Asinfo:
+    inicial + ingresos + ajustes − salidas a tejeduría = final según
+    movimientos, contra el final según el saldo de Asinfo. Se pide sola al
+    abrir el desplegable "Mes a mes" del cuadro de movimientos."""
+    from modules.asinfo import kardex_bodegas
+
+    hoy = today_ec()
+    try:
+        anio = int(request.args.get("anio") or hoy.year)
+    except (TypeError, ValueError):
+        anio = hoy.year
+    try:
+        mes = int(request.args.get("mes") or hoy.month)
+    except (TypeError, ValueError):
+        mes = hoy.month
+    mes = max(1, min(mes, 12))
+    res = kardex_bodegas.ultimos(anio, mes, 5, hoy=hoy)
+    return render_template("informes/_flujo_mes_a_mes.html", res=res, anio=anio)
+
+
+def _flujo_prod_ttl(anio: int, mes: int) -> int:
+    """Mes en curso 5 min; mes cerrado 30 min (casi no cambia, y cambiar de
+    mes para atrás y para adelante tiene que ser instantáneo)."""
+    hoy = today_ec()
+    return _FLUJO_PROD_TTL_SECS if (anio, mes) >= (hoy.year, hoy.month) else 1800
+
+
+def _flujo_prod_cache_get(anio: int, mes: int):
+    hit = _FLUJO_PROD_CACHE.get((anio, mes))
+    if hit and (_time_fp.time() - hit[0]) < _flujo_prod_ttl(anio, mes):
+        return hit[1]
+    return None
+
+
+# Tamara 2026-10-01: "tarda mucho en cargar cuando cambio de mes". Cada mes
+# frío son ~10 s de Asinfo. Al mostrar un mes se arma EN SEGUNDO PLANO el mes
+# anterior (lo que se mira después casi siempre), de a uno por vez para no
+# ahogar a Metabase. Así el clic en "mes anterior" encuentra la caché.
+_PRECALENTANDO = _threading_fp.Lock()
+
+
+def _precalentar_mes_anterior(anio: int, mes: int) -> None:
+    if os.environ.get("PYTEST_CURRENT_TEST"):
+        return
+    pa, pm = (anio - 1, 12) if mes == 1 else (anio, mes - 1)
+    if _flujo_prod_cache_get(pa, pm) is not None:
+        return
+    if not _PRECALENTANDO.acquire(blocking=False):
+        return  # ya hay uno armándose
+    app = current_app._get_current_object()
+
+    def _correr():
+        try:
+            with app.app_context():
+                _armar_flujo_produccion(pa, pm)
+        except Exception as e:  # noqa: BLE001 -- nunca romper nada
+            _LOG_FP.warning("precalentar flujo %s/%s falló: %s", pm, pa, e)
+        finally:
+            _PRECALENTANDO.release()
+
+    _threading_fp.Thread(target=_correr, daemon=True,
+                         name="flujo-prod-precalentar").start()
+
+
+def _armar_flujo_produccion(anio: int, mes: int):
+    """Arma el contexto de /flujo-produccion para (anio, mes) y lo deja en la
+    caché si salió bien. Devuelve (render_kw, tint_mensual, timings)."""
+    hoy = today_ec()
+    mes_cerrado = (anio, mes) < (hoy.year, hoy.month)
+    _ck = (anio, mes)
+    _now_fp = _time_fp.time()
+    _t0_fp = _time_fp.perf_counter()
 
     # Federico 2026-07-17 — instrumentación temporal para ver qué consulta domina
     # la primera carga (se expone en un comentario HTML al final de la página).
@@ -3017,6 +3168,7 @@ def flujo_produccion():
     # un segundo cuadro "MOVIMIENTOS DEL MES (inicial Asinfo)" — clon del de
     # abajo pero con el Stock inicial tomado del snapshot de Asinfo al arranque
     # del mes. Ambas fail-soft: si Asinfo está caído la vista igual renderiza.
+    from modules.asinfo import kardex_bodegas as _kardex_bodegas
     from modules.asinfo import service as asinfo_service
 
     fecha_corte = date(anio, mes, 1)  # arranque del mes = corte del as-of
@@ -3042,11 +3194,24 @@ def flujo_produccion():
             _safe, lambda: asinfo_service.fabricacion_proceso(52), {})
         _f_fab_pt = _ex.submit(
             _safe, lambda: asinfo_service.fabricacion_proceso(53), {})
+        # Tamara 2026-10-01 — PERF: lo más lento de _build_mov_asinfo son
+        # consultas a Asinfo que corrían una atrás de otra (~6,6 s). Se
+        # disparan acá en paralelo para que, cuando el armado las pida, ya
+        # estén en su caché. Mismas funciones, mismas claves.
+        _fab52 = _ex.submit(_safe, lambda: asinfo_service.fabricacion_flujo_mes(52, anio, mes), {})
+        _fab53 = _ex.submit(_safe, lambda: asinfo_service.fabricacion_flujo_mes(53, anio, mes), {})
+        _movs = [_ex.submit(_safe, (lambda b: lambda: asinfo_service.movimiento_bodega_mes(
+            b, fecha_corte))(b), {}) for b in (51, 52, 53)]
+        _f_kardex = _ex.submit(_safe, lambda: (
+            _kardex_bodegas.mes(anio, mes) if mes_cerrado else None), None)
         data, error = _f_data.result()
         inv_asinfo, _e_inv = _f_inv.result()
         inv_asinfo_inic, _e_inic = _f_inv_asof.result()
         _fab_tc, _e_ftc = _f_fab_tc.result()
         _fab_pt, _e_fpt = _f_fab_pt.result()
+        _kardex, _e_kx = _f_kardex.result()
+        for _fx in (_fab52, _fab53, *_movs):
+            _fx.result()
     _timings["fetch_paralelo_3"] = round(_time_fp.perf_counter() - _s, 3)
 
     # TMT 2026-08-11 (dueña): *"quizás en hilo hay 9k que ya salieron pero no se
@@ -3185,6 +3350,19 @@ def flujo_produccion():
         except Exception:  # noqa: BLE001 -- best-effort, la vista no rompe
             pass
 
+    # Mes cerrado (Tamara 2026-10-01): el cuadro sale de los movimientos del
+    # mes, con "Stock final" y el saldo de Asinfo al lado. Ver
+    # _aplicar_mes_cerrado y modules/asinfo/kardex_bodegas.
+    if mes_cerrado:
+        espera_hilado = espera_crudo = 0.0
+        if mov_asinfo and _kardex:
+            _aplicar_mes_cerrado(mov_asinfo, _kardex, anio, mes)
+            kg_vendidos_terminado = float(_kardex[53]["salidas"])
+        elif mov_asinfo:
+            # Sin los movimientos de Asinfo no se muestra el stock de HOY como
+            # si fuera el del mes: mejor el aviso de "Asinfo no disponible".
+            mov_asinfo = None
+
     _s = _time_fp.perf_counter()
     coherencia, _e_coh = _safe(
         lambda: _chequeo_coherencia(data, mov_asinfo, prod_tej_asinfo),
@@ -3207,16 +3385,14 @@ def flujo_produccion():
         espera_crudo=espera_crudo,
         inv_en_proceso_pt=inv_en_proceso_pt,
         kg_vendidos_terminado=kg_vendidos_terminado,
+        mes_cerrado=mes_cerrado,
     )
     # Guardar en cache SOLO cargas buenas: sin error y con data del mes. Así un
     # Asinfo caído o un mes vacío no queda "pegado" el TTL entero.
     if not error and isinstance(data, dict) and data.get("header"):
         _FLUJO_PROD_CACHE[_ck] = (
             _now_fp, {"_tint_mensual": _tint_mensual, "render": dict(_render_kw)})
-    _LOG_FP.info("flujo_produccion %s/%s cache MISS %ss %s",
-                 mes, anio, _timings.get("TOTAL"), _timings)
-    # _perf va SOLO en la respuesta viva (no en el cache) → comentario HTML.
-    return render_template("informes/flujo_produccion.html", _perf=_timings, **_render_kw)
+    return _render_kw, _tint_mensual, _timings
 
 
 def _gastos_mes_anterior_componentes(meses_atras: int = 1) -> dict:
