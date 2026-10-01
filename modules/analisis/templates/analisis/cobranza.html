@@ -57,6 +57,8 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 #evol{border:1px solid var(--l);border-radius:10px;padding:12px 14px;margin:6px 0 14px;background:#fff}
 #evol .ev-tit{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
 #evol .ev-tit b{font-size:15px}
+#evol .ev-ec{margin-left:auto;font-size:13px;font-weight:600;color:#1d4ed8;text-decoration:none}
+#evol .ev-ec:hover{text-decoration:underline}
 #evol .ev-res{font-size:13px;color:#374151;margin:4px 0 8px}
 #evol .ev-graf{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px}
 #evol h4{font-size:12px;font-weight:600;color:var(--g);margin:0 0 2px}
@@ -426,15 +428,17 @@ recibidos cada mes. Toda la casa:
       frases.push(`la deuda en facturas pasó de ${fmt(a)} a ${fmt(z)} (${pct>0?'+':''}${pct}%) desde ${EV.meses[i0]}`); }
     return frases.join(' · ');
   }
+  // Tamara 01/10: del panel del cliente se salta a su estado de cuenta.
+  const EC='{{ url_for("informes.estado_cuenta", codigo_cli="__COD__") }}';
   function mostrarEvol(p){
     const box=document.getElementById('evol');
     if(!p){ box.hidden=true; box.innerHTML=''; return; }
     const e=EV.cli[p.k];
-    if(!e){ box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
+    if(!e){ box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span><a class="ev-ec" href="${EC.replace('__COD__',encodeURIComponent(p.k))}">Estado de cuenta →</a></div>
       <div class="ev-res">No tiene facturas impagas. Lo que debe: ${[p.reb>0?fmt(p.reb)+' de cheques devueltos':'', p.ch>0?fmt(p.ch)+' de cheques por cobrar':''].filter(Boolean).join(' y ')||'nada'}.</div>`;
       box.hidden=false; return; }
     const cols=e.c.map(c=>color[c]);
-    box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
+    box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span><a class="ev-ec" href="${EC.replace('__COD__',encodeURIComponent(p.k))}">Estado de cuenta →</a></div>
       <div class="ev-res">${esc(resumenEvol(e))}</div>
       <div class="ev-graf">
         <div><h4>Deuda en facturas al cierre de cada mes</h4>${barras(e.s, cols, 140)}<div class="ley">color = semáforo de ese día</div></div>
