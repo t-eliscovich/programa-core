@@ -42,7 +42,8 @@ _LOG = logging.getLogger("programa_core.pedidos.ordenes")
 ASINFO_DB = 2
 ESTADO_FINALIZADA = 5
 DIAS_DEFAULT = 30
-TTL = 120
+#: La pantalla de la bodega se refresca cada 5 min; la lectura en frío tarda.
+TTL = 600
 _CACHE: dict = {}
 _LOCK = threading.Lock()
 
@@ -98,18 +99,27 @@ def _ofts_asinfo(ofts: list[str]) -> tuple[dict, bool]:
         return {}, True
     from modules._lib import metabase_client
     in_list = ", ".join(f"'{o}'" for o in ofts)
+    # Sin OR en el JOIN (tardaba 15 s): primero las OFT, después la suma de
+    # sus hijas agrupada por padre (8 s medido el 01/10/2026).
     sql = f"""
+WITH p AS (
+  SELECT id_orden_fabricacion, numero, estado_produccion, cantidad, cantidad_fabricada
+    FROM orden_fabricacion
+   WHERE numero IN ({in_list})
+), h AS (
+  SELECT o.id_orden_fabricacion_padre AS padre,
+         SUM(ISNULL(o.cantidad_fabricada, 0)) AS fab
+    FROM orden_fabricacion o
+    JOIN p ON p.id_orden_fabricacion = o.id_orden_fabricacion_padre
+   GROUP BY o.id_orden_fabricacion_padre
+)
 SELECT p.numero,
        MAX(p.estado_produccion) AS estado,
        MAX(p.cantidad) AS plan_kg,
        MAX(ISNULL(p.cantidad_fabricada, 0)) AS fab_padre,
-       SUM(CASE WHEN o.id_orden_fabricacion <> p.id_orden_fabricacion
-                THEN ISNULL(o.cantidad_fabricada, 0) ELSE 0 END) AS fab_hijas
-  FROM orden_fabricacion p
-  JOIN orden_fabricacion o
-    ON o.id_orden_fabricacion = p.id_orden_fabricacion
-    OR o.id_orden_fabricacion_padre = p.id_orden_fabricacion
- WHERE p.numero IN ({in_list})
+       MAX(ISNULL(h.fab, 0)) AS fab_hijas
+  FROM p
+  LEFT JOIN h ON h.padre = p.id_orden_fabricacion
  GROUP BY p.numero
 """
     rows, ok = metabase_client.fetch_dataset_estado(ASINFO_DB, sql, max_results=5000)
@@ -201,8 +211,12 @@ def ordenes(dias: int = DIAS_DEFAULT, hoy: date | None = None) -> dict:
     ofts = sorted({_seguro(str(r.get("oft_numero") or "")) for r in filas} - {""})
     peds = sorted({_seguro(str(r.get("pedido_numero") or "")) for r in filas} - {""})
     try:
-        a, ok_a = _ofts_asinfo(ofts)
-        c, ok_c = _clientes_asinfo(peds)
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as ex:
+            fa = ex.submit(_ofts_asinfo, ofts)
+            fc = ex.submit(_clientes_asinfo, peds)
+            a, ok_a = fa.result()
+            c, ok_c = fc.result()
     except Exception as e:  # noqa: BLE001
         _LOG.warning("ordenes: Asinfo no contestó: %s", e)
         a, c, ok_a, ok_c = {}, {}, False, False

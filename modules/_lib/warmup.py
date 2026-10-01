@@ -161,6 +161,7 @@ def _warm_once() -> None:
     try:
         from modules.asinfo import hilo_sin_of as _hso
         from modules.inventario_rotativo import service as _rot
+        from modules.pedidos import ordenes as _ord
         from modules.pedidos import service as _ped
         from modules.terminado_asinfo import service as _term
         pasos += [
@@ -176,6 +177,9 @@ def _warm_once() -> None:
             ("pedidos_pendientes", lambda: _ped.pendientes()),
             ("pedidos_por_color", lambda: _ped.pedidos_por_color()),
             ("pedidos_acabados", lambda: _ped.acabados_por_producto()),
+            # Órdenes de tintura: pantalla de la bodega, se refresca sola cada
+            # 5 min y en frío tardaba ~30 s (01/10/2026).
+            ("pedidos_ordenes_tintura", lambda: _ord.ordenes()),
         ]
     except Exception as e:  # noqa: BLE001 -- fail-soft
         _LOG.warning("warmup pantallas de stock: %s", e)
