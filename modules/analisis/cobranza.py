@@ -182,7 +182,13 @@ x AS (SELECT id_fact, fechaing, importe FROM scintela.chequesxfact
        WHERE fechaing > %(desde)s::date),
 xd AS (SELECT x.id_fact, me.d, SUM(x.importe) AS despues
          FROM x JOIN me ON x.fechaing > me.d GROUP BY 1, 2),
-f AS (SELECT f.id_factura, f.codigo_cli, f.fecha, COALESCE(f.saldo,0) AS saldo
+f AS (SELECT f.id_factura, f.codigo_cli, f.fecha,
+             -- Tamara 01/10: TNZ decía 134 días en el semáforo y 192 acá. Eran
+             -- facturas T con centavos colgados: el saldo de HOY cuenta sólo
+             -- en las vivas (las mismas que mira el semáforo); lo que se le
+             -- aplicó después del cierre se suma igual.
+             CASE WHEN f.stat IS NULL OR f.stat IN ('Z','A','',' ')
+                  THEN COALESCE(f.saldo,0) ELSE 0 END AS saldo
         FROM scintela.factura f
        WHERE COALESCE(f.stat,'') <> 'X'
          AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
@@ -191,7 +197,7 @@ s AS (SELECT me.d, f.codigo_cli, f.fecha, f.saldo + COALESCE(xd.despues,0) AS sa
         FROM me JOIN f ON f.fecha <= me.d
         LEFT JOIN xd ON xd.id_fact = f.id_factura AND xd.d = me.d)
 SELECT codigo_cli AS cod, date_trunc('month', d)::date AS mes, SUM(sal) AS saldo,
-       d - MIN(fecha) FILTER (WHERE sal > 1) AS edad
+       d - MIN(fecha) FILTER (WHERE sal > 0) AS edad
   FROM s GROUP BY codigo_cli, d
 """
 
