@@ -364,9 +364,8 @@ def resumen_mes(anio: int, mes: int) -> dict:
     ingreso_bodega = 0.0
     if disponible:
         try:
-            from datetime import date as _date
             _mov52 = asinfo_service.movimiento_bodega_mes(
-                52, _date(int(anio), int(mes), 1)
+                52, asinfo_service.corte_del_mes(anio, mes)
             )
             ingreso_bodega = float((_mov52 or {}).get("ingreso") or 0.0)
         except Exception:  # noqa: BLE001 -- fail-soft
@@ -912,10 +911,9 @@ def _parse_dia(dia) -> date:
 def _ingreso_por_dia(anio: int, mes: int) -> list[dict]:
     """Ingreso diario a bodega 52 (fail-soft: [])."""
     try:
-        from datetime import date as _date
 
         from modules.asinfo import service as _asvc
-        return _asvc.ingreso_bodega_por_dia(52, _date(int(anio), int(mes), 1)) or []
+        return _asvc.ingreso_bodega_por_dia(52, _asvc.corte_del_mes(anio, mes)) or []
     except Exception:  # noqa: BLE001 -- fail-soft
         return []
 

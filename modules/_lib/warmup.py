@@ -74,7 +74,7 @@ def _warm_once() -> None:
 
     hoy = today_ec()
     yy, mm = hoy.year, hoy.month
-    corte = date(yy, mm, 1)
+    corte = asvc.corte_del_mes(yy, mm)
     pasos = [
         # ⭐ VA PRIMERO, y no es un paso más. El balance lee el inventario y las
         # importaciones ALINEADOS: cada 5 minutos tira las dos cachés y las

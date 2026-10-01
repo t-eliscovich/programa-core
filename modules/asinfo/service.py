@@ -1612,6 +1612,19 @@ _INVENTARIO_ASOF_TTL_SECS = 300  # 5 min (antes 10 — dueña 2026-07-18)
 _INVENTARIO_ASOF_CACHE: dict = {}
 
 
+def corte_del_mes(yy: int, mm: int):
+    """La fecha de CORTE de un mes: el último día del mes ANTERIOR.
+
+    🚨 Tamara 2026-10-01. El stock inicial se toma con `fecha <= corte` y los
+    movimientos del mes con `fecha > corte`. Antes el corte era el día 1, así
+    que todo lo que pasaba el DÍA 1 quedaba adentro del inicial y nunca se
+    veía como producción del mes (el 01/10 tejeduría mostraba 0 kg con 5.570
+    kg ingresados). Con el corte en el cierre del día anterior, el día 1 es
+    del mes, como cualquier otro."""
+    from datetime import timedelta as _td
+    return _date(int(yy), int(mm), 1) - _td(days=1)
+
+
 def inventario_por_etapa_a_fecha(fecha_corte) -> dict:
     """Kg de inventario por etapa AS-OF `fecha_corte` (fail-soft).
 
@@ -1819,7 +1832,6 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
 
     Fail-soft: si Asinfo no está disponible devuelve stock_act_ukg = open_ukg
     (nunca lanza, nunca rompe el balance ni el flujo)."""
-    from datetime import date as _date
     global _ULTIMA_TARIFA_HILADO
     _open = float(open_ukg or 0)
     _fallback = {
@@ -1829,7 +1841,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "hi0": 0.0, "hi1": 0.0, "maq": 0.0, "compras": 0.0, "compras_us": 0.0,
     }
     try:
-        inv_inic = inventario_por_etapa_a_fecha(_date(int(yy), int(mm), 1))
+        inv_inic = inventario_por_etapa_a_fecha(corte_del_mes(yy, mm))
         inv_act = inventario_por_etapa()
     except Exception:  # noqa: BLE001 -- fail-soft
         return _fallback
@@ -2441,13 +2453,12 @@ def hilado_egresos_mes(yy: int, mm: int, *, mov: dict | None = None,
     no repetir queries); si faltan se consultan acá. Fail-soft:
     disponible=False si Asinfo no da el movimiento de bodega.
     """
-    from datetime import date as _date
     out = {"disponible": False, "egresos_kg": 0.0, "reingresos_kg": 0.0,
            "bruto_egr_kg": 0.0, "ingreso_bodega_kg": 0.0,
            "importaciones_kg": 0.0}
     try:
         if mov is None:
-            mov = movimiento_bodega_mes(51, _date(int(yy), int(mm), 1)) or {}
+            mov = movimiento_bodega_mes(51, corte_del_mes(yy, mm)) or {}
         ing = float(mov.get("ingreso") or 0.0)
         egr = float(mov.get("egreso") or 0.0)
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista

@@ -1261,7 +1261,7 @@ def test_el_tejido_sale_del_INGRESO_A_BODEGA_no_de_las_OFs_cerradas():
                return_value=dias) as f:
         t = dia.tejido_del_dia(date(2026, 8, 5))
     assert f.call_args[0][0] == 52                      # la bodega de tejeduría
-    assert f.call_args[0][1] == date(2026, 8, 1)        # el corte, 1° del mes
+    assert f.call_args[0][1] == date(2026, 7, 31)       # el corte: cierre del día anterior al 1° (01/10/2026)
     assert t["kg"] == pytest.approx(7622.72, abs=0.01)
     assert t["mes_kg"] == pytest.approx(30000.15, abs=0.01)
 

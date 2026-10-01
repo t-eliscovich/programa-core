@@ -5347,11 +5347,10 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # Fail-soft: sin Asinfo quedan las compras K, como antes.
     _tej_kg_balance = float(tej.get("kg_total") or 0)
     try:
-        from datetime import date as _date_tejb
 
         from modules.asinfo import service as _asvc_tejb
         _mov52_bal = _asvc_tejb.movimiento_bodega_mes(
-            52, _date_tejb(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
+            52, _asvc_tejb.corte_del_mes(_hoy_ec_bal.year, _hoy_ec_bal.month)) or {}
         _ing_crudo_bal = float(_mov52_bal.get("ingreso") or 0)
         if _ing_crudo_bal > 0:
             _tej_kg_balance = _ing_crudo_bal
@@ -5366,11 +5365,10 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     # físicos. Fallback: kg de tinto/formulas (comportamiento anterior).
     _tin_kg_balance = 0.0
     try:
-        from datetime import date as _date_tinb
 
         from modules.asinfo import service as _asvc_tinb
         _mov53_bal = _asvc_tinb.movimiento_bodega_mes(
-            53, _date_tinb(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
+            53, _asvc_tinb.corte_del_mes(_hoy_ec_bal.year, _hoy_ec_bal.month)) or {}
         _tin_kg_balance = float(_mov53_bal.get("ingreso") or 0)
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
         _tin_kg_balance = 0.0

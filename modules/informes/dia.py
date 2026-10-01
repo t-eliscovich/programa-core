@@ -486,11 +486,10 @@ def tejido_del_dia(fecha) -> dict:
     """
     vacio = {"disponible": False}
     try:
-        from datetime import date as _date
 
         from modules.asinfo import service as _asinfo
         dias = _asinfo.ingreso_bodega_por_dia(
-            52, _date(fecha.year, fecha.month, 1)) or []
+            52, _asinfo.corte_del_mes(fecha.year, fecha.month)) or []
     except Exception as e:  # noqa: BLE001 -- Asinfo caído no tumba la pantalla
         _LOG.warning("dia: no pude leer la tejeduría (%s)", e)
         return vacio

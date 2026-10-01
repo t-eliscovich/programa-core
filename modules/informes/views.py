@@ -238,7 +238,7 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
             from datetime import date as _date_mov
 
             from modules.asinfo import service as _asvcd
-            _corte = _date_mov(int(anio), int(mes), 1)  # mismo corte que el inicial
+            _corte = _asvcd.corte_del_mes(int(anio), int(mes))  # mismo corte que el inicial
             mov51 = _asvcd.movimiento_bodega_mes(51, _corte) or mov51
             mov52 = _asvcd.movimiento_bodega_mes(52, _corte) or mov52
             mov53 = _asvcd.movimiento_bodega_mes(53, _corte) or mov53
@@ -3171,7 +3171,8 @@ def _armar_flujo_produccion(anio: int, mes: int):
     from modules.asinfo import kardex_bodegas as _kardex_bodegas
     from modules.asinfo import service as asinfo_service
 
-    fecha_corte = date(anio, mes, 1)  # arranque del mes = corte del as-of
+    # cierre del día anterior al 1° = corte del as-of (ver corte_del_mes)
+    fecha_corte = asinfo_service.corte_del_mes(anio, mes)
 
     # Federico 2026-07-17 — PERF: estas 3 consultas son INDEPENDIENTES entre sí y
     # sus backends son thread-safe (dBase = ThreadedConnectionPool; Asinfo = HTTP
