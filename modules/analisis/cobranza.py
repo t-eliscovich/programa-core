@@ -241,7 +241,10 @@ def evolucion(cods: set[str], evol: list[dict], compras: list[dict],
             continue
         f = fila(r["cod"])
         f["s"][i] = round(_f(r["saldo"]))
-        f["e"][i] = None if r.get("edad") is None else int(r["edad"])
+        # Como el semáforo: si las notas de crédito dejan el saldo en
+        # facturas en cero o a favor, la factura más vieja no cuenta (DCA, WUA).
+        f["e"][i] = (None if r.get("edad") is None or _f(r["saldo"]) <= 0
+                     else int(r["edad"]))
     compro_extra: dict[str, dict[date, float]] = {}
     for r in compras:
         if r["cod"] not in cods:

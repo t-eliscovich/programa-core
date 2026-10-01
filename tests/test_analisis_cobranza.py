@@ -161,3 +161,11 @@ def test_evolucion_debe_y_no_compra_es_rojo():
     e = cob.evolucion({"B"}, [dict(cod="B", mes=meses[0], saldo=900, edad=20)],
                       [], [], meses, {})
     assert e["B"]["c"][0] == "rojo"
+
+
+def test_evolucion_sin_saldo_no_tiene_factura_vieja():
+    from datetime import date
+    meses = [date(2026, 9, 1), date(2026, 10, 1)]
+    e = cob.evolucion({"DCA"}, [dict(cod="DCA", mes=meses[0], saldo=-50, edad=163)],
+                      [], [], meses, {})
+    assert e["DCA"]["e"][0] is None
