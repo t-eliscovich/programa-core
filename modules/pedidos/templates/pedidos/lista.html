@@ -165,13 +165,13 @@
       <h1>Pedidos pendientes</h1>
       <p class="nota">Lo que se pidió y todavía no se despachó, contra bodega y producción. Fuente: Asinfo.</p>
     </div>
-    {% if disponible and categorias %}
     <div class="acciones no-print">
       <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
+    {% if disponible and categorias %}
       <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
       <button type="button" class="btn" onclick="window.print()">Imprimir</button>
-    </div>
     {% endif %}
+    </div>
   </div>
 
   {% if not disponible %}

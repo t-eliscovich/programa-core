@@ -1,5 +1,4 @@
 {% extends "base.html" %}
-{% from "_ui.html" import nav_resultados %}
 {% from "_informes_design.html" import informes_styles %}
 {% block title %}Flujo producción {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
@@ -108,7 +107,6 @@
 
 {% block content %}
 <div class="max-w-full fp info-page">
-  {{ nav_resultados('flujo_produccion') }}
   <div class="flex items-center justify-between mb-2 no-print flex-wrap gap-2">
     <div>
       <h1 class="text-2xl font-semibold">Flujo producción · Costos unitarios</h1>

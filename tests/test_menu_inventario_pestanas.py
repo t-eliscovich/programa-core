@@ -82,3 +82,18 @@ def test_fuentes_y_usos_es_pestana_de_resultados(app):
     assert "('fuentes_y_usos', 'Fuentes y usos')" in ui[i:ui.index("endmacro", i)]
     tpl = (root / "modules" / "informes" / "templates" / "informes" / "fuentes_usos.html").read_text(encoding="utf-8")
     assert "nav_resultados('fuentes_y_usos')" in tpl
+
+
+def test_flujo_produccion_no_lleva_las_pestanas_de_resultados():
+    """Tamara 01/10/2026: "¿por qué aparece ahí arriba Resultados?" — el
+    Flujo de producción está en Producción y stocks, no en Resultados."""
+    from pathlib import Path
+    tpl = Path("modules/informes/templates/informes/flujo_produccion.html").read_text()
+    assert "nav_resultados" not in tpl
+
+
+def test_ordenes_de_tintura_siempre_visible_en_pedidos():
+    from pathlib import Path
+    tpl = Path("modules/pedidos/templates/pedidos/lista.html").read_text()
+    i = tpl.index("url_for('pedidos.ordenes')")
+    assert "{% if disponible and categorias %}" not in tpl[tpl.rindex('<div class="acciones', 0, i):i]
