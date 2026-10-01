@@ -600,11 +600,10 @@
   const footSaldo     = document.getElementById('aplic-foot-saldo');
   const footAplicado  = document.getElementById('aplic-foot-aplicado');
   const footAcum      = document.getElementById('aplic-foot-acum');
-  // TMT 2026-05-15: con multi-cheque, fechad vive por bloque. Para el
-  // cálculo de "Plazo" en el summary usamos la fechad del PRIMER cheque
-  // (como referencia). Si tenés cheques con fechas distintas, mirá
-  // el plazo de cada uno en el detalle individual después de guardar.
-  const fechadInput   = document.querySelector('input.cheque-fechad');
+  // Con multi-cheque, fechad vive por bloque. El "Plazo" del resumen usa
+  // el promedio de las fechas de TODOS los cheques, ponderado por importe
+  // (01/10/2026: antes tomaba sólo el primero y 15 cheques del 10/11 al
+  // 28/01 daban 56 días en vez de ~90). Ver fechaPromedioCheques().
   const FACT_URL_BASE = "{{ url_for('cheques.api_facturas_pendientes', codigo_cli='__CODIGO__') }}";
 
   let facturas = [];
@@ -1620,9 +1619,9 @@
     // Plazo en días = F. depósito cheque − promedio PONDERADO(fecha
     // facturas, por monto aplicado). Una factura de $10K a 60 días pesa
     // más que una de $100 a 10 días. TMT 2026-05-15.
-    const fechadStr = fechadInput ? fechadInput.value : '';
-    if (fechadStr && fechasYMontosSel.length > 0) {
-      const fechad = new Date(fechadStr + 'T00:00:00');
+    const fechadTs = fechaPromedioCheques();
+    if (fechadTs != null && fechasYMontosSel.length > 0) {
+      const fechad = new Date(fechadTs);
       const totalPeso = fechasYMontosSel.reduce((a, r) => a + r.monto, 0);
       if (totalPeso > 0.005) {
         const sumaPesoFecha = fechasYMontosSel.reduce((a, r) => {
@@ -1632,7 +1631,7 @@
         const diffMs = fechad.getTime() - avgTs;
         const diasPlazo = Math.round(diffMs / (1000 * 60 * 60 * 24));
         plazoSpan.textContent = `${diasPlazo} días`;
-        plazoSpan.title = 'Promedio ponderado por monto (no simple)';
+        plazoSpan.title = 'Fecha promedio de los cheques menos fecha promedio de las facturas, ponderadas por monto';
         plazoSpan.className = diasPlazo > 60 ? 'text-red-600'
                             : diasPlazo > 30 ? 'text-amber-700'
                             : 'text-emerald-700';
@@ -1745,6 +1744,24 @@
 
   // Devuelve la suma de todos los importes ingresados en los bloques
   // cheque (usado para FIFO + summary cuando hay multi-cheque).
+  // Fecha "A depositar" promedio de los cheques, ponderada por importe
+  // (timestamp ms). Bloques sin fecha no cuentan; si ninguno tiene
+  // importe, promedio simple de las fechas cargadas. null si no hay fechas.
+  function fechaPromedioCheques() {
+    let peso = 0, suma = 0, n = 0, sumaSimple = 0;
+    document.querySelectorAll('.cheque-bloque').forEach(b => {
+      const f = ((b.querySelector('.cheque-fechad') || {}).value || '').trim();
+      if (!f) return;
+      const ts = new Date(f + 'T00:00:00').getTime();
+      if (isNaN(ts)) return;
+      const imp = Math.abs(parseMonto((b.querySelector('.cheque-imp') || {}).value || ''));
+      n++; sumaSimple += ts;
+      if (imp > 0.005) { peso += imp; suma += ts * imp; }
+    });
+    if (peso > 0.005) return suma / peso;
+    return n ? sumaSimple / n : null;
+  }
+
   function sumaImporteCheques() {
     let s = 0;
     document.querySelectorAll('.cheque-imp').forEach(inp => {
@@ -1982,7 +1999,7 @@
   });
 
   // Cuando cambia cualquier fechad de cualquier bloque, recalcular plazo
-  // (que usa la fechad del PRIMER cheque).
+  // (promedio ponderado de todos los cheques).
   chequesList.addEventListener('change', (e) => {
     if (e.target.classList.contains('cheque-fechad')) {
       updateSummary();
