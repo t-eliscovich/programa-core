@@ -338,6 +338,10 @@ def _rango(v: float | None, universo: list[float]) -> float:
     return 100.0 * sum(1 for x in universo if x < v) / len(universo)
 
 
+def _miles(x) -> str:
+    return f"{round(_f(x)):,}".replace(",", ".")
+
+
 def semaforo(c: dict) -> tuple[str, list[str]]:
     """Color y motivos. Basta una condición; rojo le gana a amarillo.
 
@@ -353,10 +357,12 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
     elif c["fac"] > 0 and edad is not None and edad >= AMARILLO_DIAS_FACTURA:
         amar.append(f"Factura impaga de {edad} días")
     if c["reb"] > 0 and (c.get("reb_dias") or 0) > REBOTE_VIEJO_DIAS:
-        rojo.append("Cheque devuelto sin reemplazar hace más de "
-                    f"{REBOTE_VIEJO_DIAS} días")
+        # Tamara 01/10 (RUS): decir cuánto y hace cuánto, no sólo la regla.
+        rojo.append(f"Cheque devuelto de {_miles(c['reb'])} sin reemplazar "
+                    f"hace {c['reb_dias']} días")
     elif c["reb"] > 0:
-        amar.append("Cheque devuelto reciente sin reemplazar")
+        amar.append(f"Cheque devuelto de {_miles(c['reb'])} sin reemplazar "
+                    f"hace {c.get('reb_dias') or 0} días")
     if c["venta90"] <= 0 and c["fac"] > 500:
         rojo.append("Tiene facturas impagas y no compró en 90 días")
     if c.get("veces") is not None and c["veces"] >= AMARILLO_VECES_PLAZO:
@@ -508,7 +514,9 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
         "puntos": [{"k": c["cod"], "n": c["nombre"], "v": c["vend"],
                     "c": c["color"], "s": round(c["saldo"]),
                     "p": c["puntaje"],
-                    "m": c["motivos"]}
+                    "m": c["motivos"],
+                    "fac": round(c["fac"]), "ch": round(c["ch"]),
+                    "reb": round(c["reb"])}
                    for c in filas if c["saldo"] > 0],
         "resumen": resumen,
         "resumen_vend": resumen_vend,

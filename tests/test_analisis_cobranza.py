@@ -114,13 +114,13 @@ def test_rompe_varias_reglas_muestra_todas_rojo_primero():
     c = _uno(d, "DOS")
     assert c["color"] == "rojo"
     assert c["motivos"] == ["Factura impaga de 160 días",
-                            "Cheque devuelto reciente sin reemplazar"]
+                            "Cheque devuelto de 1.000 sin reemplazar hace 3 días"]
 
 
 def test_devuelto_viejo_no_se_repite_como_reciente():
     d = _armar([_cli("VIE", fac=5000, edad_max=10, reb=1000, reb_dias=45)])
     assert _uno(d, "VIE")["motivos"] == [
-        "Cheque devuelto sin reemplazar hace más de 7 días"]
+        "Cheque devuelto de 1.000 sin reemplazar hace 45 días"]
 
 
 def test_devuelto_de_mas_de_7_dias_ya_es_rojo():

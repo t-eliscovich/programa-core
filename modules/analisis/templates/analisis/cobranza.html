@@ -390,7 +390,7 @@ recibidos cada mes. Toda la casa:
     if(!p){ box.hidden=true; box.innerHTML=''; return; }
     const e=EV.cli[p.k];
     if(!e){ box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
-      <div class="ev-res">No tuvo facturas con saldo desde ${EV.meses[0]||'junio'}: lo que debe son cheques por cobrar.</div>`;
+      <div class="ev-res">No tiene facturas impagas. Lo que debe: ${[p.reb>0?fmt(p.reb)+' de cheques devueltos':'', p.ch>0?fmt(p.ch)+' de cheques por cobrar':''].filter(Boolean).join(' y ')||'nada'}.</div>`;
       box.hidden=false; return; }
     const cols=e.c.map(c=>color[c]);
     box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
