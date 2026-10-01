@@ -1,6 +1,6 @@
 # Backlog — Programa Core
 
-_Última actualización: 2026-09-17._
+_Última actualización: 2026-10-01._
 
 **Contexto:** el dBase/FoxPro se retiró el 05/08/2026. PC es la única fuente de
 verdad. No hay más syncs ni compares.
@@ -8,6 +8,15 @@ verdad. No hay más syncs ni compares.
 Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L >1 día).
 
 ---
+
+## Menú: juntar Inventario (pedido de Tamara 01/10/2026)
+
+### [M] Un solo "Inventario" con pestañas · hay demasiados accesos a la izquierda · base.html + las pantallas
+Pestañas, en este orden: Inventario inicial, Importación, Tejeduría
+(`/stock/fabricacion-tc`, `/produccion-tejeduria-asinfo`), Terminado
+(`/produccion-terminado-asinfo`), Rotación de inventario. "Producción
+tintorería" queda como está y gana una pestaña para el stock de químicos
+(`/stock/quimicos`). Mostrar la vista previa antes de pushear.
 
 ## Compras locales de hilo
 

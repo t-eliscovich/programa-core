@@ -261,6 +261,21 @@ def excel():
     )
 
 
+@pedidos_bp.route("/pedidos/ordenes")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def ordenes():
+    """Las órdenes de tintura con producto, cliente, pedido y avance en kg
+    (Tamara 2026-10-01). Ver modules/pedidos/ordenes.py."""
+    from . import ordenes as _ord
+
+    res = _ord.ordenes()
+    return render_template(
+        "pedidos/ordenes.html", res=res, filas=res["filas"],
+        estados=_ord.ESTADOS, dias=_ord.DIAS_DEFAULT,
+    )
+
+
 @pedidos_bp.route("/pedidos/color/<codigo>")
 @requiere_login
 @requiere_permiso("facturas.ver")

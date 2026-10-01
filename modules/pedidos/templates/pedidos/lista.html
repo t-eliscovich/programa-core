@@ -167,6 +167,7 @@
     </div>
     {% if disponible and categorias %}
     <div class="acciones no-print">
+      <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
       <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
       <button type="button" class="btn" onclick="window.print()">Imprimir</button>
     </div>
