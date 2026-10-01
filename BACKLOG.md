@@ -9,15 +9,6 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ---
 
-## Menú: juntar Inventario (pedido de Tamara 01/10/2026)
-
-### [M] Un solo "Inventario" con pestañas · hay demasiados accesos a la izquierda · base.html + las pantallas
-Pestañas, en este orden: Inventario inicial, Importación, Tejeduría
-(`/stock/fabricacion-tc`, `/produccion-tejeduria-asinfo`), Terminado
-(`/produccion-terminado-asinfo`), Rotación de inventario. "Producción
-tintorería" queda como está y gana una pestaña para el stock de químicos
-(`/stock/quimicos`). Mostrar la vista previa antes de pushear.
-
 ## Compras locales de hilo
 
 ### [XS] Borrar `scintela.hilo_local_tarifa` (mig 0143) · el tarifario se retiró el 17/09/2026 (la plata es la factura de Asinfo) y ya no tiene lectores · migración de DROP TABLE

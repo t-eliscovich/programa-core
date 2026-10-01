@@ -349,7 +349,8 @@
         ('historico_12m', 'Historia'),
         ('traza', 'Trazabilidad'),
         ('gastos', 'Gastos del mes'),
-        ('cierres', 'Cierres del mes')] %}
+        ('cierres', 'Cierres del mes'),
+        ('fuentes_y_usos', 'Fuentes y usos')] %}
     {% if _ep == actual %}
       <span class="inline-flex items-center justify-center text-sm px-4 py-1.5 rounded border border-sky-500 bg-sky-500 text-white"
             style="min-width: 11rem; text-align: center;">{{ _lbl }}</span>
@@ -388,4 +389,43 @@
           title="Cambiar estado (Z/A/T/X)">
     {% for s in ['Z','A','T','X'] %}<option value="{{ s }}"{{ ' selected' if _st==s }}>{{ s }}</option>{% endfor %}
   </select>
+{% endmacro %}
+
+
+{# ===================================================================== #}
+{# Pestañas de INVENTARIO y de TINTORERÍA (Tamara 2026-10-01: "hay        #}
+{# demasiados en la izquierda"). El menú tiene UNA entrada por cada una   #}
+{# y las pantallas se recorren desde acá arriba. Mismo diseño que las     #}
+{# pestañas de Resultados.                                                #}
+{# ===================================================================== #}
+{% macro _nav_pestanas(items, actual) %}
+<div class="no-print nav-resultados flex flex-wrap items-stretch gap-2 mb-3">
+  {% for _ep, _lbl in items %}
+    {% if _ep == actual %}
+      <span class="inline-flex items-center justify-center text-sm px-4 py-1.5 rounded border border-sky-500 bg-sky-500 text-white"
+            style="min-width: 9rem; text-align: center;">{{ _lbl }}</span>
+    {% else %}
+      <a href="{{ url_for(_ep) }}"
+         class="inline-flex items-center justify-center text-sm px-4 py-1.5 rounded border border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20 transition"
+         style="min-width: 9rem; text-align: center;">{{ _lbl }}</a>
+    {% endif %}
+  {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro nav_inventario(actual='') %}
+{%- set _items = [('stock_asinfo.fabricacion_tc', 'Inventario'),
+                  ('stock_asinfo.consumo_hilado', 'Consumo de hilado'),
+                  ('importaciones.lista', 'Ingreso de hilado')] -%}
+{%- if tiene_permiso('tejeduria.ver') -%}
+  {%- set _items = _items + [('tejeduria_asinfo.tab', 'Tejeduría')] -%}
+{%- endif -%}
+{%- set _items = _items + [('terminado_asinfo.tab', 'Terminado'),
+                           ('inventario_rotativo.lista', 'Rotación')] -%}
+{{ _nav_pestanas(_items, actual) }}
+{% endmacro %}
+
+{% macro nav_tintoreria(actual='') %}
+{{ _nav_pestanas([('comparativa_tintoreria.comparativa_tintoreria', 'Producción tintorería'),
+                  ('stock_asinfo.quimicos', 'Stock químicos')], actual) }}
 {% endmacro %}

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
 {% block title %}Ingreso de hilado — Asinfo ↔ Programa{% endblock %}
 {% block breadcrumb %}<strong>Ingreso de hilado</strong>{% endblock %}
 
@@ -107,6 +108,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_inventario('importaciones.lista') }}
 <div class="page-shell page-shell--full imp">
 
   <div class="mb-4 no-print">

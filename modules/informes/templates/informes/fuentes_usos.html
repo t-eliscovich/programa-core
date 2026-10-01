@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_ui.html" import page_hero, volver_a_resultados %}
+{% from "_ui.html" import page_hero, volver_a_resultados, nav_resultados %}
 {% block title %}Fuentes y Usos{% endblock %}
 {% block breadcrumb %}Informes / <strong>Fuentes y Usos</strong>{% endblock %}
 
@@ -8,6 +8,9 @@
    TMT 2026-05-24 v2 — dueña: "agrandalo un 20%". Subo tipografia 11→13.2px
    tbody y 9.5→11.5px thead. Mantengo margenes apretados para que siga
    entrando sin scroll. #}
+{# Tamara 2026-10-01: Fuentes y usos sale del menú de la izquierda y pasa a
+   ser una pestaña más de Resultados. #}
+{{ nav_resultados('fuentes_y_usos') }}
 <div class="max-w-7xl table-compact fyu-page">
   <style>
     .max-w-7xl.table-compact > .mb-6 { margin-bottom: 4px !important; }

@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
 {% block title %}Inventario{% endblock %}
 {% block breadcrumb %}
   <span>Stock</span> / <strong>Inventario</strong>
@@ -85,6 +86,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_inventario('stock_asinfo.fabricacion_tc') }}
 <div class="page-shell page-shell--full fb">
 
   {# ── Encabezado — TMT 2026-07-08 (dueña): "unificamos PT y TC en una
@@ -96,11 +98,6 @@
     </div>
   </div>
 
-  {# Pestañas de la vista Inventario (dueña 27/08/2026): Consumo Hilado #}
-  <div class="tabs">
-    <a class="actual" href="{{ url_for('stock_asinfo.fabricacion_tc') }}">Inventario</a>
-    <a href="{{ url_for('stock_asinfo.consumo_hilado') }}">Consumo Hilado</a>
-  </div>
 
   {% if error %}
     <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">

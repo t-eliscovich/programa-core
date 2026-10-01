@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
 {% block title %}Producción Tejeduría Asinfo {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('compras.produccion_tejeduria') }}" class="hover:underline">Producción Tejeduría</a> /
@@ -84,6 +85,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_inventario('tejeduria_asinfo.tab') }}
 {% if esperando_kg %}
   {# 🚨 TMT 2026-08-11: hilo que ya salió de bodega y todavía cuenta porque no
      tiene su orden. Acá es donde se crea esa orden, así que el número va

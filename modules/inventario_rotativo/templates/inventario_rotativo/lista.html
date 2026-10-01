@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
 {% block title %}Rotación del inventario{% endblock %}
 {% block breadcrumb %}<strong>Rotación del inventario</strong>{% endblock %}
 
@@ -129,6 +130,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_inventario('inventario_rotativo.lista') }}
 <div class="iv{% if imprimir %} hoja{% endif %}">
 
   {% if imprimir %}

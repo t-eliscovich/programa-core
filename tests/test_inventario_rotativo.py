@@ -451,23 +451,17 @@ def test_la_unidad_va_en_una_columna_y_no_pegada_a_cada_numero(app, fake_db):
     assert 'class="u"' not in tabla         # el sufijo por celda ya no existe
 
 
-def test_el_link_del_menu_va_debajo_de_inventario_en_produccion_y_stocks(app, fake_db):
-    """Federico 2026-08-20: "pasarlo a la sección de Stock, debajo de Inventario".
-
-    Antes vivía en "Modificar", debajo de Pedidos pendientes (dueña 2026-08-18).
-    La sección "Producción y stocks" ya está gateada con `stock.ver` —el mismo
-    permiso de SU pantalla—, así que el link no necesita gate propio.
-    """
-    base = (Path(app.root_path) / "templates" / "base.html").read_text(encoding="utf-8")
-    i_stock = base.index('data-key="stock"')
-    i_mod = base.index('data-key="modificar"')
-    i_fab = base.index("stock_asinfo.fabricacion_tc")
-    i_inv = base.index("inventario_rotativo.lista")
-    i_imp = base.index("importaciones.lista")
-    # dentro de la sección, y justo entre "Inventario" e "Ingreso de hilado"
-    assert i_stock < i_fab < i_inv < i_imp
-    # y ya no está en "Modificar", que arranca antes
-    assert i_mod < i_stock
+def test_rotacion_es_una_pestana_de_inventario(app, fake_db):
+    """Tamara 2026-10-01: "hay demasiados en la izquierda". Rotación dejó de
+    tener renglón propio en el menú: es una pestaña de Inventario (antes,
+    Federico 20/08, iba debajo de Inventario en Producción y stocks)."""
+    root = Path(app.root_path)
+    ui = (root / "templates" / "_ui.html").read_text(encoding="utf-8")
+    i = ui.index("macro nav_inventario")
+    assert "inventario_rotativo.lista" in ui[i:ui.index("endmacro", i)]
+    tpl = (root / "modules" / "inventario_rotativo" / "templates" / "inventario_rotativo"
+           / "lista.html").read_text(encoding="utf-8")
+    assert "nav_inventario('inventario_rotativo.lista')" in tpl
 
 
 # ── acabado ─────────────────────────────────────────────────────────────────

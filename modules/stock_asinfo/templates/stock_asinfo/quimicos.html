@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_tintoreria with context %}
 {% block title %}Stock Químicos · formulas_app{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('stock.lista') }}" class="hover:underline">Stock</a> /
@@ -28,6 +29,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_tintoreria('stock_asinfo.quimicos') }}
 <div class="page-shell page-shell--full sq">
 
   <div class="flex items-end justify-between mb-4 flex-wrap gap-3 no-print">

@@ -897,7 +897,7 @@
       </button>
     </div>
     {# ---------- nav link macro with active-state detection + inline icon ---------- #}
-    {% macro nav_link(endpoint, label, icon='dot') -%}
+    {% macro nav_link(endpoint, label, icon='dot', tambien=()) -%}
       {#- Active match:
           (a) endpoint exacto, o
           (b) si este menú es ".lista", también activar en sus páginas de
@@ -909,7 +909,7 @@
                                '.crear', '.confirmar_anulacion',
                                '.anular', '.confirmar_reverso',
                                '.reversar', '.ver') %}
-      {% set active = (request.endpoint == endpoint) or (
+      {% set active = (request.endpoint == endpoint) or (request.endpoint in tambien) or (
             endpoint.endswith('.lista')
             and request.endpoint
             and request.endpoint.startswith(endpoint.split('.')[0] + '.')
@@ -1004,7 +1004,9 @@
       {% if tiene_permiso('informes.ver') %}
       <details class="sidebar-section" data-key="informes" open>
         <summary>Informes</summary>
-        {{ nav_link('informes.balance', 'Resultados', 'report') }}
+        {{ nav_link('informes.balance', 'Resultados', 'report',
+                    tambien=('informes.historico_12m', 'informes.traza', 'informes.gastos',
+                             'informes.cierres', 'informes.fuentes_y_usos')) }}
         {# TMT 2026-07-17 (Federico): "Flujo de producción" movido a la sección
            "Producción y stocks" (antes "Stock"). #}
         {{ nav_link('informes.flujo_grafico', 'Flujo de fondos', 'trend') }}
@@ -1015,7 +1017,7 @@
            — ya se accede desde Resultados (panel anticipos clickable).
            PASADA 6 (Federico #1): "Deudas con proveedores" eliminado del
            menú — su contenido se mergea con /posdat (decisión Tamara). #}
-        {{ nav_link('informes.fuentes_y_usos', 'Fuentes y Usos', 'trend') }}
+        {# Tamara 2026-10-01: Fuentes y usos es una pestaña de Resultados (nav_resultados). #}
         {# TMT 2026-07-14 (dueña): "eliminá el tab" — Costos mensuales colorantes ya NO es un tab. La tabla vive al final de /informes/flujo-produccion (COSTOS DE TINTORERÍA); la ruta /tintoreria redirige allá. #}
         {# TMT 2026-05-20 — 'Movimientos de capital' sale del menú
            (pedido dueña: "para retiros tenemos demasiadas pantallas.
@@ -1088,37 +1090,17 @@
            compras.ver) movidos acá arriba — producción primero, luego stocks. #}
         {% if tiene_permiso('informes.ver') %}{{ nav_link('informes.flujo_produccion', 'Flujo de producción', 'box') }}{% endif %}
         {# 'Producción Tejeduría' (kg manuales del dBase) ELIMINADA — dueña 2026-07-20: la reemplaza Tejeduría Asinfo. La ruta vieja redirige. #}
-        {% if tiene_permiso('tejeduria.ver') %}{{ nav_link('tejeduria_asinfo.tab', 'Tejeduría Asinfo', 'shopping') }}{% endif %}
-        {# TMT 2026-08-04 (dueña: "hacé una copia de tejeduría asinfo y ponéme
-           un terminado asinfo"). El paso siguiente de la fábrica (bodega 53).
-           Va con `stock.ver` y no con `compras.ver` como su hermana: acá no hay
-           compras que cruzar —el terminado no se terceriza—, así que es data de
-           producción pura, del mismo tenor que Inventario. #}
-        {{ nav_link('terminado_asinfo.tab', 'Terminado Asinfo', 'box') }}
-        {# TMT 2026-06-10 dueña: Stock = 2 tabs réplica del Excel de la nube
-           (Fabricación TC / PT). Resumen, por lote, por producto, en-proceso
-           e importaciones siguen vivas por URL y linkeadas DENTRO de estas
-           dos páginas — sólo salen del menú. #}
-        {# TMT 2026-07-08 dueña: "Fabricación TC/PT" → UNA sola "Inventario"
-           (la página tiene el toggle TC/PT adentro). "Importaciones" →
-           "Ingreso de hilado" (pantalla de solo lectura). #}
-        {# Federico 2026-08-20: "Pedidos pendientes" (venía de Modificar) va
-           justo ARRIBA de Inventario. Conserva su gate propio (facturas.ver,
-           el permiso de SU pantalla): la sección se abre con stock.ver, y sin
-           el gate le aparecería el link a quien después se come un 404. #}
+        {# Tamara 2026-10-01: "hay demasiados en la izquierda". Tejeduría,
+           Terminado, Ingreso de hilado y Rotación pasan a ser PESTAÑAS de
+           Inventario; Stock químicos, pestaña de Producción Tintorería
+           (macros nav_inventario / nav_tintoreria de _ui.html). La entrada
+           del menú queda prendida en todas sus pestañas. #}
         {% if tiene_permiso('facturas.ver') %}{{ nav_link('pedidos.lista', 'Pedidos pendientes', 'file') }}{% endif %}
-        {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box') }}
-        {# Federico 2026-08-20: "Rotación del inventario" (ex "Inventario
-           rotativo", venía de Modificar) va justo debajo de Inventario. La
-           sección entera ya está gateada con stock.ver —el mismo permiso de su
-           pantalla—, así que no lleva gate propio. #}
-        {{ nav_link('inventario_rotativo.lista', 'Rotación del inventario', 'box') }}
-        {{ nav_link('importaciones.lista', 'Ingreso de hilado', 'truck') }}
-        {# TMT 2026-07-09 (dueña): Stock químicos movido a Stock (última posición) desde Tintorería. #}
-        {% if tiene_permiso('tintura.ver') %}{{ nav_link('stock_asinfo.quimicos', 'Stock químicos', 'shopping') }}{% endif %}
-        {# TMT 2026-07-11 (dueña): Tintorería (Fórmulas App) entra DENTRO de Stock
-           y se llama simplemente "Tintorería". Antes era su propia sección. #}
-        {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Producción Tintorería', 'trend') }}{% endif %}
+        {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box',
+                    tambien=('stock_asinfo.consumo_hilado', 'importaciones.lista',
+                             'tejeduria_asinfo.tab', 'terminado_asinfo.tab',
+                             'inventario_rotativo.lista')) }}
+        {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Producción Tintorería', 'trend', tambien=('stock_asinfo.quimicos',)) }}{% endif %}
       </details>
       {% endif %}
 

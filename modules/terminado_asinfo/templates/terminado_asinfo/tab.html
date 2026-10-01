@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
 {% block title %}Producción Terminado Asinfo {{ '%02d/%d' % (mes, anio) }}{% endblock %}
 {% block breadcrumb %}
   {# Terminado pide `stock.ver` y Tejeduría `tejeduria.ver`: son distintos, así
@@ -83,6 +84,7 @@
 {% endblock %}
 
 {% block content %}
+{{ nav_inventario('terminado_asinfo.tab') }}
 <div class="tm">
 
   <form class="sel" method="get">
