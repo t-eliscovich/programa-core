@@ -207,3 +207,13 @@ def test_evolucion_pagos_salen_de_los_cheques():
                       [dict(cod="A", mes=meses[1], plata=800, dias=90)], meses, {},
                       pagos=[dict(cod="A", mes=meses[0], plata=1500)])
     assert e["A"]["pa"] == [1500, 0] and e["A"]["di"] == [None, 90]
+
+
+def test_incobrable_deuda_de_mas_de_un_anio_y_no_compra():
+    d = _armar([_cli("VIE", fac=5000, edad_max=400, venta90=0),
+                _cli("COM", fac=5000, edad_max=400, venta90=9000),
+                _cli("DEV", reb=1700, reb_dias=531, venta90=0)])
+    assert _uno(d, "VIE")["incobrable"] and _uno(d, "DEV")["incobrable"]
+    assert not _uno(d, "COM")["incobrable"]          # sigue comprando
+    p = next(p for p in d["puntos"] if p["k"] == "VIE")
+    assert p["i"]

@@ -53,6 +53,7 @@ PAGADO_MINIMO_HISTORIA = 2000  # para confiar en el "plazo habitual"
 # menos de esto pendiente no cuenta como "factura impaga" (ni para el
 # semáforo ni para la evolución): son restos de redondeo, no deuda.
 CENTAVOS = 5
+INCOBRABLE_DIAS = 365
 
 # Pesos del puntaje.
 PESO_ANTIGUEDAD = 0.45
@@ -412,7 +413,7 @@ def marcar(d: dict, trend: dict, ahora: dict, antes: dict) -> None:
         c["cae"] = cae_compra(t.get("ult"), t.get("ant"))
         c["compra_ult"], c["compra_ant"] = round(_f(t.get("ult"))), round(_f(t.get("ant")))
         c["flecha"] = None
-        if c["color"] == "rojo":
+        if c["color"] == "rojo" and not c.get("incobrable"):
             a, h = antes.get(c["cod"]), ahora.get(c["cod"])
             if a:
                 def _e(r):
@@ -566,6 +567,12 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
             p = max(p, 90)
         c["puntaje"] = round(p)
         c["color"], c["motivos"] = semaforo(c)
+        # Tamara 01/10: "pone puntos negros para incobrables". Incobrable =
+        # lo que debe tiene más de un año (factura impaga o cheque devuelto)
+        # y no compró nada en 90 días: ya no hay relación con el cliente.
+        viejo = max(c["edad_max"] if c["fac"] > 0 and c["edad_max"] else 0,
+                    (c.get("reb_dias") or 0) if c["reb"] > 0 else 0)
+        c["incobrable"] = viejo >= INCOBRABLE_DIAS and c["venta90"] <= 0
 
     orden = {"rojo": 0, "amar": 1, "verde": 2}
     filas.sort(key=lambda c: (orden[c["color"]], -c["puntaje"], -c["saldo"]))
@@ -622,7 +629,7 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
                     "p": c["puntaje"],
                     "m": c["motivos"],
                     "fac": round(c["fac"]), "ch": round(c["ch"]),
-                    "reb": round(c["reb"])}
+                    "reb": round(c["reb"]), "i": c["incobrable"]}
                    for c in filas if c["saldo"] > 0],
         "resumen": resumen,
         "resumen_vend": resumen_vend,

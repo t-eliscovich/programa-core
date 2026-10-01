@@ -26,7 +26,7 @@ h2:first-of-type{margin-top:0}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;
 padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
-.p-rojo{color:#b3362a;background:#f7e3e0}.p-amar{color:#9a6400;background:#faefd8}
+.p-rojo{color:#b3362a;background:#f7e3e0}.p-inc{color:#fff;background:#111827}.p-amar{color:#9a6400;background:#faefd8}
 .p-verde{color:#2a7547;background:#e1f1e7}
 .reglas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
 .regla{border-radius:10px}
@@ -115,7 +115,8 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 <div id="grafico"></div>
 <p class="ley-marcas"><span class="cae">*</span> compró 20% menos en los últimos 3 meses que en los 3 anteriores ·
 en los rojos, contra hace 30 días: <span class="fl fl-peor">▲</span> peor (debe más, o no pagó nada) ·
-<span class="fl fl-mejor">▼</span> mejor (bajó la deuda o pagó lo más viejo) · <span class="fl fl-igual">▶</span> igual</p>
+<span class="fl fl-mejor">▼</span> mejor (bajó la deuda o pagó lo más viejo) · <span class="fl fl-igual">▶</span> igual ·
+<b style="color:#111827">●</b> incobrable (debe desde hace más de un año y no compró en 90 días)</p>
 <div id="evol" hidden></div>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
@@ -124,7 +125,7 @@ en los rojos, contra hace 30 días: <span class="fl fl-peor">▲</span> peor (de
 <tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b>{{ marcas(c) }}<span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
-<td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
+<td>{% if c.incobrable %}<span class="pill p-inc" title="Debe desde hace más de un año y no compró en 90 días">Incobrable</span>{% else %}<span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span>{% endif %}</td>
 <td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}</td></tr>
 {% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
 </tbody></table></div>
@@ -160,7 +161,7 @@ recibidos cada mes. Toda la casa:
 <tbody>
 {% for c in d.filas %}
 <tr data-c="{{ c.color }}" data-v="{{ c.vend }}" data-k="{{ c.cod }}" data-q="{{ (c.cod ~ ' ' ~ c.nombre) | lower }}">
-<td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
+<td>{% if c.incobrable %}<span class="pill p-inc" title="Debe desde hace más de un año y no compró en 90 días">Incobrable</span>{% else %}<span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span>{% endif %}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td><b>{{ c.cod }}</b>{{ marcas(c) }}{% if c.stop == 'X' %} <span class="g">stop</span>{% endif %}<span class="nom">{{ c.nombre }}</span></td>
 <td>{{ c.vend }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
@@ -283,7 +284,8 @@ recibidos cada mes. Toda la casa:
   const marca=p=>(p.cae?'*':'')+(p.fl?' '+FL[p.fl][0]:'');
   function tip(p){ return `<b>${esc(p.k)}${p.cae?'<span class="cae">*</span>':''}</b>`+p.m.map(x=>`<br>${esc(x)}`).join('')
       +(p.fl?`<br><span style="color:${FL[p.fl][1]}">${FL[p.fl][0]} ${FL[p.fl][2]}</span>`:'')
-      +(p.cae?'<br><span class="cae">*</span> Compra 20% o más abajo que los 3 meses anteriores':''); }
+      +(p.cae?'<br><span class="cae">*</span> Compra 20% o más abajo que los 3 meses anteriores':'')
+      +(p.i?'<br><b>● Incobrable</b>: debe desde hace más de un año y no compra':''); }
   function mostrarTip(p){
     let t=caja.querySelector('.tip'); if(!t){t=document.createElement('div');t.className='tip';caja.appendChild(t);}
     t.innerHTML=tip(p); t.hidden=false;
@@ -309,7 +311,7 @@ recibidos cada mes. Toda la casa:
     let g=fondo();
     orden.forEach(p=>{
       const tenue=q&&!marcados.has(p);
-      g+=`<circle cx="${p.x}" cy="${p.y}" r="${p.s>=100000?6:4}" fill="${color[p.c]}"${tenue?' opacity=".12"':''}/>`;
+      g+=`<circle cx="${p.x}" cy="${p.y}" r="${p.s>=100000?6:4}" fill="${p.i?'#111827':color[p.c]}"${tenue?' opacity=".12"':''}/>`;
     });
     hit.forEach(p=>{ g+=`<circle cx="${p.x}" cy="${p.y}" r="10" fill="none" stroke="#111827" stroke-width="2"/><text class="lab" x="${p.x-13}" y="${p.y+4}" text-anchor="end">${esc(p.k+marca(p))}</text>`; });
     if(!q) PRI.forEach(k=>{const p=visibles.find(x=>x.k===k); if(p) g+=`<text class="lab" x="${p.x-8}" y="${p.y+4}" text-anchor="end">${esc(k+marca(p))}</text>`;});
