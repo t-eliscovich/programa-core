@@ -8,16 +8,26 @@
    vemos dónde va"). Todo sale de Programa Core, en vivo. La lógica y las
    trampas están en modules/analisis/cobranza.py. #}
 <style>
+/* Tamara 30/09: "todo quiero matar espacios muertos". Esta pantalla va
+   más apretada que el resto de Análisis. */
+main{padding-top:14px}
+h2{margin:18px 0 4px;padding-top:10px}
+h2:first-of-type{margin-top:0}
+.sub{max-width:none;margin:0 0 6px}
+.filtros{margin:6px 0;padding:8px 10px}
+.reglas{margin:4px 0 8px;gap:10px}
+.regla{padding:10px 14px}
+.plegable>summary{padding-top:8px;margin-top:12px}
 .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;
 padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .pill::before{content:"";width:7px;height:7px;border-radius:50%;background:currentColor}
 .p-rojo{color:#b3362a;background:#f7e3e0}.p-amar{color:#9a6400;background:#faefd8}
 .p-verde{color:#2a7547;background:#e1f1e7}
-.reglas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px;margin:10px 0}
-.regla{border-radius:10px;padding:14px 16px}
+.reglas{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr))}
+.regla{border-radius:10px}
 .regla h3{margin:0 0 6px;font-size:15px;font-weight:600}
 .regla ul{margin:0;padding-left:18px}
-.regla li{margin:3px 0}
+.regla li{margin:1px 0}
 .regla .cnt{margin-top:8px;font-size:13px;color:var(--g)}
 .r-rojo{background:#f7e3e0}.r-amar{background:#faefd8}.r-verde{background:#e1f1e7}
 .punt{display:inline-flex;align-items:center;gap:6px}
@@ -26,7 +36,7 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .nom{display:block;font-size:12px;color:var(--g)}
 .mot{font-size:12.5px;color:var(--g);max-width:38ch}
 .sube{color:#b3362a;font-weight:600}.baja{color:#2a7547;font-weight:600}
-.filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:end;margin:8px 0 10px}
+.filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
 .filtros label{display:grid;gap:3px;font-size:12px;color:var(--g)}
 .filtros input,.filtros select{font:inherit;font-size:13px;padding:5px 8px;border:1px solid var(--l);border-radius:6px}
 .chip{font:inherit;font-size:13px;border:1px solid var(--l);background:#fff;border-radius:7px;padding:5px 11px;cursor:pointer}
@@ -74,10 +84,16 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 </div>
 
 <h2>Cobrar primero</h2>
-<p class="sub">El puntaje (0 a 100) dice qué tan mal está cada cliente comparado con el resto:
-80 = peor que 8 de cada 10. Pesa la factura más antigua (45%), la deuda frente a su plazo
-habitual (35%) y si está pagando más lento (20%). Acá van los de puntaje 70 o más y saldo
-mayor a 20.000.</p>
+{# Tamara 30/09: "lo de puntos esta dificil de entender. podrias hacer un
+   corto ejemplo". Ejemplo con números redondos, sin nombres. #}
+<p class="sub" style="margin-bottom:0">Puntaje 0 a 100: cuanto más alto, peor está contra el resto. En el recuadro rosa, los que conviene cobrar primero.</p>
+<details class="sub" style="margin:0 0 4px"><summary style="cursor:pointer">Ver ejemplo</summary>
+<ul style="margin:4px 0 0;padding-left:18px">
+<li>Cliente A debe 160.000, su factura más vieja tiene 220 días y este mes pagó 50 días más tarde → <b>98</b>. Cobrar ya.</li>
+<li>Cliente B debe 320.000, pero su factura más vieja tiene 16 días y paga como siempre → <b>39</b>. Debe mucho, pero está al día.</li>
+<li>Pesa más la factura más vieja; después, cuánto debe contra lo que suele deber y si paga más lento que antes.
+80 = peor que 8 de cada 10 clientes. Rosa = puntaje 70 o más y saldo mayor a 20.000.</li>
+</ul></details>
 <div class="filtros" id="filtros-grafico">
   <label>Buscar cliente<input id="gq" type="search" placeholder="Código o nombre" list="gq-lista" autocomplete="off"></label>
   <label>Vendedor<select id="fv"><option value="">Todos</option>
@@ -230,7 +246,7 @@ recibidos cada mes. Toda la casa:
   // del <title>), se puede buscar un cliente y filtrar por color.
   const D = {{ d.puntos | tojson }};
   const PRI = {{ d.prioridad[:8] | map(attribute='cod') | list | tojson }};
-  const W=760,H=340,m={l:62,r:14,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const W=760,H=290,m={l:62,r:14,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
   const y0=Math.log10(1000), y1=Math.log10(500000);
   const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.min(Math.log10(Math.max(v,1000)),y1)-y0)/(y1-y0)*ih;
   const color={rojo:'#b3362a',amar:'#c98a0b',verde:'#2a7547'};
@@ -247,7 +263,6 @@ recibidos cada mes. Toda la casa:
     [0,20,40,60,80,100].forEach(s=>{g+=`<text x="${X(s)}" y="${H-m.b+16}" text-anchor="middle">${s}</text>`;});
     g+=`<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">Puntaje de riesgo</text>`;
     g+=`<rect x="${X(70)}" y="${m.t}" width="${X(100)-X(70)}" height="${Y(20000)-m.t}" fill="#f7e3e0" opacity=".6"/>`;
-    g+=`<text class="ql" x="${X(100)-6}" y="${m.t+14}" text-anchor="end">Cobrar primero</text>`;
     return g;
   }
   // Tamara 30/09: "muy aparatoso el cartel… no hace falta tanta info" y
