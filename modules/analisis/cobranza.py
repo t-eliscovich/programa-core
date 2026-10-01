@@ -153,21 +153,6 @@ SELECT x.codigo_cli AS cod,
  GROUP BY 1, 2
 """
 
-_SQL_MEDIOS = """
-SELECT CASE WHEN c.no_banco IN (90, 91) THEN 'Depósito o transferencia'
-            WHEN c.no_banco = 99 THEN 'Efectivo' ELSE 'Cheque' END AS medio,
-       SUM(x.importe) AS plata,
-       SUM(x.importe * (COALESCE(c.fecha_recibido, c.fecha) - f.fecha)) / SUM(x.importe) AS entrega,
-       SUM(x.importe * (COALESCE(c.fechad, c.fecha) - f.fecha)) / SUM(x.importe) AS disponible
-  FROM scintela.chequesxfact x
-  JOIN scintela.factura f ON f.id_factura = x.id_fact
-  JOIN scintela.cheque c ON c.id_cheque = x.id_cheque
- WHERE x.importe > 0 AND c.no_banco NOT IN (95, 97, 98)
-   AND COALESCE(c.fecha_recibido, c.fecha) > %(hoy)s::date - 120
- GROUP BY 1 ORDER BY 2 DESC
-"""
-
-
 # ── Evolución mes a mes de cada cliente ─────────────────────────────────────
 # Tamara 30/09: *"ver de ese cliente como evoluciona en el tiempo… si esta
 # rojo vemos donde termino cada mes"*. No hay fotos viejas (la foto diaria
@@ -369,8 +354,7 @@ def datos(hoy: date | None = None) -> dict:
     meses = _meses_atras(hoy, 3)
     clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
     por_mes = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses[0]}) or []
-    medios = db.fetch_all(_SQL_MEDIOS, {"hoy": hoy}) or []
-    d = armar(clientes, por_mes, medios, meses, hoy)
+    d = armar(clientes, por_mes, meses, hoy)
     # Evolución mes a mes (desde julio, hasta 12 meses) + hace 30 días.
     n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
     meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
@@ -485,7 +469,7 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
     return "verde", []
 
 
-def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
+def armar(clientes: list[dict], por_mes: list[dict],
           meses: list[date], hoy: date) -> dict:
     # Plazo por mes de cada cliente.
     idx = {m: i for i, m in enumerate(meses)}
@@ -643,16 +627,6 @@ def armar(clientes: list[dict], por_mes: list[dict], medios: list[dict],
             {"mes": _MESES[m.month - 1], "plata": p,
              "dias": round(pd / p) if p else None}
             for m, (p, pd) in zip(meses, casa, strict=True)],
-        "medios": [{"medio": r["medio"], "plata": _f(r["plata"]),
-                    "entrega": round(_f(r["entrega"])),
-                    "disponible": round(_f(r["disponible"]))} for r in medios],
-        "contra_si": sorted([c for c in filas if c["cambio"] is not None
-                             and c["saldo"] >= 5000],
-                            key=lambda c: -c["cambio"]),
-        "cupos": sorted([c for c in filas if c["uso_cupo"] and c["uso_cupo"] > 1],
-                        key=lambda c: -(c["saldo"] - c["cupo"])),
-        "rebotes": sorted([c for c in filas if c["reb"] > 0 or c["n_reb_hist"] > 0],
-                          key=lambda c: (-c["reb"], -c["n_reb_hist"])),
         "limites": {
             "rojo_dias": ROJO_DIAS_FACTURA, "amar_dias": AMARILLO_DIAS_FACTURA,
             "veces": AMARILLO_VECES_PLAZO, "empeoro": AMARILLO_EMPEORO_DIAS,

@@ -137,107 +137,11 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 {% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
 </tbody></table></div>
 
-<h2>Cada cliente contra sí mismo</h2>
-<p class="sub">Días desde la factura hasta que el dinero estuvo disponible, en los pagos
-recibidos cada mes. Toda la casa:
-{% for m in d.casa_meses %}<b>{{ m.mes }} {{ m.dias if m.dias is not none else '—' }} días</b>{{ ' · ' if not loop.last }}{% endfor %}.</p>
-<details class="plegable" open><summary>Los que más cambiaron (saldo mayor a 5.000)</summary>
-<div class="caja"><table class="resumen">
-<thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}</th>{% endfor %}
-<th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
-<tbody>
-{% for c in d.contra_si %}
-<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
-{% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
-<td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
-<td class="n">{{ c.saldo | num_es(0) }}</td></tr>
-{% endfor %}
-</tbody></table></div></details>
-
-<h2>Todos los clientes</h2>
-<div class="filtros" id="filtros-todos">
-  <label>Buscar<input id="q" type="search" placeholder="Código o nombre"></label>
-  <button class="chip" data-c="rojo" aria-pressed="false">Rojo</button>
-  <button class="chip" data-c="amar" aria-pressed="false">Amarillo</button>
-  <button class="chip" data-c="verde" aria-pressed="false">Verde</button>
-</div>
-<div class="caja larga"><table class="resumen" id="todos">
-<thead><tr><th>Semáforo</th><th class="n">Puntaje</th><th>Cliente</th><th>Vendedor</th>
-<th class="n">Saldo</th><th class="n">Factura más antigua</th><th class="n">Deuda / plazo</th>
-<th class="n">Tendencia</th><th>Motivo</th></tr></thead>
-<tbody>
-{% for c in d.filas %}
-<tr data-c="{{ c.color }}" data-v="{{ c.vend }}" data-k="{{ c.cod }}" data-q="{{ (c.cod ~ ' ' ~ c.nombre) | lower }}">
-<td>{% if c.incobrable %}<span class="pill p-inc" title="Debe desde hace más de un año y no compró en 90 días">Incobrable</span>{% else %}<span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span>{% endif %}</td>
-<td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
-<td><b>{{ c.cod }}</b>{{ marcas(c) }}{% if c.stop == 'X' %} <span class="g">stop</span>{% endif %}<span class="nom">{{ c.nombre }}</span></td>
-<td>{{ c.vend }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
-<td class="n">{{ (c.edad_max ~ ' días') if (c.fac > 0 and c.edad_max is not none) else '—' }}</td>
-<td class="n">{{ c.veces | num_es(2) if c.veces is not none else '—' }}</td>
-<td class="n">{% if c.cambio is none %}—{% elif c.cambio > 0 %}<span class="sube">+{{ c.cambio }}</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }}</span>{% else %}0{% endif %}</td>
-<td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}</td></tr>
-{% endfor %}
-</tbody></table></div>
-<p class="sub" id="cnt"></p>
-
-<h2>Plazo por medio de pago</h2>
-<p class="sub">Pagos de los últimos 120 días. Entrega = cuándo se recibe; disponible = fecha del cheque.</p>
-<div class="caja"><table class="resumen">
-<thead><tr><th>Medio</th><th class="n">Monto</th><th class="n">Entrega</th><th class="n">Disponible</th></tr></thead>
-<tbody>{% for m in d.medios %}<tr><td>{{ m.medio }}</td><td class="n">{{ m.plata | num_es(0) }}</td>
-<td class="n">{{ m.entrega }} días</td><td class="n">{{ m.disponible }} días</td></tr>{% endfor %}</tbody></table></div>
-
-<details class="plegable"><summary>Clientes que superan su cupo ({{ d.cupos | length }})</summary>
-<p class="sub">El semáforo no mira los cupos porque no están al día. Esta lista es para revisarlos.</p>
-<div class="caja"><table class="resumen">
-<thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Cupo</th><th class="n">Saldo</th><th class="n">Excedente</th><th class="n">% del cupo</th></tr></thead>
-<tbody>{% for c in d.cupos %}<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
-<td class="n">{{ c.cupo | num_es(0) }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
-<td class="n">{{ (c.saldo - c.cupo) | num_es(0) }}</td><td class="n">{{ (c.uso_cupo * 100) | round | int }}%</td></tr>{% endfor %}</tbody></table></div>
-</details>
-
-<details class="plegable"><summary>Cheques devueltos ({{ d.rebotes | length }})</summary>
-<p class="sub">Pendiente = devueltos sin reemplazar. Las devoluciones se registran desde el 12/08/2026.</p>
-<div class="caja"><table class="resumen">
-<thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Devueltos en el año</th><th class="n">Saldo</th></tr></thead>
-<tbody>{% for c in d.rebotes %}<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
-<td class="n">{{ c.reb | num_es(0) if c.reb else '—' }}</td>
-<td class="n">{{ (c.reb_dias ~ ' días') if (c.reb and c.reb_dias is not none) else '—' }}</td>
-<td class="n">{{ c.n_reb_hist or '—' }}</td><td class="n">{{ c.saldo | num_es(0) }}</td></tr>{% endfor %}</tbody></table></div>
-</details>
-
-<details class="plegable"><summary>Definiciones y limitaciones</summary>
-<ul class="sub">
-<li><b>Saldo:</b> facturas impagas más cheques por cobrar más cheques devueltos.</li>
-<li><b>Factura impaga:</b> la que tiene 5 o más pendiente. Los restos de centavos no cuentan.</li>
-<li><b>Plazo habitual:</b> días promedio entre la factura y la disponibilidad del pago, sobre sus pagos de los últimos 6 meses (mínimo 2.000 pagados).</li>
-<li><b>Deuda / plazo:</b> días de compras pendientes de cobro (saldo ÷ compra diaria de 90 días) dividido su plazo habitual. 1,00 = debe lo normal para él.</li>
-<li><b>Tendencia:</b> plazo del último mes con pagos menos el promedio de los meses anteriores. Positivo = paga más lento.</li>
-<li>Los vínculos entre cobros y facturas existen desde el 14/05/2026, así que la historia es corta y crece cada mes. La foto diaria de la cartera por cliente se guarda desde el 30/09/2026.</li>
-<li>Se listan los clientes con saldo mayor a 1.000 y todos los que tienen cheques devueltos.</li>
-</ul></details>
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function(){
-  // Filtros de "Todos los clientes"
-  const filas = [...document.querySelectorAll('#todos tbody tr')];
-  const col = new Set();
-  function filtrar(){
-    const q = document.getElementById('q').value.trim().toLowerCase();
-    const v = document.getElementById('fv').value;
-    let n = 0;
-    filas.forEach(tr => {
-      const k = window.__clienteSel;
-      const ok = (!col.size || col.has(tr.dataset.c)) && (!v || tr.dataset.v === v) && (!q || tr.dataset.q.includes(q)) && (!k || tr.dataset.k === k);
-      tr.hidden = !ok; if (ok) n++;
-    });
-    document.getElementById('cnt').textContent = n + (n === 1 ? ' cliente.' : ' clientes.');
-  }
-  document.querySelectorAll('#filtros-todos .chip').forEach(b => b.addEventListener('click', () => {
-    const c = b.dataset.c; col.has(c) ? col.delete(c) : col.add(c);
-    b.setAttribute('aria-pressed', col.has(c)); filtrar(); }));
   // Tamara 30/09: "que el puntaje de riesgo y lo de abajo se filtre con el
   // filtro del vendedor" — un solo Vendedor, arriba del gráfico, manda en
   // el gráfico y en todas las tablas de abajo.
@@ -245,7 +149,6 @@ recibidos cada mes. Toda la casa:
     const v = document.getElementById('fv').value;
     const k = window.__clienteSel;
     document.querySelectorAll('tr.por-vend').forEach(tr => { tr.hidden = (!!v && tr.dataset.v !== v) || (!!k && tr.dataset.k !== k); });
-    filtrar();
     if (window.__dibujarGrafico) window.__dibujarGrafico();
     const R = v ? RV[v] : R0;
     const f = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
@@ -256,10 +159,8 @@ recibidos cada mes. Toda la casa:
   }
   const R0 = {{ d.resumen | tojson }};
   const RV = {{ d.resumen_vend | tojson }};
-  document.getElementById('q').addEventListener('input', filtrar);
   document.getElementById('fv').addEventListener('input', porVendedor);
   window.__porVendedor = porVendedor;
-  filtrar();
 
   // Gráfico: puntaje (x) contra saldo (y, logarítmico).
   // Tamara 30/09: el cliente aparece apenas se pasa el mouse (sin la demora

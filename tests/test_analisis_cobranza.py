@@ -16,7 +16,7 @@ def _cli(cod, **kw):
 
 
 def _armar(clientes, por_mes=()):
-    return cob.armar(list(clientes), list(por_mes), [], MESES, HOY)
+    return cob.armar(list(clientes), list(por_mes), MESES, HOY)
 
 
 def _uno(d, cod):
@@ -71,10 +71,9 @@ def test_saldo_chico_no_se_lista_pero_suma_a_la_cartera():
     assert d["cartera"]["facturas"] == 5500
 
 
-def test_cupo_no_pinta_pero_se_lista():
+def test_cupo_no_pinta():
     d = _armar([_cli("AAA", fac=5000, edad_max=10, cupo=1000)])
     assert _uno(d, "AAA")["color"] == "verde"
-    assert [c["cod"] for c in d["cupos"]] == ["AAA"]
 
 
 def test_puntaje_ordena_por_antiguedad():
