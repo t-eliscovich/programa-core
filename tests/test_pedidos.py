@@ -681,12 +681,44 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
     assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
     fila = body[body.index('data-grupo="d-FE96CAF"'):]
     fila = fila[:fila.index("</tr>")]
-    assert fila.count("<td") == 4                   # 3 columnas + un colspan de 3
-    assert 'colspan="3"' in fila
+    assert fila.count("<td") == 5                   # 3 columnas + memo (colspan 2) + N° pedido
+    assert 'colspan="2"' in fila
+    assert "Sin memo" in fila                        # sin bridge a formulas
     # un solo renglón: va el CÓDIGO del cliente, no el nombre fiscal entero
     assert ">KAM<" in fila
     assert "MALDONADO MALDONADO ANA KARINA<" not in fila
     assert 'title="MALDONADO MALDONADO ANA KARINA"' in fila
+
+
+def test_el_desplegable_dice_si_el_pedido_ya_tiene_memo(app, fake_db):
+    """Dueña 01/10: "una celda donde refleje los pedidos que ya estén enviados
+    con memo". En el detalle de Tipo de tela cada pedido dice Sin memo /
+    Memo enviado / En tintura / Terminado — la etapa de ESA línea."""
+    c = _login(app, fake_db)
+    peds = [{"codigo": "FE96CAF", "numero": n, "cliente": "X", "codigo_cliente": "KAM",
+             "fecha": "2026-08-05", "cantidad": 9, "unidad": 51}
+            for n in ("PDCL-1", "PDCL-2", "PDCL-3", "PDCL-4")]
+
+    def fake(_db, sql, **_kw):
+        return (peds, True) if "ORDER BY pr.codigo, v.fecha" in sql else ([_fila()], True)
+
+    estados = {"PDCL-1": {"estado": "pendiente"}, "PDCL-2": {"estado": "en_proceso"},
+               "PDCL-3": {"estado": "cancelado"}}
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake), \
+         patch("modules.pedidos.views.formulas_memos.estados", return_value=estados), \
+         patch.object(service, "por_pedido", return_value=([], True)), \
+         patch.object(service, "etapas_por_pedido", return_value={
+             "PDCL-2": {"pedido": "en_tintura", "lineas": {"FE96CAF": "en_tintura"}}}):
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
+
+    def celda(numero):
+        i = body.index(f">{numero}<")
+        return body[body.rindex("<tr", 0, i):i]
+
+    assert "Memo enviado" in celda("PDCL-1")
+    assert "En tintura" in celda("PDCL-2")
+    assert "Sin memo" in celda("PDCL-3")           # el cancelado no cuenta
+    assert "Sin memo" in celda("PDCL-4")
 
 
 def test_el_link_dice_a_donde_lleva(app, fake_db):

@@ -76,7 +76,7 @@ def lista():
         # se completan según el corte
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
-        pedidos_por_color={}, pedidos_lista=[], etapas={},
+        pedidos_por_color={}, pedidos_lista=[], etapas={}, memo_lineas={},
     )
 
     if not disponible or not categorias:
@@ -88,6 +88,7 @@ def lista():
     if corte == "color":
         ctx["colores"] = service.por_color(filas)
         ctx["pedidos_por_color"] = service.pedidos_por_color()
+        ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     elif corte == "cliente":
         ctx["clientes"] = service.por_cliente()
     elif corte == "pedido":
@@ -127,9 +128,30 @@ def lista():
             resumen=next((c for c in categorias if c["categoria"] == activa), None),
             pedidos_por_color=service.pedidos_por_color(),
         )
+        ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     # corte == "categoria" usa `categorias`, ya calculado.
 
     return render_template("pedidos/lista.html", **ctx)
+
+
+def _memo_de_lineas(pedidos_por_color: dict) -> dict[str, dict]:
+    """Qué pedidos de los cortes Color / Tipo de tela ya tienen memo, y en
+    qué etapa está cada línea (dueña 01/10: "una celda donde refleje los
+    pedidos que ya estén enviados con memo").
+
+    `{numero: {"pedido": etapa, "lineas": {producto: etapa}}}` sólo de los
+    pedidos con memo activo (el cancelado no cuenta). Fail-soft: sin bridge
+    a formulas → {} y la celda dice "Sin memo"; sin Asinfo para las etapas
+    → todos quedan en "enviado".
+    """
+    numeros = sorted({p["numero"] for ps in pedidos_por_color.values() for p in ps})
+    activos = {n: v for n, v in formulas_memos.estados(numeros).items()
+               if v.get("estado") != "cancelado"}
+    if not activos:
+        return {}
+    pedidos, ok = service.por_pedido()
+    etapas = service.etapas_por_pedido(pedidos, activos) if ok else {}
+    return {n: etapas.get(n) or {"pedido": "enviado", "lineas": {}} for n in activos}
 
 
 @pedidos_bp.route("/pedidos/excel")

@@ -118,6 +118,17 @@
      «Terminado» tras «● Enviado — ● En tintura —» */
   .pd .lst.tinto{margin-left:60px}
   .pd .lst.done{margin-left:132px}
+  .pd .filtros{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 4px}
+  .pd .memof{margin:0}
+  .pd .memof .cnt{font-size:11px;font-weight:600;color:#94a3b8;margin-left:2px}
+  .pd .memof a.on .cnt{color:#cbd5e1}
+  .pd .fx{display:none !important}
+  .pd .mchip{display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;white-space:nowrap;padding:1px 8px 1px 7px;border-radius:99px;line-height:1.5}
+  .pd .mchip b{display:inline-block;width:6px;height:6px;border-radius:50%;background:currentColor}
+  .pd .mchip.env{color:#334155;background:#e2e8f0}
+  .pd .mchip.tinto{color:var(--azul);background:#dbeafe}
+  .pd .mchip.done{color:var(--verde);background:#dcfce7}
+  .pd .mchip.sin{color:#94a3b8;background:none;border:1px dashed #cbd5e1;font-weight:500}
   .pd .lst{display:inline-block;font-size:10.5px;font-weight:600;white-space:nowrap;padding:1px 7px;border-radius:99px}
   .pd .lst.done{color:var(--verde);background:#dcfce7}
   .pd .lst.tinto{color:var(--azul);background:#dbeafe}
@@ -137,6 +148,17 @@
 {% endblock %}
 
 {% block content %}
+{# La celda de memo en el detalle de los cortes Color y Tipo de tela (dueña
+   01/10): qué pedido ya se mandó a la fábrica y en qué anda ESA línea. #}
+{% macro memo_chip(numero, codigo) -%}
+  {%- set m = memo_lineas.get(numero) -%}
+  {%- if m -%}
+    {%- set e = m.lineas.get((codigo or '')|upper) or 'enviado' -%}
+    {%- if e == 'terminado' -%}<span class="mchip done"><b></b>Terminado</span>
+    {%- elif e == 'en_tintura' -%}<span class="mchip tinto"><b></b>En tintura</span>
+    {%- else -%}<span class="mchip env"><b></b>Memo enviado</span>{%- endif -%}
+  {%- else -%}<span class="mchip sin">Sin memo</span>{%- endif -%}
+{%- endmacro %}
 <div class="pd">
   <div class="top">
     <div>
@@ -223,7 +245,8 @@
                 <td class="cod"><span class="cli" title="{{ p.cliente }}" style="margin-left:40px">{{ p.codigo_cliente or p.cliente }}</span></td>
                 <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(0) }} <span class="u">{{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span></td>
-                <td colspan="3" class="npd" style="text-align:left">{{ p.numero }}</td>
+                <td colspan="2" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
+                <td class="npd">{{ p.numero }}</td>
               </tr>
             {% endfor %}
           {% endfor %}
@@ -240,11 +263,26 @@
       <div class="card rojo"><div class="lbl">Faltan</div><div class="val">{{ resumen.faltan_d|num_es(0) }} {{ resumen.u }}</div>
         <div class="sub">en {{ resumen.colores_faltan }} {{ 'color' if resumen.colores_faltan == 1 else 'colores' }}</div></div>
     </div>
-    <p class="nota">
-      {% if solo_faltan %}Mostrando sólo los colores que necesitan tela.
-        <a href="{{ url_for('pedidos.lista', corte='tela', cat=activa) }}">Ver todos los pedidos</a>
-      {% else %}<a href="{{ url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">Ver sólo lo que falta</a>{% endif %}
-    </p>
+    {% set mc = namespace(sin=0, con=0) %}
+    {% for t in telas %}{% for f in t.filas %}{% for p in pedidos_por_color.get(f.codigo, []) %}
+      {% if memo_lineas.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
+    {% endfor %}{% endfor %}{% endfor %}
+    <div class="filtros">
+      <p class="nota" style="margin:0">
+        {% if solo_faltan %}Mostrando sólo los colores que necesitan tela.
+          <a href="{{ url_for('pedidos.lista', corte='tela', cat=activa) }}">Ver todos los pedidos</a>
+        {% else %}<a href="{{ url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">Ver sólo lo que falta</a>{% endif %}
+      </p>
+      {# Dueña 01/10: "filtrar sin memo — los que ya tienen memo no quieren
+         pedir". Filtra en el navegador: esconde los pedidos con memo y los
+         colores que se quedan sin ninguno. #}
+      <div class="ver memof no-print" role="group" aria-label="Filtrar por memo">
+        <span class="cap">Memo</span>
+        <a href="#" class="on" data-memof="todos">Todos</a>
+        <a href="#" data-memof="sin">Sin memo <span class="cnt">{{ mc.sin }}</span></a>
+        <a href="#" data-memof="con">Con memo <span class="cnt">{{ mc.con }}</span></a>
+      </div>
+    </div>
     {% endif %}
     <div class="tabs">
       {% for c in categorias %}
@@ -254,6 +292,7 @@
       {% endfor %}
     </div>
     {% for t in telas %}
+      <div class="telablk">
       <h3><span>{{ t.tela }}</span>
         <span class="muted">{{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
           en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.faltan_kg %} · <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }}</span>{% endif %}</span>
@@ -264,7 +303,9 @@
         <tbody>
           {% for f in t.filas %}
             {% set peds = pedidos_por_color.get(f.codigo, []) %}
-            <tr>
+            {% set nm = namespace(sin=0, con=0) %}
+            {% for p in peds %}{% if memo_lineas.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
+            <tr class="crow" data-g="d-{{ f.codigo }}" data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
               <td class="cod">
                 <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.codigo }}">
                   <span class="chev" aria-hidden="true"></span>
@@ -280,11 +321,12 @@
               <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
             </tr>
             {% for p in peds %}
-              <tr class="det" data-grupo="d-{{ f.codigo }}" data-fila-hija>
+              <tr class="det" data-grupo="d-{{ f.codigo }}" data-memo="{{ 1 if memo_lineas.get(p.numero) else 0 }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
                 <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
-                <td colspan="3" class="npd">{{ p.numero }}</td>
+                <td colspan="2" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
+                <td class="npd">{{ p.numero }}</td>
               </tr>
             {% endfor %}
             {% if not peds %}
@@ -301,6 +343,7 @@
           {% endfor %}
         </tbody>
       </table>
+      </div>
     {% endfor %}
     {% if cubiertas %}<p class="nota">Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.</p>{% endif %}
 
@@ -465,6 +508,35 @@
 </div>
 
 <script>
+  // Filtro de memo del corte Tipo de tela (dueña 01/10).
+  (function () {
+    var bar = document.querySelector('.pd .memof');
+    if (!bar) return;
+    function aplicar(modo) {
+      bar.querySelectorAll('a').forEach(function (a) { a.classList.toggle('on', a.dataset.memof === modo); });
+      document.querySelectorAll('.pd .telablk').forEach(function (blk) {
+        var vivos = 0;
+        blk.querySelectorAll('tr.crow').forEach(function (r) {
+          var n = modo === 'sin' ? +r.dataset.sin : (modo === 'con' ? +r.dataset.con : 1);
+          var fuera = n === 0;
+          r.classList.toggle('fx', fuera);
+          if (!fuera) vivos++;
+          blk.querySelectorAll('tr[data-grupo="' + r.dataset.g + '"]').forEach(function (d) {
+            var m = d.dataset.memo;
+            var esconder = fuera || (m !== undefined && ((modo === 'sin' && m === '1') || (modo === 'con' && m === '0')));
+            d.classList.toggle('fx', esconder);
+          });
+        });
+        blk.classList.toggle('fx', vivos === 0);
+      });
+    }
+    bar.addEventListener('click', function (e) {
+      var a = e.target.closest('a[data-memof]');
+      if (!a) return;
+      e.preventDefault();
+      aplicar(a.dataset.memof);
+    });
+  })();
   (function () {
     // Corte color: abrir/cerrar un color muestra sus variantes.
     document.querySelectorAll('.pd tr.ghead').forEach(function (h) {
