@@ -36,7 +36,7 @@ La pantalla tiene tres ideas:
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 import db
 from filters import today_ec
@@ -172,16 +172,16 @@ SELECT CASE WHEN c.no_banco IN (90, 91) THEN 'Depósito o transferencia'
 # rojo vemos donde termino cada mes"*. No hay fotos viejas (la foto diaria
 # arranca el 30/09), así que el saldo al cierre de cada mes se RECONSTRUYE
 # para atrás: saldo de hoy de cada factura + lo que se le aplicó DESPUÉS del
-# cierre (chequesxfact, que está completo desde junio). Por eso arranca en
-# junio y no antes.
-EVOL_DESDE = date(2026, 6, 1)
+# cierre (chequesxfact). Tamara 01/10: "nunca pagan en junio" — hasta el
+# 05/08 los cobros se aplicaban en el dBase y no dejaban vínculo, y la tabla
+# de cheques arranca a fin de junio: junio salía con la deuda baja y sin
+# pagos. Arranca en julio (el cierre de julio sólo depende de lo aplicado
+# desde agosto).
+EVOL_DESDE = date(2026, 7, 1)
 EVOL_MAX_MESES = 12
 
 _SQL_EVOL = """
-WITH me AS (
-  SELECT LEAST((date_trunc('month', g) + interval '1 month - 1 day')::date,
-               %(hoy)s::date) AS d
-    FROM generate_series(%(desde)s::date, %(hoy)s::date, interval '1 month') g),
+WITH me AS (SELECT unnest(%(fechas)s::date[]) AS d),
 x AS (SELECT id_fact, fechaing, importe FROM scintela.chequesxfact
        WHERE fechaing > %(desde)s::date),
 xd AS (SELECT x.id_fact, me.d, SUM(x.importe) AS despues
@@ -200,10 +200,71 @@ f AS (SELECT f.id_factura, f.codigo_cli, f.fecha,
 s AS (SELECT me.d, f.codigo_cli, f.fecha, f.saldo + COALESCE(xd.despues,0) AS sal
         FROM me JOIN f ON f.fecha <= me.d
         LEFT JOIN xd ON xd.id_fact = f.id_factura AND xd.d = me.d)
-SELECT codigo_cli AS cod, date_trunc('month', d)::date AS mes, SUM(sal) AS saldo,
+SELECT codigo_cli AS cod, d, SUM(sal) AS saldo,
        d - MIN(fecha) FILTER (WHERE sal >= %(centavos)s) AS edad
   FROM s GROUP BY codigo_cli, d
 """
+
+# Lo que PAGÓ cada mes = cheques, depósitos y efectivo recibidos ese mes
+# (no los vínculos con facturas, que antes del 05/08 no existían).
+_SQL_PAGOS = """
+SELECT c.codigo_cli AS cod,
+       date_trunc('month', COALESCE(c.fecha_recibido, c.fecha))::date AS mes,
+       SUM(c.importe) AS plata
+  FROM scintela.cheque c
+ WHERE c.importe > 0 AND c.no_banco NOT IN (95, 97, 98)
+   AND COALESCE(c.stat,'') <> 'X' AND c.codigo_cli IS NOT NULL
+   AND COALESCE(c.fecha_recibido, c.fecha) >= %(desde)s::date
+   AND COALESCE(c.fecha_recibido, c.fecha) <= %(hoy)s::date
+ GROUP BY 1, 2
+"""
+
+# Tamara 01/10: "un * en los que cayó un 20% su trend de compra" — compra de
+# los últimos 90 días contra los 90 anteriores.
+_SQL_TREND_COMPRA = """
+SELECT f.codigo_cli AS cod,
+       SUM(f.importe) FILTER (WHERE f.fecha > %(hoy)s::date - 90) AS ult,
+       SUM(f.importe) FILTER (WHERE f.fecha <= %(hoy)s::date - 90) AS ant
+  FROM scintela.factura f
+ WHERE f.fecha > %(hoy)s::date - 180 AND f.fecha <= %(hoy)s::date
+   AND f.importe > 0 AND COALESCE(f.stat,'') <> 'X'
+   AND COALESCE(f.tipo,'') <> 'ND'
+   AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
+ GROUP BY 1
+"""
+CAIDA_COMPRA = 0.20
+CAIDA_COMPRA_MINIMO = 3000   # con menos que esto antes, no se mide
+
+# Tamara 01/10: flechas en los rojos — "si vienen mejorando o empeorando".
+# Se compara hoy contra hace 30 días.
+FLECHA_DIAS = 30
+
+
+def flecha(s_hoy, e_hoy, s_ant, e_ant) -> str | None:
+    """'mejor', 'peor', 'igual' o None (sin con qué comparar).
+
+    Mejor: bajó la deuda 10% o más, o pagó lo más viejo (la factura más vieja
+    es 15 días o más nueva). Peor: subió la deuda 10% o más, o no pagó nada
+    (misma deuda) y lo viejo siguió envejeciendo. Si no, igual.
+    (Probado el 01/10: con "envejeció = peor" sin mirar la deuda salían
+    peor 25 de 26 rojos, incluidos los que habían pagado.)
+    """
+    if not s_ant or s_ant <= 0:
+        return None
+    r = (s_hoy or 0) / s_ant
+    if r <= 0.90 or (e_ant is not None and (e_hoy is None or e_hoy <= e_ant - 15)):
+        return "mejor"
+    if r >= 1.10:
+        return "peor"
+    if e_hoy is not None and e_ant is not None and e_hoy >= e_ant + 20:
+        return "peor"
+    return "igual"
+
+
+def cae_compra(ult, ant) -> bool:
+    ant = _f(ant)
+    return ant >= CAIDA_COMPRA_MINIMO and _f(ult) <= ant * (1 - CAIDA_COMPRA)
+
 
 _SQL_COMPRAS = """
 SELECT f.codigo_cli AS cod, date_trunc('month', f.fecha)::date AS mes,
@@ -223,7 +284,7 @@ def _a_fecha(m):
 
 def evolucion(cods: set[str], evol: list[dict], compras: list[dict],
               por_mes: list[dict], meses: list[date],
-              color_hoy: dict[str, str]) -> dict:
+              color_hoy: dict[str, str], pagos: list[dict] | None = None) -> dict:
     """Serie mensual por cliente: saldo en facturas y factura más vieja al
     cierre, color de ese día, lo que compró y lo que pagó cada mes, y en
     cuántos días pagó.
@@ -263,9 +324,15 @@ def evolucion(cods: set[str], evol: list[dict], compras: list[dict],
         if i is None or r["cod"] not in cods:
             continue
         f = fila(r["cod"])
-        f["pa"][i] += round(_f(r["plata"]))
+        if pagos is None:
+            f["pa"][i] += round(_f(r["plata"]))
         if _f(r["plata"]) >= 500:
             f["di"][i] = round(_f(r["dias"]))
+    for r in pagos or []:
+        i = idx.get(_a_fecha(r["mes"]))
+        if i is None or r["cod"] not in cods:
+            continue
+        fila(r["cod"])["pa"][i] += round(_f(r["plata"]))
     for cod, f in out.items():
         compras_cli = compro_extra.get(cod, {})
         for i, m in enumerate(meses):
@@ -303,22 +370,61 @@ def datos(hoy: date | None = None) -> dict:
     por_mes = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses[0]}) or []
     medios = db.fetch_all(_SQL_MEDIOS, {"hoy": hoy}) or []
     d = armar(clientes, por_mes, medios, meses, hoy)
-    # Evolución mes a mes (desde junio, hasta 12 meses).
+    # Evolución mes a mes (desde julio, hasta 12 meses) + hace 30 días.
     n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
     meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
+    cierres = [min(_fin_de_mes(m), hoy) for m in meses_e]
+    hace = hoy - timedelta(days=FLECHA_DIAS)
     desde_c = _meses_atras(meses_e[0], 3)[0]
-    evol = db.fetch_all(_SQL_EVOL, {"hoy": hoy, "desde": meses_e[0],
-                                     "centavos": CENTAVOS}) or []
+    filas_e = db.fetch_all(_SQL_EVOL, {"fechas": sorted(set(cierres) | {hace}),
+                                       "desde": min(cierres[0], hace),
+                                       "centavos": CENTAVOS}) or []
+    a_mes = {c: m for c, m in zip(cierres, meses_e, strict=True)}
+    evol = [dict(r, mes=a_mes[_a_fecha(r["d"])]) for r in filas_e
+            if _a_fecha(r["d"]) in a_mes]
+    antes = {r["cod"]: r for r in filas_e if _a_fecha(r["d"]) == hace}
+    ahora = {r["cod"]: r for r in filas_e if _a_fecha(r["d"]) == hoy}
     compras = db.fetch_all(_SQL_COMPRAS, {"hoy": hoy, "desde": desde_c}) or []
     pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
+    pagos = db.fetch_all(_SQL_PAGOS, {"hoy": hoy, "desde": meses_e[0]}) or []
+    trend = {r["cod"]: r for r in db.fetch_all(_SQL_TREND_COMPRA, {"hoy": hoy}) or []}
     cods = {p["k"] for p in d["puntos"]}
     d["evol"] = {"meses": [_MESES[m.month - 1][:3] for m in meses_e],
                  "cli": evolucion(cods, evol, compras, pm, meses_e,
-                                  {c["cod"]: c["color"] for c in d["filas"]})}
+                                  {c["cod"]: c["color"] for c in d["filas"]},
+                                  pagos=pagos)}
+    marcar(d, trend, ahora, antes)
     return d
 
 
 # ── Cálculo (puro, testeable) ───────────────────────────────────────────────
+
+def _fin_de_mes(m: date) -> date:
+    sig = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+    return sig - timedelta(days=1)
+
+
+def marcar(d: dict, trend: dict, ahora: dict, antes: dict) -> None:
+    """Pone el * (cayó la compra) y la flecha (rojos: mejor/peor que hace 30
+    días) en las filas y en los puntos del gráfico."""
+    for c in d["filas"]:
+        t = trend.get(c["cod"]) or {}
+        c["cae"] = cae_compra(t.get("ult"), t.get("ant"))
+        c["compra_ult"], c["compra_ant"] = round(_f(t.get("ult"))), round(_f(t.get("ant")))
+        c["flecha"] = None
+        if c["color"] == "rojo":
+            a, h = antes.get(c["cod"]), ahora.get(c["cod"])
+            if a:
+                def _e(r):
+                    return r.get("edad") if r and _f(r["saldo"]) > 0 else None
+                c["flecha"] = flecha(_f(h and h["saldo"]), _e(h),
+                                     _f(a["saldo"]), _e(a))
+                c["flecha_antes"] = (round(_f(a["saldo"])), a.get("edad"))
+    por = {c["cod"]: c for c in d["filas"]}
+    for p in d["puntos"]:
+        c = por.get(p["k"], {})
+        p["cae"] = bool(c.get("cae"))
+        p["fl"] = c.get("flecha")
 
 def _f(x) -> float:
     return float(x or 0)

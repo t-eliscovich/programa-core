@@ -169,3 +169,41 @@ def test_evolucion_sin_saldo_no_tiene_factura_vieja():
     e = cob.evolucion({"DCA"}, [dict(cod="DCA", mes=meses[0], saldo=-50, edad=163)],
                       [], [], meses, {})
     assert e["DCA"]["e"][0] is None
+
+
+def test_flecha():
+    assert cob.flecha(100, 160, 100, 190) == "mejor"     # pagó lo viejo
+    assert cob.flecha(81, 200, 100, 170) == "mejor"      # bajó la deuda 19% (GUG, KRH)
+    assert cob.flecha(100, 200, 100, 170) == "peor"      # no pagó nada y envejeció
+    assert cob.flecha(111, 225, 100, 229) == "peor"      # subió la deuda (MWI)
+    assert cob.flecha(100, 180, 100, 175) == "igual"
+    assert cob.flecha(0, None, 100, 175) == "mejor"      # pagó todo
+    assert cob.flecha(100, 180, 0, None) is None
+
+
+def test_cae_compra_20_por_ciento():
+    assert cob.cae_compra(7900, 10000)
+    assert not cob.cae_compra(8100, 10000)
+    assert not cob.cae_compra(0, 2000)                   # muy poco antes
+
+
+def test_marcar_pone_asterisco_y_flecha_solo_a_rojos():
+    d = _armar([_cli("ROJ", fac=5000, edad_max=200), _cli("VER", fac=5000, edad_max=10)])
+    trend = {"ROJ": {"ult": 1000, "ant": 9000}, "VER": {"ult": 1000, "ant": 9000}}
+    ahora = {"ROJ": {"saldo": 5000, "edad": 200}, "VER": {"saldo": 5000, "edad": 10}}
+    antes = {"ROJ": {"saldo": 5000, "edad": 170}, "VER": {"saldo": 5000, "edad": 40}}
+    cob.marcar(d, trend, ahora, antes)
+    assert _uno(d, "ROJ")["cae"] and _uno(d, "VER")["cae"]
+    assert _uno(d, "ROJ")["flecha"] == "peor"
+    assert _uno(d, "VER")["flecha"] is None
+    p = next(p for p in d["puntos"] if p["k"] == "ROJ")
+    assert p["cae"] and p["fl"] == "peor"
+
+
+def test_evolucion_pagos_salen_de_los_cheques():
+    from datetime import date
+    meses = [date(2026, 7, 1), date(2026, 8, 1)]
+    e = cob.evolucion({"A"}, [dict(cod="A", mes=meses[0], saldo=100, edad=10)], [],
+                      [dict(cod="A", mes=meses[1], plata=800, dias=90)], meses, {},
+                      pagos=[dict(cod="A", mes=meses[0], plata=1500)])
+    assert e["A"]["pa"] == [1500, 0] and e["A"]["di"] == [None, 90]
