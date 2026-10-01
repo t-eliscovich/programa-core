@@ -49,6 +49,10 @@ AMARILLO_EMPEORO_DIAS = 15     # 9 de cada 10 cambian menos de 16 días
 REBOTE_VIEJO_DIAS = 7   # Tamara 30/09: "en vez de 30 dias sea 7"
 SALDO_MINIMO = 1000            # debajo de esto no se lista (salvo rebotes)
 PAGADO_MINIMO_HISTORIA = 2000  # para confiar en el "plazo habitual"
+# Tamara 01/10: "si son centavos me gustaria no contarlas". Una factura con
+# menos de esto pendiente no cuenta como "factura impaga" (ni para el
+# semáforo ni para la evolución): son restos de redondeo, no deuda.
+CENTAVOS = 5
 
 # Pesos del puntaje.
 PESO_ANTIGUEDAD = 0.45
@@ -67,7 +71,7 @@ _MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 _SQL_CLIENTES = """
 WITH fac AS (
   SELECT f.codigo_cli, SUM(f.saldo) AS saldo_fac,
-         MAX(%(hoy)s::date - f.fecha) FILTER (WHERE f.saldo > 0) AS edad_max
+         MAX(%(hoy)s::date - f.fecha) FILTER (WHERE f.saldo >= %(centavos)s) AS edad_max
     FROM scintela.factura f
    WHERE (f.stat IS NULL OR f.stat IN ('Z','A','',' '))
      AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
@@ -197,7 +201,7 @@ s AS (SELECT me.d, f.codigo_cli, f.fecha, f.saldo + COALESCE(xd.despues,0) AS sa
         FROM me JOIN f ON f.fecha <= me.d
         LEFT JOIN xd ON xd.id_fact = f.id_factura AND xd.d = me.d)
 SELECT codigo_cli AS cod, date_trunc('month', d)::date AS mes, SUM(sal) AS saldo,
-       d - MIN(fecha) FILTER (WHERE sal > 0) AS edad
+       d - MIN(fecha) FILTER (WHERE sal >= %(centavos)s) AS edad
   FROM s GROUP BY codigo_cli, d
 """
 
@@ -295,7 +299,7 @@ def _meses_atras(hoy: date, n: int) -> list[date]:
 def datos(hoy: date | None = None) -> dict:
     hoy = hoy or today_ec()
     meses = _meses_atras(hoy, 3)
-    clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy}) or []
+    clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
     por_mes = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses[0]}) or []
     medios = db.fetch_all(_SQL_MEDIOS, {"hoy": hoy}) or []
     d = armar(clientes, por_mes, medios, meses, hoy)
@@ -303,7 +307,8 @@ def datos(hoy: date | None = None) -> dict:
     n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
     meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
     desde_c = _meses_atras(meses_e[0], 3)[0]
-    evol = db.fetch_all(_SQL_EVOL, {"hoy": hoy, "desde": meses_e[0]}) or []
+    evol = db.fetch_all(_SQL_EVOL, {"hoy": hoy, "desde": meses_e[0],
+                                     "centavos": CENTAVOS}) or []
     compras = db.fetch_all(_SQL_COMPRAS, {"hoy": hoy, "desde": desde_c}) or []
     pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
     cods = {p["k"] for p in d["puntos"]}
