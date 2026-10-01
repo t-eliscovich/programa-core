@@ -283,7 +283,11 @@ recibidos cada mes. Toda la casa:
     const q=document.getElementById('gq').value.trim().toLowerCase();
     const fv=document.getElementById('fv').value;
     visibles=D.filter(p=>(!gcol.size||gcol.has(p.c))&&(!fv||p.v===fv));
-    const hit=q?visibles.filter(p=>p.q.includes(q)):[];
+    // Tamara 30/09: clic en EDU marcaba 5 (KA2, CED, LEG, JOE tienen "edu"
+    // en el nombre). Si lo escrito ES un código, va sólo ese cliente; si no,
+    // busca por pedazo de código o nombre.
+    const exacto=q?visibles.filter(p=>p.k.toLowerCase()===q):[];
+    const hit=exacto.length?exacto:(q?visibles.filter(p=>p.q.includes(q)):[]);
     const marcados=new Set(hit);
     const orden=[...visibles].sort((a,b)=>({verde:0,amar:1,rojo:2}[a.c]-{verde:0,amar:1,rojo:2}[b.c]));
     let g=fondo();
@@ -382,8 +386,11 @@ recibidos cada mes. Toda la casa:
   }
   function mostrarEvol(p){
     const box=document.getElementById('evol');
-    const e=p && EV.cli[p.k];
-    if(!e){ box.hidden=true; box.innerHTML=''; return; }
+    if(!p){ box.hidden=true; box.innerHTML=''; return; }
+    const e=EV.cli[p.k];
+    if(!e){ box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
+      <div class="ev-res">No tuvo facturas con saldo desde ${EV.meses[0]||'junio'}: lo que debe son cheques por cobrar.</div>`;
+      box.hidden=false; return; }
     const cols=e.c.map(c=>color[c]);
     box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
       <div class="ev-res">${esc(resumenEvol(e))}</div>
