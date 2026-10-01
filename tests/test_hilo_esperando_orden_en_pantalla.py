@@ -91,18 +91,13 @@ def test_tejeduria_sin_nada_esperando_no_dice_nada(app, fake_db):
     assert "kg de hilo" not in html
 
 
-def test_las_tres_pantallas_tienen_su_lugar_para_el_dato():
-    """Inventario y Flujo lo muestran como renglón; Tejeduría, como línea
-    arriba de todo — ahí es donde alguien va a crear la orden."""
-    # Flujo producción no se renderiza acá (arma media pantalla con Asinfo);
-    # se fija que el renglón exista Y que cuelgue de la variable — cambiar la
-    # condición por `False` es justamente el mutante que sobrevivía cuando esto
-    # sólo buscaba el texto suelto.
+def test_las_pantallas_tienen_su_lugar_para_el_dato():
+    """Inventario lo muestra como renglón; Tejeduría, como línea arriba de
+    todo — ahí es donde alguien va a crear la orden. Flujo producción YA NO
+    (Tamara 01/10/2026: "¿qué es esto? se ve horrible" → sacarlo)."""
     flujo = Path("modules/informes/templates/informes/flujo_produccion.html").read_text()
-    assert "{% if espera_hilado or espera_crudo %}" in flujo
-    assert "Esperando orden de fabricación" in flujo
-    assert "{{ espera_hilado | num_es(0) }}" in flujo
-    assert "{{ espera_crudo | num_es(0) }}" in flujo
+    assert "Esperando orden de fabricación" not in flujo
+    assert "{{ espera_hilado | num_es(0) }}" not in flujo
 
     tej = Path("modules/tejeduria_asinfo/templates/tejeduria_asinfo/tab.html").read_text()
     assert "esperando_kg" in tej
