@@ -2755,6 +2755,22 @@ def precios_asinfo():
 
 
 # ---------------------------------------------------------------------------
+# Salidas de material que Asinfo no bajó del saldo
+# ---------------------------------------------------------------------------
+# Tamara 2026-10-01: desde el 13/07 Asinfo a veces registra la salida pero no
+# baja el saldo de la bodega; el lote sigue en stock y la utilidad sube. Ver
+# modules/asinfo/salidas_sin_saldo.
+
+
+@bp.route("/salidas-sin-saldo", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def salidas_sin_saldo():
+    from modules.asinfo import salidas_sin_saldo as _sss
+    return jsonify(_sss.health())
+
+
+# ---------------------------------------------------------------------------
 # Deudas de proveedores que desaparecieron de posdat sin pagarse
 # ---------------------------------------------------------------------------
 # Tamara 2026-09-03: el 01/09 la procedure vieja `procesa_provisiones` hizo
@@ -2901,6 +2917,8 @@ def health_all():
     # factura de proveedor pagada dos veces (caso AQ 166).
     resp28 = debito_sin_banco()
     data28 = json.loads(resp28.get_data(as_text=True))
+    # Tamara 2026-10-01: salidas de material que Asinfo no bajó del saldo.
+    data29 = json.loads(salidas_sin_saldo().get_data(as_text=True))
     # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
     # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
     from modules._lib import servidor as _srv
@@ -2955,7 +2973,7 @@ def health_all():
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
                and data23["ok"] and data24["ok"] and data25["ok"]
-               and data26["ok"] and data28["ok"]),
+               and data26["ok"] and data28["ok"] and data29["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -2983,6 +3001,7 @@ def health_all():
         "deudas_desaparecidas": data25,
         "hilo_local": json.loads(resp27.get_data(as_text=True)),
         "debito_sin_banco": data28,
+        "salidas_sin_saldo": data29,
         "servidor": data26,
     })
 
