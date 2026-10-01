@@ -1750,7 +1750,9 @@
   function fechaPromedioCheques() {
     let peso = 0, suma = 0, n = 0, sumaSimple = 0;
     document.querySelectorAll('.cheque-bloque').forEach(b => {
-      const f = ((b.querySelector('.cheque-fechad') || {}).value || '').trim();
+      // OJO: fechas-es.js pone DELANTE un cuadro de texto dd/mm/aaaa con la
+      // MISMA clase; el que tiene la fecha ISO es el input escondido fechad[].
+      const f = ((b.querySelector('input[name="fechad[]"]') || {}).value || '').trim();
       if (!f) return;
       const ts = new Date(f + 'T00:00:00').getTime();
       if (isNaN(ts)) return;
