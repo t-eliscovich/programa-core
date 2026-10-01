@@ -21,8 +21,16 @@ ING = [
 ]
 
 
-def _fake(salidas=FILAS, ingresos=(), ok=True):
+CUADRA = [
+    {"bodega": 51, "saldo": 1000, "movimientos": 1000 - 2300, "diferencia": 2300},
+    {"bodega": 52, "saldo": 500, "movimientos": 500, "diferencia": 0},
+]
+
+
+def _fake(salidas=FILAS, ingresos=(), ok=True, cuadre=CUADRA):
     def f(db, sql, **k):
+        if "AS diferencia" in sql:
+            return list(cuadre), ok
         return (list(ingresos) if "operacion = 1" in sql else list(salidas)), ok
     return f
 
@@ -60,7 +68,8 @@ def test_asinfo_no_contesta_no_alarma():
 
 def test_la_consulta_compara_el_saldo_contra_la_fecha_de_la_salida():
     q = sss._sql(10)
-    assert "s.sf < CAST(sal.fecha_creacion AS date)" in q
+    assert "s.saldo - k.kx > 0.5" in q           # saldo contra movimientos
+    assert "u.rn = 1" in q                        # se le anota a la última salida
     assert "WHERE b = 51" in q          # repetidos sólo en hilo
     assert "indicador_anulacion" in q
 
@@ -115,9 +124,81 @@ def test_si_solo_contesta_una_consulta_igual_alerta():
     def f(db, sql, **k):
         if "operacion = 1" in sql:
             return list(ING), True
+        if "AS diferencia" in sql:
+            return list(CUADRA), True
         return [], False
     with patch("modules._lib.metabase_client.fetch_dataset_estado", side_effect=f), \
          patch("modules.avisos.queries.avisar", side_effect=RuntimeError("sin base")):
         h = sss.health(10)
     assert [a["category"] for a in h["alerts"]] == ["ingresos_sumados_dos_veces"]
     assert h["stats"]["salidas"] == []
+
+
+DESCUADRE = [
+    {"bodega": 51, "saldo": 2202034, "movimientos": 2144885, "diferencia": 57149},
+    {"bodega": 52, "saldo": 254354, "movimientos": 206950, "diferencia": 47404},
+    {"bodega": 53, "saldo": 318328, "movimientos": 318298, "diferencia": 30},
+]
+
+
+def test_cuadre_marca_lo_que_pasa_de_la_base():
+    with patch("modules._lib.metabase_client.fetch_dataset_estado",
+               return_value=(DESCUADRE + [{"bodega": "x"}], True)):
+        c = sss.cuadre()
+    b = {x["id"]: x for x in c["bodegas"]}
+    assert b[51]["descuadrada"] and b[51]["de_mas_nuevo"] == 57149 - 2300
+    assert b[52]["descuadrada"] and b[53]["descuadrada"] is False
+
+
+def test_cuadre_falla_sin_levantar():
+    with patch("modules._lib.metabase_client.fetch_dataset_estado",
+               side_effect=RuntimeError("boom")):
+        assert sss.cuadre()["ok"] is False
+    with patch("modules._lib.metabase_client.fetch_dataset_estado",
+               return_value=([], False)):
+        assert sss.cuadre()["ok"] is False
+
+
+def test_bodega_descuadrada_alerta_y_avisa_cada_mil_kg():
+    avisos = []
+    with patch("modules._lib.metabase_client.fetch_dataset_estado",
+               side_effect=_fake([], [], cuadre=DESCUADRE)), \
+         patch("modules.avisos.queries.avisar", side_effect=lambda **k: avisos.append(k) or True):
+        h = sss.health(10)
+    assert [a["category"] for a in h["alerts"]] == ["bodega_descuadrada"]
+    assert [a["clave"] for a in avisos] == ["cuadre:51:54", "cuadre:52:47"]
+    assert "tela cruda no cuadra" in avisos[1]["titulo"]
+    assert len(h["stats"]["cuadre"]) == 3
+
+
+def test_corre_solo_cada_media_hora(monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(sss, "health", lambda **k: llamadas.append(k) or {
+        "ok": False, "alerts": [{"category": "bodega_descuadrada"}]})
+    monkeypatch.setattr(sss, "_auto_ultimo", None)
+    monkeypatch.delenv("SALIDAS_SALDO_AUTO", raising=False)
+    monkeypatch.setenv("SALIDAS_SALDO_SECS", "nada")
+    r = sss.correr_si_toca()
+    assert r["corrio"] and r["alertas"] == ["bodega_descuadrada"]
+    assert sss.correr_si_toca()["corrio"] is False, "no repite antes de 30 min"
+    assert llamadas == [{"avisar": True}]
+
+
+def test_corre_solo_se_apaga_y_no_se_cae(monkeypatch):
+    monkeypatch.setattr(sss, "_auto_ultimo", None)
+    monkeypatch.setenv("SALIDAS_SALDO_AUTO", "0")
+    assert sss.correr_si_toca()["corrio"] is False
+    monkeypatch.setenv("SALIDAS_SALDO_AUTO", "1")
+    monkeypatch.setenv("SALIDAS_SALDO_SECS", "600")
+
+    def boom(**k):
+        raise RuntimeError("boom")
+    monkeypatch.setattr(sss, "health", boom)
+    assert sss.correr_si_toca()["corrio"] is False
+
+
+def test_el_hilo_de_fondo_lo_llama():
+    import inspect
+
+    from modules._lib import autocarga_facturas as af
+    assert "_sss.correr_si_toca()" in inspect.getsource(af._loop)

@@ -8,13 +8,20 @@ pasó en 58 de 1.034 salidas (jul–sep) y dejó ~52.000 kg de hilo "de más" en
 balance — ~124 mil de utilidad inflada sólo en septiembre. Nadie lo vio porque
 el saldo equivocado es el del propio Asinfo.
 
-Cómo se detecta: por cada lote de una SM de los últimos días, el último saldo
-del lote en `saldo_producto_lote` sigue positivo y es de una fecha ANTERIOR a
-la salida (cuando la salida anda bien, Asinfo graba un saldo nuevo en el mismo
-instante). También marca los lotes de HILO cargados en dos o más salidas (las
-"etiquetas repetidas en dos órdenes" que reportó Alex el 30/09). En tela cruda
-NO: ahí un rollo se reparte entre dos órdenes seguidas todo el tiempo y el
-saldo baja bien (medido el 01/10: decenas de casos por día, todos normales).
+Cómo se detecta: por cada lote de una SM de los últimos días, el saldo del
+lote en `saldo_producto_lote` quedó MÁS ALTO que la suma de sus movimientos
+(ingresos menos salidas): el saldo no bajó con la salida. También marca los
+lotes de HILO cargados en dos o más salidas (las "etiquetas repetidas en dos
+órdenes" que reportó Alex el 30/09). En tela cruda NO: ahí un rollo se reparte
+entre dos órdenes seguidas todo el tiempo y es normal.
+
+Además, el CUADRE de cada bodega (hilo, tela cruda, terminado): kilos según el
+saldo contra kilos según los movimientos. Al 01/10: hilo +57.149 kg, tela
+cruda +47.404 kg (ambas desde el 13/07), terminado ~0. Atrapa cualquier falla
+del saldo, también una que todavía no conozcamos.
+
+Corre solo cada 30 min desde el hilo de fondo (`correr_si_toca`) y además
+cuando se abre /admin/health/salidas-sin-saldo o /admin/health/all.
 
 Tamara 2026-10-01 (segundo caso): INGRESOS que Asinfo sumó DOS VECES al
 saldo. En las importaciones del 11/09 (IM-0000591 e IM-0000607) 30 lotes de
@@ -36,7 +43,16 @@ BODEGAS = {51: "Hilo", 52: "Tela cruda", 53: "Terminado"}
 
 
 def _sql(dias: int) -> str:
-    dias = max(1, min(int(dias), 60))
+    """Salidas de los últimos `dias` con lotes cuyo saldo quedó MÁS ALTO que la
+    suma de sus movimientos (el saldo no bajó con la salida).
+
+    TMT 2026-10-01 — antes se comparaba la FECHA del último saldo contra la de
+    la salida, y eso se perdía los rollos de tela cruda repartidos en dos
+    salidas el MISMO día (la primera baja, la segunda no). En tela cruda eran
+    ~48.000 kg y el chequeo veía 5.900. Ahora se compara el saldo contra la
+    suma de los movimientos del lote, que es exacto. La falla se le anota a la
+    ÚLTIMA salida del lote (la que no bajó)."""
+    dias = max(1, min(int(dias), 90))
     return f"""
 WITH sal AS (
     SELECT ip.numero_documento doc, ip.id_bodega b, ip.id_producto, ip.id_lote,
@@ -48,32 +64,55 @@ WITH sal AS (
        AND ip.fecha >= DATEADD(day, -{dias}, CAST(GETDATE() AS date))
        AND ip.fecha_creacion < DATEADD(minute, -15, GETDATE())
 ),
+lot AS (SELECT DISTINCT id_producto, b, id_lote FROM sal),
+k AS (
+    SELECT ip.id_producto, ip.id_bodega b, ip.id_lote, SUM(ip.operacion * ip.cantidad) kx
+      FROM inventario_producto ip
+      JOIN lot ON lot.id_producto = ip.id_producto AND lot.b = ip.id_bodega
+              AND lot.id_lote = ip.id_lote
+     WHERE ISNULL(ip.indicador_anulacion, 0) = 0
+     GROUP BY ip.id_producto, ip.id_bodega, ip.id_lote
+),
 snap AS (
-    SELECT s.id_producto, s.id_bodega, s.id_lote, s.saldo, s.sf FROM (
-        SELECT x.id_producto, x.id_bodega, x.id_lote, x.saldo, x.fecha sf,
+    SELECT s.id_producto, s.id_bodega, s.id_lote, s.saldo FROM (
+        SELECT x.id_producto, x.id_bodega, x.id_lote, x.saldo,
                ROW_NUMBER() OVER (PARTITION BY x.id_producto, x.id_bodega, x.id_lote
                                   ORDER BY x.fecha DESC, x.id_saldo_producto_lote DESC) rn
           FROM saldo_producto_lote x
-          JOIN (SELECT DISTINCT id_producto, b, id_lote FROM sal) k
-            ON k.id_producto = x.id_producto AND k.b = x.id_bodega AND k.id_lote = x.id_lote
+          JOIN lot ON lot.id_producto = x.id_producto AND lot.b = x.id_bodega
+                  AND lot.id_lote = x.id_lote
     ) s WHERE rn = 1
+),
+dif AS (
+    SELECT k.id_producto, k.b, k.id_lote, s.saldo - k.kx de_mas
+      FROM k JOIN snap s ON s.id_producto = k.id_producto AND s.id_bodega = k.b
+                        AND s.id_lote = k.id_lote
+     WHERE s.saldo - k.kx > 0.5
+),
+ult AS (
+    SELECT doc, b, id_producto, id_lote,
+           ROW_NUMBER() OVER (PARTITION BY b, id_producto, id_lote
+                              ORDER BY fecha_creacion DESC) rn
+      FROM sal
 ),
 rep AS (SELECT b, id_lote FROM sal WHERE b = 51
          GROUP BY b, id_lote HAVING COUNT(DISTINCT doc) > 1),
 x AS (
     SELECT sal.*,
-           CASE WHEN s.saldo > 0.5 AND s.sf < CAST(sal.fecha_creacion AS date)
-                THEN 1 ELSE 0 END falla,
+           CASE WHEN dif.id_lote IS NOT NULL AND u.rn = 1 THEN 1 ELSE 0 END falla,
+           CASE WHEN dif.id_lote IS NOT NULL AND u.rn = 1 THEN dif.de_mas ELSE 0 END kg_falla,
            CASE WHEN rep.id_lote IS NULL THEN 0 ELSE 1 END repetido
       FROM sal
-      LEFT JOIN snap s ON s.id_producto = sal.id_producto AND s.id_bodega = sal.b
-                      AND s.id_lote = sal.id_lote
+      JOIN ult u ON u.doc = sal.doc AND u.b = sal.b AND u.id_producto = sal.id_producto
+                AND u.id_lote = sal.id_lote
+      LEFT JOIN dif ON dif.id_producto = sal.id_producto AND dif.b = sal.b
+                   AND dif.id_lote = sal.id_lote
       LEFT JOIN rep ON rep.b = sal.b AND rep.id_lote = sal.id_lote
 )
 SELECT x.doc, x.b AS bodega, MAX(o.numero) AS orden,
        CONVERT(varchar(16), MIN(x.fecha_creacion), 120) AS fecha,
        COUNT(*) AS lotes, SUM(x.falla) AS sin_bajar,
-       CAST(SUM(CASE WHEN x.falla = 1 THEN x.cantidad ELSE 0 END) AS decimal(12, 2)) AS kg_sin_bajar,
+       CAST(SUM(x.kg_falla) AS decimal(12, 2)) AS kg_sin_bajar,
        SUM(x.repetido) AS repetidos
   FROM x
   LEFT JOIN detalle_movimiento_inventario d ON d.id_detalle_movimiento_inventario = x.idm
@@ -173,6 +212,67 @@ def detectar_ingresos(dias: int = 30) -> dict:
     }
 
 
+#: Diferencia (saldo − movimientos) que cada bodega YA tenía antes de la falla
+#: del 13/07/2026, medida el 01/10: hilo 2.296 kg de lotes 2022–2023, tela
+#: cruda −24, terminado ~30. Por encima de esto (más un margen) es falla nueva.
+CUADRE_BASE_KG = {51: 2300.0, 52: 0.0, 53: 30.0}
+CUADRE_MARGEN_KG = 100.0
+
+_SQL_CUADRE = """
+WITH s AS (
+    SELECT id_bodega b, SUM(saldo) saldo FROM (
+        SELECT id_bodega, saldo,
+               ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega, id_lote
+                                  ORDER BY fecha DESC, id_saldo_producto_lote DESC) rn
+          FROM saldo_producto_lote WHERE id_bodega IN (51, 52, 53)
+    ) z WHERE rn = 1 GROUP BY id_bodega
+),
+k AS (
+    SELECT id_bodega b, SUM(operacion * cantidad) kx
+      FROM inventario_producto
+     WHERE id_bodega IN (51, 52, 53) AND ISNULL(indicador_anulacion, 0) = 0
+     GROUP BY id_bodega
+)
+SELECT s.b AS bodega, CAST(s.saldo AS decimal(14, 2)) AS saldo,
+       CAST(k.kx AS decimal(14, 2)) AS movimientos,
+       CAST(s.saldo - k.kx AS decimal(14, 2)) AS diferencia
+  FROM s JOIN k ON k.b = s.b ORDER BY s.b
+"""
+
+
+def cuadre() -> dict:
+    """El cuadre de cada bodega: kilos según el saldo de Asinfo contra kilos
+    según sus ingresos y salidas. Tienen que dar igual; la diferencia es stock
+    que el saldo cuenta de más (o de menos). Atrapa CUALQUIER falla del saldo,
+    también una que todavía no conocemos. Nunca levanta."""
+    try:
+        from modules._lib import metabase_client
+        filas, ok = metabase_client.fetch_dataset_estado(2, _SQL_CUADRE, max_results=10)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("cuadre falló: %s", e)
+        return {"ok": False, "error": str(e)[:200], "bodegas": []}
+    if not ok:
+        return {"ok": False, "error": "Asinfo no contestó", "bodegas": []}
+    bodegas = []
+    for f in filas or []:
+        try:
+            b = int(f.get("bodega"))
+            dif = round(float(f.get("diferencia") or 0), 2)
+            base = CUADRE_BASE_KG.get(b, 0.0)
+            bodegas.append({
+                "id": b,
+                "bodega": BODEGAS.get(b, str(b)),
+                "saldo": round(float(f.get("saldo") or 0), 2),
+                "movimientos": round(float(f.get("movimientos") or 0), 2),
+                "diferencia": dif,
+                "de_mas_nuevo": round(dif - base, 2),
+                "descuadrada": abs(dif - base) > CUADRE_MARGEN_KG,
+            })
+        except (TypeError, ValueError):
+            continue
+    return {"ok": True, "bodegas": bodegas}
+
+
 def detectar(dias: int = 10) -> dict:
     """Salidas de los últimos `dias` con lotes que no bajaron o repetidos.
 
@@ -231,7 +331,8 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
     campanita por cada documento (una sola vez por documento)."""
     res = detectar(dias)
     ing = detectar_ingresos(dias_ingresos)
-    if not res.get("ok") and not ing.get("ok"):
+    cua = cuadre()
+    if not res.get("ok") and not ing.get("ok") and not cua.get("ok"):
         return {"ok": True, "alerts": [],
                 "stats": {"sin_datos": True, "error": res.get("error")}}
     salidas = res.get("salidas") or []
@@ -261,6 +362,17 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
                     f"el saldo tiene más kilos. El stock y la utilidad están altos en "
                     f"esos kilos hasta que Asinfo lo corrija."),
         })
+    descuadradas = [b for b in cua.get("bodegas") or [] if b["descuadrada"]]
+    if descuadradas:
+        det = "; ".join(f"{b['bodega']}: el saldo dice {b['saldo']:,.0f} kg y los "
+                        f"movimientos {b['movimientos']:,.0f} kg "
+                        f"({b['de_mas_nuevo']:+,.0f} kg)" for b in descuadradas)
+        alerts.append({
+            "severity": "high",
+            "category": "bodega_descuadrada",
+            "msg": (f"El saldo de Asinfo no coincide con sus ingresos y salidas — {det}. "
+                    f"Esos kilos están de más (o de menos) en el stock y en la utilidad."),
+        })
     if avisar and alerts:
         try:
             from modules.avisos import queries as avisos
@@ -286,6 +398,22 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
                     cantidad=int(i["kg_de_mas"]) or None,
                     clave=f"ingreso-doble:{i['ingreso']}",
                 )
+            for b in descuadradas:
+                # Un aviso nuevo cada 1.000 kg que se agranda (o achica) la
+                # diferencia: si sigue creciendo, la campanita lo vuelve a decir.
+                paso = int(b["de_mas_nuevo"] // 1000)
+                avisos.avisar(
+                    fuente="stock", nivel="alerta",
+                    titulo=(f"Asinfo: la bodega de {b['bodega'].lower()} no cuadra — "
+                            f"{b['de_mas_nuevo']:+,.0f} kg entre el saldo y los "
+                            f"movimientos")[:200],
+                    detalle=(f"El saldo de Asinfo dice {b['saldo']:,.0f} kg y sus "
+                             f"ingresos menos salidas dan {b['movimientos']:,.0f} kg. "
+                             f"La diferencia es stock que el saldo cuenta de más (o de "
+                             f"menos). Pedirle a Asinfo que lo corrija."),
+                    cantidad=int(b["de_mas_nuevo"]) or None,
+                    clave=f"cuadre:{b['id']}:{paso}",
+                )
         except Exception as e:  # noqa: BLE001 -- avisar nunca rompe el health
             _LOG.warning("no pude avisar: %s", e)
     stats = {k: res.get(k) for k in ("dias", "lotes_sin_bajar", "kg_sin_bajar",
@@ -293,5 +421,42 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
     stats |= {"salidas": salidas,
               "ingresos": ingresos,
               "lotes_ingreso_de_mas": ing.get("lotes", 0),
-              "kg_ingreso_de_mas": ing.get("kg_de_mas", 0)}
+              "kg_ingreso_de_mas": ing.get("kg_de_mas", 0),
+              "cuadre": cua.get("bodegas") or []}
     return {"ok": not alerts, "alerts": alerts, "stats": stats}
+
+
+#: Cada cuánto corre solo el control (hilo de fondo). Default 30 min, todo el
+#: día: las salidas se escanean en los tres turnos.
+_INTERVALO_SECS = 1800
+_auto_ultimo: float | None = None
+
+
+def correr_si_toca() -> dict:
+    """Entrada del hilo de fondo (autocarga_facturas). Corre el control completo
+    y deja los avisos, como mucho una vez cada `SALIDAS_SALDO_SECS` (default
+    30 min). SALIDAS_SALDO_AUTO=0 lo apaga. Nunca levanta.
+
+    Tamara 2026-10-01: "este control debe ser continuo" — antes sólo corría
+    cuando alguien abría el health."""
+    import os
+    import time as _time
+    global _auto_ultimo
+    res: dict = {"corrio": False}
+    if os.environ.get("SALIDAS_SALDO_AUTO", "1") == "0":
+        return res
+    try:
+        intervalo = max(300, int(os.environ.get("SALIDAS_SALDO_SECS", _INTERVALO_SECS)))
+    except ValueError:
+        intervalo = _INTERVALO_SECS
+    ahora = _time.monotonic()
+    if _auto_ultimo is not None and (ahora - _auto_ultimo) < intervalo:
+        return res
+    _auto_ultimo = ahora
+    try:
+        h = health(avisar=True)
+        res.update(corrio=True, ok=h.get("ok"),
+                   alertas=[a["category"] for a in h.get("alerts") or []])
+    except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
+        _LOG.warning("control de salidas y saldo (fondo): %s", e)
+    return res

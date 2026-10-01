@@ -325,6 +325,15 @@ def _loop() -> None:
                 _saldos.correr_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("saldos (fondo): %s", e)
+            # Tamara 2026-10-01: "este control debe ser continuo". Salidas que
+            # Asinfo no bajó del saldo, ingresos sumados dos veces y el cuadre
+            # de cada bodega (saldo contra movimientos), cada 30 min, con
+            # aviso en la campanita. SALIDAS_SALDO_AUTO=0 lo apaga.
+            try:
+                from modules.asinfo import salidas_sin_saldo as _sss
+                _sss.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("salidas sin saldo (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)
