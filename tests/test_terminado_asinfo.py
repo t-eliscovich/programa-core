@@ -123,9 +123,10 @@ def test_por_dia_cachea():
 
 
 def test_por_dia_vacio_no_se_congela_en_cache():
-    """Un [] puede ser Asinfo mudo — si se cachea, la pantalla queda vacía
-    5 minutos aunque el ERP ya conteste."""
-    with patch.object(metabase_client, "fetch_dataset", return_value=[]):
+    """Asinfo MUDO no se cachea — si no, la pantalla queda vacía 5 minutos
+    aunque el ERP ya conteste. (Un vacío con Asinfo contestando SÍ se guarda:
+    ver tests/test_asinfo_vacio_se_cachea.py, TMT 2026-10-01.)"""
+    with patch.object(metabase_client, "fetch_dataset_estado", return_value=([], False)):
         asvc.fabricacion_flujo_por_dia(53, 2026, 7)
     with patch.object(metabase_client, "fetch_dataset", return_value=_DIAS):
         assert len(asvc.fabricacion_flujo_por_dia(53, 2026, 7)) == 2

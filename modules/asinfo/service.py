@@ -1331,6 +1331,28 @@ def _cache_put(cache: dict, clave, valor, ok: bool, ttl: int) -> None:
     _OK_POR_CACHE[(id(cache), clave)] = bool(ok)
 
 
+# ── ¿La última consulta de ESTE hilo llegó a Asinfo? (TMT 2026-10-01) ─────
+# Las funciones `_..._agrupado` devuelven [] / {} tanto si Asinfo no contestó
+# como si contestó "no hay nada" (el día 1 del mes, por ejemplo). Sus llamadores
+# sólo cacheaban un resultado NO vacío, así que un mes todavía vacío se volvía
+# a preguntar en CADA visita (/informes/dia: ~1 s por visita). Con esto el
+# llamador distingue los dos casos sin cambiar lo que devuelven.
+_TL_OK = _threading.local()
+
+
+def _fetch_con_estado(db_id: int, sql: str, max_results: int):
+    """`fetch_dataset_estado` que deja anotado si contestó (ver `_ultimo_ok`)."""
+    _TL_OK.ok = False
+    rows, ok = metabase_client.fetch_dataset_estado(db_id, sql, max_results=max_results)
+    _TL_OK.ok = bool(ok)
+    return rows
+
+
+def _ultimo_ok() -> bool:
+    """True si la última `_fetch_con_estado` de este hilo llegó a Asinfo."""
+    return bool(getattr(_TL_OK, "ok", False))
+
+
 def _cache_ok(cache: dict, clave) -> bool:
     """¿Lo último que se guardó en esa caché vino de una consulta buena?
 
@@ -2625,7 +2647,7 @@ def _fabricacion_flujo_agrupado(id_bodega: int, d1: str, d2: str,
          ORDER BY o.periodo
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+        rows = _fetch_con_estado(2, sql, max_results=400)
     except Exception:  # noqa: BLE001 -- fail-soft
         return []
     return [
@@ -2661,7 +2683,7 @@ def fabricacion_flujo_por_dia(id_bodega: int, yy: int, mm: int) -> list[dict]:
         return cached[1]
     d1, d2 = _rango_mes(yy, mm)
     out = _fabricacion_flujo_agrupado(id_bodega, d1, d2, "dia")
-    if out:  # no congelar un [] por error de red (mismo criterio que el mensual)
+    if out or _ultimo_ok():  # un vacío BUENO también se guarda (TMT 2026-10-01)
         _FABRICACION_DIA_CACHE[cache_key] = (now, out)
     return out
 
@@ -2683,7 +2705,7 @@ def fabricacion_flujo_por_mes(id_bodega: int, anio: int) -> list[dict]:
         return cached[1]
     out = _fabricacion_flujo_agrupado(
         id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
-    if out:
+    if out or _ultimo_ok():
         _FABRICACION_DIA_CACHE[cache_key] = (now, out)
     return out
 
@@ -2879,7 +2901,7 @@ def _despacho_fisico_agrupado(id_bodega: int, d1: str, d2: str,
          GROUP BY {periodo}
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+        rows = _fetch_con_estado(2, sql, max_results=400)
     except Exception:  # noqa: BLE001 -- fail-soft
         return {}
     return {str(r.get("periodo") or ""): round(float(r.get("kg") or 0.0), 2)
@@ -2899,7 +2921,7 @@ def despacho_fisico_por_dia(yy: int, mm: int, id_bodega: int = 53) -> dict:
         return cached[1]
     d1, d2 = _rango_mes(yy, mm)
     out = _despacho_fisico_agrupado(id_bodega, d1, d2, "dia")
-    if out:
+    if out or _ultimo_ok():
         _DESPACHO_PERIODO_CACHE[cache_key] = (now, out)
     return out
 
@@ -2917,7 +2939,7 @@ def despacho_fisico_por_mes(anio: int, id_bodega: int = 53) -> dict:
         return cached[1]
     out = _despacho_fisico_agrupado(
         id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
-    if out:
+    if out or _ultimo_ok():
         _DESPACHO_PERIODO_CACHE[cache_key] = (now, out)
     return out
 
@@ -3043,7 +3065,7 @@ def _movimiento_bodega_agrupado(id_bodega: int, d1: str, d2: str,
          GROUP BY {periodo}
     """
     try:
-        rows = metabase_client.fetch_dataset(2, sql, max_results=400)
+        rows = _fetch_con_estado(2, sql, max_results=400)
     except Exception:  # noqa: BLE001 -- fail-soft
         return {}
     return {
@@ -3068,7 +3090,7 @@ def movimiento_bodega_por_dia(id_bodega: int, yy: int, mm: int) -> dict:
         return cached[1]
     d1, d2 = _rango_mes(yy, mm)
     out = _movimiento_bodega_agrupado(id_bodega, d1, d2, "dia")
-    if out:
+    if out or _ultimo_ok():
         _MOVIMIENTO_PERIODO_CACHE[cache_key] = (now, out)
     return out
 
@@ -3086,7 +3108,7 @@ def movimiento_bodega_por_mes(id_bodega: int, anio: int) -> dict:
         return cached[1]
     out = _movimiento_bodega_agrupado(
         id_bodega, f"{anio:04d}-01-01", f"{anio + 1:04d}-01-01", "mes")
-    if out:
+    if out or _ultimo_ok():
         _MOVIMIENTO_PERIODO_CACHE[cache_key] = (now, out)
     return out
 
