@@ -92,6 +92,9 @@ def _warm_once() -> None:
         ("despacho_hoy", lambda: asvc.despacho_fisico_dia_info(hoy, forzar=True)),
         ("inventario_por_etapa", lambda: asvc.inventario_por_etapa()),
         ("inventario_asof", lambda: asvc.inventario_por_etapa_a_fecha(corte)),
+        # el $/kg del balance sigue cortando el 1° (Tamara 01/10: la utilidad no se toca)
+        ("inventario_asof_1", lambda: asvc.inventario_por_etapa_a_fecha(date(yy, mm, 1))),
+        ("mov_bodega_51_1", lambda: asvc.movimiento_bodega_mes(51, date(yy, mm, 1))),
         ("mov_bodega_51", lambda: asvc.movimiento_bodega_mes(51, corte)),
         ("mov_bodega_52", lambda: asvc.movimiento_bodega_mes(52, corte)),
         ("mov_bodega_53", lambda: asvc.movimiento_bodega_mes(53, corte)),

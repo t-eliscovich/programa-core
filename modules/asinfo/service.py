@@ -1841,7 +1841,9 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         "hi0": 0.0, "hi1": 0.0, "maq": 0.0, "compras": 0.0, "compras_us": 0.0,
     }
     try:
-        inv_inic = inventario_por_etapa_a_fecha(corte_del_mes(yy, mm))
+        # ⚠ Tamara 2026-10-01: el $/kg del balance NO cambia con el corte de
+        # las pantallas de producción (corte_del_mes) — sigue con el 1° del mes.
+        inv_inic = inventario_por_etapa_a_fecha(_date(int(yy), int(mm), 1))
         inv_act = inventario_por_etapa()
     except Exception:  # noqa: BLE001 -- fail-soft
         return _fallback
@@ -2458,7 +2460,7 @@ def hilado_egresos_mes(yy: int, mm: int, *, mov: dict | None = None,
            "importaciones_kg": 0.0}
     try:
         if mov is None:
-            mov = movimiento_bodega_mes(51, corte_del_mes(yy, mm)) or {}
+            mov = movimiento_bodega_mes(51, _date(int(yy), int(mm), 1)) or {}
         ing = float(mov.get("ingreso") or 0.0)
         egr = float(mov.get("egreso") or 0.0)
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper la vista

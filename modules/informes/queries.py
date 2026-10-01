@@ -5350,7 +5350,7 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
 
         from modules.asinfo import service as _asvc_tejb
         _mov52_bal = _asvc_tejb.movimiento_bodega_mes(
-            52, _asvc_tejb.corte_del_mes(_hoy_ec_bal.year, _hoy_ec_bal.month)) or {}
+            52, date(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
         _ing_crudo_bal = float(_mov52_bal.get("ingreso") or 0)
         if _ing_crudo_bal > 0:
             _tej_kg_balance = _ing_crudo_bal
@@ -5368,7 +5368,7 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
 
         from modules.asinfo import service as _asvc_tinb
         _mov53_bal = _asvc_tinb.movimiento_bodega_mes(
-            53, _asvc_tinb.corte_del_mes(_hoy_ec_bal.year, _hoy_ec_bal.month)) or {}
+            53, date(_hoy_ec_bal.year, _hoy_ec_bal.month, 1)) or {}
         _tin_kg_balance = float(_mov53_bal.get("ingreso") or 0)
     except Exception:  # noqa: BLE001 -- fail-soft, nunca romper el balance
         _tin_kg_balance = 0.0

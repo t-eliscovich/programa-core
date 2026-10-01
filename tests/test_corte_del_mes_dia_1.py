@@ -23,8 +23,9 @@ def test_tejeduria_pide_el_ingreso_desde_el_dia_anterior():
     assert f.call_args.args[1] == date(2026, 9, 30)
 
 
-def test_el_inicial_del_hilado_tambien_corta_el_dia_anterior():
+def test_el_dolar_por_kilo_del_balance_no_cambia_de_corte():
     with patch.object(service, "inventario_por_etapa_a_fecha", return_value={}) as inic, \
          patch.object(service, "inventario_por_etapa", return_value={}):
         service.mov_hilado_valuacion(2026, 10, 3.0)
-    assert inic.call_args.args[0] == date(2026, 9, 30)
+    # el balance NO cambia: su $/kg sigue cortando el 1° (Tamara 01/10)
+    assert inic.call_args.args[0] == date(2026, 10, 1)
