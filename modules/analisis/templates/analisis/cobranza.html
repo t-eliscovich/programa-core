@@ -32,6 +32,17 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .chip{font:inherit;font-size:13px;border:1px solid var(--l);background:#fff;border-radius:7px;padding:5px 11px;cursor:pointer}
 .chip[aria-pressed="true"]{border-color:#1f4f6e;background:#e3ecf3}
 #grafico{position:relative}
+#evol{border:1px solid var(--l);border-radius:10px;padding:12px 14px;margin:6px 0 14px;background:#fff}
+#evol .ev-tit{display:flex;flex-wrap:wrap;gap:6px 12px;align-items:baseline}
+#evol .ev-tit b{font-size:15px}
+#evol .ev-res{font-size:13px;color:#374151;margin:4px 0 8px}
+#evol .ev-graf{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px 18px}
+#evol h4{font-size:12px;font-weight:600;color:var(--g);margin:0 0 2px}
+#evol svg{display:block;width:100%;height:auto}
+#evol svg text{font-size:10px;fill:#6b7280}
+#evol svg .v{font-size:10px;fill:#111827;font-weight:600}
+#evol .ley{font-size:11px;color:var(--g)}
+#evol .ley i{display:inline-block;width:9px;height:9px;border-radius:2px;margin:0 3px 0 8px;vertical-align:-1px}
 #grafico svg{display:block;width:100%;height:auto}
 #grafico .tip{position:absolute;pointer-events:none;background:#fff;color:#111827;border:1px solid #d1d5db;border-radius:5px;padding:2px 7px;font-size:12px;white-space:nowrap;line-height:1.4;z-index:2}
 
@@ -78,11 +89,12 @@ mayor a 20.000.</p>
   <span class="g" id="gcnt"></span>
 </div>
 <div id="grafico"></div>
+<div id="evol" hidden></div>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
 <tbody>
 {% for c in d.prioridad %}
-<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
@@ -100,7 +112,7 @@ recibidos cada mes. Toda la casa:
 <th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
 <tbody>
 {% for c in d.contra_si %}
-<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 {% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
 <td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td></tr>
@@ -120,7 +132,7 @@ recibidos cada mes. Toda la casa:
 <th class="n">Tendencia</th><th>Motivo</th></tr></thead>
 <tbody>
 {% for c in d.filas %}
-<tr data-c="{{ c.color }}" data-v="{{ c.vend }}" data-q="{{ (c.cod ~ ' ' ~ c.nombre) | lower }}">
+<tr data-c="{{ c.color }}" data-v="{{ c.vend }}" data-k="{{ c.cod }}" data-q="{{ (c.cod ~ ' ' ~ c.nombre) | lower }}">
 <td><span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span></td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td><b>{{ c.cod }}</b>{% if c.stop == 'X' %} <span class="g">stop</span>{% endif %}<span class="nom">{{ c.nombre }}</span></td>
@@ -144,7 +156,7 @@ recibidos cada mes. Toda la casa:
 <p class="sub">El semáforo no mira los cupos porque no están al día. Esta lista es para revisarlos.</p>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Cupo</th><th class="n">Saldo</th><th class="n">Excedente</th><th class="n">% del cupo</th></tr></thead>
-<tbody>{% for c in d.cupos %}<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+<tbody>{% for c in d.cupos %}<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.cupo | num_es(0) }}</td><td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n">{{ (c.saldo - c.cupo) | num_es(0) }}</td><td class="n">{{ (c.uso_cupo * 100) | round | int }}%</td></tr>{% endfor %}</tbody></table></div>
 </details>
@@ -153,7 +165,7 @@ recibidos cada mes. Toda la casa:
 <p class="sub">Pendiente = devueltos sin reemplazar. Las devoluciones se registran desde el 12/08/2026.</p>
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th class="n">Pendiente</th><th class="n">Hace</th><th class="n">Devueltos en el año</th><th class="n">Saldo</th></tr></thead>
-<tbody>{% for c in d.rebotes %}<tr class="por-vend" data-v="{{ c.vend }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
+<tbody>{% for c in d.rebotes %}<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td>
 <td class="n">{{ c.reb | num_es(0) if c.reb else '—' }}</td>
 <td class="n">{{ (c.reb_dias ~ ' días') if (c.reb and c.reb_dias is not none) else '—' }}</td>
 <td class="n">{{ c.n_reb_hist or '—' }}</td><td class="n">{{ c.saldo | num_es(0) }}</td></tr>{% endfor %}</tbody></table></div>
@@ -181,10 +193,11 @@ recibidos cada mes. Toda la casa:
     const v = document.getElementById('fv').value;
     let n = 0;
     filas.forEach(tr => {
-      const ok = (!col.size || col.has(tr.dataset.c)) && (!v || tr.dataset.v === v) && (!q || tr.dataset.q.includes(q));
+      const k = window.__clienteSel;
+      const ok = (!col.size || col.has(tr.dataset.c)) && (!v || tr.dataset.v === v) && (!q || tr.dataset.q.includes(q)) && (!k || tr.dataset.k === k);
       tr.hidden = !ok; if (ok) n++;
     });
-    document.getElementById('cnt').textContent = n + ' clientes.';
+    document.getElementById('cnt').textContent = n + (n === 1 ? ' cliente.' : ' clientes.');
   }
   document.querySelectorAll('#filtros-todos .chip').forEach(b => b.addEventListener('click', () => {
     const c = b.dataset.c; col.has(c) ? col.delete(c) : col.add(c);
@@ -194,7 +207,8 @@ recibidos cada mes. Toda la casa:
   // el gráfico y en todas las tablas de abajo.
   function porVendedor(){
     const v = document.getElementById('fv').value;
-    document.querySelectorAll('tr.por-vend').forEach(tr => { tr.hidden = !!v && tr.dataset.v !== v; });
+    const k = window.__clienteSel;
+    document.querySelectorAll('tr.por-vend').forEach(tr => { tr.hidden = (!!v && tr.dataset.v !== v) || (!!k && tr.dataset.k !== k); });
     filtrar();
     if (window.__dibujarGrafico) window.__dibujarGrafico();
     const R = v ? RV[v] : R0;
@@ -208,6 +222,7 @@ recibidos cada mes. Toda la casa:
   const RV = {{ d.resumen_vend | tojson }};
   document.getElementById('q').addEventListener('input', filtrar);
   document.getElementById('fv').addEventListener('input', porVendedor);
+  window.__porVendedor = porVendedor;
   filtrar();
 
   // Gráfico: puntaje (x) contra saldo (y, logarítmico).
@@ -268,6 +283,12 @@ recibidos cada mes. Toda la casa:
     if(t) caja.appendChild(t);
     document.getElementById('gcnt').textContent = q ? (hit.length ? hit.length+(hit.length===1?' cliente':' clientes') : 'Ningún cliente con saldo') : visibles.length+' clientes';
     ocultarTip();  // el encontrado ya lleva su código al lado: no repetir
+    const sel = hit.length===1 ? hit[0].k : null;
+    if (sel !== window.__clienteSel) {
+      window.__clienteSel = sel;
+      mostrarEvol(sel ? hit[0] : null);
+      if (window.__porVendedor) { const f=window.__dibujarGrafico; window.__dibujarGrafico=null; window.__porVendedor(); window.__dibujarGrafico=f; }
+    }
   }
   caja.addEventListener('mousemove', e=>{
     const svg=caja.querySelector('svg'); if(!svg) return;
@@ -278,12 +299,86 @@ recibidos cada mes. Toda la casa:
     caja.style.cursor=mejor?'pointer':'';
     if(mejor) mostrarTip(mejor); else if(!document.getElementById('gq').value.trim()) ocultarTip();
   });
+  // Tamara 30/09: "si clickeo en un puntito que me filtre por ese".
+  caja.addEventListener('click', e=>{
+    const svg=caja.querySelector('svg'); if(!svg) return;
+    const r=svg.getBoundingClientRect(), k=W/r.width;
+    const mx=(e.clientX-r.left)*k, my=(e.clientY-r.top)*k;
+    let mejor=null, dmin=14*14;
+    visibles.forEach(p=>{const d=(p.x-mx)**2+(p.y-my)**2; if(d<dmin){dmin=d;mejor=p;}});
+    const gq=document.getElementById('gq');
+    gq.value = mejor ? mejor.k : '';
+    dibujar();
+  });
   caja.addEventListener('mouseleave', ()=>{ if(!document.getElementById('gq').value.trim()) ocultarTip(); });
   document.querySelectorAll('#filtros-grafico .chip').forEach(b=>b.addEventListener('click',()=>{
     const c=b.dataset.c; gcol.has(c)?gcol.delete(c):gcol.add(c);
     b.setAttribute('aria-pressed',gcol.has(c)); dibujar(); }));
   document.getElementById('gq').addEventListener('input', dibujar);
   window.__dibujarGrafico = dibujar;
+
+  // Evolución mes a mes del cliente elegido (Tamara 30/09: "ver de ese
+  // cliente como evoluciona en el tiempo… donde termino cada mes").
+  const EV = {{ d.evol | tojson if d.evol else '{"meses":[],"cli":{}}' }};
+  const nomColor={rojo:'Rojo',amar:'Amarillo',verde:'Verde'};
+  const corto=n=>n>=1e6?(n/1e6).toFixed(1).replace('.',',')+'M':n>=1000?Math.round(n/1000)+'k':String(Math.round(n));
+  function barras(vals, cols, h){
+    const w=240, m={l:6,r:6,t:14,b:16}, iw=w-m.l-m.r, ih=h-m.t-m.b, n=vals.length;
+    const max=Math.max(1,...vals.map(v=>v||0)), bw=Math.min(34, iw/n*0.62);
+    let g='';
+    vals.forEach((v,i)=>{const cx=m.l+iw*(i+.5)/n, bh=(v||0)/max*ih;
+      g+=`<rect x="${cx-bw/2}" y="${m.t+ih-bh}" width="${bw}" height="${Math.max(bh,v?1:0)}" rx="2" fill="${cols[i]}"/>`;
+      g+=`<text class="v" x="${cx}" y="${m.t+ih-bh-3}" text-anchor="middle">${v?corto(v):'0'}</text>`;
+      g+=`<text x="${cx}" y="${h-3}" text-anchor="middle">${EV.meses[i]}</text>`;});
+    return `<svg viewBox="0 0 ${w} ${h}">${g}</svg>`;
+  }
+  function linea(vals, cols, h){
+    const w=240, m={l:24,r:8,t:18,b:16}, iw=w-m.l-m.r, ih=h-m.t-m.b, n=vals.length;
+    const max=Math.max(180,...vals.map(v=>v||0)), Yv=v=>m.t+ih-v/max*ih, Xi=i=>m.l+iw*(i+.5)/n;
+    let g='';
+    [[100,'#c98a0b'],[150,'#b3362a']].forEach(([v,c])=>{g+=`<line x1="${m.l}" x2="${w-m.r}" y1="${Yv(v)}" y2="${Yv(v)}" stroke="${c}" stroke-dasharray="3 3" opacity=".7"/><text x="${m.l-3}" y="${Yv(v)+3}" text-anchor="end">${v}</text>`;});
+    const pts=vals.map((v,i)=>v==null?null:[Xi(i),Yv(v)]);
+    const tr=pts.filter(Boolean).map(p=>p.join(',')).join(' ');
+    if(tr) g+=`<polyline points="${tr}" fill="none" stroke="#6b7280" stroke-width="1.5"/>`;
+    pts.forEach((p,i)=>{ if(p) g+=`<circle cx="${p[0]}" cy="${p[1]}" r="4" fill="${cols[i]}"/><text class="v" x="${p[0]}" y="${p[1]-7}" text-anchor="middle">${vals[i]}</text>`;
+      g+=`<text x="${Xi(i)}" y="${h-3}" text-anchor="middle">${EV.meses[i]}</text>`;});
+    return `<svg viewBox="0 0 ${w} ${h}">${g}</svg>`;
+  }
+  function pares(a, b, h){
+    const w=240, m={l:6,r:6,t:14,b:16}, iw=w-m.l-m.r, ih=h-m.t-m.b, n=a.length;
+    const max=Math.max(1,...a,...b), bw=Math.min(16, iw/n*0.3);
+    let g='';
+    a.forEach((v,i)=>{const cx=m.l+iw*(i+.5)/n;
+      [[v,'#cbd5e1',-1],[b[i],'#1f4f6e',1]].forEach(([x,c,s])=>{const bh=(x||0)/max*ih, xx=cx+(s<0?-bw-1:1);
+        g+=`<rect x="${xx}" y="${m.t+ih-bh}" width="${bw}" height="${bh}" rx="2" fill="${c}"/>`;
+        if(x) g+=`<text class="v" x="${s<0?xx+bw:xx}" y="${m.t+ih-bh-3}" text-anchor="${s<0?'end':'start'}">${corto(x)}</text>`;});
+      g+=`<text x="${cx}" y="${h-3}" text-anchor="middle">${EV.meses[i]}</text>`;});
+    return `<svg viewBox="0 0 ${w} ${h}">${g}</svg>`;
+  }
+  function resumenEvol(e){
+    const n=e.c.length, hoyC=e.c[n-1]; let frases=[];
+    if(hoyC!=='verde'){ let i=n-1; while(i>0 && e.c[i-1]===hoyC) i--;
+      frases.push(i===0 ? `${nomColor[hoyC]} desde ${EV.meses[0]} (el primer mes que se puede ver)` : `${nomColor[hoyC]} desde ${EV.meses[i]}`); }
+    else if(e.c.some(c=>c!=='verde')) frases.push('Hoy está en verde');
+    const i0=e.s.findIndex(v=>v>0), a=e.s[i0], z=e.s[n-1];
+    if(i0>=0 && i0<n-1 && a>0){ const pct=Math.round((z-a)/a*100);
+      frases.push(`la deuda en facturas pasó de ${fmt(a)} a ${fmt(z)} (${pct>0?'+':''}${pct}%) desde ${EV.meses[i0]}`); }
+    return frases.join(' · ');
+  }
+  function mostrarEvol(p){
+    const box=document.getElementById('evol');
+    const e=p && EV.cli[p.k];
+    if(!e){ box.hidden=true; box.innerHTML=''; return; }
+    const cols=e.c.map(c=>color[c]);
+    box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span></div>
+      <div class="ev-res">${esc(resumenEvol(e))}</div>
+      <div class="ev-graf">
+        <div><h4>Deuda en facturas al cierre de cada mes</h4>${barras(e.s, cols, 140)}<div class="ley">color = semáforo de ese día</div></div>
+        <div><h4>Factura más vieja (días)</h4>${linea(e.e, cols, 140)}<div class="ley">amarillo desde 100 · rojo desde 150</div></div>
+        <div><h4>Compró y pagó cada mes</h4>${pares(e.co, e.pa, 140)}<div class="ley"><i style="background:#cbd5e1"></i>compró<i style="background:#1f4f6e"></i>pagó${e.di.some(x=>x!=null)?'<br>días que tardó en pagar: '+e.di.map((x,i)=>EV.meses[i]+' '+(x==null?'—':x)).join(' · '):''}</div></div>
+      </div>`;
+    box.hidden=false;
+  }
   window.addEventListener('resize', ()=>{ const t=caja.querySelector('.tip'); if(t&&!t.hidden) dibujar(); });
   dibujar();
 })();

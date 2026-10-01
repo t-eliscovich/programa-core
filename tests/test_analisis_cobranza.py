@@ -134,3 +134,30 @@ def test_resumen_por_vendedor():
     assert d["resumen_vend"]["PPR"]["rojo"]["n"] == 1
     assert d["resumen_vend"]["EDG"]["rojo"]["n"] == 0
     assert d["resumen_vend"]["PPR"]["rojo"]["pct"] == 100
+
+
+def test_evolucion_color_por_mes():
+    from datetime import date
+    meses = [date(2026, 6, 1), date(2026, 7, 1), date(2026, 8, 1)]
+    evol = [dict(cod="AAA", mes=meses[0], saldo=1000, edad=90),
+            dict(cod="AAA", mes=meses[1], saldo=2000, edad=120),
+            dict(cod="AAA", mes=meses[2], saldo=3000, edad=160),
+            dict(cod="ZZZ", mes=meses[0], saldo=10, edad=1)]
+    compras = [dict(cod="AAA", mes=date(2026, 5, 1), compro=500)]
+    pm = [dict(cod="AAA", mes=meses[1], plata=800, dias=95)]
+    e = cob.evolucion({"AAA"}, evol, compras, pm, meses, {"AAA": "amar"})
+    assert "ZZZ" not in e
+    a = e["AAA"]
+    assert a["s"] == [1000, 2000, 3000]
+    # jun: 90 días y compró en mayo -> verde; jul: 120 -> amarillo;
+    # ago: el mes en curso toma el color de hoy.
+    assert a["c"] == ["verde", "amar", "amar"]
+    assert a["pa"] == [0, 800, 0] and a["di"] == [None, 95, None]
+
+
+def test_evolucion_debe_y_no_compra_es_rojo():
+    from datetime import date
+    meses = [date(2026, 8, 1), date(2026, 9, 1)]
+    e = cob.evolucion({"B"}, [dict(cod="B", mes=meses[0], saldo=900, edad=20)],
+                      [], [], meses, {})
+    assert e["B"]["c"][0] == "rojo"

@@ -163,6 +163,114 @@ SELECT CASE WHEN c.no_banco IN (90, 91) THEN 'Depósito o transferencia'
 """
 
 
+# ── Evolución mes a mes de cada cliente ─────────────────────────────────────
+# Tamara 30/09: *"ver de ese cliente como evoluciona en el tiempo… si esta
+# rojo vemos donde termino cada mes"*. No hay fotos viejas (la foto diaria
+# arranca el 30/09), así que el saldo al cierre de cada mes se RECONSTRUYE
+# para atrás: saldo de hoy de cada factura + lo que se le aplicó DESPUÉS del
+# cierre (chequesxfact, que está completo desde junio). Por eso arranca en
+# junio y no antes.
+EVOL_DESDE = date(2026, 6, 1)
+EVOL_MAX_MESES = 12
+
+_SQL_EVOL = """
+WITH me AS (
+  SELECT LEAST((date_trunc('month', g) + interval '1 month - 1 day')::date,
+               %(hoy)s::date) AS d
+    FROM generate_series(%(desde)s::date, %(hoy)s::date, interval '1 month') g),
+x AS (SELECT id_fact, fechaing, importe FROM scintela.chequesxfact
+       WHERE fechaing > %(desde)s::date),
+xd AS (SELECT x.id_fact, me.d, SUM(x.importe) AS despues
+         FROM x JOIN me ON x.fechaing > me.d GROUP BY 1, 2),
+f AS (SELECT f.id_factura, f.codigo_cli, f.fecha, COALESCE(f.saldo,0) AS saldo
+        FROM scintela.factura f
+       WHERE COALESCE(f.stat,'') <> 'X'
+         AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
+         AND (COALESCE(f.saldo,0) <> 0 OR f.id_factura IN (SELECT id_fact FROM x))),
+s AS (SELECT me.d, f.codigo_cli, f.fecha, f.saldo + COALESCE(xd.despues,0) AS sal
+        FROM me JOIN f ON f.fecha <= me.d
+        LEFT JOIN xd ON xd.id_fact = f.id_factura AND xd.d = me.d)
+SELECT codigo_cli AS cod, date_trunc('month', d)::date AS mes, SUM(sal) AS saldo,
+       d - MIN(fecha) FILTER (WHERE sal > 1) AS edad
+  FROM s GROUP BY codigo_cli, d
+"""
+
+_SQL_COMPRAS = """
+SELECT f.codigo_cli AS cod, date_trunc('month', f.fecha)::date AS mes,
+       SUM(f.importe) AS compro
+  FROM scintela.factura f
+ WHERE f.fecha >= %(desde)s::date AND f.fecha <= %(hoy)s::date
+   AND f.importe > 0 AND COALESCE(f.stat,'') <> 'X'
+   AND COALESCE(f.tipo,'') <> 'ND'
+   AND COALESCE(f.usuario_crea,'') <> 'asinfo-backfill'
+ GROUP BY 1, 2
+"""
+
+
+def _a_fecha(m):
+    return m.date() if hasattr(m, "date") and not isinstance(m, date) else m
+
+
+def evolucion(cods: set[str], evol: list[dict], compras: list[dict],
+              por_mes: list[dict], meses: list[date],
+              color_hoy: dict[str, str]) -> dict:
+    """Serie mensual por cliente: saldo en facturas y factura más vieja al
+    cierre, color de ese día, lo que compró y lo que pagó cada mes, y en
+    cuántos días pagó.
+
+    El color de los meses cerrados sale de las reglas que se pueden
+    reconstruir (factura vieja y "debe y no compra"); el del mes en curso es
+    el del semáforo de hoy, con todas las reglas.
+    """
+    idx = {m: i for i, m in enumerate(meses)}
+    n = len(meses)
+    out: dict[str, dict] = {}
+
+    def fila(cod):
+        return out.setdefault(cod, {"s": [0] * n, "e": [None] * n, "c": ["verde"] * n,
+                                    "co": [0] * n, "pa": [0] * n, "di": [None] * n})
+    for r in evol:
+        i = idx.get(_a_fecha(r["mes"]))
+        if i is None or r["cod"] not in cods:
+            continue
+        f = fila(r["cod"])
+        f["s"][i] = round(_f(r["saldo"]))
+        f["e"][i] = None if r.get("edad") is None else int(r["edad"])
+    compro_extra: dict[str, dict[date, float]] = {}
+    for r in compras:
+        if r["cod"] not in cods:
+            continue
+        m = _a_fecha(r["mes"])
+        compro_extra.setdefault(r["cod"], {})[m] = _f(r["compro"])
+        i = idx.get(m)
+        if i is not None:
+            fila(r["cod"])["co"][i] = round(_f(r["compro"]))
+    for r in por_mes:
+        i = idx.get(_a_fecha(r["mes"]))
+        if i is None or r["cod"] not in cods:
+            continue
+        f = fila(r["cod"])
+        f["pa"][i] += round(_f(r["plata"]))
+        if _f(r["plata"]) >= 500:
+            f["di"][i] = round(_f(r["dias"]))
+    for cod, f in out.items():
+        compras_cli = compro_extra.get(cod, {})
+        for i, m in enumerate(meses):
+            if i == n - 1 and cod in color_hoy:
+                f["c"][i] = color_hoy[cod]
+                continue
+            e = f["e"][i]
+            # compras de ese mes y los dos anteriores (≈ 90 días)
+            atras = [date(m.year - (1 if m.month - k <= 0 else 0),
+                          (m.month - k - 1) % 12 + 1, 1) for k in range(3)]
+            venta90 = sum(compras_cli.get(a, 0) for a in atras)
+            if (e is not None and e >= ROJO_DIAS_FACTURA) or (venta90 <= 0 and f["s"][i] > 500):
+                f["c"][i] = "rojo"
+            elif e is not None and e >= AMARILLO_DIAS_FACTURA:
+                f["c"][i] = "amar"
+    return out
+
+
 def _meses_atras(hoy: date, n: int) -> list[date]:
     """Primeros de mes de los últimos `n` meses, del más viejo al actual."""
     out = []
@@ -181,7 +289,19 @@ def datos(hoy: date | None = None) -> dict:
     clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy}) or []
     por_mes = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses[0]}) or []
     medios = db.fetch_all(_SQL_MEDIOS, {"hoy": hoy}) or []
-    return armar(clientes, por_mes, medios, meses, hoy)
+    d = armar(clientes, por_mes, medios, meses, hoy)
+    # Evolución mes a mes (desde junio, hasta 12 meses).
+    n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
+    meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
+    desde_c = _meses_atras(meses_e[0], 3)[0]
+    evol = db.fetch_all(_SQL_EVOL, {"hoy": hoy, "desde": meses_e[0]}) or []
+    compras = db.fetch_all(_SQL_COMPRAS, {"hoy": hoy, "desde": desde_c}) or []
+    pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
+    cods = {p["k"] for p in d["puntos"]}
+    d["evol"] = {"meses": [_MESES[m.month - 1][:3] for m in meses_e],
+                 "cli": evolucion(cods, evol, compras, pm, meses_e,
+                                  {c["cod"]: c["color"] for c in d["filas"]})}
+    return d
 
 
 # ── Cálculo (puro, testeable) ───────────────────────────────────────────────
