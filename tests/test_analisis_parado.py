@@ -1863,8 +1863,10 @@ def test_agosto_y_septiembre_cuentan_juntos(monkeypatch):
 
 def test_el_mes_en_curso_se_marca_como_en_juego(monkeypatch):
     from datetime import date as _d
+    # El mes en curso es el de HOY: con una fecha fija el test se rompe solo
+    # el día que cambia el mes.
     c = _competencia_falsa(monkeypatch, meses=[
-        {"mes": _d(2026, 9, 1), "vendedor": "Intela", "kg": 100}])
+        {"mes": _d.today().replace(day=1), "vendedor": "Intela", "kg": 100}])
     assert c["meses"][0]["cerrado"] is False
 
 
