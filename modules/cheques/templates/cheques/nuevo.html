@@ -2217,8 +2217,7 @@
     render(buscar.value);
   });
   buscar.addEventListener('input', (e) => render(e.target.value));
-  // Cuando cambia la fecha de depósito, recalculamos el plazo.
-  if (fechadInput) fechadInput.addEventListener('change', () => updateSummary());
+  // El cambio de fecha de cualquier cheque recalcula el plazo (listener en chequesList).
 
   // Header "select all": tickea/destickea todos los checkboxes de la tabla
   // y propaga al monto de cada fila.
