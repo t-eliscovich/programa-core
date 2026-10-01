@@ -1133,6 +1133,42 @@ def _meses_a_barrer(hoy, meses: int = MESES_VENTANA_TOPE) -> list[tuple]:
     return list(reversed(out))
 
 
+# ── La carga frenada también avisa (TMT 2026-10-01) ──────────────────────
+# El día 1 la producción del mes vino "no disponible" y la carga de pasivos
+# se salteó el mes en curso en cada vuelta, sin decir nada: nadie se enteró
+# hasta que Tamara abrió la pantalla. Ahora, si la lectura del mes en curso
+# falla DOS vueltas seguidas (una hora), sale un aviso a la campanita; cuando
+# vuelve a leer, el mismo aviso se da vuelta solo ("listo").
+_CLAVE_SIN_LECTURA = "tejeduria:sin-asinfo:"
+_VUELTAS_PARA_AVISAR = 2
+_sin_lectura_seguidas = 0
+
+
+def _vigilar_lectura(fallo: bool, hoy) -> None:
+    global _sin_lectura_seguidas
+    try:
+        from modules.avisos import queries as _av
+        if fallo:
+            _sin_lectura_seguidas += 1
+            if _sin_lectura_seguidas >= _VUELTAS_PARA_AVISAR:
+                _av.avisar(
+                    fuente="tejeduria", nivel="alerta",
+                    titulo="Tejeduría: no puedo leer la producción del mes en Asinfo",
+                    detalle=("La carga de las compras de tejeduría está frenada "
+                             "hasta que vuelva a leer."),
+                    url="/produccion-tejeduria-asinfo",
+                    clave=f"{_CLAVE_SIN_LECTURA}{hoy.isoformat()}",
+                )
+            return
+        _sin_lectura_seguidas = 0
+        for a in _av.abiertos_por_clave(_CLAVE_SIN_LECTURA):
+            _av.resolver(a["id_aviso"],
+                         titulo="Tejeduría: listo, ya lee la producción de Asinfo",
+                         detalle="La carga de compras de tejeduría volvió a andar.")
+    except Exception as e:  # noqa: BLE001 -- vigilar nunca frena la carga
+        _LOG.warning("tejeduría: no pude vigilar la lectura: %s", e)
+
+
 def correr_si_toca() -> dict:
     """Entrada del hilo de fondo: carga lo pendiente del mes y avisa.
 
@@ -1169,6 +1205,8 @@ def correr_si_toca() -> dict:
         res["avisos_alta"] = 0
         for _a, _m in _meses_a_barrer(hoy):
             carga = cargar_pendientes(_a, _m, usuario=MARCADOR_CARGA)
+            if (_a, _m) == (hoy.year, hoy.month):
+                _vigilar_lectura(bool(carga.get("sin_asinfo")), hoy)
             res["creadas"] += carga.get("creadas") or 0
             res["importe"] = round(res["importe"] + (carga.get("importe") or 0.0), 2)
             # Lo que NO se pudo cargar también se avisa: un tejedor nuevo o sin

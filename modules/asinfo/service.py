@@ -3375,13 +3375,17 @@ def produccion_tejeduria_mes(anio: int, mes: int) -> dict:
     except Exception:  # noqa: BLE001 -- fail-soft
         return dict(vacio)
     if not rows:
-        # TMT 2026-10-01 — Asinfo CONTESTÓ y no hay órdenes cerradas en el mes
-        # (el día 1, o un mes sin cierres): eso también se guarda, si no cada
-        # visita a /produccion-tejeduria-asinfo volvía a preguntar (dos veces:
-        # la auto-carga y la pantalla). Sigue disponible=False, como siempre.
-        if ok:
-            _cache_put(_PROD_TEJ_CACHE, cache_key, dict(vacio), True, _PROD_TEJ_TTL_SECS)
-        return dict(vacio)
+        # 🚨 TMT 2026-10-01 — el día 1 la pantalla de tejeduría decía "Asinfo no
+        # está disponible" y la auto-carga de pasivos se frenaba EN SILENCIO:
+        # Asinfo contestaba bien, sólo que todavía no había ninguna orden
+        # CERRADA en el mes. "Sin órdenes cerradas" no es "Asinfo caído": los
+        # ingresos (IFT) del mes igual están y son los que generan el pasivo.
+        # Si contestó, el mes está DISPONIBLE y vacío (y se guarda).
+        if not ok:
+            return dict(vacio)
+        out = dict(vacio, disponible=True)
+        _cache_put(_PROD_TEJ_CACHE, cache_key, out, True, _PROD_TEJ_TTL_SECS)
+        return out
     ofs = []
     agg: dict = {}
     total = 0.0

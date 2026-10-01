@@ -52,3 +52,16 @@ def test_produccion_terminado_por_dia_vacio_tambien_se_guarda():
         for _ in range(2):
             service.fabricacion_flujo_por_dia(53, 2026, 10)
     assert q.call_count == 2
+
+
+def test_mes_sin_ordenes_cerradas_esta_disponible():
+    """El día 1 no hay órdenes cerradas todavía: eso NO es 'Asinfo caído'.
+    Antes la pantalla de tejeduría decía 'no disponible' y la carga de
+    pasivos se frenaba en silencio (TMT 2026-10-01)."""
+    service._PROD_TEJ_CACHE.clear()
+    with patch.object(mc, "fetch_dataset_estado", return_value=([], True)):
+        r = service.produccion_tejeduria_mes(2026, 10)
+    assert r["disponible"] is True and r["ofs"] == []
+    service._PROD_TEJ_CACHE.clear()
+    with patch.object(mc, "fetch_dataset_estado", return_value=([], False)):
+        assert service.produccion_tejeduria_mes(2026, 10)["disponible"] is False
