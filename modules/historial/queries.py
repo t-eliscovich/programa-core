@@ -114,6 +114,7 @@ TIPOS_LABEL = {
     "cheque_creado":            "Cheque: alta",
     "cheque_anticipo_espejo":   "Cheque: espejo de anticipo",
     "posdat_anulada":           "Posdat: anulada",
+    "reverso_posdat_anulada":   "Posdat: vuelve (se deshizo la eliminación)",
     "posdat_edit_importe":      "Posdat: edit de importe",
     "factura_abono_manual":     "Factura: abono manual",
     "retencion_movida_del_abono": "Retención separada del abono",

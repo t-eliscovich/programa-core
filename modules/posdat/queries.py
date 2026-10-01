@@ -696,6 +696,10 @@ def reabrir(id_posdat: int, usuario: str = "web") -> int:
     )
 
 
+#: Hasta cuánto puede quedar sin retirar en una OP para que se deje borrar.
+OP_TOLERANCIA_BORRAR = 1.0
+
+
 def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
     """Soft-delete con trazabilidad (TMT 2026-05-14, #3).
 
@@ -721,6 +725,19 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
     if pd.get("anulada") is True:
         raise ValueError("La posdat ya está anulada.")
     banc = int(pd.get("banc") or 0)
+    # 🚨 TMT 2026-10-01 — Andrés pagó la OP 100335 y, al borrar la línea con
+    # el tacho, le pegó a la de al lado: la 100352, que tenía 37.431,04 SIN
+    # retirar. La utilidad bajó 37 mil sin que se moviera un peso. Una OP con
+    # saldo es plata que el banco ya pagó: se consume con «Retirar», nunca
+    # borrándola. Tamara: sólo se borra si quedan centavos (hasta 1 dólar).
+    if (pd.get("prov") or "").strip().upper() == "OP":
+        restante = abs(float(pd.get("importe") or 0))
+        if restante > OP_TOLERANCIA_BORRAR:
+            raise ValueError(
+                f"Esta OP tiene {money_es(restante)} sin retirar. Usá «Retirar» "
+                f"para pasarla a retiro; sólo se puede borrar cuando queda "
+                f"en 0 o con centavos."
+            )
     # TMT 2026-07-15 (dueña: "los gastos forzados no los puedo eliminar"):
     # banc=9 son GASTOS FORZADOS / compras futuras de hilado (proyecciones
     # internas importadas del dBase, prov AC/AI/CL) — NO tienen cheque ni
@@ -790,6 +807,81 @@ def anular(id_posdat: int, *, motivo: str = "", usuario: str = "web") -> int:
             # que el caller vea la falla — la anulación necesita historial.
             raise
     return rc
+
+
+def deshacer_anulacion(id_mov_doble: int, *, usuario: str = "web") -> dict:
+    """Vuelve a la vida un posdatado borrado por error, desde el historial.
+
+    TMT 2026-10-01 (Tamara: *"desde el historial deshacer"*). Caso testigo: la
+    OP 100352 (37.431,04) borrada con el tacho en vez de la línea de al lado.
+
+    Va por el `mov_doble` tipo `posdat_anulada`: el posdatado vuelve con su
+    importe, vencimiento y número tal como estaban (la anulación es un
+    soft-delete, no tocó nada más). Queda un `reverso_posdat_anulada` en el
+    historial y la anulación pasa a «reversada». Si la anulación había marcado
+    como reversado el movimiento anterior del posdatado (lo hace `anular` vía
+    `id_original`), ese movimiento vuelve a activo.
+    """
+    md = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, origen_id, id_original "
+        "FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,),
+    )
+    if not md or (md.get("tipo") or "") != "posdat_anulada":
+        raise ValueError("Ese movimiento no es la eliminación de un posdatado.")
+    if (md.get("estado") or "") == "reversado":
+        raise ValueError("Esa eliminación ya se deshizo.")
+    id_posdat = int(md.get("origen_id") or 0)
+    pd = db.fetch_one(
+        "SELECT id_posdat, num, prov, importe, concepto, anulada "
+        "FROM scintela.posdat WHERE id_posdat = %s",
+        (id_posdat,),
+    )
+    if not pd:
+        raise ValueError("El posdatado ya no existe.")
+    if pd.get("anulada") is not True:
+        raise ValueError("El posdatado ya está vivo: no hay nada que deshacer.")
+
+    with db.tx() as conn:
+        db.execute(
+            """
+            UPDATE scintela.posdat
+               SET anulada = FALSE,
+                   motivo_anulacion = NULL,
+                   fecha_anulacion = NULL,
+                   usuario_modifica = %s
+             WHERE id_posdat = %s AND anulada = TRUE
+            """,
+            (usuario[:50], id_posdat),
+            conn=conn,
+        )
+        if md.get("id_original"):
+            db.execute(
+                "UPDATE scintela.mov_doble SET estado = 'activo', id_reverso = NULL "
+                "WHERE id_mov_doble = %s AND id_reverso = %s",
+                (int(md["id_original"]), id_mov_doble),
+                conn=conn,
+            )
+        import mov_doble as _md
+        _md.registrar(
+            conn=conn,
+            tipo="reverso_posdat_anulada",
+            origen_table="posdat",
+            origen_id=id_posdat,
+            destino_table="posdat",
+            destino_id=id_posdat,
+            importe=float(pd.get("importe") or 0),
+            fecha=today_ec(),
+            concepto=(f"Vuelve posdat {pd.get('num') or id_posdat} "
+                      f"{pd.get('prov') or ''} (se había borrado por error)")[:200],
+            usuario=usuario,
+            metadata={"id_posdat": id_posdat, "num": pd.get("num"),
+                      "prov": pd.get("prov")},
+            id_original=id_mov_doble,
+        )
+    return {"id_posdat": id_posdat, "num": pd.get("num"), "prov": pd.get("prov"),
+            "importe": float(pd.get("importe") or 0),
+            "concepto": pd.get("concepto") or ""}
 
 
 def _resolver_cuotas(rows: list[dict]) -> None:

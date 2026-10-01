@@ -1134,6 +1134,14 @@ def reverso_preview(id_mov_doble: int):
         titulo = "Reversar retiro OP"
         mensaje = "Se borra el retiro y la línea OP vuelve a subir su restante."
 
+    if tipo == "posdat_anulada":
+        titulo = "Deshacer la eliminación"
+        mensaje = ("El posdatado vuelve tal como estaba: mismo número, importe "
+                   "y vencimiento.")
+        detalle = {"Importe": money_es(importe)}
+        if concepto:
+            detalle["Se había borrado"] = concepto
+
     # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
     # y, para los complejos, redirige al wizard de siempre (fallback graceful).
     accion_url = url_for("historial.reversar_mov_inline", id_mov_doble=id_mov_doble)
@@ -1146,7 +1154,7 @@ def reverso_preview(id_mov_doble: int):
         "movimientos": movimientos,
         "titulo_movimientos": titulo_movs,
         "accion_url": accion_url,
-        "confirm_label": "Reversar",
+        "confirm_label": "Deshacer" if tipo == "posdat_anulada" else "Reversar",
     })
 
 
@@ -1552,6 +1560,9 @@ _PERMISO_REVERSO_INLINE = {
     # automatizado" — ahora sí: deshacer_op (borra retiro + imputación y
     # devuelve el monto a la fila posdat OP si el retiro la había bajado).
     "retiro_op": "posdat.editar",
+    # TMT 2026-10-01 (Tamara: "desde el historial deshacer") — la OP 100352
+    # se borró con el tacho sin haberse retirado. Deshacer la vuelve a la vida.
+    "posdat_anulada": "posdat.anular",
 }
 
 
@@ -1624,6 +1635,20 @@ def reversar_mov_inline(id_mov_doble: int):
             flash(str(e), "warn")
         except Exception as e:
             flash_exc("No pude deshacer la retención (rollback total)", e)
+        return redirect(_next_seguro())
+
+    # TMT 2026-10-01: un posdatado borrado por error vuelve tal como estaba.
+    if tipo == "posdat_anulada":
+        try:
+            res = _posdat_q.deshacer_anulacion(id_mov_doble, usuario=usuario)
+            _nom = " ".join(str(x) for x in (res["prov"], res["num"]) if x)
+            flash(
+                f"Volvió el posdatado {_nom} {res['concepto']} por "
+                f"{money_es(res['importe'])}.", "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude deshacer la eliminación (no se tocó nada)", e)
         return redirect(_next_seguro())
 
     # TMT 2026-07-06: retiro_op tiene reverso atómico propio — deshacer_op
