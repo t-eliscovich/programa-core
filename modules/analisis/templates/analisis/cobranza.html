@@ -264,7 +264,7 @@ recibidos cada mes. Toda la casa:
   // del <title>), se puede buscar un cliente y filtrar por color.
   const D = {{ d.puntos | tojson }};
   const PRI = {{ d.prioridad[:8] | map(attribute='cod') | list | tojson }};
-  const W=760,H=290,m={l:62,r:14,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
+  const W=760,H=290,m={l:62,r:44,t:14,b:40},iw=W-m.l-m.r,ih=H-m.t-m.b;
   const y0=Math.log10(1000), y1=Math.log10(500000);
   const X=s=>m.l+s/100*iw, Y=v=>m.t+ih-(Math.min(Math.log10(Math.max(v,1000)),y1)-y0)/(y1-y0)*ih;
   const color={rojo:'#b3362a',amar:'#c98a0b',verde:'#2a7547'};
@@ -288,20 +288,20 @@ recibidos cada mes. Toda la casa:
   const FL={peor:['▲','#b3362a','Peor que hace 30 días'],mejor:['▼','#2a7547','Mejor que hace 30 días'],igual:['▶','#9aa3af','Igual que hace 30 días']};
   // Rótulo del punto: código + flecha de color + caída de compra en naranja.
   // (el % de caída va en el cartel y la tabla: en el gráfico tapaba códigos)
-  const etiqueta=p=>esc(p.k)+(p.fl?`<tspan fill="${FL[p.fl][1]}"> ${FL[p.fl][0]}</tspan>`:'')
+  const etiqueta=p=>esc(p.k)+(p.fl?`<tspan fill="${FL[p.fl][1]}">${FL[p.fl][0]}</tspan>`:'')
       +(p.cae?`<tspan fill="#c2410c">*</tspan>`:'');
-  // Rótulos sin pisarse: a la izquierda del punto; si choca, a la derecha;
-  // si choca igual, no se escribe (pasando el mouse se ve).
+  // Rótulos sin pisarse: punto y enseguida el código, a la derecha (Tamara
+  // 01/10: "primero el punto y luego seguido el código, todo más juntito");
+  // siempre a la derecha (corrido parecía del punto de al lado); si choca,
+  // no se escribe: pasando el mouse se ve.
   function rotulos(lista, sep){
     const usados=[]; let g='';
     const choca=b=>usados.some(u=>b[0]<u[2]&&b[2]>u[0]&&b[1]<u[3]&&b[3]>u[1]);
     lista.forEach(p=>{
-      const w=(p.k.length+(p.fl?2:0)+(p.cae?1:0))*7.2;
-      const izq=[p.x-sep-w,p.y-8,p.x-sep,p.y+5], der=[p.x+sep,p.y-8,p.x+sep+w,p.y+5];
-      let b=null, anc='end', x=p.x-sep;
-      if(!choca(izq)&&izq[0]>m.l) b=izq; else if(!choca(der)&&der[2]<W) {b=der; anc='start'; x=p.x+sep;}
-      if(!b) return; usados.push(b);
-      g+=`<text class="lab" x="${x}" y="${p.y+4}" text-anchor="${anc}">${etiqueta(p)}</text>`;
+      const d=sep||((p.s>=100000?6:4)+2), w=(p.k.length+(p.fl?1:0)+(p.cae?1:0))*7;
+      const dy=[0].find(k=>{const b=[p.x+d,p.y+k-8,p.x+d+w,p.y+k+5]; return b[2]<W&&b[1]>0&&!choca(b);});
+      if(dy===undefined) return; usados.push([p.x+d,p.y+dy-8,p.x+d+w,p.y+dy+5]);
+      g+=`<text class="lab" x="${p.x+d}" y="${p.y+dy+4}">${etiqueta(p)}</text>`;
     });
     return g;
   }
@@ -338,7 +338,7 @@ recibidos cada mes. Toda la casa:
       g+=`<circle cx="${p.x}" cy="${p.y}" r="${p.s>=100000?6:4}" fill="${p.i?'#111827':color[p.c]}"${tenue?' opacity=".12"':''}/>`;
     });
     hit.forEach(p=>{ g+=`<circle cx="${p.x}" cy="${p.y}" r="10" fill="none" stroke="#111827" stroke-width="2"/>`; });
-    g+=rotulos(q?hit:PRI.map(k=>visibles.find(x=>x.k===k)).filter(Boolean), q?13:8);
+    g+=rotulos(q?hit:PRI.map(k=>visibles.find(x=>x.k===k)).filter(Boolean), q?12:0);
     const t=caja.querySelector('.tip');
     caja.innerHTML=`<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Puntaje de riesgo contra saldo">${g}</svg>`;
     if(t) caja.appendChild(t);
