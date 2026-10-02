@@ -32,6 +32,15 @@
   .ped-num{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;font-weight:700;color:var(--tinta,#0f172a);white-space:nowrap}
   .ped-cli{font-size:13px;font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .ped-fecha{font-size:11.5px;color:#64748b;white-space:nowrap}
+  /* La suma fabricado/plan del pedido, sin desplegar (TMT 02/10). */
+  .ped-kg{font-size:11.5px;font-weight:700;color:#1d4ed8;white-space:nowrap;font-variant-numeric:tabular-nums}
+  /* Buscador chico (TMT 02/10): filtra en la página, sin ir al servidor.
+     15px: por debajo de 16 iOS hace zoom al enfocar; 15 es lo mínimo que
+     ya usa el buscador de clientes. */
+  .ped-buscar{margin:0 0 4px}
+  .ped-buscar input{width:100%;box-sizing:border-box;background:var(--surface,#fff);border:1px solid var(--line,#e2e8f0);
+      border-radius:9px;padding:6px 10px;font-size:15px;color:var(--ink,#0f172a);font-family:inherit}
+  .ped-grupo{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin:14px 2px 6px}
   .ped-lineas{margin:8px 0 0;padding:0;list-style:none;border-top:1px solid #f1f5f9}
   .ped-lineas li{display:flex;align-items:baseline;gap:8px;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:12.5px}
   .ped-lineas .c{font-weight:700}
@@ -76,20 +85,34 @@
 {% elif not pedidos %}
   <div class="card"><div class="vacio">No tenés pedidos pendientes.</div></div>
 {% else %}
+  <div class="ped-buscar">
+    <input type="search" id="ped-q" placeholder="Buscar pedido o cliente…" autocomplete="off"
+           enterkeyhint="search" aria-label="Buscar pedido o cliente">
+  </div>
   {% for p in pedidos %}
   {% set m = memo_estados.get(p.numero) %}
-  <div class="card ped-card">
+  {# Dos grupos (TMT 02/10): primero los que ya tienen memo enviado. #}
+  {% set _con = p.numero in memo_estados %}
+  {% if loop.first or (_con != (loop.previtem.numero in memo_estados)) %}
+  <div class="ped-grupo" data-grupo="{{ 'con' if _con else 'sin' }}">{{ 'Memo enviado' if _con else 'Para enviar memo' }}</div>
+  {% endif %}
+  <div class="card ped-card" data-grupo="{{ 'con' if _con else 'sin' }}"
+       data-buscar="{{ (p.numero ~ ' ' ~ (p.codigo_cliente or '') ~ ' ' ~ (p.cliente or ''))|lower }}">
     <details>
       <summary>
         <div class="ped-sumrow">
           <span class="ped-chev" aria-hidden="true"></span>
           <span class="ped-num">{{ p.numero }}</span>
           <span class="ped-cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span>
+          {% set et = etapas.get(p.numero) %}
+          {%- if et and et.kg %}
+          {%- set _vals = et.kg.values()|list %}
+          <span class="ped-kg">{{ _vals|sum(attribute='fab')|num_es(0) }}/{{ _vals|sum(attribute='plan')|num_es(0) }} kg</span>
+          {%- endif %}
           <span class="ped-fecha">{{ p.fecha_es }}</span>
         </div>
         {# Los pasos del pedido (dueña 27/08): siempre a la vista, con la
            ficha abierta o cerrada. #}
-        {% set et = etapas.get(p.numero) %}
         {% if et %}
         {# El resumen del pedido; cada línea lleva el suyo adentro
            (dueña 27/08: "trackearlo por línea, no global"). #}
@@ -164,4 +187,25 @@
   </div>
   {% endfor %}
 {% endif %}
+
+<script>
+/* Buscador de pedidos: por número o cliente (código o nombre). Esconde las
+   tarjetas que no coinciden y el título de un grupo que quedó vacío. */
+(function () {
+  var q = document.getElementById("ped-q");
+  if (!q) return;
+  q.addEventListener("input", function () {
+    var t = q.value.trim().toLowerCase();
+    var visibles = {con: 0, sin: 0};
+    document.querySelectorAll(".ped-card").forEach(function (c) {
+      var ok = !t || c.dataset.buscar.indexOf(t) >= 0;
+      c.style.display = ok ? "" : "none";
+      if (ok) visibles[c.dataset.grupo]++;
+    });
+    document.querySelectorAll(".ped-grupo").forEach(function (g) {
+      g.style.display = visibles[g.dataset.grupo] ? "" : "none";
+    });
+  });
+})();
+</script>
 {% endblock %}

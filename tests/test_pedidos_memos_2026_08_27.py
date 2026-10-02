@@ -709,3 +709,24 @@ def test_cada_linea_lleva_los_kg_fabricados_sobre_el_plan():
         et = service.etapas_por_pedido(pedidos, {"PDCL-1": {"estado": "enviado"}})
     assert et["PDCL-1"]["kg"]["J35CEN"] == {"fab": 40.0, "plan": 156.0}
     assert et["PDCL-1"]["lineas"]["J35CEN"] == "en_tintura"
+
+
+def test_el_vendedor_ve_primero_los_de_memo_enviado_con_la_suma_y_el_buscador(app, fake_db):
+    """Tamara 02/10/2026: arriba los de memo enviado (con la suma x/y kg sin
+    desplegar), después los que pueden mandarlo; y un buscador chico."""
+    filas = [_fila(numero="PDCL-1", codigo_cliente="AAA", codigo="P1"),
+             _fila(numero="PDCL-2", codigo_cliente="BBB", codigo="P2")]
+    et = {"PDCL-2": {"pedido": "en_tintura", "lineas": {"P2": "en_tintura"},
+                     "kg": {"P2": {"fab": 120.0, "plan": 408.0}}}}
+    c = _login_vendedor(app, fake_db, vend="PPR")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(formulas_memos, "estados",
+                      return_value={"PDCL-2": {"estado": "enviado", "en_proceso_por": None}}), \
+         patch.object(service, "etapas_por_pedido", return_value=et):
+        body = c.get("/mi-cartera/pedidos").get_data(as_text=True)
+    assert body.index("PDCL-2") < body.index("PDCL-1")
+    assert body.index("Memo enviado") < body.index("Para enviar memo")
+    assert "120/408 kg" in body
+    assert 'id="ped-q"' in body
