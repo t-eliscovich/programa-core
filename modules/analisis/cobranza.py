@@ -351,13 +351,15 @@ def _meses_atras(hoy: date, n: int) -> list[date]:
 
 def datos(hoy: date | None = None) -> dict:
     hoy = hoy or today_ec()
-    meses = _meses_atras(hoy, 3)
-    clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
-    por_mes = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses[0]}) or []
-    d = armar(clientes, por_mes, meses, hoy)
     # Evolución mes a mes (desde julio, hasta 12 meses) + hace 30 días.
     n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
     meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
+    clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
+    # Tamara 02/10: el "Pagó a X días; antes a Y" del semáforo mira los MISMOS
+    # meses que el panel de abajo (antes eran sólo los últimos 3 y "antes"
+    # dejaba afuera julio, que el panel sí muestra).
+    pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
+    d = armar(clientes, pm, meses_e, hoy)
     cierres = [min(_fin_de_mes(m), hoy) for m in meses_e]
     hace = hoy - timedelta(days=FLECHA_DIAS)
     desde_c = _meses_atras(meses_e[0], 3)[0]
@@ -370,7 +372,6 @@ def datos(hoy: date | None = None) -> dict:
     antes = {r["cod"]: r for r in filas_e if _a_fecha(r["d"]) == hace}
     ahora = {r["cod"]: r for r in filas_e if _a_fecha(r["d"]) == hoy}
     compras = db.fetch_all(_SQL_COMPRAS, {"hoy": hoy, "desde": desde_c}) or []
-    pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
     pagos = db.fetch_all(_SQL_PAGOS, {"hoy": hoy, "desde": meses_e[0]}) or []
     trend = {r["cod"]: r for r in db.fetch_all(_SQL_TREND_COMPRA, {"hoy": hoy}) or []}
     cods = {p["k"] for p in d["puntos"]}
@@ -383,6 +384,10 @@ def datos(hoy: date | None = None) -> dict:
 
 
 # ── Cálculo (puro, testeable) ───────────────────────────────────────────────
+
+def _mes_corto(m: date) -> str:
+    return _MESES[m.month - 1][:3]
+
 
 def _fin_de_mes(m: date) -> date:
     sig = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
@@ -461,7 +466,8 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
     if c.get("veces") is not None and c["veces"] >= AMARILLO_VECES_PLAZO:
         amar.append(f"Debe {c['veces']:.2f} veces lo normal para él".replace(".", ","))
     if c.get("cambio") is not None and c["cambio"] >= AMARILLO_EMPEORO_DIAS:
-        amar.append(f"Pagó a {c['ultimo']} días; antes a {c['antes']}")
+        amar.append(f"En {c['ultimo_mes']} pagó a {c['ultimo']} días; "
+                    f"en {c['antes_meses']}, a {c['antes']}")
     if rojo:
         return "rojo", rojo + amar
     if amar:
@@ -521,6 +527,7 @@ def armar(clientes: list[dict], por_mes: list[dict],
         s = serie.get(c["cod"])
         c["meses"] = s or [None] * len(meses)
         c["cambio"] = c["ultimo"] = c["antes"] = None
+        c["ultimo_mes"] = c["antes_meses"] = None
         if s:
             ult = max((i for i, x in enumerate(s) if x), default=None)
             if ult:
@@ -530,6 +537,13 @@ def armar(clientes: list[dict], por_mes: list[dict],
                     c["antes"] = round(sum(x[0] * x[1] for x in prev) / pw)
                     c["ultimo"] = s[ult][0]
                     c["cambio"] = c["ultimo"] - c["antes"]
+                    # Tamara 02/10: "que sea coherente arriba y abajo" — el
+                    # motivo nombra los meses, que son los mismos del renglón
+                    # "días que tardó en pagar" del panel del cliente.
+                    con = [i for i in range(ult) if s[i]]
+                    c["ultimo_mes"] = _mes_corto(meses[ult])
+                    c["antes_meses"] = (_mes_corto(meses[con[0]]) if len(con) == 1 else
+                                        f"{_mes_corto(meses[con[0]])}–{_mes_corto(meses[con[-1]])}")
         filas.append(c)
 
     # Puntaje: cada factor, contra el resto de los clientes.

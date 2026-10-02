@@ -62,6 +62,8 @@ def test_contra_si_mismo_detecta_que_empeoro():
     c = _uno(d, "AAA")
     assert (c["antes"], c["ultimo"], c["cambio"]) == (60, 90, 30)
     assert c["color"] == "amar"
+    # Tamara 02/10: los meses en el motivo, iguales a los del panel de abajo.
+    assert "En sep pagó a 90 días; en jul–ago, a 60" in c["motivos"]
     assert d["casa_meses"][2]["dias"] == 90
 
 
@@ -216,3 +218,23 @@ def test_incobrable_deuda_de_mas_de_un_anio_y_no_compra():
     assert not _uno(d, "COM")["incobrable"]          # sigue comprando
     p = next(p for p in d["puntos"] if p["k"] == "VIE")
     assert p["i"]
+
+
+def test_contra_si_mismo_con_un_solo_mes_antes():
+    pm = [dict(cod="AAA", mes=MESES[1], plata=5000, dias=199),
+          dict(cod="AAA", mes=MESES[2], plata=5000, dias=246)]
+    c = _uno(_armar([_cli("AAA", fac=6000, edad_max=30)], pm), "AAA")
+    assert "En sep pagó a 246 días; en ago, a 199" in c["motivos"]
+
+
+def test_datos_usa_los_mismos_meses_que_el_panel(monkeypatch):
+    """El semáforo y el panel de evolución leen el plazo de los mismos meses."""
+    vistos = []
+
+    def fake(sql, params=None):
+        if sql is cob._SQL_MESES:
+            vistos.append(params["desde"])
+        return []
+    monkeypatch.setattr(cob.db, "fetch_all", fake)
+    cob.datos(date(2026, 10, 2))
+    assert vistos == [date(2026, 7, 1)]
