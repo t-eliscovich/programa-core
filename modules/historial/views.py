@@ -655,7 +655,7 @@ def lista():
         _cod_cli = _cliente_de(r)
         r["cliente_codigo"] = _cod_cli
         r["cliente_label"] = cliente_nombres.get(_cod_cli, "")
-        r["cliente_url"] = f"/clientes/{_cod_cli}/cuenta" if _cod_cli else None
+        r["cliente_url"] = f"/informes/estado-cuenta/{_cod_cli}" if _cod_cli else None
         # TMT 2026-07-09 (dueña): si el movimiento consolidó >1 item
         # (p.ej. "6 anticipo(s) → compra"), traer cada uno para poder
         # desplegarlos uno por uno en el historial.

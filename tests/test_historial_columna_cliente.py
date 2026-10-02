@@ -78,7 +78,7 @@ def test_el_cheque_muestra_el_codigo_del_cliente(app, fake_db):
         "FROM scintela.cliente": _CLIENTES,
     })
     assert ">IIA</a>" in html
-    assert "/clientes/IIA/cuenta" in html
+    assert "/informes/estado-cuenta/IIA" in html
 
 
 def test_el_nombre_entero_no_se_pinta_pero_queda_en_el_tooltip(app, fake_db):
@@ -122,7 +122,7 @@ def test_la_factura_emitida_muestra_su_cliente(app, fake_db):
          "FROM scintela.cliente": _CLIENTES},
     )
     assert ">HOM</a>" in html
-    assert "/clientes/HOM/cuenta" in html
+    assert "/informes/estado-cuenta/HOM" in html
 
 
 def test_un_cliente_sin_ficha_en_pc_sigue_mostrando_su_codigo(app, fake_db):
@@ -164,3 +164,23 @@ def test_los_colspan_acompanan_a_la_columna_nueva():
     html = _LISTA.read_text()
     assert 'colspan="8"' not in html
     assert html.count('colspan="9"') == 3
+
+
+def test_ningun_link_lleva_a_la_cuenta_corriente():
+    """Tamara 2026-10-02: el click en un cliente va SIEMPRE al estado de cuenta
+    (/informes/estado-cuenta/<cod>), nunca a /clientes/<cod>/cuenta."""
+    import re
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    malos = []
+    for f in list((root / "modules").rglob("*.py")) + list((root / "modules").rglob("*.html")) \
+            + list((root / "templates").rglob("*.html")) + list((root / "static").rglob("*.js")):
+        txt = f.read_text(encoding="utf-8", errors="ignore")
+        for n, linea in enumerate(txt.splitlines(), 1):
+            if linea.lstrip().startswith(("#", "--", "@")):
+                continue
+            if re.search(r"/clientes/[^\s\"']*/cuenta[\"'?`]", linea) or \
+               re.search(r"url_for\(\s*['\"]clientes\.cuenta['\"](?![^)]*export)", linea):
+                malos.append(f"{f.relative_to(root)}:{n}")
+    assert not malos, malos

@@ -710,7 +710,10 @@ def cuenta(codigo_cli: str):
             filename=f"cuenta_{codigo_cli.upper()}.csv",
         )
 
-    return render_template("clientes/cuenta.html", data=data)
+    # Tamara 2026-10-02: "siempre tiene que llevar todo a estado de cuenta".
+    # La pantalla de cuenta corriente queda sólo para la descarga CSV; el que
+    # llegue acá por un link viejo o un marcador va al estado de cuenta.
+    return redirect(f"/informes/estado-cuenta/{codigo_cli.upper()}")
 
 
 @clientes_bp.route("/clientes/mails-asinfo/refrescar", methods=["GET", "POST"])
