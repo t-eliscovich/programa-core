@@ -72,25 +72,114 @@ def cierre_vigente() -> dict | None:
     return _q.historia_ultimo_mes()
 
 
-def tarifas_del_cierre(fecha_cierre) -> dict:
-    """$/kg de cada etapa con que CERRÓ el mes: la última foto de la traza
-    de ese día (hora Ecuador). Es la misma valuación que tiene `ustock`."""
+def foto_del_cierre(hist: dict) -> dict:
+    """La foto de la traza de la hora en que se grabó la foto de cierre (la
+    última antes de `historia.fecha_crea`, ese mismo día). De ahí salen los
+    kilos, el $/kg de cada etapa y los insumos con que se armó el $/kg del
+    hilado (`hilado_insumos`: arranque, compras, en máquinas)."""
+    fecha = hist.get("fecha")
     row = db.fetch_one(
         """
-        SELECT hilado_ukg, tejido_ukg, terminado_ukg,
-               hilado_kg, tejido_kg, terminado_kg, id_traza
-          FROM scintela.traza_utilidad
+        SELECT * FROM scintela.traza_utilidad
          WHERE (creado_en AT TIME ZONE 'America/Guayaquil')::date = %s
            AND hilado_ukg IS NOT NULL
+           AND (%s::timestamp IS NULL
+                OR creado_en <= (%s::timestamp AT TIME ZONE 'UTC') + INTERVAL '1 minute')
          ORDER BY creado_en DESC, id_traza DESC
          LIMIT 1
         """,
-        (fecha_cierre,),
+        (fecha, hist.get("fecha_crea"), hist.get("fecha_crea")),
     ) or {}
+    ins = row.get("hilado_insumos")
+    if isinstance(ins, str):
+        try:
+            ins = json.loads(ins)
+        except ValueError:
+            ins = None
+    row["hilado_insumos"] = ins if isinstance(ins, dict) else None
+    return row
+
+
+def tarifas_del_cierre(hist: dict) -> dict:
+    """$/kg de cada etapa con que CERRÓ el mes (la misma valuación que tiene
+    `ustock`) y los kilos de esa foto."""
+    row = foto_del_cierre(hist) if isinstance(hist, dict) else {}
     return {e: _f(row.get(f"{e}_ukg")) for e in ETAPAS} | {
         "kg": {e: _f(row.get(f"{e}_kg")) for e in ETAPAS},
         "id_traza": row.get("id_traza"),
     }
+
+
+def _ukg_hilado(hi0: float, hi1: float, maq: float, ins: dict) -> float:
+    """El $/kg del hilado con la MISMA cuenta de `asinfo.service.
+    mov_hilado_valuacion`: promedio ponderado arranque + compras del mes para
+    lo que está en bodega, y lo que está en máquinas al $/kg de arranque."""
+    o = _f(ins.get("open_ukg"))
+    cu = (_f(ins.get("import_us")) + _f(ins.get("local_us"))
+          + _f(ins.get("al_precio_us")) + _f(ins.get("recargos_tardios_us")))
+    ck = _f(ins.get("kg_con_costo"))
+    avg = ((hi0 * o + cu) / (hi0 + ck)) if (hi0 + ck) else o
+    kg = hi1 + maq
+    return ((hi1 * avg + maq * o) / kg) if kg else avg
+
+
+def revaluacion_del_cierre(hist: dict, foto: dict, lineas: list[dict],
+                           hi0_nuevo: float | None) -> dict | None:
+    """Cuánto cambia el $/kg del hilado del cierre si el arranque del mes
+    (`hi0`, el saldo de Asinfo del día 1) y el hilo en bodega al cierre
+    (`hi1`) hubieran sido los corregidos.
+
+    Tamara 02/10/2026: *"¿cómo puede ser que no subió nada por el stock más
+    caro?"*. Los kilos de más que ya estaban el día 1 entraban al promedio al
+    $/kg viejo (más barato que lo comprado en el mes) y lo bajaban. Sin ellos
+    el promedio sube, y con él el hilo, el tejido y el terminado (que valen
+    hilo + fijo). Devuelve None si la foto no tiene con qué recalcular."""
+    ins = (foto or {}).get("hilado_insumos")
+    if not ins or ins.get("tarifa_congelada") or hi0_nuevo is None:
+        return None
+    hi0, hi1, maq = _f(ins.get("hi0")), _f(ins.get("hi1")), _f(ins.get("maq"))
+    ukg_foto = _f(foto.get("hilado_ukg"))
+    ukg_antes = _ukg_hilado(hi0, hi1, maq, ins)
+    # Si la cuenta no da el $/kg que mostró el balance, los insumos no son los
+    # de esa foto: mejor no inventar una revaluación.
+    if abs(ukg_antes - ukg_foto) > 0.00005:
+        raise ValueError(
+            f"No puedo rehacer el $/kg del hilado del cierre: con los insumos de "
+            f"la foto da {ukg_antes:.6f} y el balance mostró {ukg_foto:.6f}.")
+    kg_lin = {e: 0.0 for e in ETAPAS}
+    for ln in lineas:
+        if ln.get("etapa") in kg_lin:
+            kg_lin[ln["etapa"]] += _f(ln.get("kg"))
+    ukg_desp = _ukg_hilado(hi0_nuevo, hi1 + kg_lin["hilado"], maq, ins)
+    d = ukg_desp - ukg_antes
+    por_etapa = {}
+    for e in ETAPAS:
+        kg_final = _f(foto.get(f"{e}_kg")) + kg_lin[e]
+        u0 = _f(foto.get(f"{e}_ukg"))
+        por_etapa[e] = {"kg": round(kg_final, 2), "importe": round(kg_final * d, 2),
+                        "ukg_antes": round(u0, 6), "ukg_despues": round(u0 + d, 6)}
+    imp = round(sum(x["importe"] for x in por_etapa.values()), 2)
+    if abs(imp) < 1:
+        return None
+    return {"etapa": "revaluacion", "kg": 0.0, "importe": imp,
+            "ukg_antes": round(ukg_antes, 6), "ukg_despues": round(ukg_desp, 6),
+            "delta_ukg": round(d, 6), "hi0_antes": round(hi0, 2),
+            "hi0_despues": round(hi0_nuevo, 2), "por_etapa": por_etapa,
+            "id_traza": foto.get("id_traza")}
+
+
+def _hi0_asinfo(fecha_cierre) -> float | None:
+    """El saldo de hilo de Asinfo al día 1 del mes cerrado, como lo lee hoy
+    (ya corregido). None si Asinfo no contesta."""
+    try:
+        from modules.asinfo import service as _asv
+        inv = _asv.inventario_por_etapa_a_fecha(fecha_cierre.replace(day=1))
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("ajuste_cierre: no pude leer el arranque en Asinfo (%s)", e)
+        return None
+    if not inv or not inv.get("disponible"):
+        return None
+    return _f(inv.get("hilo"))
 
 
 def propuesta_desde_traza(id_traza: int) -> list[dict]:
@@ -137,13 +226,26 @@ def _normalizar(lineas, tarifas: dict) -> list[dict]:
 
 
 def calcular(lineas) -> dict:
-    """Lo que haría el ajuste, sin escribir nada: para la vista previa."""
+    """Lo que haría el ajuste, sin escribir nada: para la vista previa.
+
+    Dos partes: los kilos que se van, valuados al $/kg del cierre, y la
+    REVALUACIÓN del cierre — el $/kg del hilado rehecho con el arranque del
+    mes y el hilo al cierre corregidos (ver `revaluacion_del_cierre`)."""
     hist = cierre_vigente()
     if not hist:
         raise ValueError("No hay foto de cierre del mes anterior en historia.")
-    tar = tarifas_del_cierre(hist.get("fecha"))
+    foto = foto_del_cierre(hist)
+    tar = {e: _f(foto.get(f"{e}_ukg")) for e in ETAPAS}
     lns = _normalizar(lineas, tar)
-    imp = round(sum(x["importe"] for x in lns), 2)
+    reval = None
+    if lns:
+        hi0 = _hi0_asinfo(hist["fecha"])
+        if hi0 is None:
+            raise ValueError("Asinfo no contesta: sin el saldo del día 1 no se "
+                             "puede rehacer el $/kg del cierre. Probá en un rato.")
+        reval = revaluacion_del_cierre(hist, foto, lns, hi0)
+    todas = lns + ([reval] if reval else [])
+    imp = round(sum(x["importe"] for x in todas), 2)
     kg = round(sum(x["kg"] for x in lns), 2)
     antes = _foto(hist)
     despues = {
@@ -157,7 +259,7 @@ def calcular(lineas) -> dict:
         "id_historia": int(hist["id_historia"]),
         "fecha": hist.get("fecha"),
         "anio": hist["fecha"].year, "mes": hist["fecha"].month,
-        "lineas": lns, "importe": imp, "kg": kg,
+        "lineas": todas, "revaluacion": reval, "importe": imp, "kg": kg,
         "antes": antes, "despues": despues, "tarifas": tar,
         "ukg_antes": (antes["usuti"] / kvent) if kvent else None,
         "ukg_despues": (despues["usuti"] / kvent) if kvent else None,
@@ -175,7 +277,7 @@ def aplicar(*, lineas, motivo: str, usuario: str = "web") -> dict:
     if not motivo:
         raise ValueError("Escribí el motivo: es lo que va a leer quien mire el cierre.")
     calc = calcular(lineas)
-    if not calc["lineas"] or not calc["importe"]:
+    if not calc["kg"] or not calc["importe"]:
         raise ValueError("El ajuste no tiene kilos.")
     hoy = today_ec()
     fecha = calc["fecha"]
@@ -196,6 +298,12 @@ def aplicar(*, lineas, motivo: str, usuario: str = "web") -> dict:
             raise ValueError("La foto de cierre cambió mientras tanto. Volvé a cargar.")
         antes = _foto(row)
         _sumar(conn, calc["id_historia"], calc["importe"], calc["kg"], usuario)
+        # Las INICIALES del mes cerrado son su cierre: los kilos por etapa y el
+        # $/kg (um/uk/uf) que el mes siguiente usa de arranque. Si no se
+        # corrigen, el mes en curso valúa su stock al $/kg viejo y devuelve
+        # la revaluación que se le acaba de dar al cierre.
+        antes["iniciales_delta"] = _sumar_iniciales(
+            conn, fecha.year, fecha.month, calc["lineas"], +1)
         despues = {
             "ustock": antes["ustock"] + calc["importe"],
             "stock": antes["stock"] + calc["kg"],
@@ -251,6 +359,42 @@ def _sumar(conn, id_historia: int, importe: float, kg: float, usuario: str) -> N
     )
 
 
+def _delta_iniciales(lineas: list[dict]) -> dict:
+    d = {"hilado": 0.0, "tejido": 0.0, "terminado": 0.0, "ukg": 0.0}
+    for ln in lineas or []:
+        if ln.get("etapa") in ETAPAS:
+            d[ln["etapa"]] += _f(ln.get("kg"))
+        elif ln.get("etapa") == "revaluacion":
+            d["ukg"] += _f(ln.get("delta_ukg"))
+    return d
+
+
+def _aplicar_delta_iniciales(conn, anio: int, mes: int, d: dict, signo: int) -> int:
+    return db.execute(
+        """
+        UPDATE scintela.iniciales
+           SET hilado = COALESCE(hilado, 0) + %(h)s,
+               tejido = COALESCE(tejido, 0) + %(t)s,
+               terminado = COALESCE(terminado, 0) + %(m)s,
+               um = COALESCE(um, 0) + %(u)s,
+               uk = COALESCE(uk, 0) + %(u)s,
+               uf = COALESCE(uf, 0) + %(u)s
+         WHERE mesnum = %(mes)s AND yy = %(anio)s
+        """,
+        {"h": signo * _f(d.get("hilado")), "t": signo * _f(d.get("tejido")),
+         "m": signo * _f(d.get("terminado")), "u": signo * _f(d.get("ukg")),
+         "mes": int(mes), "anio": int(anio)}, conn=conn) or 0
+
+
+def _sumar_iniciales(conn, anio: int, mes: int, lineas: list[dict], signo: int) -> dict | None:
+    d = _delta_iniciales(lineas)
+    if not any(abs(v) > 0 for v in d.values()):
+        return None
+    if not _aplicar_delta_iniciales(conn, anio, mes, d, signo):
+        return None
+    return d
+
+
 def deshacer(id_ajuste: int, usuario: str = "web") -> dict:
     """Devuelve la foto de cierre a como estaba antes de ESTE ajuste."""
     with db.tx() as conn:
@@ -266,6 +410,12 @@ def deshacer(id_ajuste: int, usuario: str = "web") -> dict:
             raise ValueError("La foto de cierre ya no es la que se ajustó: "
                              "sólo se deshace mientras sigue siendo el cierre vigente.")
         _sumar(conn, int(a["id_historia"]), -_f(a["importe"]), -_f(a["kg"]), usuario)
+        antes_a = a.get("antes") or {}
+        if isinstance(antes_a, str):
+            antes_a = json.loads(antes_a or "{}")
+        delta = antes_a.get("iniciales_delta")
+        if delta:
+            _aplicar_delta_iniciales(conn, int(a["anio"]), int(a["mes"]), delta, -1)
         db.execute(
             "UPDATE scintela.ajuste_cierre SET anulado_en = now(), anulado_por = %s "
             " WHERE id_ajuste = %s", ((usuario or "web")[:50], int(id_ajuste)),

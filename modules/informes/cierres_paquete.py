@@ -504,6 +504,14 @@ def cambios_hoja_resultados(textos: list[dict], ajustes: list[dict],
     por_etapa: dict = {}
     for a in ajustes:
         for ln in a.get("lineas") or []:
+            if ln.get("etapa") == "revaluacion":
+                # El $/kg del cierre rehecho: cambia el $/kg y el U$ de cada
+                # etapa (el hilo arrastra al tejido y al terminado).
+                for e, r in (ln.get("por_etapa") or {}).items():
+                    d = por_etapa.setdefault(e, {"kg": 0.0, "us": 0.0})
+                    d["us"] += _f(r.get("importe"))
+                    d["ukg"] = _f(r.get("ukg_despues"))
+                continue
             e = por_etapa.setdefault(ln.get("etapa"), {"kg": 0.0, "us": 0.0})
             e["kg"] += _f(ln.get("kg"))
             e["us"] += _f(ln.get("importe"))
@@ -532,6 +540,8 @@ def cambios_hoja_resultados(textos: list[dict], ajustes: list[dict],
             continue
         r = fila(_FILA_ETAPA[e], 3)
         cambio(r[0], _fmt(_num_pagina(r[0]["t"]) + d["kg"]))
+        if d.get("ukg"):
+            cambio(r[1], _fmt(d["ukg"], 3))
         cambio(r[-1], _fmt(_num_pagina(r[-1]["t"]) + d["us"]))
     st = fila("Stock MP+Prod.", 3)
     kg = _num_pagina(st[0]["t"]) + sum(d["kg"] for d in por_etapa.values())

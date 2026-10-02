@@ -2128,7 +2128,7 @@ def cierres_ajuste():
     from modules.informes import ajuste_cierre
 
     hist = ajuste_cierre.cierre_vigente()
-    tar = ajuste_cierre.tarifas_del_cierre(hist.get("fecha")) if hist else {}
+    tar = ajuste_cierre.tarifas_del_cierre(hist) if hist else {}
     lineas = []
     traza = request.args.get("traza", type=int)
     if traza:

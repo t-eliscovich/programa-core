@@ -51,6 +51,22 @@
   <div class="bg-white dark:bg-slate-900 border-2 border-amber-500 rounded p-4 mb-6 text-sm">
     <table class="w-full mb-3">
       <thead class="text-xs uppercase tracking-wider text-slate-500">
+        <tr><th class="text-left">Qué se ajusta</th><th class="text-right">Kg</th><th class="text-right">$/kg</th><th class="text-right">U$</th></tr>
+      </thead>
+      <tbody class="tabular-nums">
+        {% for ln in calc.lineas if ln.etapa != 'revaluacion' %}
+        <tr><td>{{ etapas[ln.etapa] }} que ya no estaba</td><td class="text-right">{{ ln.kg | num_es(0) }}</td><td class="text-right">{{ ln.ukg | num_es(4) }}</td><td class="text-right">{{ ln.importe | num_es(0) }}</td></tr>
+        {% endfor %}
+        {% if calc.revaluacion %}{% set r = calc.revaluacion %}
+        <tr><td>$/kg del hilado del cierre, con el arranque del día 1 corregido
+              <div class="text-xs text-slate-500">arranque {{ r.hi0_antes | num_es(0) }} → {{ r.hi0_despues | num_es(0) }} kg · arrastra tejido y terminado (hilo + fijo)</div></td>
+            <td></td><td class="text-right">{{ r.ukg_antes | num_es(4) }} → {{ r.ukg_despues | num_es(4) }}</td><td class="text-right">{{ r.importe | num_es(0) }}</td></tr>
+        {% endif %}
+        <tr class="font-bold"><td>Total</td><td class="text-right">{{ calc.kg | num_es(0) }}</td><td></td><td class="text-right">{{ calc.importe | num_es(0) }}</td></tr>
+      </tbody>
+    </table>
+    <table class="w-full mb-3">
+      <thead class="text-xs uppercase tracking-wider text-slate-500">
         <tr><th class="text-left">Cierre de {{ mes_nombre }}</th><th class="text-right">Antes</th><th class="text-right">Ajuste</th><th class="text-right">Queda</th></tr>
       </thead>
       <tbody class="tabular-nums">
@@ -63,10 +79,10 @@
         {% endif %}
       </tbody>
     </table>
-    <p class="mb-3">La utilidad del mes en curso sube {{ (-calc.importe) | num_es(0) }} en el momento de aplicarlo: devuelve lo que bajó cuando Asinfo corrigió, y la traza lo muestra con nombre.</p>
+    <p class="mb-3">La utilidad del mes en curso se mueve {{ (-calc.importe) | num_es(0) }} en el momento de aplicarlo (devuelve lo que bajó cuando Asinfo corrigió) y la traza lo muestra con nombre. Las iniciales de {{ mes_nombre }} quedan con los kilos y el $/kg corregidos, así el mes en curso arranca del cierre corregido.</p>
     <form method="post" action="{{ url_for('informes.cierres_ajuste_aplicar') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-      {% for ln in calc.lineas %}<input type="hidden" name="kg_{{ ln.etapa }}" value="{{ ln.kg }}">{% endfor %}
+      {% for ln in calc.lineas if ln.etapa != 'revaluacion' %}<input type="hidden" name="kg_{{ ln.etapa }}" value="{{ ln.kg }}">{% endfor %}
       <input type="hidden" name="motivo" value="{{ motivo }}">
       <button class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700"
               {% if not motivo %}disabled title="Falta el motivo"{% endif %}>Aplicar el ajuste</button>

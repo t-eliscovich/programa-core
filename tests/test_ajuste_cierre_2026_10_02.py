@@ -37,23 +37,83 @@ def test_el_ajuste_mueve_stock_patrimonio_y_utilidad_juntos():
         assert f"{col} = COALESCE({col}, 0) +" in src
 
 
+#: La foto de la traza del cierre de septiembre (14660, 30/09 23:28), con los
+#: insumos con que se armó el $/kg del hilado.
+_INSUMOS = {"hi0": 1933359.114, "hi1": 2202034.014, "maq": 29197.6,
+            "open_ukg": 3.0435481066654853, "import_us": 2027311.23,
+            "local_us": 70434.06086956523, "al_precio_us": 21253.0,
+            "recargos_tardios_us": 6849.51, "kg_con_costo": 582329.99,
+            "tarifa_congelada": False}
+_FOTO = {"id_traza": 14660, "hilado_kg": 2231231.61, "hilado_ukg": 3.182226859916865,
+         "tejido_kg": 292324.07, "tejido_ukg": 3.682226859916865,
+         "terminado_kg": 317911.07, "terminado_ukg": 5.382226859916865,
+         "hilado_insumos": _INSUMOS}
+_HIST = {"id_historia": 749, "fecha": dt.date(2026, 9, 30), "kvent": 345817.49,
+         "ustock": 9887482.02, "stock": 2841381.7, "patrimonio": 22287799.68,
+         "usuti": 804955.02}
+
+
+def _cierre(monkeypatch, hi0=1912089.398):
+    monkeypatch.setattr(ajuste_cierre, "cierre_vigente", lambda: dict(_HIST))
+    monkeypatch.setattr(ajuste_cierre, "foto_del_cierre", lambda h: dict(_FOTO))
+    monkeypatch.setattr(ajuste_cierre, "_hi0_asinfo", lambda f: hi0)
+
+
 def test_calcular_valua_los_kilos_al_ukg_del_cierre(monkeypatch):
-    monkeypatch.setattr(ajuste_cierre, "cierre_vigente", lambda: {
-        "id_historia": 749, "fecha": dt.date(2026, 9, 30), "kvent": 345817.49,
-        "ustock": 9887482.02, "stock": 2841381.7, "patrimonio": 22287799.68,
-        "usuti": 804955.02})
-    monkeypatch.setattr(ajuste_cierre, "tarifas_del_cierre", lambda f: {
-        "hilado": 3.1822, "tejido": 3.682226859916865, "terminado": 5.38})
-    c = ajuste_cierre.calcular([{"etapa": "hilado", "kg": -51775},
-                                {"etapa": "tejido", "kg": -7139},
+    _cierre(monkeypatch)
+    c = ajuste_cierre.calcular([{"etapa": "hilado", "kg": -51775.45},
+                                {"etapa": "tejido", "kg": -7139.09},
                                 {"etapa": "otra", "kg": 5}])
-    assert [ln["etapa"] for ln in c["lineas"]] == ["hilado", "tejido"]
-    assert c["importe"] == pytest.approx(-191045.8, abs=1)
-    assert c["despues"]["usuti"] == pytest.approx(804955.02 - 191045.8, abs=1)
+    assert [ln["etapa"] for ln in c["lineas"]] == ["hilado", "tejido", "revaluacion"]
+    kilos = sum(ln["importe"] for ln in c["lineas"] if ln["etapa"] != "revaluacion")
+    assert kilos == pytest.approx(-191048.98, abs=0.02)
     assert c["despues"]["ustock"] - c["antes"]["ustock"] == pytest.approx(c["importe"])
     assert c["despues"]["patrimonio"] - c["antes"]["patrimonio"] == pytest.approx(c["importe"])
-    assert c["kg"] == -58914
-    assert round(c["ukg_despues"], 3) == 1.775
+    assert c["despues"]["usuti"] - c["antes"]["usuti"] == pytest.approx(c["importe"])
+    assert c["kg"] == pytest.approx(-58914.54)
+
+
+def test_la_revaluacion_rehace_el_ukg_con_la_cuenta_del_programa(monkeypatch):
+    """Tamara: *"¿cómo puede ser que no subió nada por el stock más caro?"*.
+    Con los insumos de la foto la cuenta da EXACTO el $/kg que mostró el
+    balance (3,182227); con el arranque del 1/9 corregido en Asinfo
+    (1.933.359 → 1.912.089 kg, que estaban a 3,0435) sube a 3,183365."""
+    _cierre(monkeypatch)
+    c = ajuste_cierre.calcular([{"etapa": "hilado", "kg": -51775.45},
+                                {"etapa": "tejido", "kg": -7139.09}])
+    r = c["revaluacion"]
+    assert r["ukg_antes"] == pytest.approx(3.182227, abs=1e-6)
+    assert r["ukg_despues"] == pytest.approx(3.183365, abs=1e-6)
+    assert r["importe"] == pytest.approx(3167.8, abs=1)
+    assert set(r["por_etapa"]) == {"hilado", "tejido", "terminado"}
+    assert r["por_etapa"]["terminado"]["ukg_despues"] == pytest.approx(5.383365, abs=1e-6)
+    assert c["importe"] == pytest.approx(-191048.98 + 3167.8, abs=1)
+
+
+def test_sin_asinfo_no_ajusta(monkeypatch):
+    _cierre(monkeypatch, hi0=None)
+    with pytest.raises(ValueError, match="Asinfo"):
+        ajuste_cierre.calcular([{"etapa": "hilado", "kg": -1000}])
+
+
+def test_si_la_cuenta_no_da_el_ukg_de_la_foto_no_inventa(monkeypatch):
+    _cierre(monkeypatch)
+    monkeypatch.setattr(ajuste_cierre, "foto_del_cierre",
+                        lambda h: dict(_FOTO, hilado_ukg=3.20))
+    with pytest.raises(ValueError, match="No puedo rehacer"):
+        ajuste_cierre.calcular([{"etapa": "hilado", "kg": -1000}])
+
+
+def test_las_iniciales_del_mes_cerrado_toman_kilos_y_ukg():
+    d = ajuste_cierre._delta_iniciales([
+        {"etapa": "hilado", "kg": -51775.45}, {"etapa": "tejido", "kg": -7139.09},
+        {"etapa": "revaluacion", "kg": 0, "delta_ukg": 0.001138}])
+    assert d == {"hilado": -51775.45, "tejido": -7139.09, "terminado": 0.0,
+                 "ukg": 0.001138}
+    src = inspect.getsource(ajuste_cierre._aplicar_delta_iniciales)
+    for col in ("um", "uk", "uf", "hilado", "tejido", "terminado"):
+        assert f"{col} = COALESCE({col}, 0) +" in src
+    assert "iniciales_delta" in inspect.getsource(ajuste_cierre.deshacer)
 
 
 def test_aplicar_exige_motivo(monkeypatch):
@@ -167,20 +227,17 @@ def test_ajuste_al_cierre_solo_admin(app, fake_db):
 
 
 def test_ajuste_al_cierre_muestra_la_vista_previa(app, fake_db, monkeypatch):
-    monkeypatch.setattr(ajuste_cierre, "cierre_vigente", lambda: {
-        "id_historia": 749, "fecha": dt.date(2026, 9, 30), "kvent": 345817.49,
-        "ustock": 9887482.02, "stock": 2841381.7, "patrimonio": 22287799.68,
-        "usuti": 804955.02})
-    monkeypatch.setattr(ajuste_cierre, "tarifas_del_cierre", lambda f: {
-        "hilado": 3.1822, "tejido": 3.6822, "terminado": 5.38, "kg": {}})
+    _cierre(monkeypatch)
     monkeypatch.setattr(ajuste_cierre, "listar", lambda *a, **k: [])
     c = _login(app, fake_db, ["usuarios.admin"])
-    r = c.get("/informes/cierres/ajuste?kg_hilado=-51.775&kg_tejido=-7139&motivo=Asinfo")
+    r = c.get("/informes/cierres/ajuste?kg_hilado=-51775.45&kg_tejido=-7139.09&motivo=Asinfo")
     body = r.get_data(as_text=True)
     assert r.status_code == 200
     assert "Ajuste al cierre de septiembre" in body
-    assert "613.9" in body                       # utilidad que queda
+    assert "3,1834" in body                      # el $/kg rehecho
+    assert "617.07" in body                      # utilidad que queda
     assert "Aplicar el ajuste" in body
+    assert 'name="kg_revaluacion"' not in body
 
 
 # ── El segundo PDF ──────────────────────────────────────────────────────────
@@ -290,6 +347,7 @@ def test_la_hoja_es_la_original_con_los_numeros_del_ajuste():
 
 def test_la_hoja_corregida_se_estampa_sobre_la_original(monkeypatch):
     from pypdf import PdfReader
+
     from modules.informes import ajuste_cierre as aj
     original = _pdf([_HOJA, "VENTAS DEL MES"])
     monkeypatch.setattr(cierres_paquete, "obtener", lambda a, m, v=1: original)
@@ -310,3 +368,19 @@ def test_la_hoja_sin_la_fila_levanta():
     with pytest.raises(RuntimeError, match="Utilidad Real"):
         cierres_paquete.cambios_hoja_resultados(
             cierres_paquete._textos_con_posicion(page), _AJ, 2026)
+
+
+def test_la_hoja_lleva_el_ukg_rehecho_del_cierre():
+    from pypdf import PdfReader
+    page = PdfReader(io.BytesIO(_pdf([_HOJA]))).pages[0]
+    aj = [dict(_AJ[0], importe=_AJ[0]["importe"] + 3167.8, lineas=_AJ[0]["lineas"] + [
+        {"etapa": "revaluacion", "kg": 0, "importe": 3167.8, "delta_ukg": 0.001138,
+         "por_etapa": {"hilado": {"importe": 2481.2, "ukg_despues": 3.183365},
+                       "tejido": {"importe": 324.7, "ukg_despues": 3.683365},
+                       "terminado": {"importe": 361.9, "ukg_despues": 5.383365}}}])]
+    c = {x["t"]: x["nuevo"] for x in cierres_paquete.cambios_hoja_resultados(
+        cierres_paquete._textos_con_posicion(page), aj, 2026)}
+    assert c["3,182"] == "3,183" and c["3,682"] == "3,683" and c["5,382"] == "5,383"
+    assert c["1.711.187"] == "1.711.549"            # terminado: sólo el $/kg
+    assert c["7.100.285"] == "6.938.008"            # hilo: kilos + $/kg
+    assert c["804.955"] == "617.077"
