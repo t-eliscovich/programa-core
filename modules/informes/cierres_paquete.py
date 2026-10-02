@@ -316,27 +316,34 @@ def obtener(anio: int, mes: int, version: int = 1) -> bytes | None:
 #
 # Tamara 02/10/2026: Asinfo corrigió el stock (−51.775 kg de hilo, −7.139 kg
 # de tela cruda) y el ajuste se absorbió en el cierre de septiembre
-# (`ajuste_cierre`). *"¿Podés rearmar el PDF? Si se puede recalculando todo
-# (...) pero subilo como un segundo PDF."*
+# (`ajuste_cierre`). *"¿Podés rearmar el PDF? (...) subilo como un segundo
+# PDF"* — y al ver una hoja nueva: *"¿por qué hacés otro formato?"*.
 #
-# El PDF original son las pantallas tal como estaban la noche del cierre, y
-# esas pantallas hoy muestran el mes en curso: no se pueden volver a pedir.
-# Lo que cambió con el ajuste son dos cosas, y esas dos se rehacen:
+# La hoja de Resultados del PDF es la pantalla de la noche del cierre, y esa
+# pantalla hoy calcula el mes en curso: no se puede volver a pedir. Así que
+# es LA MISMA página del original, y sólo se reemplazan los números que el
+# ajuste cambia (utilidad, kilos y $ de las etapas ajustadas, stock, total
+# activo, patrimonio, utilidades del año), en amarillo y recalculados a
+# partir de los números de la propia página. Arriba, una línea dice qué se
+# corrigió y cuándo.
 #
-#   · Resultados y balance: se arman de nuevo desde la foto de cierre
-#     (`scintela.historia`, ya con el ajuste), la foto de la traza de esa
-#     misma hora (caja/bancos, cheques/facturas y los kilos y $/kg de cada
-#     etapa) y los colorantes del mes. Nada sale de la pantalla de hoy.
-#   · Flujo de producción: la pantalla del mes CERRADO se arma con los
-#     movimientos de Asinfo, que ya están corregidos.
-#
-# Ventas, Cartera, Deudas, Gastos, Activos y Anticipos no cambian con un
-# ajuste de stock: van las páginas del original, tal cual.
+# El Flujo de producción sí se vuelve a pedir: la pantalla del mes CERRADO se
+# arma con los movimientos de Asinfo, que ya están corregidos. Ventas,
+# Cartera, Deudas, Gastos, Activos y Anticipos no cambian con un ajuste de
+# stock: van las páginas del original, tal cual.
 
 #: Texto con el que empieza cada sección en el PDF original (para partirlo).
 _MARCA_VENTAS = "VENTAS DEL MES"
 _MARCA_FLUJO = "MOVIMIENTOS DEL MES"
 _MARCA_ACTIVOS = "Activos fijos"
+
+#: Rótulo de la fila en la hoja de Resultados por etapa del ajuste.
+_FILA_ETAPA = {"hilado": "Hilado", "tejido": "Tejido", "terminado": "Terminado"}
+
+#: Anchos de Helvetica (milésimas de em) — para tapar y escribir el número
+#: nuevo del mismo ancho que el viejo.
+_ANCHO_HELV = {c: 556 for c in "0123456789"} | {".": 278, ",": 278, "-": 333,
+                                                 " ": 278}
 
 
 def _f(v) -> float:
@@ -346,127 +353,270 @@ def _f(v) -> float:
         return 0.0
 
 
-def datos_resultados_al_cierre(anio: int, mes: int) -> dict:
-    """Todo lo que lleva la hoja de Resultados de (anio, mes) al cierre,
-    recalculado desde lo guardado, con los ajustes al cierre ya adentro."""
-    from calendar import monthrange
-    from datetime import date
+def _num_pagina(t: str) -> float | None:
+    """'2.231.232' → 2231232 · '2,328' → 2.328 · '-7.139' → -7139."""
+    t = (t or "").strip().replace("\u2212", "-")
+    if not t or not any(ch.isdigit() for ch in t):
+        return None
+    t = t.replace(".", "").replace(",", ".")
+    try:
+        return float(t)
+    except ValueError:
+        return None
+
+
+def _fmt(v: float, dec: int = 0) -> str:
+    s = f"{abs(v):,.{dec}f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    return ("-" if v < 0 and round(abs(v), dec) else "") + s
+
+
+def _anchos_fuente(fuente) -> tuple[dict, float, int]:
+    """(ancho por código, ancho por defecto, bytes por código) de una fuente
+    del PDF, en milésimas de em. Type0 (lo que escribe Chromium): /W del
+    descendiente, códigos de 2 bytes. Simple: /Widths desde /FirstChar."""
+    f = fuente.get_object()
+    if str(f.get("/Subtype")) == "/Type0":
+        d = f["/DescendantFonts"][0].get_object()
+        dw = float(d.get("/DW") or 1000)
+        w: dict = {}
+        arr = list(d.get("/W") or [])
+        i = 0
+        while i < len(arr):
+            c0 = int(arr[i])
+            nxt = arr[i + 1]
+            if isinstance(nxt, list | tuple) or hasattr(nxt, "__iter__"):
+                for k, v in enumerate(list(nxt)):
+                    w[c0 + k] = float(v)
+                i += 2
+            else:
+                for c in range(c0, int(nxt) + 1):
+                    w[c] = float(arr[i + 2])
+                i += 3
+        return w, dw, 2
+    primero = int(f.get("/FirstChar") or 0)
+    w = {primero + k: float(v) for k, v in enumerate(list(f.get("/Widths") or []))}
+    return w, 500.0, 1
+
+
+def _ancho_tj(args, op, anchos) -> float:
+    """Ancho en unidades de texto (× tamaño de letra) de un Tj/TJ."""
+    if not anchos:
+        return 0.0
+    w, dw, n = anchos
+    partes = args[0] if op == b"TJ" and args else (args[-1:] if args else [])
+    total = 0.0
+    for p in partes:
+        if isinstance(p, bytes | str) or hasattr(p, "original_bytes"):
+            b = getattr(p, "original_bytes", None) or (p if isinstance(p, bytes)
+                                                        else str(p).encode("latin-1", "ignore"))
+            for i in range(0, len(b) - n + 1, n):
+                total += w.get(int.from_bytes(b[i:i + n], "big"), dw)
+        else:
+            try:
+                total -= float(p)          # ajuste de TJ, en milésimas
+            except (TypeError, ValueError) as e:
+                _LOG.debug("TJ con un elemento raro (%r): %s", p, e)
+    return total / 1000.0
+
+
+def _textos_con_posicion(page) -> list[dict]:
+    """Cada texto de la página con su x, y, tamaño de letra y ANCHO reales.
+
+    🚨 pypdf le pasa a `visitor_text` una matriz de texto VIEJA cuando el
+    PDF lo hizo Chromium (posiciona cada celda con Tm/Td y el texto se junta
+    después): todos los números caían en el mismo punto. La posición buena es
+    la de los Tj/TJ desde la última vez que se entregó texto, que sí llega
+    bien a `visitor_operand_before`. El ancho sale de las métricas de la
+    fuente del propio PDF (así el número nuevo termina donde terminaba el
+    viejo, que es como están alineadas las columnas)."""
+    out: list[dict] = []
+    pend: dict = {"tjs": []}
+    fuentes: dict = {}
+    try:
+        for k, v in (page["/Resources"]["/Font"] or {}).items():
+            fo = v.get_object()
+            try:
+                an = _anchos_fuente(fo)
+            except Exception:  # noqa: BLE001 -- sin anchos se estima
+                an = None
+            fuentes[str(k)] = (str(fo.get("/BaseFont") or ""), an)
+    except (KeyError, TypeError, AttributeError) as e:
+        _LOG.warning("hoja corregida: la página no tiene fuentes legibles (%s)", e)
+
+    def _xy(cm, tm, dx=0.0):
+        tx, ty = tm[4] + dx * tm[0], tm[5] + dx * tm[1]
+        return (tx * cm[0] + ty * cm[2] + cm[4], tx * cm[1] + ty * cm[3] + cm[5])
+
+    def _antes(op, args, cm, tm):
+        if op == b"Tf" and args and len(args) > 1:
+            pend["tf"] = float(args[1])
+            pend["fuente"] = str(args[0])
+        if op in (b"Tj", b"TJ", b"'", b'"'):
+            tf = pend.get("tf") or 0.0
+            base, an = fuentes.get(pend.get("fuente") or "", ("", None))
+            ancho = _ancho_tj(args, op, an) * tf
+            x0, y0 = _xy(cm, tm)
+            x1, _ = _xy(cm, tm, ancho)
+            esc = abs(tm[0] * cm[0] + tm[1] * cm[2]) or 1.0
+            pend["tjs"].append({"x": x0, "y": y0, "x1": x1 if an else None,
+                                "fs": abs(tf) * esc, "bold": "bold" in base.lower()})
+
+    def _texto(text, cm, tm, font_dict, font_size):
+        tjs, pend["tjs"] = pend["tjs"], []
+        t = (text or "").strip()
+        if not t or not tjs:
+            return
+        p0 = tjs[0]
+        fin = [j["x1"] for j in tjs if j["x1"] is not None]
+        out.append({"t": t, "x": p0["x"], "y": p0["y"], "fs": p0["fs"],
+                    "bold": p0["bold"], "x_fin": max(fin) if fin else None})
+
+    page.extract_text(visitor_operand_before=_antes, visitor_text=_texto)
+    return out
+
+
+def _fila(textos: list[dict], rotulo: str) -> list[dict]:
+    """Los números de la fila que empieza con `rotulo`, de izquierda a derecha."""
+    lab = next((t for t in textos if t["t"] == rotulo), None)
+    if lab is None:
+        return []
+    nums = [t for t in textos if abs(t["y"] - lab["y"]) <= 1.6
+            and t is not lab and _num_pagina(t["t"]) is not None
+            and t["x"] > lab["x"]]
+    return sorted(nums, key=lambda t: t["x"])
+
+
+def _ancho_helv(t: str, fs: float) -> float:
+    return sum(_ANCHO_HELV.get(ch, 556) for ch in t) / 1000.0 * fs
+
+
+def _pdf_texto(t: str) -> str:
+    b = t.encode("cp1252", "replace").decode("latin-1")
+    return b.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def cambios_hoja_resultados(textos: list[dict], ajustes: list[dict],
+                            anio: int) -> list[dict]:
+    """Qué número de la hoja de Resultados se reemplaza por cuál. Todo sale de
+    los números de la propia hoja más los ajustes, así el resto de la página
+    sigue cerrando con lo nuevo. Levanta si no encuentra una fila."""
+    imp = round(sum(_f(a.get("importe")) for a in ajustes), 2)
+    por_etapa: dict = {}
+    for a in ajustes:
+        for ln in a.get("lineas") or []:
+            e = por_etapa.setdefault(ln.get("etapa"), {"kg": 0.0, "us": 0.0})
+            e["kg"] += _f(ln.get("kg"))
+            e["us"] += _f(ln.get("importe"))
+    cambios: list[dict] = []
+
+    def fila(rotulo, n):
+        f = _fila(textos, rotulo)
+        if len(f) < n:
+            raise RuntimeError(f"no encuentro la fila «{rotulo}» en la hoja de Resultados")
+        return f
+
+    def cambio(run, nuevo):
+        if run["t"] != nuevo:
+            cambios.append(dict(run, nuevo=nuevo))
+
+    ventas_kg = _num_pagina(fila("Ventas", 1)[0]["t"]) or 0
+    ut = fila("Utilidad Real", 2)
+    ut_us = _num_pagina(ut[-1]["t"]) + imp
+    cambio(ut[-1], _fmt(ut_us))
+    if ventas_kg:
+        cambio(ut[-2], _fmt(ut_us / ventas_kg, 3))
+    ua = fila(f"Utilidades {anio}", 1)
+    cambio(ua[-1], _fmt(_num_pagina(ua[-1]["t"]) + imp))
+    for e, d in por_etapa.items():
+        if e not in _FILA_ETAPA:
+            continue
+        r = fila(_FILA_ETAPA[e], 3)
+        cambio(r[0], _fmt(_num_pagina(r[0]["t"]) + d["kg"]))
+        cambio(r[-1], _fmt(_num_pagina(r[-1]["t"]) + d["us"]))
+    st = fila("Stock MP+Prod.", 3)
+    kg = _num_pagina(st[0]["t"]) + sum(d["kg"] for d in por_etapa.values())
+    us = _num_pagina(st[-1]["t"]) + imp
+    cambio(st[0], _fmt(kg))
+    cambio(st[-1], _fmt(us))
+    if kg:
+        cambio(st[1], _fmt(us / kg, 3))
+    for rot in ("Total activo", "Patrimonio neto"):
+        r = fila(rot, 1)
+        cambio(r[-1], _fmt(_num_pagina(r[-1]["t"]) + imp))
+    return cambios
+
+
+def _capa(ancho: float, alto: float, cambios: list[dict], leyenda: str):
+    """Una página transparente con los números nuevos (sobre un fondo amarillo
+    que tapa el viejo) y la leyenda arriba, para estampar sobre la original."""
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, DictionaryObject, NameObject
+
+    ops = []
+    for c in cambios:
+        fs = c["fs"] or 9.0
+        fuente = "HB" if c["bold"] else "HR"
+        # El número nuevo termina donde terminaba el viejo (las columnas están
+        # alineadas a la derecha). Sin el ancho real, se estima con Helvetica.
+        x_der = c.get("x_fin") or (c["x"] + _ancho_helv(c["t"], fs) * 0.95)
+        w_viejo = x_der - c["x"]
+        w_nuevo = _ancho_helv(c["nuevo"], fs)
+        tz = max(80.0, min(110.0, 100.0 * w_viejo / w_nuevo)) if (
+            w_nuevo and len(c["nuevo"]) == len(c["t"])) else 100.0
+        x = x_der - w_nuevo * tz / 100.0
+        izq = min(x, c["x"]) - 1.2
+        ops.append(f"q 0.996 0.953 0.78 rg {izq:.2f} {c['y'] - 2.4:.2f} "
+                   f"{x_der - izq + 1.2:.2f} {fs * 0.98 + 2.8:.2f} re f Q")
+        ops.append(f"BT /{fuente} {fs:.2f} Tf {tz:.1f} Tz 0.06 0.09 0.16 rg "
+                   f"1 0 0 1 {x:.2f} {c['y']:.2f} Tm ({_pdf_texto(c['nuevo'])}) Tj ET")
+    if leyenda:
+        ops.append(f"BT /HB 8.5 Tf 0.57 0.25 0.05 rg 1 0 0 1 38 {alto - 22:.2f} Tm "
+                   f"({_pdf_texto(leyenda)}) Tj ET")
+    w = PdfWriter()
+    pag = w.add_blank_page(width=ancho, height=alto)
+
+    def _helv(nombre):
+        return DictionaryObject({
+            NameObject("/Type"): NameObject("/Font"),
+            NameObject("/Subtype"): NameObject("/Type1"),
+            NameObject("/BaseFont"): NameObject(nombre),
+            NameObject("/Encoding"): NameObject("/WinAnsiEncoding")})
+    pag[NameObject("/Resources")] = DictionaryObject({
+        NameObject("/Font"): DictionaryObject({
+            NameObject("/HR"): _helv("/Helvetica"),
+            NameObject("/HB"): _helv("/Helvetica-Bold")})})
+    st = DecodedStreamObject()
+    st.set_data("\n".join(ops).encode("latin-1"))
+    pag[NameObject("/Contents")] = w._add_object(st)
+    return pag
+
+
+def hoja_resultados_corregida(anio: int, mes: int) -> tuple[bytes, list[dict]]:
+    """La página de Resultados del PDF original con los números del ajuste
+    reemplazados. Devuelve (pdf de una página, lista de cambios)."""
+    from pypdf import PdfReader, PdfWriter
 
     from modules.informes import ajuste_cierre
 
-    fin = date(anio, mes, monthrange(anio, mes)[1])
-    h = db.fetch_one(
-        "SELECT * FROM scintela.historia WHERE fecha = %s "
-        " ORDER BY id_historia DESC LIMIT 1", (fin,))
-    if not h:
-        raise RuntimeError(f"no hay foto de cierre del {fin:%d/%m/%Y}")
-    # La foto de la traza de la hora del cierre (la última antes de que se
-    # grabara historia): de ahí salen las partes que historia guarda sumadas.
-    t = db.fetch_one(
-        """
-        SELECT * FROM scintela.traza_utilidad
-         WHERE creado_en <= (%s AT TIME ZONE 'UTC') + INTERVAL '1 minute'
-           AND (creado_en AT TIME ZONE 'America/Guayaquil')::date = %s
-         ORDER BY creado_en DESC, id_traza DESC LIMIT 1
-        """, (h.get("fecha_crea"), fin)) or {}
+    original = obtener(anio, mes, 1)
+    if not original:
+        raise RuntimeError(f"no hay PDF original del cierre de {nombre_mes(mes)} {anio}")
     ajustes = ajuste_cierre.vivos_del_mes(anio, mes)
-    kg_aj = {e: 0.0 for e in ajuste_cierre.ETAPAS}
-    for a in ajustes:
-        for ln in a.get("lineas") or []:
-            if ln.get("etapa") in kg_aj:
-                kg_aj[ln["etapa"]] += _f(ln.get("kg"))
-    etapas = []
-    for e, nom in (("hilado", "Hilado"), ("tejido", "Tejido"), ("terminado", "Terminado")):
-        kg = _f(t.get(f"{e}_kg")) + kg_aj[e]
-        ukg = _f(t.get(f"{e}_ukg"))
-        etapas.append({"etapa": e, "nombre": nom, "kg": kg, "ukg": ukg,
-                       "us": kg * ukg, "ajuste_kg": kg_aj[e]})
-    stock_us = _f(h.get("ustock"))
-    stock_kg = _f(h.get("stock"))
-    caja = _f(t.get("caja"))
-    banco_total = _f(h.get("banco"))
-    cheques = _f(t.get("cheques"))
-    cart = _f(h.get("cart"))
-    act = {
-        "caja": caja, "bancos": banco_total - caja,
-        "cheques": cheques, "facturas": cart - cheques, "cartera": cart,
-        "subtotal": banco_total + cart,
-        "anticipos": _f(h.get("anticipos")),
-        "stock_us": stock_us, "stock_kg": stock_kg,
-        "stock_ukg": (stock_us / stock_kg) if stock_kg else 0.0,
-        "quimicos": _f(h.get("uqui")),
-        "maq": _f(h.get("maquinaria")), "terr": _f(h.get("realty")),
-    }
-    act["af"] = act["maq"] + act["terr"]
-    act["total"] = (act["subtotal"] + act["anticipos"] + stock_us
-                    + act["quimicos"] + act["af"])
-    pasivo = _f(h.get("deuda"))
-    patrimonio = _f(h.get("patrimonio"))
-
-    kv = _f(h.get("kvent"))
-
-    def fila(nombre, kg, us):
-        return {"nombre": nombre, "kg": kg, "us": us,
-                "ukg": (us / kv) if (kv and kg is None) else ((us / kg) if kg else None)}
-
-    col_kg = col_us = None
-    try:
-        from modules.comparativa_tintoreria.views import tintoreria_mensual_cacheada
-        # Mismo criterio que la fila Colorantes del balance: la primera fila
-        # de COSTOS DE TINTORERÍA del mes pedido (kg y $ de la misma fila).
-        filas = (tintoreria_mensual_cacheada(anio, mes) or {}).get("filas") or []
-        if filas and filas[0].get("t_imp") is not None:
-            col_us = _f(filas[0]["t_imp"])
-            col_kg = _f(filas[0].get("t_kg")) or None
-    except Exception as e:  # noqa: BLE001
-        _LOG.warning("cierre corregido: colorantes de %s/%s: %s", mes, anio, e)
-    costos = [
-        fila("Materia Prima", _f(h.get("kcom")), _f(h.get("ucom"))),
-        fila("Tejeduría", _f(h.get("ktej")), _f(h.get("utej"))),
-        fila("Tintorería", _f(h.get("ktin")), _f(h.get("utin"))),
-    ]
-    if col_us is not None:
-        costos.append(fila("Colorantes/Quím.", col_kg, col_us))
-    costos.append(fila("Administración", None, _f(h.get("gasto"))))
-    usuti = _f(h.get("usuti"))
-    imp_aj = sum(_f(a.get("importe")) for a in ajustes)
-
-    cierres = db.fetch_all(
-        """
-        SELECT DISTINCT ON (date_trunc('month', fecha)) fecha, uvent, usuti, usret
-          FROM scintela.historia
-         WHERE fecha >= %s AND fecha <= %s
-         ORDER BY date_trunc('month', fecha), fecha DESC, id_historia DESC
-        """, (date(anio, 1, 1), fin)) or []
-    ret_anio = db.fetch_one(
-        "SELECT COALESCE(SUM(ret), 0) AS t FROM scintela.retiros "
-        " WHERE fecha >= %s AND fecha <= %s "
-        "   AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'",
-        (date(anio, 1, 1), fin)) or {}
-    return {
-        "anio": anio, "mes": mes, "mes_nombre": nombre_mes(mes), "fin": fin,
-        "ventas": fila("Ventas", kv, _f(h.get("uvent"))),
-        "costos": costos,
-        "utilidad": {"us": usuti, "ukg": (usuti / kv) if kv else 0.0,
-                     "antes": usuti - imp_aj,
-                     "ukg_antes": ((usuti - imp_aj) / kv) if kv else 0.0},
-        # Igual que `ventas_anio_en_curso` la noche del cierre: los meses
-        # cerrados de historia + lo facturado en el mes (sólo positivos).
-        "anio_ventas": (sum(_f(c.get("uvent")) for c in cierres
-                            if c["fecha"].month < mes) + _f((db.fetch_one(
-            """
-            SELECT COALESCE(SUM(importe), 0) AS t FROM scintela.factura
-             WHERE EXTRACT(YEAR FROM fecha) = %s AND EXTRACT(MONTH FROM fecha) = %s
-               AND COALESCE(stat, '') <> 'X' AND COALESCE(importe, 0) > 0
-               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
-            """, (anio, mes)) or {}).get("t"))),
-        "anio_utilidades": sum(_f(c.get("usuti")) for c in cierres),
-        "dividendos_mes": _f(h.get("usret")),
-        "dividendos_anio": _f(ret_anio.get("t")),
-        "etapas": etapas, "activo": act, "pasivo": pasivo,
-        "patrimonio": patrimonio, "ajustes": ajustes, "ajuste_total": imp_aj,
-        "id_traza": t.get("id_traza"),
-    }
+    if not ajustes:
+        raise RuntimeError(f"el cierre de {nombre_mes(mes)} {anio} no tiene ajustes")
+    page = PdfReader(io.BytesIO(original)).pages[0]
+    textos = _textos_con_posicion(page)
+    cambios = cambios_hoja_resultados(textos, ajustes, anio)
+    imp = sum(_f(a.get("importe")) for a in ajustes)
+    leyenda = (f"Corregido el {today_ec():%d/%m/%Y} · ajuste al cierre {_fmt(imp)}: "
+               + "; ".join(str(a.get("motivo") or "") for a in ajustes))[:150]
+    ancho, alto = float(page.mediabox.width), float(page.mediabox.height)
+    page.merge_page(_capa(ancho, alto, cambios, leyenda))
+    w = PdfWriter()
+    w.add_page(page)
+    buf = io.BytesIO()
+    w.write(buf)
+    return buf.getvalue(), cambios
 
 
 def _partir_original(pdf_bytes: bytes) -> dict:
@@ -491,16 +641,6 @@ def _partir_original(pdf_bytes: bytes) -> dict:
             "n": len(textos)}
 
 
-def pagina_resultados_corregida(anio: int, mes: int) -> str:
-    """El HTML de la hoja de Resultados recalculada (para el PDF y para verla
-    en pantalla antes de guardarla)."""
-    from flask import render_template
-
-    d = datos_resultados_al_cierre(anio, mes)
-    return render_template("informes/cierre_resultados_corregido.html", d=d,
-                           hoy=today_ec())
-
-
 def armar_corregido(anio: int, mes: int) -> tuple[bytes, int]:
     """El paquete de (anio, mes) con Resultados y Flujo de producción
     recalculados y el resto de las páginas del original. Devuelve (bytes,
@@ -518,8 +658,7 @@ def armar_corregido(anio: int, mes: int) -> tuple[bytes, int]:
     partes = _partir_original(original)
     r = partes["reader"]
 
-    resultados = pdf_motor.desde_html(pagina_resultados_corregida(anio, mes),
-                                      fondo=True)
+    resultados, _cambios = hoja_resultados_corregida(anio, mes)
     uid = _usuario_sistema_id()
     if not uid:
         raise RuntimeError("no hay ningún usuario activo con permiso '*'")
@@ -536,7 +675,7 @@ def armar_corregido(anio: int, mes: int) -> tuple[bytes, int]:
 
     w = PdfWriter()
     _agregar_paginas(w, resultados)
-    for i in range(partes["ventas"], partes["flujo"]):
+    for i in range(1, partes["flujo"]):   # el resto de Resultados, si hay, y Ventas..Gastos
         w.add_page(r.pages[i])
     _agregar_paginas(w, flujo)
     for i in range(partes["activos"], partes["n"]):

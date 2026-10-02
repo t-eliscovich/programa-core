@@ -192,13 +192,16 @@ def test_guardar_y_obtener_por_version():
 
 
 def _pdf(textos):
-    """Un PDF mínimo con una línea de texto por página, escrito a mano (sin
-    reportlab, que el CI no tiene)."""
+    """Un PDF mínimo escrito a mano (sin reportlab, que el CI no tiene). Cada
+    página es un texto, o una lista de (x, y, texto) en celdas separadas como
+    las pone Chromium (BT … Tm … Tj ET por celda)."""
     objs = ["<< /Type /Catalog /Pages 2 0 R >>", None,
             "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
     kids = []
     for t in textos:
-        flujo = f"BT /F1 12 Tf 50 700 Td ({t}) Tj ET".encode("latin-1")
+        celdas = [(50, 700, t)] if isinstance(t, str) else t
+        flujo = " ".join(f"BT /F1 9 Tf 1 0 0 1 {x} {y} Tm ({c}) Tj ET"
+                         for x, y, c in celdas).encode("latin-1")
         objs.append(f"<< /Length {len(flujo)} >>\nstream\n".encode("latin-1")
                     + flujo + b"\nendstream")
         objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
@@ -244,3 +247,66 @@ def test_la_descarga_pide_la_version(app, fake_db, monkeypatch):
     r = c.get("/informes/cierres/2026/9/pdf?version=2")
     assert r.status_code == 200 and pedido["v"] == 2
     assert "corregido" in r.headers["Content-Disposition"]
+
+
+_HOJA = [(38, 730, "Ventas"), (220, 730, "345.817"), (338, 730, "8,531"),
+         (440, 730, "2.950.184"),
+         (38, 560, "Utilidad Real"), (336, 560, "2,328"), (445, 560, "804.955"),
+         (38, 486, "Utilidades 2026"), (440, 486, "5.202.316"),
+         (38, 340, "Hilado"), (262, 340, "2.231.232"), (317, 340, "3,182"),
+         (464, 340, "7.100.285"),
+         (38, 323, "Tejido"), (269, 323, "292.217"), (317, 323, "3,682"),
+         (464, 323, "1.076.010"),
+         (38, 307, "Terminado"), (269, 307, "317.933"), (317, 307, "5,382"),
+         (464, 307, "1.711.187"),
+         (38, 290, "Stock MP+Prod."), (262, 290, "2.841.382"), (317, 290, "3,480"),
+         (537, 290, "9.887.482"),
+         (38, 210, "Total activo"), (529, 210, "26.658.002"),
+         (38, 175, "Patrimonio neto"), (521, 175, "22.287.800")]
+
+_AJ = [{"importe": -191045.82, "motivo": "Asinfo corrigió el saldo",
+        "lineas": [{"etapa": "hilado", "kg": -51775, "importe": -164758.4},
+                   {"etapa": "tejido", "kg": -7139, "importe": -26287.42}]}]
+
+
+def test_la_hoja_es_la_original_con_los_numeros_del_ajuste():
+    """Tamara: *"¿por qué hacés otro formato?"* — es la misma página, sólo
+    cambian los números que mueve el ajuste."""
+    from pypdf import PdfReader
+    page = PdfReader(io.BytesIO(_pdf([_HOJA]))).pages[0]
+    tx = cierres_paquete._textos_con_posicion(page)
+    assert {t["t"]: (round(t["x"]), round(t["y"])) for t in tx}["7.100.285"] == (464, 340)
+    cambios = {c["t"]: c["nuevo"] for c in
+               cierres_paquete.cambios_hoja_resultados(tx, _AJ, 2026)}
+    assert cambios == {
+        "804.955": "613.909", "2,328": "1,775", "5.202.316": "5.011.270",
+        "2.231.232": "2.179.457", "7.100.285": "6.935.527",
+        "292.217": "285.078", "1.076.010": "1.049.723",
+        "2.841.382": "2.782.468", "9.887.482": "9.696.436", "3,480": "3,485",
+        "26.658.002": "26.466.956", "22.287.800": "22.096.754"}
+    # Terminado no se tocó: no estaba en el ajuste.
+    assert "1.711.187" not in cambios and "317.933" not in cambios
+
+
+def test_la_hoja_corregida_se_estampa_sobre_la_original(monkeypatch):
+    from pypdf import PdfReader
+    from modules.informes import ajuste_cierre as aj
+    original = _pdf([_HOJA, "VENTAS DEL MES"])
+    monkeypatch.setattr(cierres_paquete, "obtener", lambda a, m, v=1: original)
+    monkeypatch.setattr(aj, "vivos_del_mes", lambda a, m: _AJ)
+    monkeypatch.setattr(cierres_paquete, "today_ec", lambda: dt.date(2026, 10, 2))
+    pdf, cambios = cierres_paquete.hoja_resultados_corregida(2026, 9)
+    r = PdfReader(io.BytesIO(pdf))
+    assert len(r.pages) == 1
+    texto = r.pages[0].extract_text()
+    assert "613.909" in texto and "22.096.754" in texto
+    assert "Corregido el 02/10/2026" in texto
+    assert len(cambios) == 12
+
+
+def test_la_hoja_sin_la_fila_levanta():
+    from pypdf import PdfReader
+    page = PdfReader(io.BytesIO(_pdf([[(38, 700, "Ventas"), (220, 700, "1")]]))).pages[0]
+    with pytest.raises(RuntimeError, match="Utilidad Real"):
+        cierres_paquete.cambios_hoja_resultados(
+            cierres_paquete._textos_con_posicion(page), _AJ, 2026)

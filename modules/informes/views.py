@@ -1996,9 +1996,7 @@ def cierres():
     con el estado de HOY y no lo guarda; sirve para ver cómo queda o probar
     un cambio de diseño cualquier día del mes, sin esperar a un cierre.
     """
-    from modules.informes import cierres_paquete
-
-    from modules.informes import ajuste_cierre
+    from modules.informes import ajuste_cierre, cierres_paquete
 
     filas, error = _safe(cierres_paquete.listar, [])
     # Tamara 02/10/2026: los meses con ajuste al cierre ofrecen el segundo
@@ -2198,15 +2196,23 @@ def cierres_ajuste_deshacer(id_ajuste: int):
 @requiere_login
 @requiere_permiso("informes.ver")
 def cierres_corregido_hoja(anio: int, mes: int):
-    """La hoja de Resultados recalculada, en pantalla, para verla antes de
-    armar el PDF corregido."""
+    """La hoja de Resultados del PDF original con los números del ajuste
+    reemplazados — para verla antes de guardar el PDF corregido. Con
+    `?cambios=1` devuelve qué número cambia por cuál."""
     from modules.informes import cierres_paquete
 
     try:
-        return cierres_paquete.pagina_resultados_corregida(anio, mes)
+        pdf_bytes, cambios = cierres_paquete.hoja_resultados_corregida(anio, mes)
     except Exception as e:  # noqa: BLE001
         flash(f"No se pudo armar la hoja: {e}", "error")
         return redirect(url_for("informes.cierres"))
+    if request.args.get("cambios"):
+        return jsonify([{k: c.get(k) for k in ("t", "nuevo", "x", "y", "fs", "bold", "x_fin")}
+                        for c in cambios])
+    return Response(pdf_bytes, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Resultados {cierres_paquete.nombre_mes(mes)} '
+                               f'{anio} (corregido).pdf"',
+        "Cache-Control": "no-store"})
 
 
 @informes_bp.route("/cierres/<int:anio>/<int:mes>/corregido/vista-previa")
