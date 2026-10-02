@@ -347,7 +347,8 @@ def texto_del_salto(fila: dict, previa: dict, movs: list[dict]) -> dict | None:
     if ajustes and abs(d - explicado_por_ajuste) < max(1000.0, abs(d) * 0.05):
         return {"nivel": "ok",
                 "titulo": (f"{ajustes[0]['etiqueta']}: la utilidad del mes "
-                           f"{'sube' if d > 0 else 'baja'} {_miles(abs(d))}")[:200],
+                           f"{'sube' if explicado_por_ajuste > 0 else 'baja'} "
+                           f"{_miles(abs(explicado_por_ajuste))}")[:200],
                 "detalle": ("El cierre del mes anterior se corrigió y lo absorbe "
                             "ese mes, no éste.")}
     kg = []

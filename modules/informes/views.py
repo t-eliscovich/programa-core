@@ -2172,8 +2172,9 @@ def cierres_ajuste_aplicar():
     except ValueError as e:
         flash(str(e), "error")
         return redirect(url_for("informes.cierres_ajuste"))
-    flash(f"Listo: el cierre de {ajuste_cierre.nombre_mes(r['mes'])} quedó "
-          f"{num_es(r['importe'], 0)} y la utilidad del mes en curso no lo paga.",
+    flash(f"Listo: la utilidad de {ajuste_cierre.nombre_mes(r['mes'])} "
+          f"{'bajó' if r['importe'] < 0 else 'subió'} {num_es(abs(r['importe']), 0)} "
+          f"(quedó {num_es(r['despues']['usuti'], 0)}) y el mes en curso no lo paga.",
           "success")
     return redirect(url_for("informes.cierres"))
 
