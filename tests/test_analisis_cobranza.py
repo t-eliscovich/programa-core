@@ -286,3 +286,11 @@ def test_al_vendedor_el_incobrable_se_le_muestra_rojo(monkeypatch):
     assert cob.de_cliente("VIE")["nombre"] == "Incobrable"
     v = cob.de_cliente("VIE", incobrable=False)
     assert (v["color"], v["nombre"], v["hex"]) == ("rojo", "Rojo", "#b3362a")
+
+
+def test_el_puntito_incluye_a_los_que_deben_poco():
+    """El análisis no lista a los de menos de 1.000; el puntito sí (Tamara 02/10)."""
+    chico = [_cli("CHI", fac=500, edad_max=10)]
+    assert not _armar(chico)["filas"]
+    d = cob.armar(chico, [], MESES, HOY, saldo_minimo=None)
+    assert [c["cod"] for c in d["filas"]] == ["CHI"]

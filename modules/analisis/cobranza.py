@@ -362,14 +362,15 @@ def _meses_panel(hoy: date) -> list[date]:
     return _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
 
 
-def _semaforo(hoy: date) -> tuple[dict, list[date], list[dict]]:
+def _semaforo(hoy: date, saldo_minimo: float | None = SALDO_MINIMO
+              ) -> tuple[dict, list[date], list[dict]]:
     meses_e = _meses_panel(hoy)
     clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
     # Tamara 02/10: el "Pagó a X días; antes a Y" del semáforo mira los MISMOS
     # meses que el panel de abajo (antes eran sólo los últimos 3 y "antes"
     # dejaba afuera julio, que el panel sí muestra).
     pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
-    return armar(clientes, pm, meses_e, hoy), meses_e, pm
+    return armar(clientes, pm, meses_e, hoy, saldo_minimo), meses_e, pm
 
 
 # ── El puntito del semáforo en otras pantallas ─────────────────────────────
@@ -385,15 +386,17 @@ _colores_lock = threading.Lock()
 def colores(hoy: date | None = None) -> dict[str, dict]:
     """codigo_cli → {color, motivos, puntaje} del semáforo de hoy.
 
-    Sólo están los clientes que lista el semáforo (saldo de 1.000 o más, o un
-    cheque devuelto): el resto no lleva puntito. ``color`` es rojo, amar,
+    Están TODOS los clientes con saldo o con compras en 90 días, también los
+    de menos de 1.000 que el análisis no lista. ``color`` es rojo, amar,
     verde o inc (incobrable, el punto negro del gráfico).
     """
     with _colores_lock:
         if hoy is None and _colores["d"] is not None \
                 and time.monotonic() - _colores["t"] < COLORES_TTL:
             return _colores["d"]
-        d, _, _ = _semaforo(hoy or today_ec())
+        # Tamara 02/10: el puntito va en TODOS los clientes, también los que
+        # deben menos de 1.000 (el análisis no los lista, pero tienen color).
+        d, _, _ = _semaforo(hoy or today_ec(), saldo_minimo=None)
         out = {c["cod"].strip().upper(): {
                    "color": "inc" if c["incobrable"] else c["color"],
                    "motivos": c["motivos"], "puntaje": c["puntaje"]}
@@ -547,7 +550,8 @@ def semaforo(c: dict) -> tuple[str, list[str]]:
 
 
 def armar(clientes: list[dict], por_mes: list[dict],
-          meses: list[date], hoy: date) -> dict:
+          meses: list[date], hoy: date,
+          saldo_minimo: float | None = SALDO_MINIMO) -> dict:
     # Plazo por mes de cada cliente.
     idx = {m: i for i, m in enumerate(meses)}
     serie: dict[str, list] = {}
@@ -586,7 +590,7 @@ def armar(clientes: list[dict], por_mes: list[dict],
         }
         c["deuda"] = c["fac"] + c["ch"]
         c["saldo"] = c["deuda"] + c["reb"]
-        if c["saldo"] < SALDO_MINIMO and c["reb"] <= 0:
+        if saldo_minimo is not None and c["saldo"] < saldo_minimo and c["reb"] <= 0:
             continue
         c["dias_cartera"] = (c["deuda"] / (c["venta90"] / 90)) if c["venta90"] > 0 else None
         c["veces"] = None

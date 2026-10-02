@@ -118,11 +118,9 @@
       </div>
       <div class="amt">
         <b>$ {{ c.saldo|money_es }}</b>
-        {% if c.vencido > 0 %}
-          <span class="tag bad">Vencido</span>
-        {% else %}
-          <span class="tag good">Al día</span>
-        {% endif %}
+        {# Tamara 02/10: se fue la etiqueta Vencido / Al día — el puntito del
+           semáforo dice lo mismo sin contradecirse (vencido a 90 días,
+           amarillo a 100). El filtro "Vencidos" de arriba sigue. #}
       </div>
     </a>
   {% endfor %}

@@ -15,10 +15,10 @@
 {# Para el portal de vendedores: el punto + el porqué en una línea. #}
 {% macro motivo(codigo_cli, incobrable=True) -%}
 {%- set s = semaforo_cliente(codigo_cli, incobrable) -%}
-{%- if s and s.color != 'verde' -%}
+{%- if s -%}
 <div class="sem-motivo no-print" style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;padding:8px 10px;border-radius:10px;background:{{ s.hex }}14;color:{{ s.hex }};font-size:13px;line-height:1.35">
   <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ s.hex }};margin-top:4px;flex:none"></span>
-  <span><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% endif %}</span>
+  <span><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% else %} · al día{% endif %}</span>
 </div>
 {%- endif -%}
 {%- endmacro %}
@@ -31,7 +31,7 @@
 <span class="sem-pastilla no-print" title="Semáforo de cobranza: {{ s.nombre }}"
       style="display:inline-flex;gap:6px;align-items:center;max-width:100%;padding:2px 9px;border-radius:999px;background:{{ s.hex }}14;color:{{ s.hex }};font-size:12px;line-height:1.5;font-weight:500">
   <span style="width:8px;height:8px;border-radius:50%;background:{{ s.hex }};flex:none"></span>
-  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% endif %}</span>
+  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% else %} · al día{% endif %}</span>
 </span>
 {%- endif -%}
 {%- endmacro %}
