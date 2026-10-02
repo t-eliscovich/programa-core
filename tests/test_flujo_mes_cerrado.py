@@ -205,3 +205,60 @@ def test_mes_a_mes_son_los_ultimos_cinco_cruzando_el_anio():
         r = kb.ultimos(2026, 2, 5, hoy=date(2026, 10, 1))
     assert [(m["anio"], m["mes"]) for m in r["meses"]] == [
         (2025, 10), (2025, 11), (2025, 12), (2026, 1), (2026, 2)]
+
+
+def test_trae_el_stock_de_mas_de_verdad():
+    """Tamara 2026-10-02: la Diferencia mezcla salidas contadas dos veces con
+    el lote en cero; "De más en stock" es lo que infla el stock."""
+    kb.reset_cache()
+
+    def fake(sql, max_results=5000):
+        if "saldo_producto_lote" in sql:
+            assert "stock_de_mas" in sql and "fecha < '2026-10-01'" in sql
+            return [{"b": 51, "saldo": 2202034.0, "stock_de_mas": 51740.1},
+                    {"b": 52, "saldo": 251675.2, "stock_de_mas": 7308.1},
+                    {"b": 53, "saldo": 318082.9}], True
+        return _FILAS_SEP, True
+    with patch.object(kb, "_consultar", side_effect=fake):
+        m = kb.mes(2026, 9, hoy=date(2026, 10, 1))
+    assert m[51]["stock_de_mas"] == 51740.1 and m[52]["stock_de_mas"] == 7308.1
+    assert m[53]["stock_de_mas"] is None
+    assert round(m[51]["de_mas"]) == 57149
+
+
+def test_calentar_recalcula_el_mes_en_curso_y_no_los_cerrados():
+    kb.reset_cache()
+    pedidos = []
+
+    def fake(sql, max_results=5000):
+        pedidos.append("saldo" if "saldo_producto_lote" in sql else "mov")
+        if "saldo_producto_lote" in sql:
+            return _SALDO_SEP, True
+        return _FILAS_SEP, True
+    with patch.object(kb, "_consultar", side_effect=fake):
+        assert kb.calentar(hoy=date(2026, 10, 2)) is True
+        n1 = len(pedidos)
+        assert n1 == 6                       # movimientos + 5 saldos
+        assert kb.calentar(hoy=date(2026, 10, 2)) is True
+        # la 2da vez: movimientos + sólo el saldo del mes en curso
+        assert len(pedidos) - n1 == 2
+        kb.ultimos(2026, 10, 5, hoy=date(2026, 10, 2))
+        assert len(pedidos) - n1 == 2, "la pantalla sale del caché"
+
+
+def test_calentar_no_se_cae():
+    with patch.object(kb, "ultimos", side_effect=RuntimeError("boom")):
+        assert kb.calentar(hoy=date(2026, 10, 2)) is False
+
+
+def test_el_desplegable_dice_de_mas_en_stock(app):
+    kb.reset_cache()
+    with patch.object(kb, "ultimos", return_value={"ok": True, "meses": [
+            {"anio": 2026, "mes": 9, "en_curso": False,
+             51: {"inicial": 1, "ingresos": 1, "ajustes": 0, "salidas": 1, "final": 1,
+                  "saldo": 2202034.0, "de_mas": 57149.0, "stock_de_mas": 51740.0}}]}):
+        from flask import render_template
+        with app.test_request_context():
+            html = render_template("informes/_flujo_mes_a_mes.html",
+                                   res=kb.ultimos(2026, 9, 5), anio=2026)
+    assert "De más en stock" in html and "51.740" in html and "57.149" in html

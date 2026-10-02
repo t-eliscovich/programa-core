@@ -22,8 +22,9 @@
     <tr><td class="lbl">− Salidas</td>{% for m in _ms %}<td class="num">{{ _n(m[51].salidas) }}</td>{% endfor %}</tr>
     <tr class="total"><td class="lbl">Final</td>{% for m in _ms %}<td class="num">{{ _n(m[51].final) }}</td>{% endfor %}</tr>
     <tr><td class="lbl" style="color:rgb(100 116 139);">Saldo Asinfo</td>{% for m in _ms %}<td class="num" style="color:rgb(100 116 139);">{{ _n(m[51].saldo) }}</td>{% endfor %}</tr>
-    <tr><td class="lbl" style="color:rgb(180 83 9);">De más</td>{% for m in _ms %}<td class="num" style="color:rgb(180 83 9);font-weight:700;">{{ _n(m[51].de_mas) }}</td>{% endfor %}</tr>
+    <tr><td class="lbl" style="color:rgb(100 116 139);">Diferencia</td>{% for m in _ms %}<td class="num" style="color:rgb(100 116 139);">{{ _n(m[51].de_mas) }}</td>{% endfor %}</tr>
+    <tr><td class="lbl" style="color:rgb(180 83 9);">De más en stock</td>{% for m in _ms %}<td class="num" style="color:rgb(180 83 9);font-weight:700;">{{ _n(m[51].stock_de_mas) }}</td>{% endfor %}</tr>
   </tbody>
 </table>
-{% if _ms[-1].en_curso %}<p class="nd" style="font-size:11.5px;margin-top:2px;">* a hoy</p>{% endif %}
+<p class="nd" style="font-size:11.5px;margin-top:2px;">{% if _ms[-1].en_curso %}* a hoy. {% endif %}De más en stock: lotes que salieron pero el saldo de Asinfo sigue mostrando en la bodega. Es lo que infla el stock; si crece de un mes a otro, la falla sigue.</p>
 {% endif %}

@@ -617,6 +617,10 @@ def correr_si_toca() -> dict:
         h = health(avisar=True)
         res.update(corrio=True, ok=h.get("ok"),
                    alertas=[a["category"] for a in h.get("alerts") or []])
+        # Y de paso deja listo el "Mes a mes" del Flujo de producción, que
+        # tarda en armarse contra Asinfo (Tamara 2026-10-02).
+        from modules.asinfo import kardex_bodegas
+        kardex_bodegas.calentar()
     except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
         _LOG.warning("control de salidas y saldo (fondo): %s", e)
     return res

@@ -34,9 +34,11 @@ BODEGAS = (51, 52, 53)
 INGRESO = {51: "BOD", 52: "IFT", 53: "IFT"}
 SALIDA = {51: "SM", 52: "SM", 53: "DES"}
 
-#: Un mes cerrado casi no cambia: 30 min. El mes en curso, 5 min.
-TTL_CERRADO = 1800
-TTL_EN_CURSO = 300
+#: Un mes cerrado casi no cambia: 12 h. El mes en curso, 40 min — y el hilo
+#: de fondo lo recalcula cada 30 (`calentar`), así la pantalla nunca espera a
+#: Asinfo. Tamara 2026-10-02: "mes a mes tarda mucho en cargar".
+TTL_CERRADO = 43200
+TTL_EN_CURSO = 2400
 _CACHE: dict = {}
 _LOCK = threading.Lock()
 
@@ -93,16 +95,35 @@ SELECT id_bodega AS b,
 
 def _sql_saldo(hasta: date) -> str:
     """Saldo de Asinfo por bodega al cierre: la última foto de cada lote con
-    fecha ANTERIOR a `hasta`."""
+    fecha ANTERIOR a `hasta`. Y `stock_de_mas`: la parte que de verdad infla el
+    stock — lotes cuyo saldo sigue positivo y por encima de lo que dicen sus
+    movimientos a esa fecha (ver `salidas_sin_saldo`). El resto de la
+    diferencia son salidas contadas dos veces con el lote ya en cero."""
+    h = hasta.isoformat()
     return f"""
-SELECT id_bodega AS b, CAST(SUM(saldo) AS decimal(16, 3)) AS saldo
-  FROM (SELECT id_bodega, saldo,
+WITH s AS (
+    SELECT id_producto, id_bodega b, id_lote, saldo FROM (
+        SELECT id_producto, id_bodega, id_lote, saldo,
                ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega, id_lote
                                   ORDER BY fecha DESC, id_saldo_producto_lote DESC) rn
           FROM saldo_producto_lote
-         WHERE id_bodega IN (51, 52, 53) AND fecha < '{hasta.isoformat()}') z
- WHERE rn = 1
- GROUP BY id_bodega
+         WHERE id_bodega IN (51, 52, 53) AND fecha < '{h}') z
+     WHERE rn = 1
+),
+k AS (
+    SELECT id_producto, id_bodega b, id_lote, SUM(operacion * cantidad) kx
+      FROM inventario_producto
+     WHERE id_bodega IN (51, 52, 53) AND ISNULL(indicador_anulacion, 0) = 0
+       AND fecha < '{h}'
+     GROUP BY id_producto, id_bodega, id_lote
+)
+SELECT s.b AS b, CAST(SUM(s.saldo) AS decimal(16, 3)) AS saldo,
+       CAST(SUM(CASE WHEN s.saldo > 0.5 AND s.saldo - ISNULL(k.kx, 0) > 0.5
+                     THEN CASE WHEN s.saldo < s.saldo - ISNULL(k.kx, 0) THEN s.saldo
+                               ELSE s.saldo - ISNULL(k.kx, 0) END
+                     ELSE 0 END) AS decimal(16, 3)) AS stock_de_mas
+  FROM s LEFT JOIN k ON k.id_producto = s.id_producto AND k.b = s.b AND k.id_lote = s.id_lote
+ GROUP BY s.b
 """
 
 
@@ -111,9 +132,11 @@ def _consultar(sql: str, max_results: int = 5000):
     return metabase_client.fetch_dataset_estado(2, sql, max_results=max_results)
 
 
-def _saldo_al(hasta: date, en_curso: bool) -> dict | None:
+def _saldo_al(hasta: date, en_curso: bool, forzar: bool = False) -> dict | None:
+    """{bodega: (saldo, stock_de_mas)} al cierre. `forzar` saltea el caché
+    (lo usa `calentar` para dejarlo fresco antes de que venza)."""
     clave = ("saldo", hasta)
-    hit = _cache_get(clave)
+    hit = None if forzar else _cache_get(clave)
     if hit is not None:
         return hit
     try:
@@ -123,7 +146,11 @@ def _saldo_al(hasta: date, en_curso: bool) -> dict | None:
         return None
     if not ok:
         return None
-    out = {int(f["b"]): float(f.get("saldo") or 0) for f in filas or []}
+    out = {}
+    for f in filas or []:
+        sdm = f.get("stock_de_mas")
+        out[int(f["b"])] = (float(f.get("saldo") or 0),
+                            None if sdm is None else float(sdm))
     _cache_put(clave, out, TTL_EN_CURSO if en_curso else TTL_CERRADO)
     return out
 
@@ -183,7 +210,8 @@ def meses(anio: int, desde_mes: int, hasta_mes: int, hoy: date | None = None) ->
     return _meses_lista(lista, hoy)
 
 
-def ultimos(anio: int, mes_: int, n: int = 5, hoy: date | None = None) -> dict:
+def ultimos(anio: int, mes_: int, n: int = 5, hoy: date | None = None,
+            forzar: bool = False) -> dict:
     """Los `n` meses que terminan en (anio, mes_), cruzando de año si hace
     falta. Mismo formato que `meses`. Tamara 2026-10-01: el mes a mes con los
     últimos 5, no el año entero."""
@@ -195,10 +223,24 @@ def ultimos(anio: int, mes_: int, n: int = 5, hoy: date | None = None) -> dict:
     for _ in range(max(1, int(n))):
         lista.append((a, m))
         a, m = (a - 1, 12) if m == 1 else (a, m - 1)
-    return _meses_lista(list(reversed(lista)), hoy)
+    return _meses_lista(list(reversed(lista)), hoy, forzar=forzar)
 
 
-def _meses_lista(lista: list[tuple[int, int]], hoy: date) -> dict:
+def calentar(hoy: date | None = None) -> bool:
+    """Deja calculado el mes a mes de la pantalla (últimos 5 meses) para que
+    abra al instante. El mes en curso se recalcula siempre; los cerrados salen
+    del caché de 12 h. Lo llama el hilo de fondo cada 30 min. Nunca levanta."""
+    try:
+        if hoy is None:
+            from filters import today_ec
+            hoy = today_ec()
+        return bool(ultimos(hoy.year, hoy.month, 5, hoy=hoy, forzar=True).get("ok"))
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("calentar mes a mes: %s", e)
+        return False
+
+
+def _meses_lista(lista: list[tuple[int, int]], hoy: date, forzar: bool = False) -> dict:
     lista = [x for x in lista if date(x[0], x[1], 1) <= hoy]
     if not lista:
         return {"ok": True, "meses": []}
@@ -207,7 +249,7 @@ def _meses_lista(lista: list[tuple[int, int]], hoy: date) -> dict:
     en_curso_algo = hasta > hoy
 
     clave = ("mov", desde, hasta)
-    filas = _cache_get(clave)
+    filas = None if forzar else _cache_get(clave)
     if filas is None:
         try:
             filas, ok = _consultar(_sql_movimientos(desde, hasta))
@@ -224,7 +266,8 @@ def _meses_lista(lista: list[tuple[int, int]], hoy: date) -> dict:
     # ahoga con más — ver warmup._PASOS_A_LA_VEZ).
     cortes = [(x, _siguiente(*x)) for x in lista]
     with ThreadPoolExecutor(max_workers=3) as ex:
-        saldos = list(ex.map(lambda c: _saldo_al(c[1], c[1] > hoy), cortes))
+        saldos = list(ex.map(
+            lambda c: _saldo_al(c[1], c[1] > hoy, forzar=forzar and c[1] > hoy), cortes))
 
     salida = []
     prev_de_mas = {b: None for b in BODEGAS}
@@ -232,8 +275,9 @@ def _meses_lista(lista: list[tuple[int, int]], hoy: date) -> dict:
         fila = {"anio": x[0], "mes": x[1], "en_curso": _corte > hoy}
         for b in BODEGAS:
             d = dict(armado[x][b])
-            s = None if saldo is None else float(saldo.get(b, 0.0))
+            s, sdm = (None, None) if saldo is None else saldo.get(b, (0.0, None))
             d["saldo"] = s
+            d["stock_de_mas"] = sdm
             d["de_mas"] = None if s is None else s - d["final"]
             d["de_mas_nuevo"] = (None if d["de_mas"] is None or prev_de_mas[b] is None
                                  else d["de_mas"] - prev_de_mas[b])

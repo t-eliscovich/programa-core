@@ -180,6 +180,9 @@ def test_corre_solo_cada_media_hora(monkeypatch):
     llamadas = []
     monkeypatch.setattr(sss, "health", lambda **k: llamadas.append(k) or {
         "ok": False, "alerts": [{"category": "bodega_descuadrada"}]})
+    from modules.asinfo import kardex_bodegas
+    calentados = []
+    monkeypatch.setattr(kardex_bodegas, "calentar", lambda: calentados.append(1) or True)
     monkeypatch.setattr(sss, "_auto_ultimo", None)
     monkeypatch.delenv("SALIDAS_SALDO_AUTO", raising=False)
     monkeypatch.setenv("SALIDAS_SALDO_SECS", "nada")
@@ -187,6 +190,7 @@ def test_corre_solo_cada_media_hora(monkeypatch):
     assert r["corrio"] and r["alertas"] == ["bodega_descuadrada"]
     assert sss.correr_si_toca()["corrio"] is False, "no repite antes de 30 min"
     assert llamadas == [{"avisar": True}]
+    assert calentados == [1], "de paso deja listo el mes a mes del flujo"
 
 
 def test_corre_solo_se_apaga_y_no_se_cae(monkeypatch):
