@@ -600,7 +600,7 @@ def _resumen_rango(dia0, dia1) -> dict:
     d_stock = round(_f(h.get("vsto")) - _f(d.get("vsto")), 2)
     d_cartera = round(_f(h.get("facturas")) - _f(d.get("facturas")), 2)
     d_deuda = round(_f(h.get("totp")) - _f(d.get("totp")), 2)
-    d_util = round(_f(h.get("utilidad")) - _f(d.get("utilidad")), 2)
+    d_util = d_utilidad_tramo(d, h)
 
     hil = etapas.get("hilado") or {}
     prod = produccion_entre(dia0, dia1)
@@ -1545,6 +1545,60 @@ def capturas(fecha) -> list[dict]:
         """, (fecha,))
 
 
+
+def _mes_de(f) -> tuple[int, int] | None:
+    """(año, mes) de una `fecha_ec` que puede venir como date o como texto."""
+    try:
+        if hasattr(f, "year"):
+            return f.year, f.month
+        t = str(f or "")[:10]
+        return int(t[:4]), int(t[5:7])
+    except (TypeError, ValueError):
+        return None
+
+
+def _utilidad_cierre_antes_de(anio: int, mes: int) -> float | None:
+    """La utilidad de la ÚLTIMA foto de la traza antes del día 1 de (anio, mes),
+    hora Ecuador: con qué número cerró el mes anterior. None si no hay."""
+    try:
+        filas = _rows(
+            """
+            SELECT utilidad FROM scintela.traza_utilidad
+             WHERE creado_en < (make_date(%s, %s, 1)::timestamp
+                                AT TIME ZONE 'America/Guayaquil')
+               AND utilidad IS NOT NULL
+             ORDER BY creado_en DESC, id_traza DESC
+             LIMIT 1
+            """, (anio, mes))
+        return _f(filas[0]["utilidad"]) if filas else None
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("dia: no pude leer el cierre del mes anterior (%s)", e)
+        return None
+
+
+def d_utilidad_tramo(desde: dict, hasta: dict) -> float:
+    """Cuánto se movió la utilidad entre dos fotos, SIN el salto del cambio de mes.
+
+    Tamara 2026-10-01: el mail del 1/10 decía "Utilidad del día −760.148" al
+    lado de "Utilidad del mes 39.195". La resta cruda (hoy − ayer) mezclaba dos
+    meses: ayer era la utilidad ACUMULADA de septiembre (~799 mil) y hoy la de
+    octubre, que arranca de cero. Si las dos puntas caen en meses distintos, el
+    tramo es lo que faltaba de septiembre (cierre − ayer) más lo que va de
+    octubre. Sirve igual para el finde que cruza el fin de mes.
+    """
+    d0, d1 = _f((desde or {}).get("utilidad")), _f((hasta or {}).get("utilidad"))
+    crudo = round(d1 - d0, 2)
+    m0, m1 = _mes_de((desde or {}).get("fecha_ec")), _mes_de((hasta or {}).get("fecha_ec"))
+    if not m0 or not m1 or m0 == m1:
+        return crudo
+    cierre = _utilidad_cierre_antes_de(*m1)
+    if cierre is None:
+        # Sin la foto del cierre, lo honesto es lo que va del mes nuevo: se
+        # pierde sólo la cola del último día del mes anterior.
+        return round(d1, 2)
+    return round((cierre - d0) + d1, 2)
+
+
 def ventana(fecha) -> tuple[dict | None, dict | None]:
     """Las dos puntas del día: el cierre de AYER y el cierre de HOY.
 
@@ -1735,7 +1789,7 @@ def explicar(fecha=None) -> dict:
         and desde.get("fecha_ec") == hasta.get("fecha_ec")
     )
     out["desde"], out["hasta"] = desde, hasta
-    out["d_utilidad"] = round(_f(hasta.get("utilidad")) - _f(desde.get("utilidad")), 2)
+    out["d_utilidad"] = d_utilidad_tramo(desde, hasta)
 
     # PATANT es derivado, no una columna guardada: se calcula por foto para que
     # el Δ lo trate como un componente más. Ver `foto.patant_de` y el comentario
