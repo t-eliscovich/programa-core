@@ -193,13 +193,14 @@ def _enumerar(cosas: list[str]) -> str:
 
 
 def mensaje(sug: dict) -> str:
-    """El texto que se abre en WhatsApp. De usted, y sin decir cuál es de
-    segunda."""
+    """El texto que se abre en WhatsApp. De usted, sin decir cuál es de
+    segunda, y SIN el signo de pregunta de apertura (Tamara 02/10: *"nunca
+    este ¿"*): por WhatsApp nadie lo escribe y delata que es automático."""
     pila = nombre_de_pila(sug.get("nombre"))
     colores = _enumerar([c["color"] for c in sug["colores"]])
-    return (f"Hola{' ' + pila if pila else ''}, ¿cómo está? Le cuento que "
+    return (f"Hola{' ' + pila if pila else ''}, cómo está? Le cuento que "
             f"tenemos {sug['tela']} en {colores}, lista para entregar. "
-            f"¿Le separo?")
+            f"Le separo?")
 
 
 def link_whatsapp(sug: dict) -> str | None:

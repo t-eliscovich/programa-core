@@ -112,8 +112,9 @@ def test_el_mensaje_habla_de_usted_y_no_dice_segunda():
            "colores": [{"color": "COR"}, {"color": "BLA", "segunda": True},
                        {"color": "CIE"}]}
     m = s.mensaje(sug)
-    assert m == ("Hola Ida, ¿cómo está? Le cuento que tenemos Microfibra 1.2 en "
-                 "COR, BLA y CIE, lista para entregar. ¿Le separo?")
+    assert m == ("Hola Ida, cómo está? Le cuento que tenemos Microfibra 1.2 en "
+                 "COR, BLA y CIE, lista para entregar. Le separo?")
+    assert "¿" not in m   # Tamara 02/10: "nunca este ¿"
     assert "segunda" not in m.lower() and "seg" not in m.lower()
     link = s.link_whatsapp(sug)
     assert link.startswith("https://wa.me/593999999999?text=")
