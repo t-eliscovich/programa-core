@@ -163,7 +163,8 @@ def lista() -> list[dict]:
     Cada fila trae: codigo_cli, nombre, vend, saldo, vencido, correo (el
     resuelto), de_donde ('portal' | 'ficha' | 'asinfo' | ''), entro (bool: ya
     eligió clave en el portal), ultimo_aviso (timestamptz | None),
-    ultimo_aviso_ok (bool | None), ultima_compra (date).
+    ultimo_aviso_ok (bool | None), ultima_compra (date), y del último aviso:
+    con_marca (salió con seguimiento), abierto_en, clic_en (mig 0257).
     """
     from modules.informes.queries import estado_cuenta_clientes_saldos
 
@@ -193,6 +194,9 @@ def lista() -> list[dict]:
             "entro": bool(e.get("eligio_clave")),
             "ultimo_aviso": e.get("ultimo_aviso"),
             "ultimo_aviso_ok": e.get("ultimo_aviso_ok"),
+            "con_marca": bool(e.get("con_marca")),
+            "abierto_en": e.get("abierto_en"),
+            "clic_en": e.get("clic_en"),
             "ultima_compra": ultima_compra,
         })
     filas.sort(key=lambda x: x["codigo_cli"])
@@ -245,7 +249,8 @@ def _correos_y_portal(codigos: list[str]) -> list[dict]:
         ),
         ultimo AS (
             SELECT DISTINCT ON (UPPER(TRIM(codigo_cli)))
-                   UPPER(TRIM(codigo_cli)) AS codigo_cli, enviado_en, ok
+                   UPPER(TRIM(codigo_cli)) AS codigo_cli, enviado_en, ok,
+                   token, abierto_en, clic_en
               FROM scintela.portal_aviso
              WHERE tipo = 'cliente'
              ORDER BY UPPER(TRIM(codigo_cli)), enviado_en DESC
@@ -256,7 +261,10 @@ def _correos_y_portal(codigos: list[str]) -> list[dict]:
                pa.clave_hash IS NOT NULL        AS eligio_clave,
                ma.email                         AS mail_asinfo,
                u.enviado_en                     AS ultimo_aviso,
-               u.ok                             AS ultimo_aviso_ok
+               u.ok                             AS ultimo_aviso_ok,
+               u.token IS NOT NULL              AS con_marca,
+               u.abierto_en                     AS abierto_en,
+               u.clic_en                        AS clic_en
           FROM c
           LEFT JOIN scintela.portal_acceso pa
                  ON UPPER(TRIM(pa.codigo_cli)) = c.codigo_cli
@@ -284,14 +292,55 @@ def correo_del_vendedor(vend: str) -> str:
 
 
 def anotar(codigo_cli: str, correo: str, tipo: str, ok: bool, motivo: str,
-           id_ses: str, quien: str) -> None:
+           id_ses: str, quien: str, token: str = "") -> None:
     db.execute(
         "INSERT INTO scintela.portal_aviso "
-        "  (codigo_cli, correo, tipo, ok, motivo, id_ses, enviado_por) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s)",
+        "  (codigo_cli, correo, tipo, ok, motivo, id_ses, enviado_por, token) "
+        "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
         ((codigo_cli or "")[:20], (correo or "")[:200], tipo, bool(ok),
          (motivo or "")[:200] or None, (id_ses or "")[:120] or None,
-         (quien or "")[:40] or None))
+         (quien or "")[:40] or None, (token or "")[:40] or None))
+
+
+def marcar_apertura(token: str) -> int:
+    """La imagen invisible del mail se descargó: el cliente lo abrió (o su
+    correo la bajó solo — ver mig 0257). Devuelve las filas tocadas."""
+    return db.execute(
+        "UPDATE scintela.portal_aviso "
+        "   SET abierto_en = COALESCE(abierto_en, now()), aperturas = aperturas + 1 "
+        " WHERE token = %s",
+        (token,))
+
+
+def marcar_clic(token: str) -> int:
+    """El cliente apretó el botón del mail. Un clic también es una apertura
+    (aunque su correo haya bloqueado la imagen)."""
+    return db.execute(
+        "UPDATE scintela.portal_aviso "
+        "   SET clic_en = COALESCE(clic_en, now()), clics = clics + 1, "
+        "       abierto_en = COALESCE(abierto_en, now()) "
+        " WHERE token = %s",
+        (token,))
+
+
+def resumen_envios(limite: int = 6) -> list[dict]:
+    """Cómo le fue a cada envío a clientes, por día (Ecuador): cuántos
+    salieron, cuántos se abrieron y cuántos hicieron clic. Sólo cuentan los
+    que salieron con marca (desde el 02/10/2026)."""
+    return db.fetch_all(
+        """
+        SELECT (enviado_en AT TIME ZONE 'America/Guayaquil')::date AS dia,
+               COUNT(*)                                   AS enviados,
+               COUNT(*) FILTER (WHERE token IS NOT NULL)  AS con_marca,
+               COUNT(abierto_en)                          AS abrieron,
+               COUNT(clic_en)                             AS clic
+          FROM scintela.portal_aviso
+         WHERE tipo = 'cliente' AND ok
+         GROUP BY 1
+         ORDER BY 1 DESC
+         LIMIT %s
+        """,
+        (limite,))
 
 
 def historial(limite: int = 200) -> list[dict]:
@@ -299,7 +348,8 @@ def historial(limite: int = 200) -> list[dict]:
     return db.fetch_all(
         """
         SELECT a.codigo_cli, COALESCE(c.nombre, '') AS nombre, a.correo, a.tipo,
-               a.ok, a.motivo, a.enviado_por, a.enviado_en
+               a.ok, a.motivo, a.enviado_por, a.enviado_en,
+               a.token IS NOT NULL AS con_marca, a.abierto_en, a.clic_en
           FROM scintela.portal_aviso a
           LEFT JOIN scintela.cliente c ON UPPER(TRIM(c.codigo_cli)) = UPPER(TRIM(a.codigo_cli))
          ORDER BY a.enviado_en DESC

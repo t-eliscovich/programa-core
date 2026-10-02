@@ -2,6 +2,14 @@
 {% from "_ui.html" import empty_row, page_hero %}
 {% block title %}Aviso del portal a los clientes{% endblock %}
 {% block breadcrumb %}<strong>Aviso del portal</strong>{% endblock %}
+{% macro _leido(f) -%}
+  {%- if not f.con_marca -%}
+    <td class="px-3 py-2 text-slate-400">—</td><td class="px-3 py-2 text-slate-400">—</td>
+  {%- else -%}
+    <td class="px-3 py-2 whitespace-nowrap">{% if f.abierto_en %}<span class="text-emerald-700 dark:text-emerald-400">{% set x = f.abierto_en | fecha_hora_ec %}{{ x[:5] }} {{ x[11:16] }}</span>{% else %}<span class="text-slate-400">no</span>{% endif %}</td>
+    <td class="px-3 py-2 whitespace-nowrap">{% if f.clic_en %}<span class="font-semibold text-emerald-700 dark:text-emerald-400">{% set x = f.clic_en | fecha_hora_ec %}{{ x[:5] }} {{ x[11:16] }}</span>{% else %}<span class="text-slate-400">no</span>{% endif %}</td>
+  {%- endif -%}
+{%- endmacro %}
 {% block content %}
 <div class="max-w-7xl">
   {{ page_hero('Aviso del portal a los clientes',
@@ -176,6 +184,8 @@
             <th class="px-3 py-2">Correo</th>
             <th class="px-3 py-2">Portal</th>
             <th class="px-3 py-2">Último aviso</th>
+            <th class="px-3 py-2">Abrió</th>
+            <th class="px-3 py-2">Clic</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -209,14 +219,47 @@
                 {{ f.ultimo_aviso | fecha_hora_ec }}{% if not f.ultimo_aviso_ok %} <span class="text-red-600">no salió</span>{% endif %}
               {% else %}—{% endif %}
             </td>
+            {{ _leido(f) }}
           </tr>
           {% else %}
-            {{ empty_row(8, 'No hay clientes con saldo que hayan comprado en los últimos 6 meses.') }}
+            {{ empty_row(10, 'No hay clientes con saldo que hayan comprado en los últimos 6 meses.') }}
           {% endfor %}
         </tbody>
       </table>
     </div>
   </form>
+
+  {# --- Cómo les fue (Tamara 02/10/2026: "ver quién lee los mails") --- #}
+  {% if resumen %}
+  <h2 class="mt-8 mb-1 text-lg font-semibold text-slate-900 dark:text-slate-100">Quién lo leyó</h2>
+  <p class="mb-2 text-xs text-slate-500">«Abrió» es aproximado: Apple Mail baja la imagen solo y Hotmail/Outlook a veces la bloquean. «Clic» es seguro: apretó el botón del mail.</p>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg overflow-x-auto shadow-sm mb-2">
+    <table class="min-w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700 text-left text-xs uppercase tracking-wider text-slate-500">
+        <tr>
+          <th class="px-3 py-2">Envío</th>
+          <th class="px-3 py-2 text-right">Salieron</th>
+          <th class="px-3 py-2 text-right">Abrieron</th>
+          <th class="px-3 py-2 text-right">Clic</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for r in resumen %}
+        <tr>
+          <td class="px-3 py-2">{{ r.dia | fecha_es }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ r.enviados }}</td>
+          {% if r.con_marca %}
+          <td class="px-3 py-2 text-right tabular-nums">{{ r.abrieron }} <span class="text-xs text-slate-400">({{ (100 * r.abrieron / r.con_marca) | round | int }} %)</span></td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ r.clic }} <span class="text-xs text-slate-400">({{ (100 * r.clic / r.con_marca) | round | int }} %)</span></td>
+          {% else %}
+          <td class="px-3 py-2 text-right text-slate-400" colspan="2">sin seguimiento</td>
+          {% endif %}
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
 
   {# --- Lo que ya salió --- #}
   <h2 class="mt-8 mb-2 text-lg font-semibold text-slate-900 dark:text-slate-100">Lo que ya salió</h2>
@@ -230,6 +273,8 @@
           <th class="px-3 py-2">Qué</th>
           <th class="px-3 py-2">Salió</th>
           <th class="px-3 py-2">Lo mandó</th>
+          <th class="px-3 py-2">Abrió</th>
+          <th class="px-3 py-2">Clic</th>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
@@ -241,9 +286,10 @@
           <td class="px-3 py-2">{% if h.tipo == 'prueba' %}prueba{% else %}al cliente{% endif %}</td>
           <td class="px-3 py-2">{% if h.ok %}sí{% else %}<span class="text-red-600">no{% if h.motivo %} · {{ h.motivo }}{% endif %}</span>{% endif %}</td>
           <td class="px-3 py-2 text-slate-500">{{ h.enviado_por }}</td>
+          {{ _leido(h) }}
         </tr>
         {% else %}
-          {{ empty_row(6, 'Todavía no salió ningún aviso.', 'Mandate una prueba para ver cómo llega.') }}
+          {{ empty_row(8, 'Todavía no salió ningún aviso.', 'Mandate una prueba para ver cómo llega.') }}
         {% endfor %}
       </tbody>
     </table>

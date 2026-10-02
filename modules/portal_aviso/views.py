@@ -58,6 +58,11 @@ def pantalla():
         vendedores = []
     ec_encendido = queries.ec_auto_encendido()
     ec_proxima = queries.proxima_corrida_ec()
+    try:
+        resumen = queries.resumen_envios()
+    except Exception as e:  # noqa: BLE001 -- sin la mig 0257, sin el bloque
+        _LOG.warning("portal_aviso: no pude armar el resumen (%s)", e)
+        resumen = []
     return render_template(
         "portal_aviso/pantalla.html",
         filas=filas, con_correo=con_correo, sin_correo=sin_correo,
@@ -69,6 +74,7 @@ def pantalla():
         mensajes_a=", ".join(_mensajes_a()),
         ec_encendido=ec_encendido,
         ec_proxima=ec_proxima,
+        resumen=resumen,
     )
 
 

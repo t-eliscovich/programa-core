@@ -807,3 +807,45 @@ def inicio():
     # Lo que el cliente vino a ver es su cuenta: no se le pone una portada en
     # el medio para que tenga que dar otro click.
     return redirect(url_for("portal.estado_cuenta"))
+
+
+# ---------------------------------------------------------------------------
+# Quién lee el aviso (Tamara 02/10/2026, mig 0257). Cada mail del aviso lleva
+# su marca: la imagen invisible /a/<marca>.gif anota que se abrió y el botón
+# /a/<marca> anota el clic y sigue al portal. Las dos contestan siempre lo
+# mismo, exista o no la marca: no dicen nada a quien pruebe marcas.
+# ---------------------------------------------------------------------------
+
+_MARCA = re.compile(r"^[A-Za-z0-9_-]{16,40}$")
+
+#: GIF transparente de 1×1.
+_GIF = (b"GIF89a\x01\x00\x01\x00\x80\x00\x00\x00\x00\x00\xff\xff\xff!\xf9\x04"
+        b"\x01\x00\x00\x00\x00,\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02\x02D\x01\x00;")
+
+
+def _anotar_marca(marca: str, que: str) -> None:
+    if not _MARCA.match(marca or ""):
+        return
+    try:
+        from modules.portal_aviso import queries as aviso_q
+        (aviso_q.marcar_clic if que == "clic" else aviso_q.marcar_apertura)(marca)
+    except Exception:  # noqa: BLE001 -- anotar nunca le rompe nada al cliente
+        _LOG.exception("portal: no pude anotar %s de la marca", que)
+
+
+@portal_bp.route("/a/<marca>.gif")
+@limiter.limit("60 per minute")
+def aviso_abierto(marca: str):
+    from flask import make_response
+    _anotar_marca(marca, "apertura")
+    r = make_response(_GIF)
+    r.headers["Content-Type"] = "image/gif"
+    r.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    return r
+
+
+@portal_bp.route("/a/<marca>")
+@limiter.limit("60 per minute")
+def aviso_clic(marca: str):
+    _anotar_marca(marca, "clic")
+    return redirect(url_for("portal.inicio"))

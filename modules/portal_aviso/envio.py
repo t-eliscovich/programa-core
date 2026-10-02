@@ -17,6 +17,7 @@ Dos maneras de mandarlo, y las dos pasan por `mandar()`:
 from __future__ import annotations
 
 import logging
+import secrets
 import threading
 
 from . import queries
@@ -26,6 +27,24 @@ _LOG = logging.getLogger("programa_core.portal_aviso")
 PORTAL_URL = "https://portal.intela.com.ec/"
 
 ASUNTO = "Portal Intela - Estado de cuenta"
+
+
+def nueva_marca() -> str:
+    """La marca de UN mail (mig 0257): 22 caracteres al azar, sin nada del
+    cliente adentro."""
+    return secrets.token_urlsafe(16)
+
+
+def link_con_marca(token: str) -> str:
+    """El botón pasa por /a/<marca> (anota el clic) y de ahí al portal."""
+    return f"{PORTAL_URL}a/{token}" if token else PORTAL_URL
+
+
+def _pixel(token: str) -> str:
+    if not token:
+        return ""
+    return (f'<img src="{PORTAL_URL}a/{token}.gif" width="1" height="1" alt="" '
+            'style="display:block;border:0;width:1px;height:1px">')
 
 
 def nombre_lindo(nombre: str) -> str:
@@ -52,7 +71,7 @@ def nombre_lindo(nombre: str) -> str:
     return " ".join(palabras)
 
 
-def texto_del_aviso(nombre: str) -> str:
+def texto_del_aviso(nombre: str, token: str = "") -> str:
     return (
         f"Hola {nombre_lindo(nombre)},\n\n"
         f"Intela tiene un portal nuevo para clientes.\n"
@@ -63,7 +82,7 @@ def texto_del_aviso(nombre: str) -> str:
     )
 
 
-def html_del_aviso(nombre: str) -> str:
+def html_del_aviso(nombre: str, token: str = "") -> str:
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
         'color:#1e293b;max-width:520px;margin:0 auto;padding:24px 16px">'
@@ -71,18 +90,19 @@ def html_del_aviso(nombre: str) -> str:
         '<p>Intela tiene un portal nuevo para clientes.<br>'
         'Desde ahora puede consultar en línea su estado de cuenta y sus '
         'pagos.</p>'
-        f'<p style="margin:28px 0"><a href="{PORTAL_URL}" '
+        f'<p style="margin:28px 0"><a href="{link_con_marca(token)}" '
         'style="background:#b91c1c;color:#fff;text-decoration:none;'
         'padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block">'
         'Entrar al portal</a></p>'
         '<p>Le va a pedir su RUC.</p>'
         '<p style="font-size:12px;color:#64748b">Intela · Industria Textil '
         'Latinoamericana C. Ltda.</p>'
+        f'{_pixel(token)}'
         '</div>'
     )
 
 
-def texto_recordatorio(nombre: str) -> str:
+def texto_recordatorio(nombre: str, token: str = "") -> str:
     return (
         f"Hola {nombre_lindo(nombre)},\n\n"
         f"Le recordamos que puede consultar su estado de cuenta actualizado "
@@ -93,20 +113,21 @@ def texto_recordatorio(nombre: str) -> str:
     )
 
 
-def html_recordatorio(nombre: str) -> str:
+def html_recordatorio(nombre: str, token: str = "") -> str:
     return (
         '<div style="font-family:Arial,Helvetica,sans-serif;font-size:15px;'
         'color:#1e293b;max-width:520px;margin:0 auto;padding:24px 16px">'
         f'<p>Hola {nombre_lindo(nombre)},</p>'
         '<p>Le recordamos que puede consultar su estado de cuenta '
         'actualizado en el portal de Intela.</p>'
-        f'<p style="margin:28px 0"><a href="{PORTAL_URL}" '
+        f'<p style="margin:28px 0"><a href="{link_con_marca(token)}" '
         'style="background:#b91c1c;color:#fff;text-decoration:none;'
         'padding:12px 22px;border-radius:6px;font-weight:bold;display:inline-block">'
         'Ver mi estado de cuenta</a></p>'
         '<p>Le va a pedir su RUC.</p>'
         '<p style="font-size:12px;color:#64748b">Intela · Industria Textil '
         'Latinoamericana C. Ltda.</p>'
+        f'{_pixel(token)}'
         '</div>'
     )
 
@@ -178,15 +199,17 @@ def _mandar_cada_uno(filas, quien, tipo, a, texto_fn, html_fn, res,
                 res["repetidos"] += 1
                 continue
         nombre = f.get("nombre") or f.get("codigo_cli") or ""
+        token = nueva_marca()
         env = mailer.enviar(
-            ASUNTO, texto_fn(nombre), [correo],
-            html=html_fn(nombre),
+            ASUNTO, texto_fn(nombre, token), [correo],
+            html=html_fn(nombre, token),
             responder_a=queries.correo_del_vendedor(f.get("vend") or ""))
         ok = bool(env.get("ok"))
         res["enviados" if ok else "fallidos"] += 1
         try:
             queries.anotar(f.get("codigo_cli") or "", correo, tipo, ok,
-                           env.get("motivo") or "", env.get("id") or "", quien)
+                           env.get("motivo") or "", env.get("id") or "", quien,
+                           token if ok else "")
         except Exception:  # noqa: BLE001 -- anotar no puede frenar el envío
             _LOG.exception("portal_aviso: no pude anotar el aviso de %s",
                            f.get("codigo_cli"))
