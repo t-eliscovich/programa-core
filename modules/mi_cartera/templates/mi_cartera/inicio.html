@@ -132,10 +132,12 @@
   </div>
   <div class="kpi">
     <small>Por cobrar</small><b>$ {{ pendiente.saldo|money_es }}</b>
-    {% if pendiente.vencido > 0 %}
-      <i style="color:var(--bad)">$ {{ pendiente.vencido|money_es }} vencido</i>
-    {% else %}
-      <i style="color:var(--good)">todo al día</i>
+    {# Tamara 02/10: con el semáforo, no con el vencido. #}
+    {% set sc = semaforo_cuenta %}
+    {% if sc and (sc.rojo or sc.amar) %}
+      <i>{% if sc.rojo %}<span style="color:#b3362a">{{ sc.rojo }} en rojo</span>{% endif %}{% if sc.rojo and sc.amar %} · {% endif %}{% if sc.amar %}<span style="color:#c98a0b">{{ sc.amar }} en amarillo</span>{% endif %}</i>
+    {% elif sc %}
+      <i style="color:var(--good)">todo en verde</i>
     {% endif %}
   </div>
 </div>
@@ -154,11 +156,15 @@
       <div class="ini cod">{{ c.codigo_cli|upper }}</div>
       <div class="nm">
         <b>{{ c.nombre }}</b>
-        <span>{{ c.n_facturas }} factura{{ '' if c.n_facturas == 1 else 's' }} abierta{{ '' if c.n_facturas == 1 else 's' }}</span>
+        {# El semáforo y su porqué, en lugar de "N facturas abiertas" (Tamara
+           02/10: el Inicio no habla más de "vencido"). #}
+        {# Estilos en línea: el <style> de abajo queda fuera del bloque y no se dibuja. #}
+        <span class="sem-l" style="color:{{ c.sem.hex }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600"
+              title="{{ c.sem.nombre }}{% if c.sem.motivos %} — {{ c.sem.motivos|join(' · ') }}{% endif %}"
+              ><i style="display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:5px;vertical-align:1px;background:{{ c.sem.hex }}"></i>{{ c.sem.motivos[0] if c.sem.motivos else c.sem.nombre }}</span>
       </div>
       <div class="amt">
         <b>$ {{ c.saldo|money_es }}</b>
-        <span class="tag bad">Vencido $ {{ c.vencido|money_es }}</span>
       </div>
     </a>
   {% endfor %}

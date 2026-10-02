@@ -841,35 +841,38 @@ def test_el_redondel_de_la_cuenta_dice_el_codigo_del_vendedor(
     assert '<span class="avatar">PP</span>' not in html
 
 
-def test_las_alertas_del_inicio_siguen_yendo_por_vencido(vendedor_logueado, monkeypatch):
-    """El Inicio muestra los 5 de MAYOR vencido.
-
-    Colgaba del ORDER BY de `mis_clientes`. Al ordenar la lista de clientes
-    alfabéticamente, si el orden se heredara de la query el Inicio pasaría a
-    mostrar cinco vencidos cualesquiera — sin error y sin síntoma.
-    """
+def test_las_alertas_del_inicio_van_por_el_semaforo(vendedor_logueado, monkeypatch):
+    """Tamara 02/10/2026 ("sigo viendo lo de vencido"): el Inicio lista los
+    clientes en rojo y amarillo del semáforo — rojo primero, después el que
+    más reglas rompe, después el que más debe — y cuenta cuántos hay."""
+    from modules.analisis import cobranza
     from modules.mi_cartera import views
 
-    def _fila(cod, nombre, venc):
-        return {"codigo_cli": cod, "nombre": nombre, "saldo": venc,
-                "vencido": venc, "provincia": "", "n_facturas": 1,
+    def _fila(cod, saldo):
+        return {"codigo_cli": cod, "nombre": cod, "saldo": saldo,
+                "vencido": 0.0, "provincia": "", "n_facturas": 1,
                 "vence_mas_viejo": None}
 
-    monkeypatch.setattr(
-        q, "mis_clientes",
-        lambda vend: [_fila("AAA", "Almacén", 10.0), _fila("ZZZ", "Zapatería", 900.0)],
-    )
+    monkeypatch.setattr(q, "mis_clientes", lambda vend: [
+        _fila("VVV", 9000.0), _fila("AAA", 10.0), _fila("RRR", 50.0), _fila("BBB", 900.0)])
+    colores = {"VVV": "verde", "AAA": "amar", "RRR": "rojo", "BBB": "amar"}
+    monkeypatch.setattr(cobranza, "de_cliente", lambda cod, incobrable=True: {
+        "color": colores[cod], "nombre": colores[cod], "hex": "#000000",
+        "motivos": [], "puntaje": 1})
     capturado = {}
     orig = views.render_template
 
     def _render(nombre_tpl, **ctx):
         if nombre_tpl == "mi_cartera/inicio.html":
-            capturado["alertas"] = ctx["alertas"]
+            capturado.update(ctx)
         return orig(nombre_tpl, **ctx)
 
     monkeypatch.setattr(views, "render_template", _render)
-    vendedor_logueado.get("/mi-cartera")
-    assert [c["codigo_cli"] for c in capturado["alertas"]] == ["ZZZ", "AAA"]
+    body = vendedor_logueado.get("/mi-cartera").get_data(as_text=True)
+    assert [c["codigo_cli"] for c in capturado["alertas"]] == ["RRR", "BBB", "AAA"]
+    assert capturado["semaforo_cuenta"] == {"rojo": 1, "amar": 2}
+    assert "1 en rojo" in body and "2 en amarillo" in body
+    assert "vencido" not in body.split("Requieren atención")[1].split("Comisión")[0].lower()
 
 
 def test_el_contador_del_inicio_usa_el_mismo_criterio_que_la_lista(monkeypatch):
@@ -2661,6 +2664,9 @@ def test_requieren_atencion_muestra_el_CODIGO_del_cliente(app, monkeypatch):
          "saldo": 75947.37, "vencido": 53574.60, "vence_mas_viejo": date(2026, 6, 1),
          "n_facturas": 23},
     ])
+    from modules.analisis import cobranza
+    monkeypatch.setattr(cobranza, "de_cliente", lambda cod, incobrable=True: {
+        "color": "rojo", "nombre": "Rojo", "hex": "#b3362a", "motivos": [], "puntaje": 1})
     with app.test_request_context("/mi-cartera?vend=EDG&periodo=mes"):
         g.user, g.permisos = {"vend": "EDG"}, {"micartera.ver"}
         html = views.inicio()

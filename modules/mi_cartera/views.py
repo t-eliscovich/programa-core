@@ -52,6 +52,29 @@ MESES = ("Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio",
          "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre")
 
 
+def _semaforo_de_mis_clientes(vend: str) -> dict:
+    """Los clientes del vendedor en rojo y amarillo del semáforo de cobranza.
+
+    {"alertas": [cliente + "sem"], "cuenta": {"rojo": n, "amar": n} o None si
+    el semáforo no se pudo calcular}. El incobrable se cuenta como rojo, igual
+    que el puntito del portal. Nunca rompe el Inicio.
+    """
+    from modules.analisis.cobranza import de_cliente
+    alertas, cuenta, hay = [], {"rojo": 0, "amar": 0}, False
+    for c in queries.mis_clientes(vend):
+        s = de_cliente(c.get("codigo_cli"), incobrable=False)
+        if s is None:
+            continue
+        hay = True
+        if s["color"] in cuenta:
+            cuenta[s["color"]] += 1
+            alertas.append(dict(c, sem=s))
+    alertas.sort(key=lambda c: (c["sem"]["color"] != "rojo",
+                                -(c["sem"].get("puntaje") or 0),
+                                -float(c.get("saldo") or 0)))
+    return {"alertas": alertas, "cuenta": cuenta if hay else None}
+
+
 def _vend_actual() -> str:
     """Código de vendedor del request. 404 si el usuario no es vendedor.
 
@@ -190,6 +213,7 @@ def inicio():
             barras = []
 
     pend = queries.por_cobrar(vend)
+    sem = _semaforo_de_mis_clientes(vend)
     return render_template(
         "mi_cartera/inicio.html",
         # Las 5 de la competencia: se arman una vez por día y se guardan
@@ -216,16 +240,13 @@ def inicio():
         cobrado=queries.cobrado(vend, desde, hasta),
         pendiente=pend,
         barras=barras,
-        # Las 5 alertas son las de MAYOR vencido. El orden se pide acá y no
-        # se hereda del ORDER BY de la query: la lista de Mis clientes la
-        # ordena alfabéticamente y, si esto colgara del orden de la query,
-        # el Inicio habría pasado a mostrar cinco vencidos cualesquiera sin
-        # que se rompiera nada.
-        alertas=sorted(
-            (c for c in queries.mis_clientes(vend) if c["vencido"] > 0),
-            key=lambda c: float(c.get("vencido") or 0),
-            reverse=True,
-        )[:5],
+        # Tamara 02/10/2026 ("sigo viendo lo de vencido"): el Inicio habla con
+        # el SEMÁFORO de cobranza, igual que el puntito de Mis clientes. Las
+        # alertas son los clientes en rojo y amarillo (rojo primero, después
+        # el que más reglas rompe y el que más debe) y abajo de Por cobrar va
+        # cuántos hay de cada color.
+        alertas=sem["alertas"][:5],
+        semaforo_cuenta=sem["cuenta"],
         # Para el mes se usa la MISMA cuenta que la pantalla de comisión
         # (suma del desglose). Si el Inicio dijera 7,73 y Comisión 7,74, el
         # vendedor no sabe a cuál creerle.
