@@ -137,6 +137,23 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 {% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
 </tbody></table></div>
 
+<h2>Cada cliente contra sí mismo</h2>
+<p class="sub">Días desde la factura hasta que el dinero estuvo disponible, en los pagos
+recibidos cada mes. Toda la casa:
+{% for m in d.casa_meses %}<b>{{ m.mes }} {{ m.dias if m.dias is not none else '—' }} días</b>{{ ' · ' if not loop.last }}{% endfor %}.</p>
+<details class="plegable" open><summary>Los que más cambiaron (saldo mayor a 5.000)</summary>
+<div class="caja"><table class="resumen">
+<thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}</th>{% endfor %}
+<th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
+<tbody>
+{% for c in d.contra_si %}
+<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+{% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
+<td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
+<td class="n">{{ c.saldo | num_es(0) }}</td></tr>
+{% endfor %}
+</tbody></table></div></details>
+
 {% endblock %}
 
 {% block scripts %}

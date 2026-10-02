@@ -716,6 +716,10 @@ def armar(clientes: list[dict], por_mes: list[dict],
             {"mes": _MESES[m.month - 1], "plata": p,
              "dias": round(pd / p) if p else None}
             for m, (p, pd) in zip(meses, casa, strict=True)],
+        # Tamara 02/10: Andrés quiere de vuelta los días de cobranza por cliente.
+        "contra_si": sorted([c for c in filas if c["cambio"] is not None
+                             and c["saldo"] >= 5000],
+                            key=lambda c: -c["cambio"]),
         "limites": {
             "rojo_dias": ROJO_DIAS_FACTURA, "amar_dias": AMARILLO_DIAS_FACTURA,
             "veces": AMARILLO_VECES_PLAZO, "empeoro": AMARILLO_EMPEORO_DIAS,
