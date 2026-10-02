@@ -1,0 +1,37 @@
+{# Tamara 02/10: el puntito del semáforo de cobranza (/analisis/cobranza) al
+   lado del cliente. Mismo color que el gráfico. Nunca se imprime: el estado
+   de cuenta impreso se le da al CLIENTE. Pasando el mouse (o tocándolo en el
+   celular) dice el color y por qué. #}
+{% macro punto(codigo_cli, tam=12, incobrable=True) -%}
+{%- set s = semaforo_cliente(codigo_cli, incobrable) -%}
+{%- if s -%}
+<span class="sem-punto no-print" role="img"
+      aria-label="Semáforo de cobranza: {{ s.nombre }}"
+      title="Semáforo de cobranza: {{ s.nombre }}{% if s.motivos %} — {{ s.motivos | join(' · ') }}{% endif %}"
+      style="display:inline-block;width:{{ tam }}px;height:{{ tam }}px;border-radius:50%;background:{{ s.hex }};vertical-align:middle;flex:none;margin:0 6px 2px 4px;box-shadow:0 0 0 2px #fff,0 0 0 3px {{ s.hex }}33"></span>
+{%- endif -%}
+{%- endmacro %}
+
+{# Para el portal de vendedores: el punto + el porqué en una línea. #}
+{% macro motivo(codigo_cli, incobrable=True) -%}
+{%- set s = semaforo_cliente(codigo_cli, incobrable) -%}
+{%- if s and s.color != 'verde' -%}
+<div class="sem-motivo no-print" style="display:flex;gap:8px;align-items:flex-start;margin:8px 0 0;padding:8px 10px;border-radius:10px;background:{{ s.hex }}14;color:{{ s.hex }};font-size:13px;line-height:1.35">
+  <span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{{ s.hex }};margin-top:4px;flex:none"></span>
+  <span><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% endif %}</span>
+</div>
+{%- endif -%}
+{%- endmacro %}
+
+{# Oficina (Tamara 02/10: "más chiquito, ocupa mucho lugar"): una pastilla en
+   el mismo renglón del nombre, sin agregar alto a la ficha. #}
+{% macro pastilla(codigo_cli) -%}
+{%- set s = semaforo_cliente(codigo_cli) -%}
+{%- if s -%}
+<span class="sem-pastilla no-print" title="Semáforo de cobranza: {{ s.nombre }}"
+      style="display:inline-flex;gap:6px;align-items:center;max-width:100%;padding:2px 9px;border-radius:999px;background:{{ s.hex }}14;color:{{ s.hex }};font-size:12px;line-height:1.5;font-weight:500">
+  <span style="width:8px;height:8px;border-radius:50%;background:{{ s.hex }};flex:none"></span>
+  <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b>{{ s.nombre }}</b>{% if s.motivos %} · {{ s.motivos | join(' · ') }}{% endif %}</span>
+</span>
+{%- endif -%}
+{%- endmacro %}

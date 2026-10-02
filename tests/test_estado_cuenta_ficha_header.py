@@ -253,13 +253,11 @@ def test_el_stop_se_ve_bloqueado_y_ok():
     assert "data.cliente.stop == 'S'" in bloque
 
 
-def test_el_buscador_de_otro_cliente_sigue_entero():
-    """Estaba arriba de todo con su propio label; ahora vive en la ficha. El id
-    y el datalist no cambian: el `onsubmit` los busca por id."""
+def test_no_tiene_buscador_propio():
+    """Tamara 02/10: "saca la barra del buscador ver otro cliente, total se
+    usa la de arriba"."""
     ficha = _ficha()
-    assert 'id="ec-nuevo"' in ficha
-    assert 'list="ec-clientes-dl"' in ficha and 'id="ec-clientes-dl"' in ficha
-    assert "informes.estado_cuenta" in ficha and "XCODEX" in ficha
+    assert 'id="ec-nuevo"' not in ficha and "ec-clientes-dl" not in ficha
 
 
 # ─────────────────────────── permisos y jerarquía ───────────────────────────

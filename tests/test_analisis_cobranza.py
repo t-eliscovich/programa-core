@@ -8,7 +8,7 @@ HOY = date(2026, 9, 29)
 
 
 def _cli(cod, **kw):
-    base = dict(cod=cod, nombre=cod, vend="Casa", cupo=0, stop="", fac=0, ch=0,
+    base = dict(cod=cod, nombre=cod, vend="Intela", cupo=0, stop="", fac=0, ch=0,
                 reb=0, n_reb=0, n_reb_hist=0, reb_dias=None, edad_max=None,
                 venta90=9000, pagado=None, dias_plata=None)
     base.update(kw)
@@ -238,3 +238,51 @@ def test_datos_usa_los_mismos_meses_que_el_panel(monkeypatch):
     monkeypatch.setattr(cob.db, "fetch_all", fake)
     cob.datos(date(2026, 10, 2))
     assert vistos == [date(2026, 7, 1)]
+
+
+# ── El puntito del semáforo en otras pantallas (Tamara 02/10) ───────────────
+
+def _fake_fetch(llamadas):
+    def fake(sql, params=None):
+        llamadas.append(sql)
+        if sql is cob._SQL_CLIENTES:
+            return [_cli("ROJ", fac=5000, edad_max=200), _cli("VIE", fac=5000, edad_max=400, venta90=0),
+                    _cli(" ver ", fac=5000, edad_max=10)]
+        return []
+    return fake
+
+
+def test_colores_da_el_color_de_cada_cliente_y_guarda_unos_minutos(monkeypatch):
+    llamadas = []
+    monkeypatch.setattr(cob.db, "fetch_all", _fake_fetch(llamadas))
+    monkeypatch.setattr(cob, "_colores", {"t": 0.0, "d": None})
+    c = cob.colores()
+    assert c["ROJ"]["color"] == "rojo" and c["VIE"]["color"] == "inc"
+    assert c["VER"]["color"] == "verde"          # el código se normaliza
+    n = len(llamadas)
+    cob.colores()                                 # dentro del TTL: no consulta
+    assert len(llamadas) == n
+    cob.colores(HOY)                              # con fecha: calcula y no guarda
+    assert len(llamadas) > n
+
+
+def test_de_cliente_listo_para_el_template(monkeypatch):
+    monkeypatch.setattr(cob, "colores", lambda: {"ROJ": {"color": "rojo", "motivos": ["x"], "puntaje": 90}})
+    s = cob.de_cliente(" roj ")
+    assert s["nombre"] == "Rojo" and s["hex"] == "#b3362a" and s["motivos"] == ["x"]
+    assert cob.de_cliente("NOP") is None
+    assert cob.de_cliente(None) is None
+
+
+def test_de_cliente_nunca_rompe_la_pantalla(monkeypatch):
+    def boom():
+        raise RuntimeError("sin base")
+    monkeypatch.setattr(cob, "colores", boom)
+    assert cob.de_cliente("ROJ") is None
+
+
+def test_al_vendedor_el_incobrable_se_le_muestra_rojo(monkeypatch):
+    monkeypatch.setattr(cob, "colores", lambda: {"VIE": {"color": "inc", "motivos": [], "puntaje": 99}})
+    assert cob.de_cliente("VIE")["nombre"] == "Incobrable"
+    v = cob.de_cliente("VIE", incobrable=False)
+    assert (v["color"], v["nombre"], v["hex"]) == ("rojo", "Rojo", "#b3362a")

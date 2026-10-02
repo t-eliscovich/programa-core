@@ -4331,12 +4331,6 @@ def estado_cuenta(codigo_cli):
     except Exception as _e:
         from modules._lib.silencios import avisar
         avisar(__name__, "estado_cuenta", _e)
-    # Lista de clientes para el cargador "Nuevo estado de cuenta" (autocomplete).
-    try:
-        from modules.autocomplete.queries import clientes_para_datalist
-        _clientes_dl = clientes_para_datalist()
-    except Exception:  # noqa: BLE001
-        _clientes_dl = []
     # GRUPO del cliente + sus hermanos (TMT 2026-08-19, dueña: *"abajo del RUC
     # dice grupo: y todos los codigos que son de su mismo grupo"*). Best-effort
     # a propósito: `scintela.grupo_cliente` recién ahora tiene migración
@@ -4356,7 +4350,6 @@ def estado_cuenta(codigo_cli):
         error=error,
         grupo_codigo=_grupo_codigo,
         grupo_hermanos=_grupo_hermanos,
-        clientes_datalist=_clientes_dl,
         # TMT 2026-07-09 (dueña): facturas totalizadas (T), para poder
         # REABRIRLAS desde el panel A↔T. Solo en la vista individual.
         facturas_totalizadas=(_safe(

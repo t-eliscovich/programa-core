@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_ui.html" import empty_row, saldo_pill, page_hero %}
+{% from "_semaforo_punto.html" import pastilla %}
 {% block title %}Estado de cuenta — {{ data.cliente.codigo_cli }}{% endblock %}
 {% block breadcrumb %}
   <a href="{{ url_for('cartera.aging') }}" class="hover:underline">Cartera</a> /
@@ -191,15 +192,6 @@
               font-size: 1.35rem; line-height: 1.2; letter-spacing: .12em; font-weight: 700;
               color: #fff; background: #0f172a; border-radius: 8px;
               padding: .3rem .7rem .3rem .8rem; white-space: nowrap; flex: 0 0 auto; }
-    .ec-buscar { display: flex; align-items: center; gap: .3rem; flex: 0 0 auto; }
-    .ec-buscar input { width: 15rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-                       font-size: .8125rem; text-transform: uppercase; padding: .35rem .6rem;
-                       border: 1px solid #0f172a; border-radius: 7px; background: #fff; }
-    .ec-buscar input::placeholder { font-family: system-ui, sans-serif; text-transform: none;
-                                    letter-spacing: 0; color: #94a3b8; }
-    .ec-buscar button { font-size: .8125rem; padding: .38rem .8rem; border-radius: 7px;
-                        border: 1px solid #0f172a; background: #0f172a; color: #fff; cursor: pointer; }
-    .ec-buscar button:hover { background: #334155; }
 
     /* — Datos del cliente —
        TMT 2026-08-04, tercera vuelta. La dueña mandó el recorte del bloque de
@@ -243,7 +235,6 @@
       .ec-nums  { grid-template-columns: repeat(2, minmax(0, 1fr)); }
       .ec-num:nth-child(3) { border-left: 0; }
       .ec-num:nth-child(n+3) { border-top: 1px solid #e2e8f0; }
-      .ec-buscar input { width: 11rem; }
     }
 
     /* — Barra de acciones al pie — */
@@ -300,23 +291,9 @@
     <div class="ec-cab">
       <span class="ec-cod" title="Código del cliente">{{ data.cliente.codigo_cli }}</span>
       <h1 class="ec-nombre">{{ data.cliente.nombre | cleanstr }}</h1>
-      {# TMT 2026-07-09 (dueña): cargar el estado de cuenta de OTRO cliente sin
-         volver a la cartera. Escribí el código (o elegí del listado) → Enter/Ver.
-         TMT 2026-08-04: entra en la ficha, en el hueco que quedaba a la derecha
-         del nombre, en vez de flotar arriba de todo con su propio label. #}
-      <form class="ec-buscar"
-            onsubmit="event.preventDefault(); var c=(document.getElementById('ec-nuevo').value||'').trim().toUpperCase(); if(c){ window.location.href='{{ url_for('informes.estado_cuenta', codigo_cli='XCODEX') }}'.replace('XCODEX', encodeURIComponent(c)); }">
-        <input id="ec-nuevo" type="text" list="ec-clientes-dl" autocomplete="off"
-               placeholder="Ver otro cliente (ej. BED)"
-               title="Código del cliente — Enter para abrir su estado de cuenta"
-               oninput="this.value=this.value.toUpperCase()">
-        <button type="submit">Ver</button>
-        {% if clientes_datalist %}
-        <datalist id="ec-clientes-dl">
-          {% for c in clientes_datalist %}<option value="{{ c.codigo_cli }}">{{ c.nombre }}</option>{% endfor %}
-        </datalist>
-        {% endif %}
-      </form>
+      {{ pastilla(data.cliente.codigo_cli) }}
+      {# Tamara 02/10: se sacó el "Ver otro cliente" de acá — se usa el
+         buscador de arriba (Ctrl+K), que ya abre la ficha del cliente. #}
     </div>
 
     {# Los datos del cliente, en DOS columnas como en la pantalla vieja.

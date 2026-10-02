@@ -51,6 +51,7 @@
    Lo que el vendedor NO ve (dueña, 2026-08-03): el cupo del cliente ni su
    propio % de comisión. El cupo se saca en la vista, no acá. #}
 {% extends "mi_cartera/base.html" %}
+{% from "_semaforo_punto.html" import motivo %}
 {% set seccion = 'clientes' %}
 {% block title %}{{ cliente.nombre }}{% endblock %}
 
@@ -60,6 +61,7 @@
       <a class="back" href="{{ url_for('mi_cartera.clientes') }}{{ ('?vend=' ~ vend) if preview else '' }}">‹ Mis clientes</a>
       <h1 style="margin-top:3px">{{ cliente.nombre }}</h1>
       <div class="sub">{{ cliente.codigo_cli }}{% if cliente.provincia %} · {{ cliente.provincia }}{% endif %}</div>
+      {{ motivo(cliente.codigo_cli, incobrable=False) }}
     </div>
   </div>
 {% endblock %}

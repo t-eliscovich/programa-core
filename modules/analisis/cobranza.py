@@ -36,6 +36,8 @@ La pantalla tiene tres ideas:
 
 from __future__ import annotations
 
+import threading
+import time
 from datetime import date, timedelta
 
 import db
@@ -119,7 +121,12 @@ pag AS (
      AND c.no_banco NOT IN (95, 97, 98)
    GROUP BY 1)
 SELECT cl.codigo_cli AS cod, COALESCE(cl.nombre,'') AS nombre,
-       COALESCE(NULLIF(TRIM(cl.vend),''), 'Casa') AS vend,
+       -- Tamara 02/10: sólo los vendedores ACTIVOS; los clientes de uno que
+       -- ya no está (BED, CEM, DJA, JLZ…) o sin vendedor son de Intela.
+       CASE WHEN EXISTS (SELECT 1 FROM scintela.vendedor v
+                          WHERE UPPER(TRIM(v.codigo)) = UPPER(TRIM(cl.vend))
+                            AND COALESCE(v.activo, TRUE))
+            THEN UPPER(TRIM(cl.vend)) ELSE 'Intela' END AS vend,
        COALESCE(cl.cupo,0) AS cupo, COALESCE(cl.stop,'') AS stop,
        COALESCE(fac.saldo_fac,0) AS fac, COALESCE(ch.ch_cartera,0) AS ch,
        COALESCE(ch.ch_reb,0) AS reb, COALESCE(ch.n_reb,0) AS n_reb,
@@ -349,17 +356,81 @@ def _meses_atras(hoy: date, n: int) -> list[date]:
     return list(reversed(out))
 
 
-def datos(hoy: date | None = None) -> dict:
-    hoy = hoy or today_ec()
-    # Evolución mes a mes (desde julio, hasta 12 meses) + hace 30 días.
+def _meses_panel(hoy: date) -> list[date]:
+    """Los meses del panel de evolución: desde julio, hasta 12."""
     n = (hoy.year - EVOL_DESDE.year) * 12 + hoy.month - EVOL_DESDE.month + 1
-    meses_e = _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
+    return _meses_atras(hoy, max(1, min(n, EVOL_MAX_MESES)))
+
+
+def _semaforo(hoy: date) -> tuple[dict, list[date], list[dict]]:
+    meses_e = _meses_panel(hoy)
     clientes = db.fetch_all(_SQL_CLIENTES, {"hoy": hoy, "centavos": CENTAVOS}) or []
     # Tamara 02/10: el "Pagó a X días; antes a Y" del semáforo mira los MISMOS
     # meses que el panel de abajo (antes eran sólo los últimos 3 y "antes"
     # dejaba afuera julio, que el panel sí muestra).
     pm = db.fetch_all(_SQL_MESES, {"hoy": hoy, "desde": meses_e[0]}) or []
-    d = armar(clientes, pm, meses_e, hoy)
+    return armar(clientes, pm, meses_e, hoy), meses_e, pm
+
+
+# ── El puntito del semáforo en otras pantallas ─────────────────────────────
+# Tamara 02/10: *"en los estados de cuenta ... un puntito con el color que
+# tienen en este gráfico"* y que los vendedores lo vean de sus clientes. Es el
+# MISMO cálculo que /analisis/cobranza (armar), guardado unos minutos para que
+# abrir un estado de cuenta no cueste las dos consultas de toda la cartera.
+COLORES_TTL = 600
+_colores = {"t": 0.0, "d": None}
+_colores_lock = threading.Lock()
+
+
+def colores(hoy: date | None = None) -> dict[str, dict]:
+    """codigo_cli → {color, motivos, puntaje} del semáforo de hoy.
+
+    Sólo están los clientes que lista el semáforo (saldo de 1.000 o más, o un
+    cheque devuelto): el resto no lleva puntito. ``color`` es rojo, amar,
+    verde o inc (incobrable, el punto negro del gráfico).
+    """
+    with _colores_lock:
+        if hoy is None and _colores["d"] is not None \
+                and time.monotonic() - _colores["t"] < COLORES_TTL:
+            return _colores["d"]
+        d, _, _ = _semaforo(hoy or today_ec())
+        out = {c["cod"].strip().upper(): {
+                   "color": "inc" if c["incobrable"] else c["color"],
+                   "motivos": c["motivos"], "puntaje": c["puntaje"]}
+               for c in d["filas"]}
+        if hoy is None:
+            _colores.update(t=time.monotonic(), d=out)
+        return out
+
+
+NOMBRE_COLOR = {"rojo": "Rojo", "amar": "Amarillo", "verde": "Verde",
+                "inc": "Incobrable"}
+HEX_COLOR = {"rojo": "#b3362a", "amar": "#c98a0b", "verde": "#2a7547",
+             "inc": "#111827"}
+
+
+def de_cliente(codigo_cli: str | None, incobrable: bool = True) -> dict | None:
+    """El semáforo de UN cliente, listo para el template (o None).
+
+    Con ``incobrable=False`` (portal de vendedores, Tamara 02/10: *"como
+    rojo"*) el incobrable se muestra como rojo. Nunca rompe la pantalla que lo
+    llama: si la cuenta falla, no hay puntito.
+    """
+    if not codigo_cli:
+        return None
+    try:
+        s = colores().get(codigo_cli.strip().upper())
+    except Exception:  # noqa: BLE001 — el puntito es un adorno, no un freno
+        return None
+    if not s:
+        return None
+    color = "rojo" if (s["color"] == "inc" and not incobrable) else s["color"]
+    return dict(s, color=color, nombre=NOMBRE_COLOR[color], hex=HEX_COLOR[color])
+
+
+def datos(hoy: date | None = None) -> dict:
+    hoy = hoy or today_ec()
+    d, meses_e, pm = _semaforo(hoy)
     cierres = [min(_fin_de_mes(m), hoy) for m in meses_e]
     hace = hoy - timedelta(days=FLECHA_DIAS)
     desde_c = _meses_atras(meses_e[0], 3)[0]

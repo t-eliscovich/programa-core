@@ -345,6 +345,11 @@ def create_app() -> Flask:
     # base.html lo usa para no dibujarle el chrome de escritorio (menú con
     # entradas que él no puede abrir) a un vendedor.
     app.jinja_env.globals["es_vendedor"] = es_vendedor
+    # Tamara 02/10: el puntito del semáforo de cobranza al lado del cliente
+    # (estados de cuenta, portal de vendedores). Ver _semaforo_punto.html.
+    from modules.analisis.cobranza import de_cliente as _semaforo_de
+
+    app.jinja_env.globals["semaforo_cliente"] = _semaforo_de
 
     # Blueprints — TMT 2026-08-24: se registran por MODO. En modo portal las
     # del ERP NO se registran: no existen, así que no hay candado que pueda

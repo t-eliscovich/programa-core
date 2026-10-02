@@ -28,6 +28,7 @@
    una lista de tres filas es peor que no tener contador — ya pasó el 03/08
    con el filtro Vencidos, que decía "22 con saldo". #}
 {% extends "mi_cartera/base.html" %}
+{% from "_semaforo_punto.html" import punto %}
 {% set seccion = 'clientes' %}
 {% block title %}Mis clientes{% endblock %}
 
@@ -87,7 +88,7 @@
          que ya se había hecho en el Inicio el 05/08. #}
       <div class="ini cod">{{ c.codigo_cli|upper }}</div>
       <div class="nm">
-        <b>{{ c.nombre }}</b>
+        <b>{{ punto(c.codigo_cli, 10, incobrable=False) }}{{ c.nombre }}</b>
         {# El código NO se repite acá: ya lo dice el cuadradito de la
            izquierda, entero y en negrita. TMT 2026-08-11, después de subirlo
            al cuadradito. Sin provincia no se dibuja el renglón — un <span>
