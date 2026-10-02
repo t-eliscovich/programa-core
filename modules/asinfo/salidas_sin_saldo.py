@@ -31,6 +31,24 @@ tuvieron ninguna salida, cuyo saldo es MAYOR que la suma de sus movimientos.
 Medido el 01/10 sobre 60 días y las tres bodegas (51/52/53): sólo esos dos
 ingresos, ningún falso positivo.
 
+EL PATRÓN (medido el 01/10 sobre todas las salidas desde junio):
+
+1. HILO — salidas cargadas lote por lote. Cuando la salida se escanea de a un
+   bulto (una línea cada ~5 segundos) en vez de grabarse toda junta, desde el
+   13/07 sólo el PRIMER bulto baja el saldo y el resto queda en la bodega. En
+   ese modo fallan 1.559 de 1.795 lotes (87 %); grabadas juntas, el 1 %. Antes
+   del 13/07 el mismo modo andaba bien (186 lotes, 0 fallas). Es stock de más
+   de verdad: ~51.700 kg al 30/09.
+2. TELA CRUDA — el mismo rollo en DOS salidas (las etiquetas repetidas en dos
+   órdenes que reportó Alex). Antes del 13/07 pasó 2 veces; desde entonces,
+   1.625 rollos. La segunda salida no baja nada porque el rollo ya está en 0:
+   el saldo está BIEN y lo que se cuenta dos veces es la salida. No infla el
+   stock (sí la orden que recibió el rollo dos veces). El stock de más de
+   verdad en tela cruda son ~7.300 kg.
+
+Por eso el cuadre separa la `diferencia` entera del `stock_de_mas`: sólo lo
+segundo mueve la utilidad.
+
 Sólo lee Asinfo (vía Metabase). Fail-soft: si Asinfo no contesta, no alarma.
 """
 from __future__ import annotations
@@ -84,10 +102,14 @@ snap AS (
     ) s WHERE rn = 1
 ),
 dif AS (
-    SELECT k.id_producto, k.b, k.id_lote, s.saldo - k.kx de_mas
+    -- Stock DE MÁS de verdad: el saldo sigue positivo y es mayor que lo que
+    -- dicen los movimientos. Un lote con saldo 0 y la salida contada dos veces
+    -- (etiqueta repetida en dos órdenes) NO infla el stock: no es falla acá.
+    SELECT k.id_producto, k.b, k.id_lote,
+           CASE WHEN s.saldo < s.saldo - k.kx THEN s.saldo ELSE s.saldo - k.kx END de_mas
       FROM k JOIN snap s ON s.id_producto = k.id_producto AND s.id_bodega = k.b
                         AND s.id_lote = k.id_lote
-     WHERE s.saldo - k.kx > 0.5
+     WHERE s.saldo - k.kx > 0.5 AND s.saldo > 0.5
 ),
 ult AS (
     SELECT doc, b, id_producto, id_lote,
@@ -212,39 +234,49 @@ def detectar_ingresos(dias: int = 30) -> dict:
     }
 
 
-#: Diferencia (saldo − movimientos) que cada bodega YA tenía antes de la falla
-#: del 13/07/2026, medida el 01/10: hilo 2.296 kg de lotes 2022–2023, tela
-#: cruda −24, terminado ~30. Por encima de esto (más un margen) es falla nueva.
-CUADRE_BASE_KG = {51: 2300.0, 52: 0.0, 53: 30.0}
+#: Stock de más que cada bodega YA tenía antes de la falla del 13/07/2026
+#: (medido al 12/07): 0 en hilo y tela cruda, ~20 kg en terminado. La
+#: diferencia vieja del hilo (2.296 kg de 2022–2023) es toda de lotes con
+#: saldo 0: salidas contadas de más en los movimientos, no stock.
+CUADRE_BASE_KG = {51: 0.0, 52: 0.0, 53: 30.0}
 CUADRE_MARGEN_KG = 100.0
 
 _SQL_CUADRE = """
 WITH s AS (
-    SELECT id_bodega b, SUM(saldo) saldo FROM (
-        SELECT id_bodega, saldo,
+    SELECT id_producto, id_bodega b, id_lote, saldo FROM (
+        SELECT id_producto, id_bodega, id_lote, saldo,
                ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega, id_lote
                                   ORDER BY fecha DESC, id_saldo_producto_lote DESC) rn
           FROM saldo_producto_lote WHERE id_bodega IN (51, 52, 53)
-    ) z WHERE rn = 1 GROUP BY id_bodega
+    ) z WHERE rn = 1
 ),
 k AS (
-    SELECT id_bodega b, SUM(operacion * cantidad) kx
+    SELECT id_producto, id_bodega b, id_lote, SUM(operacion * cantidad) kx
       FROM inventario_producto
      WHERE id_bodega IN (51, 52, 53) AND ISNULL(indicador_anulacion, 0) = 0
-     GROUP BY id_bodega
+     GROUP BY id_producto, id_bodega, id_lote
+),
+j AS (
+    SELECT COALESCE(s.b, k.b) b, ISNULL(s.saldo, 0) saldo, ISNULL(k.kx, 0) kx
+      FROM s FULL JOIN k ON k.id_producto = s.id_producto AND k.b = s.b
+                        AND k.id_lote = s.id_lote
 )
-SELECT s.b AS bodega, CAST(s.saldo AS decimal(14, 2)) AS saldo,
-       CAST(k.kx AS decimal(14, 2)) AS movimientos,
-       CAST(s.saldo - k.kx AS decimal(14, 2)) AS diferencia
-  FROM s JOIN k ON k.b = s.b ORDER BY s.b
+SELECT b AS bodega, CAST(SUM(saldo) AS decimal(14, 2)) AS saldo,
+       CAST(SUM(kx) AS decimal(14, 2)) AS movimientos,
+       CAST(SUM(saldo - kx) AS decimal(14, 2)) AS diferencia,
+       CAST(SUM(CASE WHEN saldo > 0.5 AND saldo - kx > 0.5
+                     THEN CASE WHEN saldo < saldo - kx THEN saldo ELSE saldo - kx END
+                     ELSE 0 END) AS decimal(14, 2)) AS stock_de_mas
+  FROM j GROUP BY b ORDER BY b
 """
 
 
 def cuadre() -> dict:
     """El cuadre de cada bodega: kilos según el saldo de Asinfo contra kilos
-    según sus ingresos y salidas. Tienen que dar igual; la diferencia es stock
-    que el saldo cuenta de más (o de menos). Atrapa CUALQUIER falla del saldo,
-    también una que todavía no conocemos. Nunca levanta."""
+    según sus ingresos y salidas. `stock_de_mas` es la parte que infla el
+    stock: lotes cuyo saldo sigue positivo y por encima de sus movimientos.
+    Atrapa CUALQUIER falla del saldo, también una que todavía no conocemos.
+    Nunca levanta."""
     try:
         from modules._lib import metabase_client
         filas, ok = metabase_client.fetch_dataset_estado(2, _SQL_CUADRE, max_results=10)
@@ -258,6 +290,7 @@ def cuadre() -> dict:
         try:
             b = int(f.get("bodega"))
             dif = round(float(f.get("diferencia") or 0), 2)
+            de_mas = round(float(f.get("stock_de_mas") or 0), 2)
             base = CUADRE_BASE_KG.get(b, 0.0)
             bodegas.append({
                 "id": b,
@@ -265,8 +298,12 @@ def cuadre() -> dict:
                 "saldo": round(float(f.get("saldo") or 0), 2),
                 "movimientos": round(float(f.get("movimientos") or 0), 2),
                 "diferencia": dif,
-                "de_mas_nuevo": round(dif - base, 2),
-                "descuadrada": abs(dif - base) > CUADRE_MARGEN_KG,
+                # Lo que de verdad infla el stock (y la utilidad): lotes con
+                # saldo positivo más alto que sus movimientos. El resto de la
+                # diferencia son salidas contadas dos veces con saldo 0.
+                "stock_de_mas": de_mas,
+                "de_mas_nuevo": round(de_mas - base, 2),
+                "descuadrada": (de_mas - base) > CUADRE_MARGEN_KG,
             })
         except (TypeError, ValueError):
             continue
@@ -311,6 +348,129 @@ def detectar(dias: int = 10) -> dict:
         "kg_sin_bajar": round(sum(s["kg_sin_bajar"] for s in salidas), 2),
         "lotes_repetidos": sum(s["repetidos"] for s in salidas),
     }
+
+
+def _sql_docs(docs: list[str]) -> str:
+    """De estas salidas, cuáles SIGUEN con lotes de más en el saldo (sin
+    importar la fecha: sirve para ver si Asinfo arregló una salida vieja)."""
+    limpios = sorted({d for d in docs if d and all(c.isalnum() or c in "-/" for c in d)})
+    lista = ", ".join(f"'{d}'" for d in limpios) or "''"
+    return f"""
+WITH sal AS (
+    SELECT DISTINCT ip.numero_documento doc, ip.id_bodega b, ip.id_producto, ip.id_lote
+      FROM inventario_producto ip
+     WHERE ip.numero_documento IN ({lista}) AND ip.operacion = -1
+       AND ISNULL(ip.indicador_anulacion, 0) = 0
+),
+lot AS (SELECT DISTINCT id_producto, b, id_lote FROM sal),
+k AS (
+    SELECT ip.id_producto, ip.id_bodega b, ip.id_lote, SUM(ip.operacion * ip.cantidad) kx
+      FROM inventario_producto ip
+      JOIN lot ON lot.id_producto = ip.id_producto AND lot.b = ip.id_bodega
+              AND lot.id_lote = ip.id_lote
+     WHERE ISNULL(ip.indicador_anulacion, 0) = 0
+     GROUP BY ip.id_producto, ip.id_bodega, ip.id_lote
+),
+snap AS (
+    SELECT s.id_producto, s.id_bodega, s.id_lote, s.saldo FROM (
+        SELECT x.id_producto, x.id_bodega, x.id_lote, x.saldo,
+               ROW_NUMBER() OVER (PARTITION BY x.id_producto, x.id_bodega, x.id_lote
+                                  ORDER BY x.fecha DESC, x.id_saldo_producto_lote DESC) rn
+          FROM saldo_producto_lote x
+          JOIN lot ON lot.id_producto = x.id_producto AND lot.b = x.id_bodega
+                  AND lot.id_lote = x.id_lote
+    ) s WHERE rn = 1
+)
+SELECT sal.doc, COUNT(*) AS lotes
+  FROM sal
+  JOIN k ON k.id_producto = sal.id_producto AND k.b = sal.b AND k.id_lote = sal.id_lote
+  JOIN snap s ON s.id_producto = sal.id_producto AND s.id_bodega = sal.b
+             AND s.id_lote = sal.id_lote
+ WHERE s.saldo > 0.5 AND s.saldo - k.kx > 0.5
+ GROUP BY sal.doc
+"""
+
+
+def avisar_arreglos(res: dict, ing: dict, cua: dict) -> list[str]:
+    """Cuando Asinfo ARREGLA algo, el aviso de la campanita se da vuelta a
+    "resuelto" (vuelve a no leído para que se vea). Tamara 2026-10-01: "también
+    me podés avisar si algo arreglan?".
+
+    · Salidas: se vuelve a mirar CADA salida con aviso abierto, sea de la fecha
+      que sea; si ya no le queda ningún lote de más, se resolvió.
+    · Ingresos sumados dos veces: si ya no aparece entre los de los últimos
+      90 días.
+    · Bodega: si el stock de más bajó un escalón de 1.000 kg (o a cero), se
+      resuelven los avisos de los escalones de arriba.
+    Sólo con Asinfo contestando; nunca levanta. Devuelve las claves resueltas.
+    """
+    hechas: list[str] = []
+    try:
+        from modules._lib import metabase_client
+        from modules.avisos import queries as avisos
+
+        abiertas = avisos.abiertos_por_clave("salida-sin-saldo:")
+        if abiertas and res.get("ok"):
+            docs = [a["clave"].split(":", 1)[1] for a in abiertas]
+            filas, ok = metabase_client.fetch_dataset_estado(
+                2, _sql_docs(docs), max_results=5000)
+            if ok:
+                siguen = {str(f.get("doc") or "").strip() for f in filas or []}
+                for a in abiertas:
+                    doc = a["clave"].split(":", 1)[1]
+                    if doc not in siguen:
+                        avisos.resolver(
+                            int(a["id_aviso"]),
+                            titulo=f"Asinfo arregló {doc}: los lotes ya bajaron del saldo",
+                            detalle="El saldo de la bodega ya no cuenta esos lotes. "
+                                    "El stock y la utilidad bajan en esos kilos.")
+                        hechas.append(a["clave"])
+
+        abiertas = avisos.abiertos_por_clave("ingreso-doble:")
+        if abiertas and ing.get("ok"):
+            todavia = detectar_ingresos(90)
+            if todavia.get("ok"):
+                siguen = {i["ingreso"] for i in todavia.get("ingresos") or []}
+                for a in abiertas:
+                    doc = a["clave"].split(":", 1)[1]
+                    if doc not in siguen:
+                        avisos.resolver(
+                            int(a["id_aviso"]),
+                            titulo=f"Asinfo arregló {doc}: el saldo ya no lo cuenta dos veces",
+                            detalle="Los lotes quedaron con los kilos que entraron.")
+                        hechas.append(a["clave"])
+
+        if cua.get("ok"):
+            # Los avisos viejos del cuadre (antes del 01/10 medían la diferencia
+            # entera, que mezcla salidas contadas dos veces con saldo 0) se
+            # archivan sin decir "arreglado": no se arregló nada.
+            for a in avisos.abiertos_por_clave("cuadre:"):
+                avisos.archivar(int(a["id_aviso"]), "salidas-sin-saldo")
+            por_id = {b["id"]: b for b in cua.get("bodegas") or []}
+            for a in avisos.abiertos_por_clave("stock-de-mas:"):
+                try:
+                    _, b_id, paso = a["clave"].split(":")
+                    b = por_id.get(int(b_id))
+                    if b is None:
+                        continue
+                    hoy = int(b["de_mas_nuevo"] // 1000) if b["descuadrada"] else -1
+                    if hoy < int(paso):
+                        if b["descuadrada"]:
+                            tit = (f"Asinfo corrigió parte: la bodega de "
+                                   f"{b['bodega'].lower()} bajó a "
+                                   f"{b['de_mas_nuevo']:,.0f} kg de más")
+                        else:
+                            tit = (f"Asinfo lo arregló: la bodega de "
+                                   f"{b['bodega'].lower()} ya no tiene kilos de más")
+                        avisos.resolver(int(a["id_aviso"]), titulo=tit[:200],
+                                        detalle="El stock y la utilidad bajan en "
+                                                "los kilos que se corrigieron.")
+                        hechas.append(a["clave"])
+                except (ValueError, KeyError, TypeError):
+                    continue
+    except Exception as e:  # noqa: BLE001 -- nunca rompe el health
+        _LOG.warning("avisar_arreglos: %s", e)
+    return hechas
 
 
 def _titulo(s: dict) -> str:
@@ -364,14 +524,14 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
         })
     descuadradas = [b for b in cua.get("bodegas") or [] if b["descuadrada"]]
     if descuadradas:
-        det = "; ".join(f"{b['bodega']}: el saldo dice {b['saldo']:,.0f} kg y los "
-                        f"movimientos {b['movimientos']:,.0f} kg "
-                        f"({b['de_mas_nuevo']:+,.0f} kg)" for b in descuadradas)
+        det = "; ".join(f"{b['bodega']}: {b['de_mas_nuevo']:,.0f} kg de más en el saldo"
+                        for b in descuadradas)
         alerts.append({
             "severity": "high",
             "category": "bodega_descuadrada",
-            "msg": (f"El saldo de Asinfo no coincide con sus ingresos y salidas — {det}. "
-                    f"Esos kilos están de más (o de menos) en el stock y en la utilidad."),
+            "msg": (f"El saldo de Asinfo tiene lotes con más kilos de los que dicen sus "
+                    f"ingresos y salidas — {det}. Esos kilos están de más en el stock "
+                    f"y en la utilidad."),
         })
     if avisar and alerts:
         try:
@@ -399,23 +559,23 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
                     clave=f"ingreso-doble:{i['ingreso']}",
                 )
             for b in descuadradas:
-                # Un aviso nuevo cada 1.000 kg que se agranda (o achica) la
-                # diferencia: si sigue creciendo, la campanita lo vuelve a decir.
+                # Un aviso nuevo cada 1.000 kg que se agranda: si sigue
+                # creciendo, la campanita lo vuelve a decir.
                 paso = int(b["de_mas_nuevo"] // 1000)
                 avisos.avisar(
                     fuente="stock", nivel="alerta",
-                    titulo=(f"Asinfo: la bodega de {b['bodega'].lower()} no cuadra — "
-                            f"{b['de_mas_nuevo']:+,.0f} kg entre el saldo y los "
-                            f"movimientos")[:200],
-                    detalle=(f"El saldo de Asinfo dice {b['saldo']:,.0f} kg y sus "
-                             f"ingresos menos salidas dan {b['movimientos']:,.0f} kg. "
-                             f"La diferencia es stock que el saldo cuenta de más (o de "
-                             f"menos). Pedirle a Asinfo que lo corrija."),
+                    titulo=(f"Asinfo: la bodega de {b['bodega'].lower()} tiene "
+                            f"{b['de_mas_nuevo']:,.0f} kg de más en el saldo")[:200],
+                    detalle=("Lotes que salieron pero el saldo de Asinfo los sigue "
+                             "mostrando en la bodega. Inflan el stock y la utilidad. "
+                             "Pedirle a Asinfo que lo corrija."),
                     cantidad=int(b["de_mas_nuevo"]) or None,
-                    clave=f"cuadre:{b['id']}:{paso}",
+                    clave=f"stock-de-mas:{b['id']}:{paso}",
                 )
         except Exception as e:  # noqa: BLE001 -- avisar nunca rompe el health
             _LOG.warning("no pude avisar: %s", e)
+    if avisar:
+        avisar_arreglos(res, ing, cua)
     stats = {k: res.get(k) for k in ("dias", "lotes_sin_bajar", "kg_sin_bajar",
                                      "lotes_repetidos")}
     stats |= {"salidas": salidas,
