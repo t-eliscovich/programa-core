@@ -730,3 +730,22 @@ def test_el_vendedor_ve_primero_los_de_memo_enviado_con_la_suma_y_el_buscador(ap
     assert body.index("Memo enviado") < body.index("Para enviar memo")
     assert "120/408 kg" in body
     assert 'id="ped-q"' in body
+
+
+def test_enviados_del_mas_viejo_y_sin_memo_del_mas_nuevo(app, fake_db):
+    """Tamara 02/10/2026."""
+    filas = [_fila(numero="PDCL-1", fecha="2026-08-01", codigo="P1"),
+             _fila(numero="PDCL-2", fecha="2026-09-01", codigo="P2"),
+             _fila(numero="PDCL-3", fecha="2026-08-05", codigo="P3"),
+             _fila(numero="PDCL-4", fecha="2026-09-10", codigo="P4")]
+    memo = {"PDCL-2": {"estado": "enviado", "en_proceso_por": None},
+            "PDCL-1": {"estado": "enviado", "en_proceso_por": None}}
+    c = _login_vendedor(app, fake_db, vend="PPR")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(formulas_memos, "estados", return_value=memo), \
+         patch.object(service, "etapas_por_pedido", return_value={}):
+        body = c.get("/mi-cartera/pedidos").get_data(as_text=True)
+    pos = [body.index(f'<span class="ped-num">PDCL-{n}<') for n in (1, 2, 4, 3)]
+    assert pos == sorted(pos)

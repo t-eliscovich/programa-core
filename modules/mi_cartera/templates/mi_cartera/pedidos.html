@@ -198,7 +198,12 @@
     var t = q.value.trim().toLowerCase();
     var visibles = {con: 0, sin: 0};
     document.querySelectorAll(".ped-card").forEach(function (c) {
-      var ok = !t || c.dataset.buscar.indexOf(t) >= 0;
+      /* El número se busca en cualquier parte; el código y el nombre del
+         cliente, por el PRINCIPIO de cada palabra (TMT 02/10: "be" traía a
+         GIC y MYU porque "be" estaba en el medio de su nombre). */
+      var ok = !t || c.dataset.buscar.split(/\s+/).some(function (w, i) {
+        return i === 0 ? w.indexOf(t) >= 0 : w.indexOf(t) === 0;
+      });
       c.style.display = ok ? "" : "none";
       if (ok) visibles[c.dataset.grupo]++;
     });

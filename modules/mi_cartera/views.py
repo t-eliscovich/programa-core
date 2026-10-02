@@ -876,9 +876,14 @@ def pedidos():
     # Un memo cancelado no cuenta como "tiene memo": el pedido vuelve a
     # mostrar "Enviar memo" como si nunca se hubiera mandado.
     activos = {n: v for n, v in memo_estados.items() if v.get("estado") != "cancelado"}
-    # Tamara 02/10/2026: arriba los que ya tienen memo enviado, después los
-    # que todavía pueden mandarlo (el orden de adentro de cada grupo no cambia).
-    mios = sorted(mios, key=lambda p: p["numero"] not in activos)
+    # Tamara 02/10/2026: arriba los que ya tienen memo enviado, del MÁS VIEJO
+    # al más nuevo; después los que todavía pueden mandarlo, del más nuevo al
+    # más viejo. La fecha es ISO (aaaa-mm-dd), se ordena como texto.
+    con = sorted((p for p in mios if p["numero"] in activos),
+                 key=lambda p: (p["fecha"], p["numero"]))
+    sin = sorted((p for p in mios if p["numero"] not in activos),
+                 key=lambda p: (p["fecha"], p["numero"]), reverse=True)
+    mios = con + sin
     return render_template(
         "mi_cartera/pedidos.html",
         seccion="pedidos",
