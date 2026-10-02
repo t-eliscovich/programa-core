@@ -120,8 +120,12 @@
              de cada línea; "enviado" es del pedido entero y no se repite. #}
           {# En 320 px con la letra agrandada, el rótulo largo + el acabado se salen
              de la tarjeta (medido 10/09): abajo de 360 px va el rótulo corto. #}
-          {%- if le == 'terminado' %}<i class="lst done">✓ <span class="pal">Terminado</span><span class="cor">Listo</span></i>
-          {%- elif le == 'en_tintura' %}<i class="lst tinto">● <span class="pal">En tintura</span><span class="cor">Tintura</span></i>{% endif %}
+          {#- Los kilos de la tintura, fabricados / planificados (TMT 02/10:
+              "como tiene tintorería"). En 320 px queda sólo el número. #}
+          {%- set lk = (et.kg or {}).get(l.producto) if et else none %}
+          {%- set _x = (lk.fab|num_es(0) ~ '/' ~ lk.plan|num_es(0) ~ ' kg') if lk else '' %}
+          {%- if le == 'terminado' %}<i class="lst done">✓ <span class="pal">Terminado{% if lk %} {{ _x }}{% endif %}</span><span class="cor">{{ _x or 'Listo' }}</span></i>
+          {%- elif le == 'en_tintura' %}<i class="lst tinto">● <span class="pal">En tintura{% if lk %} {{ _x }}{% endif %}</span><span class="cor">{{ _x or 'Tintura' }}</span></i>{% endif %}
           <span class="hueco"></span>
           <span class="q">{{ l.cantidad|num_es(0) }} {{ l.unidad }}</span>
           {# En kilos el estimado repetiría el mismo número al lado. #}

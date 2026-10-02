@@ -691,3 +691,21 @@ def test_el_memo_no_sale_del_cache_de_la_pantalla(monkeypatch):
         assert pedidos[0]["lineas"][0]["acabado"] == "ABI"
         assert fetch.call_count == 2
     service.reset_cache()
+
+
+def test_cada_linea_lleva_los_kg_fabricados_sobre_el_plan():
+    """Tamara 02/10/2026: "los vendedores no tienen x/y kg como tiene
+    tintorería" — por línea, la suma de las hojas de sus OFTs."""
+    from modules._lib import formulas_db
+    pedidos = [{"numero": "PDCL-1", "lineas": [{"producto": "J35CEN"}]}]
+    filas = [{"parent_numero": "OFT-1", "producto": "J35CEN", "estado_produccion": 2,
+              "cantidad": 100, "fabricada": 40, "es_hija": 1, "con_salida": 0},
+             {"parent_numero": "OFT-1", "producto": "J35CEN", "estado_produccion": 2,
+              "cantidad": 56, "fabricada": 0, "es_hija": 1, "con_salida": 0}]
+    with patch.object(formulas_db, "fetch_all",
+                      return_value=[{"pedido_numero": "PDCL-1", "oft_numero": "OFT-1"}]), \
+         patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(filas, True)):
+        et = service.etapas_por_pedido(pedidos, {"PDCL-1": {"estado": "enviado"}})
+    assert et["PDCL-1"]["kg"]["J35CEN"] == {"fab": 40.0, "plan": 156.0}
+    assert et["PDCL-1"]["lineas"]["J35CEN"] == "en_tintura"

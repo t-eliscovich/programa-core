@@ -1301,9 +1301,12 @@ def etapas_por_pedido(pedidos: list[dict],
             if not prod:
                 continue
             d = por_prod.setdefault(prod, {"salida": salida_arbol,
-                                           "terminada": True})
+                                           "terminada": True,
+                                           "fab": 0.0, "plan": 0.0})
             d["salida"] = d["salida"] or bool(_f(r.get("con_salida")))
             d["terminada"] = d["terminada"] and _fila_terminada(r)
+            d["fab"] += _f(r.get("fabricada"))
+            d["plan"] += _f(r.get("cantidad"))
         info_oft[n] = por_prod
 
     out: dict[str, dict] = {}
@@ -1314,14 +1317,23 @@ def etapas_por_pedido(pedidos: list[dict],
         prods: dict[str, dict] = {}
         for oft in ofts_por_pedido.get(ped, ()):
             for prod, d in info_oft.get(oft, {}).items():
-                acc = prods.setdefault(prod, {"salida": False, "terminada": True})
+                acc = prods.setdefault(prod, {"salida": False, "terminada": True,
+                                              "fab": 0.0, "plan": 0.0})
                 acc["salida"] = acc["salida"] or d["salida"]
                 acc["terminada"] = acc["terminada"] and d["terminada"]
+                acc["fab"] += d.get("fab", 0.0)
+                acc["plan"] += d.get("plan", 0.0)
 
         lineas: dict[str, str] = {}
+        # Tamara 02/10/2026: "los vendedores no tienen x/y kg como tiene
+        # tintorería" — los kilos fabricados / planificados de las OFTs de
+        # cada línea, el mismo "138/156" de formulas.
+        kg: dict[str, dict] = {}
         for ln in p.get("lineas", []):
             prod = str(ln.get("producto") or "").strip().upper()
             d = prods.get(prod)
+            if d and d.get("plan"):
+                kg[prod] = {"fab": d["fab"], "plan": d["plan"]}
             if d and d["terminada"]:
                 lineas[prod] = "terminado"
             elif d:
@@ -1338,5 +1350,5 @@ def etapas_por_pedido(pedidos: list[dict],
             etapa = "en_tintura"
         else:
             etapa = "enviado"
-        out[ped] = {"pedido": etapa, "lineas": lineas}
+        out[ped] = {"pedido": etapa, "lineas": lineas, "kg": kg}
     return out

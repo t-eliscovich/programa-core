@@ -466,8 +466,11 @@
               <td>{% if l.kg is not none %}{{ l.kg|num_es(0) }}{% else %}<span class="muted">—</span>{% endif %}</td>
               {# la etapa de ESTA línea, debajo de la tira del pedido #}
               <td class="izq etapa no-print">
-                {%- if le == 'terminado' %}<span class="lst done">Terminado</span>
-                {%- elif le == 'en_tintura' %}<span class="lst tinto">En tintura</span>{% endif %}</td>
+                {#- kilos fabricados / planificados de sus OFTs (TMT 02/10) #}
+                {%- set lk = (et.kg or {}).get(l.producto) if et else none %}
+                {%- set _x = (' ' ~ lk.fab|num_es(0) ~ '/' ~ lk.plan|num_es(0) ~ ' kg') if lk else '' %}
+                {%- if le == 'terminado' %}<span class="lst done">Terminado{{ _x }}</span>
+                {%- elif le == 'en_tintura' %}<span class="lst tinto">En tintura{{ _x }}</span>{% endif %}</td>
             </tr>
             {% endfor %}
           {% endfor %}
