@@ -12,6 +12,12 @@
   <div class="flex items-start justify-between mb-6 gap-4 flex-wrap">
     {{ page_hero('Cierres del mes', descripcion='El paquete PDF que se archiva al cerrar cada mes — Resultados, Ventas, Cartera, Deudas, Gastos, Flujo de producción, Activos y Anticipos, todo en un solo archivo.') }}
     <div class="no-print flex items-center gap-2">
+      {% if puede_generar_manual %}
+      <a href="{{ url_for('informes.cierres_ajuste') }}"
+         class="text-sm px-3 py-1.5 rounded border border-amber-500 text-amber-700 dark:text-amber-300 hover:bg-amber-50 dark:hover:bg-amber-900/20">
+        Ajuste al cierre
+      </a>
+      {% endif %}
       <a href="{{ url_for('informes.cierres_vista_previa') }}" target="_blank"
          class="text-sm px-3 py-1.5 rounded border border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20">
         Vista previa (con los datos de hoy)
@@ -66,13 +72,27 @@
       <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
         {% for f in filas %}
           <tr>
-            <td class="px-4 py-2 capitalize">{{ f.mes_nombre }} {{ f.anio }}</td>
-            <td class="px-4 py-2 text-right tabular-nums">{{ f.paginas }}/8</td>
+            <td class="px-4 py-2"><span class="capitalize">{{ f.mes_nombre }} {{ f.anio }}</span>
+              {% if (f.version or 1) > 1 %}<span class="ml-1 text-xs px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-200">corregido</span>
+                {% if f.nota %}<div class="text-xs text-slate-500">{{ f.nota }}</div>{% endif %}{% endif %}</td>
+            <td class="px-4 py-2 text-right tabular-nums">{{ f.paginas }}{{ '/8' if (f.version or 1) == 1 else '' }}</td>
             <td class="px-4 py-2 text-right tabular-nums">{{ (f.tamano_bytes / 1024) | round(0, 'floor') | int }} KB</td>
             <td class="px-4 py-2 text-slate-500">{{ f.generado_en.strftime('%d/%m/%Y %H:%M') if f.generado_en else '' }}</td>
             <td class="px-4 py-2 text-right">
-              <a href="{{ url_for('informes.cierres_pdf', anio=f.anio, mes=f.mes) }}"
+              <a href="{{ url_for('informes.cierres_pdf', anio=f.anio, mes=f.mes, version=(f.version if (f.version or 1) > 1 else None)) }}"
                  class="text-sky-600 dark:text-sky-400 hover:underline">Descargar</a>
+              {% if (f.version or 1) == 1 and (f.anio, f.mes) in con_ajuste %}
+              <div class="mt-1 text-xs flex gap-2 justify-end flex-wrap">
+                <a href="{{ url_for('informes.cierres_corregido_hoja', anio=f.anio, mes=f.mes) }}" target="_blank" class="text-amber-700 dark:text-amber-300 hover:underline">Ver hoja corregida</a>
+                <a href="{{ url_for('informes.cierres_corregido_vista_previa', anio=f.anio, mes=f.mes) }}" target="_blank" class="text-amber-700 dark:text-amber-300 hover:underline">PDF corregido (vista previa)</a>
+                {% if puede_generar_manual %}
+                <form method="post" action="{{ url_for('informes.cierres_corregido_guardar', anio=f.anio, mes=f.mes) }}" class="inline">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                  <button class="text-amber-700 dark:text-amber-300 hover:underline font-semibold">{{ 'Rearmar' if (f.anio, f.mes) in ya_corregido else 'Guardar' }} PDF corregido</button>
+                </form>
+                {% endif %}
+              </div>
+              {% endif %}
             </td>
           </tr>
         {% else %}

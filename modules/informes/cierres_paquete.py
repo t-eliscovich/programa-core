@@ -171,16 +171,22 @@ def armar_pdf(anio: int, mes: int) -> tuple[bytes, int]:
 
 
 def guardar(anio: int, mes: int, pdf_bytes: bytes, paginas: int,
-            usuario: str) -> int:
-    """UPSERT del paquete de (anio, mes) -- se puede regrabar, igual que la
-    foto de `scintela.historia`: la fila vieja se pisa, no se acumula."""
+            usuario: str, version: int = 1, nota: str | None = None) -> int:
+    """UPSERT del paquete de (anio, mes, version) -- se puede regrabar, igual
+    que la foto de `scintela.historia`: la fila vieja se pisa, no se acumula.
+
+    Tamara 02/10/2026: el cierre ORIGINAL es la versión 1 y no se pisa nunca
+    con una corrección; el PDF que se arma después de un ajuste al cierre es
+    la versión 2 (ver `armar_corregido`)."""
     res = db.execute_returning(
         """
         INSERT INTO scintela.cierre_paquete
-            (anio, mes, pdf, tamano_bytes, paginas, generado_por)
-        VALUES (%(anio)s, %(mes)s, %(pdf)s, %(tam)s, %(paginas)s, %(usuario)s)
-        ON CONFLICT (anio, mes) DO UPDATE
+            (anio, mes, version, nota, pdf, tamano_bytes, paginas, generado_por)
+        VALUES (%(anio)s, %(mes)s, %(version)s, %(nota)s, %(pdf)s, %(tam)s,
+                %(paginas)s, %(usuario)s)
+        ON CONFLICT (anio, mes, version) DO UPDATE
            SET pdf = EXCLUDED.pdf,
+               nota = EXCLUDED.nota,
                tamano_bytes = EXCLUDED.tamano_bytes,
                paginas = EXCLUDED.paginas,
                generado_por = EXCLUDED.generado_por,
@@ -188,8 +194,8 @@ def guardar(anio: int, mes: int, pdf_bytes: bytes, paginas: int,
          RETURNING id_paquete
         """,
         {
-            "anio": anio, "mes": mes,
-            "pdf": pdf_bytes, "tam": len(pdf_bytes),
+            "anio": anio, "mes": mes, "version": int(version or 1),
+            "nota": nota, "pdf": pdf_bytes, "tam": len(pdf_bytes),
             "paginas": paginas, "usuario": (usuario or "")[:50],
         },
     )
@@ -279,12 +285,14 @@ def guardar_manual_subido(anio: int, mes: int, pdf_bytes: bytes,
 
 
 def listar() -> list[dict]:
-    """Los paquetes ya generados, del más nuevo al más viejo."""
+    """Los paquetes ya generados, del más nuevo al más viejo (y dentro de un
+    mes, el original primero)."""
     filas = db.fetch_all(
         """
-        SELECT anio, mes, tamano_bytes, paginas, generado_en, generado_por
+        SELECT anio, mes, version, nota, tamano_bytes, paginas, generado_en,
+               generado_por
           FROM scintela.cierre_paquete
-         ORDER BY anio DESC, mes DESC
+         ORDER BY anio DESC, mes DESC, version
         """
     )
     for f in filas:
@@ -292,12 +300,265 @@ def listar() -> list[dict]:
     return filas
 
 
-def obtener(anio: int, mes: int) -> bytes | None:
+def obtener(anio: int, mes: int, version: int = 1) -> bytes | None:
     row = db.fetch_one(
-        "SELECT pdf FROM scintela.cierre_paquete WHERE anio = %s AND mes = %s",
-        (anio, mes),
+        "SELECT pdf FROM scintela.cierre_paquete "
+        " WHERE anio = %s AND mes = %s AND version = %s",
+        (anio, mes, int(version or 1)),
     )
     pdf = (row or {}).get("pdf")
     # psycopg2 devuelve bytea como memoryview -- Response/send_file quieren
     # bytes de verdad.
     return bytes(pdf) if pdf is not None else None
+
+
+# ── El PDF del cierre CORREGIDO (versión 2) ──────────────────────────────────
+#
+# Tamara 02/10/2026: Asinfo corrigió el stock (−51.775 kg de hilo, −7.139 kg
+# de tela cruda) y el ajuste se absorbió en el cierre de septiembre
+# (`ajuste_cierre`). *"¿Podés rearmar el PDF? Si se puede recalculando todo
+# (...) pero subilo como un segundo PDF."*
+#
+# El PDF original son las pantallas tal como estaban la noche del cierre, y
+# esas pantallas hoy muestran el mes en curso: no se pueden volver a pedir.
+# Lo que cambió con el ajuste son dos cosas, y esas dos se rehacen:
+#
+#   · Resultados y balance: se arman de nuevo desde la foto de cierre
+#     (`scintela.historia`, ya con el ajuste), la foto de la traza de esa
+#     misma hora (caja/bancos, cheques/facturas y los kilos y $/kg de cada
+#     etapa) y los colorantes del mes. Nada sale de la pantalla de hoy.
+#   · Flujo de producción: la pantalla del mes CERRADO se arma con los
+#     movimientos de Asinfo, que ya están corregidos.
+#
+# Ventas, Cartera, Deudas, Gastos, Activos y Anticipos no cambian con un
+# ajuste de stock: van las páginas del original, tal cual.
+
+#: Texto con el que empieza cada sección en el PDF original (para partirlo).
+_MARCA_VENTAS = "VENTAS DEL MES"
+_MARCA_FLUJO = "MOVIMIENTOS DEL MES"
+_MARCA_ACTIVOS = "Activos fijos"
+
+
+def _f(v) -> float:
+    try:
+        return float(v or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def datos_resultados_al_cierre(anio: int, mes: int) -> dict:
+    """Todo lo que lleva la hoja de Resultados de (anio, mes) al cierre,
+    recalculado desde lo guardado, con los ajustes al cierre ya adentro."""
+    from calendar import monthrange
+    from datetime import date
+
+    from modules.informes import ajuste_cierre
+
+    fin = date(anio, mes, monthrange(anio, mes)[1])
+    h = db.fetch_one(
+        "SELECT * FROM scintela.historia WHERE fecha = %s "
+        " ORDER BY id_historia DESC LIMIT 1", (fin,))
+    if not h:
+        raise RuntimeError(f"no hay foto de cierre del {fin:%d/%m/%Y}")
+    # La foto de la traza de la hora del cierre (la última antes de que se
+    # grabara historia): de ahí salen las partes que historia guarda sumadas.
+    t = db.fetch_one(
+        """
+        SELECT * FROM scintela.traza_utilidad
+         WHERE creado_en <= (%s AT TIME ZONE 'UTC') + INTERVAL '1 minute'
+           AND (creado_en AT TIME ZONE 'America/Guayaquil')::date = %s
+         ORDER BY creado_en DESC, id_traza DESC LIMIT 1
+        """, (h.get("fecha_crea"), fin)) or {}
+    ajustes = ajuste_cierre.vivos_del_mes(anio, mes)
+    kg_aj = {e: 0.0 for e in ajuste_cierre.ETAPAS}
+    for a in ajustes:
+        for ln in a.get("lineas") or []:
+            if ln.get("etapa") in kg_aj:
+                kg_aj[ln["etapa"]] += _f(ln.get("kg"))
+    etapas = []
+    for e, nom in (("hilado", "Hilado"), ("tejido", "Tejido"), ("terminado", "Terminado")):
+        kg = _f(t.get(f"{e}_kg")) + kg_aj[e]
+        ukg = _f(t.get(f"{e}_ukg"))
+        etapas.append({"etapa": e, "nombre": nom, "kg": kg, "ukg": ukg,
+                       "us": kg * ukg, "ajuste_kg": kg_aj[e]})
+    stock_us = _f(h.get("ustock"))
+    stock_kg = _f(h.get("stock"))
+    caja = _f(t.get("caja"))
+    banco_total = _f(h.get("banco"))
+    cheques = _f(t.get("cheques"))
+    cart = _f(h.get("cart"))
+    act = {
+        "caja": caja, "bancos": banco_total - caja,
+        "cheques": cheques, "facturas": cart - cheques, "cartera": cart,
+        "subtotal": banco_total + cart,
+        "anticipos": _f(h.get("anticipos")),
+        "stock_us": stock_us, "stock_kg": stock_kg,
+        "stock_ukg": (stock_us / stock_kg) if stock_kg else 0.0,
+        "quimicos": _f(h.get("uqui")),
+        "maq": _f(h.get("maquinaria")), "terr": _f(h.get("realty")),
+    }
+    act["af"] = act["maq"] + act["terr"]
+    act["total"] = (act["subtotal"] + act["anticipos"] + stock_us
+                    + act["quimicos"] + act["af"])
+    pasivo = _f(h.get("deuda"))
+    patrimonio = _f(h.get("patrimonio"))
+
+    kv = _f(h.get("kvent"))
+
+    def fila(nombre, kg, us):
+        return {"nombre": nombre, "kg": kg, "us": us,
+                "ukg": (us / kv) if (kv and kg is None) else ((us / kg) if kg else None)}
+
+    col_kg = col_us = None
+    try:
+        from modules.comparativa_tintoreria.views import tintoreria_mensual_cacheada
+        # Mismo criterio que la fila Colorantes del balance: la primera fila
+        # de COSTOS DE TINTORERÍA del mes pedido (kg y $ de la misma fila).
+        filas = (tintoreria_mensual_cacheada(anio, mes) or {}).get("filas") or []
+        if filas and filas[0].get("t_imp") is not None:
+            col_us = _f(filas[0]["t_imp"])
+            col_kg = _f(filas[0].get("t_kg")) or None
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("cierre corregido: colorantes de %s/%s: %s", mes, anio, e)
+    costos = [
+        fila("Materia Prima", _f(h.get("kcom")), _f(h.get("ucom"))),
+        fila("Tejeduría", _f(h.get("ktej")), _f(h.get("utej"))),
+        fila("Tintorería", _f(h.get("ktin")), _f(h.get("utin"))),
+    ]
+    if col_us is not None:
+        costos.append(fila("Colorantes/Quím.", col_kg, col_us))
+    costos.append(fila("Administración", None, _f(h.get("gasto"))))
+    usuti = _f(h.get("usuti"))
+    imp_aj = sum(_f(a.get("importe")) for a in ajustes)
+
+    cierres = db.fetch_all(
+        """
+        SELECT DISTINCT ON (date_trunc('month', fecha)) fecha, uvent, usuti, usret
+          FROM scintela.historia
+         WHERE fecha >= %s AND fecha <= %s
+         ORDER BY date_trunc('month', fecha), fecha DESC, id_historia DESC
+        """, (date(anio, 1, 1), fin)) or []
+    ret_anio = db.fetch_one(
+        "SELECT COALESCE(SUM(ret), 0) AS t FROM scintela.retiros "
+        " WHERE fecha >= %s AND fecha <= %s "
+        "   AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'",
+        (date(anio, 1, 1), fin)) or {}
+    return {
+        "anio": anio, "mes": mes, "mes_nombre": nombre_mes(mes), "fin": fin,
+        "ventas": fila("Ventas", kv, _f(h.get("uvent"))),
+        "costos": costos,
+        "utilidad": {"us": usuti, "ukg": (usuti / kv) if kv else 0.0,
+                     "antes": usuti - imp_aj,
+                     "ukg_antes": ((usuti - imp_aj) / kv) if kv else 0.0},
+        # Igual que `ventas_anio_en_curso` la noche del cierre: los meses
+        # cerrados de historia + lo facturado en el mes (sólo positivos).
+        "anio_ventas": (sum(_f(c.get("uvent")) for c in cierres
+                            if c["fecha"].month < mes) + _f((db.fetch_one(
+            """
+            SELECT COALESCE(SUM(importe), 0) AS t FROM scintela.factura
+             WHERE EXTRACT(YEAR FROM fecha) = %s AND EXTRACT(MONTH FROM fecha) = %s
+               AND COALESCE(stat, '') <> 'X' AND COALESCE(importe, 0) > 0
+               AND COALESCE(usuario_crea, '') <> 'asinfo-backfill'
+            """, (anio, mes)) or {}).get("t"))),
+        "anio_utilidades": sum(_f(c.get("usuti")) for c in cierres),
+        "dividendos_mes": _f(h.get("usret")),
+        "dividendos_anio": _f(ret_anio.get("t")),
+        "etapas": etapas, "activo": act, "pasivo": pasivo,
+        "patrimonio": patrimonio, "ajustes": ajustes, "ajuste_total": imp_aj,
+        "id_traza": t.get("id_traza"),
+    }
+
+
+def _partir_original(pdf_bytes: bytes) -> dict:
+    """Índices de las secciones del PDF original: dónde empiezan Ventas, el
+    Flujo de producción y Activos. Levanta si no encuentra alguna."""
+    from pypdf import PdfReader
+
+    r = PdfReader(io.BytesIO(pdf_bytes))
+    textos = [(p.extract_text() or "") for p in r.pages]
+    def primera(marca, desde=0):
+        for i in range(desde, len(textos)):
+            if marca.lower() in textos[i].lower():
+                return i
+        return None
+    i_v = primera(_MARCA_VENTAS)
+    i_f = primera(_MARCA_FLUJO, (i_v or 0) + 1)
+    i_a = primera(_MARCA_ACTIVOS, (i_f or 0) + 1)
+    if i_v is None or i_f is None or i_a is None:
+        raise RuntimeError("no encuentro las secciones del PDF original "
+                           f"(ventas={i_v}, flujo={i_f}, activos={i_a})")
+    return {"reader": r, "ventas": i_v, "flujo": i_f, "activos": i_a,
+            "n": len(textos)}
+
+
+def pagina_resultados_corregida(anio: int, mes: int) -> str:
+    """El HTML de la hoja de Resultados recalculada (para el PDF y para verla
+    en pantalla antes de guardarla)."""
+    from flask import render_template
+
+    d = datos_resultados_al_cierre(anio, mes)
+    return render_template("informes/cierre_resultados_corregido.html", d=d,
+                           hoy=today_ec())
+
+
+def armar_corregido(anio: int, mes: int) -> tuple[bytes, int]:
+    """El paquete de (anio, mes) con Resultados y Flujo de producción
+    recalculados y el resto de las páginas del original. Devuelve (bytes,
+    páginas). Levanta si falta el original o el navegador."""
+    from flask import current_app
+    from pypdf import PdfWriter
+
+    from modules._lib import pdf_motor
+
+    original = obtener(anio, mes, 1)
+    if not original:
+        raise RuntimeError(f"no hay PDF original del cierre de {nombre_mes(mes)} {anio}")
+    if not pdf_motor.disponible():
+        raise RuntimeError("el servidor no tiene navegador para imprimir (pdf_motor)")
+    partes = _partir_original(original)
+    r = partes["reader"]
+
+    resultados = pdf_motor.desde_html(pagina_resultados_corregida(anio, mes),
+                                      fondo=True)
+    uid = _usuario_sistema_id()
+    if not uid:
+        raise RuntimeError("no hay ningún usuario activo con permiso '*'")
+    client = current_app.test_client()
+    with client.session_transaction() as sess:
+        sess["user_id"] = uid
+        sess["last_activity"] = today_ec().isoformat()
+    try:
+        from modules.informes.views import reset_flujo_produccion_cache
+        reset_flujo_produccion_cache()
+    except Exception:  # noqa: BLE001
+        pass
+    flujo = _pdf_de_pagina(client, f"/informes/flujo-produccion?anio={anio}&mes={mes}")
+
+    w = PdfWriter()
+    _agregar_paginas(w, resultados)
+    for i in range(partes["ventas"], partes["flujo"]):
+        w.add_page(r.pages[i])
+    _agregar_paginas(w, flujo)
+    for i in range(partes["activos"], partes["n"]):
+        w.add_page(r.pages[i])
+    buf = io.BytesIO()
+    w.write(buf)
+    return buf.getvalue(), len(w.pages)
+
+
+def generar_corregido(anio: int, mes: int, usuario: str = "web") -> dict:
+    """Arma y guarda la versión 2 del paquete de (anio, mes). Nunca levanta."""
+    try:
+        from modules.informes import ajuste_cierre
+        aj = ajuste_cierre.vivos_del_mes(anio, mes)
+        pdf_bytes, paginas = armar_corregido(anio, mes)
+        nota = "; ".join(f"{a['motivo']} ({_f(a['importe']):,.0f})".replace(",", ".")
+                         for a in aj) or None
+        id_paquete = guardar(anio, mes, pdf_bytes, paginas, usuario,
+                             version=2, nota=nota)
+        return {"aplicado": True, "id_paquete": id_paquete, "paginas": paginas,
+                "razon": f"PDF corregido de {nombre_mes(mes)} {anio} guardado "
+                         f"({paginas} páginas)."}
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("cierre %04d-%02d corregido: %s", anio, mes, e)
+        return {"aplicado": False, "razon": f"No se pudo armar: {e}"}

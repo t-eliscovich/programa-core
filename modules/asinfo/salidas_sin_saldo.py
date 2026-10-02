@@ -470,7 +470,25 @@ def avisar_arreglos(res: dict, ing: dict, cua: dict) -> list[str]:
                     continue
     except Exception as e:  # noqa: BLE001 -- nunca rompe el health
         _LOG.warning("avisar_arreglos: %s", e)
+    if hechas:
+        olvidar_lo_calculado()
     return hechas
+
+
+def olvidar_lo_calculado() -> None:
+    """Asinfo corrigió algo: el Flujo de producción y su "Mes a mes" tienen
+    guardado lo de antes (los meses cerrados, 12 h). Tamara 02/10/2026: el
+    saldo ya estaba bien y la pantalla seguía mostrando 51.740 kg de más."""
+    try:
+        from modules.asinfo import kardex_bodegas
+        kardex_bodegas.reset_cache()
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude vaciar el mes a mes: %s", e)
+    try:
+        from modules.informes.views import reset_flujo_produccion_cache
+        reset_flujo_produccion_cache()
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("no pude vaciar el flujo de producción: %s", e)
 
 
 def _titulo(s: dict) -> str:

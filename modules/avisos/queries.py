@@ -338,16 +338,30 @@ def resolver(id_aviso: int, *, titulo: str, detalle: str | None = None) -> bool:
     para que suba— así queda un renglón por hecho, de punta a punta.
 
     Devuelve True si tocó una fila.
+
+    🚨 Tamara 02/10/2026: Asinfo arregló el stock de más (−191.504 de
+    utilidad) y la campanita no dijo nada. El aviso SÍ se dio vuelta, pero
+    `leido = FALSE` no alcanza desde la mig 0146: el leído es por persona
+    (`aviso_leido`), así que quien ya lo había abierto lo seguía viendo leído,
+    y quedaba abajo de todo con la fecha de cuando se avisó. Ahora se borran
+    las marcas de leído de ese aviso y sube con la hora en que se resolvió.
     """
     try:
-        return bool(db.execute(
-            """
-            UPDATE scintela.aviso
-               SET nivel = 'ok', titulo = %s, detalle = %s, leido = FALSE
-             WHERE id_aviso = %s AND nivel <> 'ok'
-            """,
-            ((titulo or "")[:200], (detalle or None), id_aviso),
-        ))
+        with db.tx() as conn:
+            n = db.execute(
+                """
+                UPDATE scintela.aviso
+                   SET nivel = 'ok', titulo = %s, detalle = %s, leido = FALSE,
+                       creado_en = now()
+                 WHERE id_aviso = %s AND nivel <> 'ok'
+                """,
+                ((titulo or "")[:200], (detalle or None), id_aviso),
+                conn=conn,
+            )
+            if n and _tiene_leido_por_usuario():
+                db.execute("DELETE FROM scintela.aviso_leido WHERE id_aviso = %s",
+                           (id_aviso,), conn=conn)
+        return bool(n)
     except Exception as e:  # noqa: BLE001 -- resolver nunca rompe al que resuelve
         _LOG.warning("no pude resolver el aviso %s: %s", id_aviso, e)
         return False

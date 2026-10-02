@@ -212,6 +212,7 @@ def registrar(origen: str = "manual", bal: dict | None = None,
     """
     res: dict = {"ok": False, "id_traza": None, "movimientos": 0,
                  "primera": False, "motivo": "", "bal": bal}
+    previa: dict | None = None
     try:
         if bal is None:
             from modules.informes import queries as _q
@@ -272,6 +273,17 @@ def registrar(origen: str = "manual", bal: dict | None = None,
             if min_gap_secs and _muy_reciente(conn, min_gap_secs):
                 res["motivo"] = "ya hay una foto de hace menos de un intervalo"
                 return res
+            # Tamara 02/10/2026: un ajuste al cierre del mes anterior mueve el
+            # PATANT, que no tiene documentos en la foto. Sin esto el salto
+            # quedaba como "sin explicar" en la traza y en el día.
+            previa = db.fetch_one(
+                "SELECT id_traza, creado_en, utilidad, hilado_kg, tejido_kg, terminado_kg "
+                " FROM scintela.traza_utilidad "
+                " ORDER BY creado_en DESC, id_traza DESC LIMIT 1", conn=conn)
+            if previa and not primera:
+                from modules.informes import ajuste_cierre as _aj
+                movs = list(movs) + _aj.movimientos_de_ajustes(
+                    previa["creado_en"], fila.get("creado_en") or _ahora_utc())
             r = db.execute_returning(
                 f"INSERT INTO scintela.traza_utilidad ({campos}) "
                 f"VALUES ({marcas}) RETURNING id_traza", fila, conn=conn)
@@ -279,11 +291,107 @@ def registrar(origen: str = "manual", bal: dict | None = None,
             _foto.guardar_movimientos(conn, idt, movs)
             _foto.aplicar(conn, nueva, vieja)
         res.update(ok=True, id_traza=idt, movimientos=len(movs), primera=primera)
+        avisar_salto(idt, fila, previa, movs)
     except Exception as e:  # noqa: BLE001 -- la grabadora no puede tumbar nada
         _LOG.warning("traza_utilidad: no se pudo guardar la foto (%s)", e)
         res["motivo"] = str(e)[:150]
         _avisar_que_no_guarda(res["motivo"])
     return res
+
+
+def _ahora_utc():
+    from datetime import UTC, datetime
+    return datetime.now(UTC)
+
+
+#: Desde cuánto un salto de la utilidad entre dos fotos va a la campanita.
+#: Tamara 02/10/2026: Asinfo corrigió el stock a las 13:50, la utilidad bajó
+#: 191.504 de una foto a la otra y nadie se enteró.
+SALTO_AVISO = 50_000.0
+
+_ETAPAS_KG = (("hilado_kg", "hilo"), ("tejido_kg", "tela cruda"),
+              ("terminado_kg", "terminado"))
+
+
+def _mes_ec(ts) -> tuple[int, int] | None:
+    try:
+        from zoneinfo import ZoneInfo
+        t = ts.astimezone(ZoneInfo("America/Guayaquil"))
+        return (t.year, t.month)
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _miles(v: float) -> str:
+    return f"{v:,.0f}".replace(",", ".")
+
+
+def texto_del_salto(fila: dict, previa: dict, movs: list[dict]) -> dict | None:
+    """Título y detalle del aviso de un salto de la utilidad entre dos fotos,
+    o None si no llega a `SALTO_AVISO` o es el cambio de mes."""
+    try:
+        d = float(fila.get("utilidad") or 0) - float(previa.get("utilidad") or 0)
+    except (TypeError, ValueError):
+        return None
+    try:
+        umbral = float(os.environ.get("TRAZA_SALTO_AVISO", SALTO_AVISO))
+    except ValueError:
+        umbral = SALTO_AVISO
+    if abs(d) < umbral:
+        return None
+    m1, m0 = _mes_ec(fila.get("creado_en") or _ahora_utc()), _mes_ec(previa.get("creado_en"))
+    if m1 is None or m0 is None or m1 != m0:
+        return None                    # el día 1 salta el PATANT: es el cierre
+    ajustes = [m for m in movs or [] if m.get("regla") == "ajuste_cierre"]
+    explicado_por_ajuste = sum(float(m.get("aporte") or 0) for m in ajustes)
+    if ajustes and abs(d - explicado_por_ajuste) < max(1000.0, abs(d) * 0.05):
+        return {"nivel": "ok",
+                "titulo": (f"{ajustes[0]['etiqueta']}: la utilidad del mes "
+                           f"{'sube' if d > 0 else 'baja'} {_miles(abs(d))}")[:200],
+                "detalle": ("El cierre del mes anterior se corrigió y lo absorbe "
+                            "ese mes, no éste.")}
+    kg = []
+    for col, nom in _ETAPAS_KG:
+        try:
+            dk = float(fila.get(col) or 0) - float(previa.get(col) or 0)
+        except (TypeError, ValueError):
+            continue
+        if abs(dk) >= 500:
+            kg.append(f"{nom} {'+' if dk > 0 else '−'}{_miles(abs(dk))} kg")
+    top = sorted((m for m in movs or [] if m.get("aporte")),
+                 key=lambda m: abs(float(m["aporte"])), reverse=True)[:3]
+    partes = []
+    if kg:
+        partes.append("Stock: " + ", ".join(kg) + ".")
+    for m in top:
+        a = float(m["aporte"])
+        partes.append(f"{m.get('etiqueta') or m.get('componente')}: "
+                      f"{'+' if a > 0 else '−'}{_miles(abs(a))}.")
+    return {"nivel": "alerta",
+            "titulo": (f"La utilidad {'subió' if d > 0 else 'bajó'} "
+                       f"{_miles(abs(d))} de una foto a la otra")[:200],
+            "detalle": " ".join(partes) or None,
+            "importe": round(d, 2)}
+
+
+def avisar_salto(id_traza: int, fila: dict, previa: dict | None,
+                 movs: list[dict]) -> bool:
+    """Deja en la campanita un salto grande de la utilidad. Nunca levanta."""
+    if not previa or not id_traza:
+        return False
+    try:
+        t = texto_del_salto(fila, previa, movs)
+        if not t:
+            return False
+        from modules.avisos import queries as avisos
+        return avisos.avisar(
+            fuente="traza", nivel=t["nivel"], titulo=t["titulo"],
+            detalle=t.get("detalle"), importe=t.get("importe"),
+            url=f"/informes/traza/{int(id_traza)}",
+            clave=f"salto-utilidad:{int(id_traza)}")
+    except Exception as e:  # noqa: BLE001 -- avisar nunca tumba la grabadora
+        _LOG.warning("traza: no pude avisar el salto (%s)", e)
+        return False
 
 
 def _avisar_que_no_guarda(motivo: str) -> None:

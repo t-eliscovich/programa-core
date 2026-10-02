@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Ajuste al cierre{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('informes.cierres') }}" class="hover:underline text-slate-500">Cierres del mes</a> / <strong>Ajuste al cierre</strong>{% endblock %}
+
+{% block content %}
+{# Tamara 02/10/2026 — ver modules/informes/ajuste_cierre.py #}
+<div class="max-w-3xl">
+  {{ page_hero('Ajuste al cierre de ' ~ mes_nombre, descripcion='Kilos que ya no estaban en stock al cierre y se corrigieron después. Se absorben en ese mes: baja el stock y la utilidad del mes cerrado, y el mes en curso no lo paga.') }}
+
+  {% if error %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">{{ error }}</div>
+  {% endif %}
+
+  {% if not hist %}
+    <p class="text-sm">No hay foto de cierre del mes anterior.</p>
+  {% else %}
+  <div class="mb-4 text-sm text-slate-600 dark:text-slate-300">
+    Cierre del <b>{{ hist.fecha.strftime('%d/%m/%Y') }}</b>: utilidad <b>{{ hist.usuti | num_es(0) }}</b>,
+    stock <b>{{ hist.ustock | num_es(0) }}</b> ({{ hist.stock | num_es(0) }} kg).
+    {% if traza %}Kilos precargados de la foto de la traza #{{ traza }}.{% endif %}
+  </div>
+
+  <form method="get" action="{{ url_for('informes.cierres_ajuste') }}"
+        class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-4 mb-4">
+    <table class="w-full text-sm mb-3">
+      <thead class="text-xs uppercase tracking-wider text-slate-500">
+        <tr><th class="text-left py-1">Etapa</th><th class="text-right py-1">Kg (− si se van)</th><th class="text-right py-1">$/kg del cierre</th></tr>
+      </thead>
+      <tbody>
+        {% for e, nom in etapas.items() %}
+        <tr>
+          <td class="py-1">{{ nom }}</td>
+          <td class="py-1 text-right">
+            <input name="kg_{{ e }}" value="{{ ('%.2f'|format(kg.get(e))).rstrip('0').rstrip('.') if kg.get(e) else '' }}" inputmode="decimal"
+                   class="w-36 px-2 py-1 text-right border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 tabular-nums">
+          </td>
+          <td class="py-1 text-right tabular-nums">{{ tarifas.get(e, 0) | num_es(4) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <label class="block text-sm mb-1">Motivo</label>
+    <input name="motivo" value="{{ motivo }}" maxlength="200"
+           placeholder="Asinfo corrigió el saldo de las bodegas el 02/10"
+           class="w-full px-2 py-1 border border-slate-300 dark:border-slate-700 rounded bg-white dark:bg-slate-900 mb-3">
+    <button class="text-sm px-3 py-1.5 rounded border border-sky-500 text-sky-700 dark:text-sky-300 hover:bg-sky-50 dark:hover:bg-sky-900/20">Ver cómo queda</button>
+  </form>
+
+  {% if calc %}
+  <div class="bg-white dark:bg-slate-900 border-2 border-amber-500 rounded p-4 mb-6 text-sm">
+    <table class="w-full mb-3">
+      <thead class="text-xs uppercase tracking-wider text-slate-500">
+        <tr><th class="text-left">Cierre de {{ mes_nombre }}</th><th class="text-right">Antes</th><th class="text-right">Ajuste</th><th class="text-right">Queda</th></tr>
+      </thead>
+      <tbody class="tabular-nums">
+        <tr><td>Stock (kg)</td><td class="text-right">{{ calc.antes.stock | num_es(0) }}</td><td class="text-right">{{ calc.kg | num_es(0) }}</td><td class="text-right">{{ calc.despues.stock | num_es(0) }}</td></tr>
+        <tr><td>Stock (U$)</td><td class="text-right">{{ calc.antes.ustock | num_es(0) }}</td><td class="text-right">{{ calc.importe | num_es(0) }}</td><td class="text-right">{{ calc.despues.ustock | num_es(0) }}</td></tr>
+        <tr><td>Patrimonio</td><td class="text-right">{{ calc.antes.patrimonio | num_es(0) }}</td><td class="text-right">{{ calc.importe | num_es(0) }}</td><td class="text-right">{{ calc.despues.patrimonio | num_es(0) }}</td></tr>
+        <tr class="font-bold"><td>Utilidad de {{ mes_nombre }}</td><td class="text-right">{{ calc.antes.usuti | num_es(0) }}</td><td class="text-right">{{ calc.importe | num_es(0) }}</td><td class="text-right">{{ calc.despues.usuti | num_es(0) }}</td></tr>
+        {% if calc.ukg_antes is not none %}
+        <tr><td>Utilidad $/kg vendido</td><td class="text-right">{{ calc.ukg_antes | num_es(3) }}</td><td></td><td class="text-right">{{ calc.ukg_despues | num_es(3) }}</td></tr>
+        {% endif %}
+      </tbody>
+    </table>
+    <p class="mb-3">La utilidad del mes en curso sube {{ (-calc.importe) | num_es(0) }} en el momento de aplicarlo: devuelve lo que bajó cuando Asinfo corrigió, y la traza lo muestra con nombre.</p>
+    <form method="post" action="{{ url_for('informes.cierres_ajuste_aplicar') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      {% for ln in calc.lineas %}<input type="hidden" name="kg_{{ ln.etapa }}" value="{{ ln.kg }}">{% endfor %}
+      <input type="hidden" name="motivo" value="{{ motivo }}">
+      <button class="text-sm px-3 py-1.5 rounded bg-amber-600 text-white hover:bg-amber-700"
+              {% if not motivo %}disabled title="Falta el motivo"{% endif %}>Aplicar el ajuste</button>
+      {% if not motivo %}<span class="text-xs text-slate-500 ml-2">Escribí el motivo y volvé a "Ver cómo queda".</span>{% endif %}
+    </form>
+  </div>
+  {% endif %}
+  {% endif %}
+
+  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-2">Ajustes hechos</h2>
+  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
+    <table class="w-full text-sm">
+      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+        <tr><th class="text-left px-3 py-2">Cierre</th><th class="text-left px-3 py-2">Motivo</th><th class="text-right px-3 py-2">Kg</th><th class="text-right px-3 py-2">U$</th><th class="text-left px-3 py-2">Cuándo</th><th></th></tr>
+      </thead>
+      <tbody class="divide-y divide-slate-100 dark:divide-slate-800">
+        {% for a in ajustes %}
+        <tr class="{{ 'opacity-50 line-through' if a.anulado_en }}">
+          <td class="px-3 py-2 capitalize">{{ a.mes_nombre }} {{ a.anio }}</td>
+          <td class="px-3 py-2">{{ a.motivo }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ a.kg | num_es(0) }}</td>
+          <td class="px-3 py-2 text-right tabular-nums">{{ a.importe | num_es(0) }}</td>
+          <td class="px-3 py-2 text-slate-500">{{ a.cuando }} · {{ a.creado_por }}</td>
+          <td class="px-3 py-2 text-right">
+            {% if not a.anulado_en %}
+            <form method="post" action="{{ url_for('informes.cierres_ajuste_deshacer', id_ajuste=a.id_ajuste) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button class="text-xs text-red-600 hover:underline">Deshacer</button>
+            </form>
+            {% endif %}
+          </td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="px-3 py-3 text-slate-500">Todavía no hay ajustes.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

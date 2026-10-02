@@ -10351,6 +10351,18 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
             conn=conn,
         )
 
+        # Tamara 02/10/2026: los ajustes al cierre (scintela.ajuste_cierre)
+        # viven aparte de la foto. Si la foto se regraba, se le vuelven a
+        # sumar a la fila nueva: regrabar no puede borrarlos en silencio.
+        reaplicados: list[int] = []
+        if borradas:
+            try:
+                from modules.informes import ajuste_cierre as _aj
+                reaplicados = _aj.reaplicar(conn, int(res["id_historia"]), anio, mes)
+            except Exception as _e:  # noqa: BLE001
+                from modules._lib.silencios import avisar
+                avisar(__name__, "crear_snapshot_historia.reaplicar_ajustes", _e)
+
         # Avanzar marker en sistema_meta (best-effort)
         try:
             db.execute(
@@ -10387,6 +10399,7 @@ def crear_snapshot_historia(anio: int, mes: int, usuario: str = "auto",
         "mes": mes,
         "id_historia": (res or {}).get("id_historia"),
         "borradas": borradas,
+        "ajustes_reaplicados": reaplicados,
         "patrimonio": params["patrimonio"],
         "usret": params["usret"],
         "usuti": params["usuti"],

@@ -27,7 +27,7 @@ import db
 from auth import requiere_login, requiere_permiso, requiere_permiso_any, tiene_permiso
 from error_messages import flash_exc
 from exports import csv_response
-from filters import today_ec
+from filters import num_es, today_ec
 from modules._lib import pdf_motor
 from modules.informes import estado_cuenta_imagen, estado_cuenta_pdf
 
@@ -1998,10 +1998,18 @@ def cierres():
     """
     from modules.informes import cierres_paquete
 
+    from modules.informes import ajuste_cierre
+
     filas, error = _safe(cierres_paquete.listar, [])
+    # Tamara 02/10/2026: los meses con ajuste al cierre ofrecen el segundo
+    # PDF (el corregido) al lado del original.
+    ajustes = [a for a in ajuste_cierre.listar() if not a.get("anulado_en")]
+    con_ajuste = {(a["anio"], a["mes"]) for a in ajustes}
+    ya_corregido = {(f["anio"], f["mes"]) for f in filas if int(f.get("version") or 1) > 1}
     return render_template(
         "informes/cierres.html", filas=filas, error=error,
         puede_generar_manual=tiene_permiso("usuarios.admin"),
+        con_ajuste=con_ajuste, ya_corregido=ya_corregido,
     )
 
 
@@ -2071,10 +2079,15 @@ def cierres_subir_manual():
 def cierres_pdf(anio: int, mes: int):
     from modules.informes import cierres_paquete
 
-    pdf_bytes = cierres_paquete.obtener(anio, mes)
+    try:
+        version = max(1, int(request.args.get("version") or 1))
+    except (TypeError, ValueError):
+        version = 1
+    pdf_bytes = cierres_paquete.obtener(anio, mes, version)
     if not pdf_bytes:
         abort(404)
-    nombre = f"Cierre {cierres_paquete.nombre_mes(mes)} {anio}.pdf"
+    nombre = (f"Cierre {cierres_paquete.nombre_mes(mes)} {anio}"
+              f"{' (corregido)' if version > 1 else ''}.pdf")
     return Response(
         pdf_bytes,
         mimetype="application/pdf",
@@ -2083,6 +2096,148 @@ def cierres_pdf(anio: int, mes: int):
             "Cache-Control": "no-store",
         },
     )
+
+
+def _kg_de(v) -> float:
+    """Kilos escritos a mano: "−51.775", "-51775", "-51.775,4". Un punto
+    seguido de tres dígitos es de miles (en kilos nadie escribe gramos con
+    punto)."""
+    import re as _re
+    t = str(v or "").strip().replace("\u2212", "-").replace(" ", "")
+    if not t:
+        return 0.0
+    if "," in t:
+        t = t.replace(".", "").replace(",", ".")
+    elif _re.fullmatch(r"-?\d{1,3}(\.\d{3})+", t):
+        t = t.replace(".", "")
+    try:
+        return float(t)
+    except ValueError:
+        return 0.0
+
+
+@informes_bp.route("/cierres/ajuste")
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cierres_ajuste():
+    """Ajuste al cierre del mes anterior (Tamara 02/10/2026): una corrección
+    que pertenece al mes cerrado — p. ej. kilos que Asinfo sacó del stock
+    después del cierre — se absorbe en ESE mes y no en el que corre. Ver
+    `ajuste_cierre.py`.
+
+    GET con `?traza=<id>` precarga los kilos que se movieron en esa foto de la
+    traza; con `lineas` calculadas muestra cómo queda antes de aplicar."""
+    from modules.informes import ajuste_cierre
+
+    hist = ajuste_cierre.cierre_vigente()
+    tar = ajuste_cierre.tarifas_del_cierre(hist.get("fecha")) if hist else {}
+    lineas = []
+    traza = request.args.get("traza", type=int)
+    if traza:
+        lineas = ajuste_cierre.propuesta_desde_traza(traza)
+    for e in ajuste_cierre.ETAPAS:
+        v = request.args.get(f"kg_{e}")
+        if v not in (None, ""):
+            lineas = [ln for ln in lineas if ln["etapa"] != e]
+            lineas.append({"etapa": e, "kg": _kg_de(v)})
+    calc, error = None, None
+    if lineas and hist:
+        try:
+            calc = ajuste_cierre.calcular(lineas)
+        except ValueError as e:
+            error = str(e)
+    kg_por_etapa = {ln["etapa"]: ln["kg"] for ln in lineas}
+    return render_template(
+        "informes/cierre_ajuste.html", hist=hist, tarifas=tar, calc=calc,
+        error=error, etapas=ajuste_cierre.ETAPAS, kg=kg_por_etapa,
+        motivo=request.args.get("motivo") or "", traza=traza,
+        ajustes=ajuste_cierre.listar(),
+        mes_nombre=(ajuste_cierre.nombre_mes(hist["fecha"].month) if hist else ""),
+    )
+
+
+@informes_bp.route("/cierres/ajuste/aplicar", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cierres_ajuste_aplicar():
+    from modules.informes import ajuste_cierre
+
+    lineas = []
+    for e in ajuste_cierre.ETAPAS:
+        v = _kg_de(request.form.get(f"kg_{e}"))
+        if v:
+            lineas.append({"etapa": e, "kg": v})
+    try:
+        r = ajuste_cierre.aplicar(
+            lineas=lineas, motivo=request.form.get("motivo") or "",
+            usuario=(g.user or {}).get("username", "web"))
+    except ValueError as e:
+        flash(str(e), "error")
+        return redirect(url_for("informes.cierres_ajuste"))
+    flash(f"Listo: el cierre de {ajuste_cierre.nombre_mes(r['mes'])} quedó "
+          f"{num_es(r['importe'], 0)} y la utilidad del mes en curso no lo paga.",
+          "success")
+    return redirect(url_for("informes.cierres"))
+
+
+@informes_bp.route("/cierres/ajuste/<int:id_ajuste>/deshacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cierres_ajuste_deshacer(id_ajuste: int):
+    from modules.informes import ajuste_cierre
+
+    try:
+        ajuste_cierre.deshacer(id_ajuste, usuario=(g.user or {}).get("username", "web"))
+        flash("Se deshizo el ajuste: la foto de cierre volvió a como estaba.", "success")
+    except ValueError as e:
+        flash(str(e), "error")
+    return redirect(url_for("informes.cierres_ajuste"))
+
+
+@informes_bp.route("/cierres/<int:anio>/<int:mes>/corregido/hoja")
+@requiere_login
+@requiere_permiso("informes.ver")
+def cierres_corregido_hoja(anio: int, mes: int):
+    """La hoja de Resultados recalculada, en pantalla, para verla antes de
+    armar el PDF corregido."""
+    from modules.informes import cierres_paquete
+
+    try:
+        return cierres_paquete.pagina_resultados_corregida(anio, mes)
+    except Exception as e:  # noqa: BLE001
+        flash(f"No se pudo armar la hoja: {e}", "error")
+        return redirect(url_for("informes.cierres"))
+
+
+@informes_bp.route("/cierres/<int:anio>/<int:mes>/corregido/vista-previa")
+@requiere_login
+@requiere_permiso("informes.ver")
+def cierres_corregido_vista_previa(anio: int, mes: int):
+    """El PDF corregido completo, sin guardarlo."""
+    from modules.informes import cierres_paquete
+
+    try:
+        pdf_bytes, paginas = cierres_paquete.armar_corregido(anio, mes)
+    except Exception as e:  # noqa: BLE001
+        flash(f"No se pudo armar el PDF corregido: {e}", "error")
+        return redirect(url_for("informes.cierres"))
+    return Response(pdf_bytes, mimetype="application/pdf", headers={
+        "Content-Disposition": f'inline; filename="Cierre {cierres_paquete.nombre_mes(mes)} '
+                               f'{anio} (corregido, vista previa).pdf"',
+        "Cache-Control": "no-store"})
+
+
+@informes_bp.route("/cierres/<int:anio>/<int:mes>/corregido", methods=["POST"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def cierres_corregido_guardar(anio: int, mes: int):
+    """Guarda el PDF corregido como segundo PDF del mes (el original queda)."""
+    from modules.informes import cierres_paquete
+
+    r = cierres_paquete.generar_corregido(
+        anio, mes, usuario=(g.user or {}).get("username", "web"))
+    flash(r.get("razon") or "", "success" if r.get("aplicado") else "error")
+    return redirect(url_for("informes.cierres"))
 
 
 @informes_bp.route("/_diag/stock")

@@ -79,7 +79,7 @@ def test_cierres_lista_muestra_las_filas(app, fake_db, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_cierres_pdf_404_si_no_existe(app, fake_db, monkeypatch):
-    monkeypatch.setattr(cierres_paquete, "obtener", lambda a, m: None)
+    monkeypatch.setattr(cierres_paquete, "obtener", lambda a, m, v=1: None)
     c = _login(app, fake_db, ["informes.ver"])
     r = c.get("/informes/cierres/2026/8/pdf")
     assert r.status_code == 404
@@ -88,7 +88,7 @@ def test_cierres_pdf_404_si_no_existe(app, fake_db, monkeypatch):
 def test_cierres_pdf_descarga_bytes_con_nombre(app, fake_db, monkeypatch):
     contenido = b"%PDF-fake-bytes"
     monkeypatch.setattr(cierres_paquete, "obtener",
-                        lambda a, m: contenido if (a, m) == (2026, 8) else None)
+                        lambda a, m, v=1: contenido if (a, m, v) == (2026, 8, 1) else None)
     c = _login(app, fake_db, ["informes.ver"])
     r = c.get("/informes/cierres/2026/8/pdf")
     assert r.status_code == 200
