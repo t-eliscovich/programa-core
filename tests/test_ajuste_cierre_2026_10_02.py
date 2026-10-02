@@ -192,14 +192,32 @@ def test_guardar_y_obtener_por_version():
 
 
 def _pdf(textos):
-    from reportlab.pdfgen import canvas
-    buf = io.BytesIO()
-    c = canvas.Canvas(buf)
+    """Un PDF mínimo con una línea de texto por página, escrito a mano (sin
+    reportlab, que el CI no tiene)."""
+    objs = ["<< /Type /Catalog /Pages 2 0 R >>", None,
+            "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>"]
+    kids = []
     for t in textos:
-        c.drawString(50, 700, t)
-        c.showPage()
-    c.save()
-    return buf.getvalue()
+        flujo = f"BT /F1 12 Tf 50 700 Td ({t}) Tj ET".encode("latin-1")
+        objs.append(f"<< /Length {len(flujo)} >>\nstream\n".encode("latin-1")
+                    + flujo + b"\nendstream")
+        objs.append(f"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+                    f"/Resources << /Font << /F1 3 0 R >> >> /Contents {len(objs)} 0 R >>")
+        kids.append(f"{len(objs)} 0 R")
+    objs[1] = f"<< /Type /Pages /Kids [{' '.join(kids)}] /Count {len(kids)} >>"
+    out = b"%PDF-1.4\n"
+    offs = []
+    for i, o in enumerate(objs, 1):
+        offs.append(len(out))
+        body = o if isinstance(o, bytes) else o.encode("latin-1")
+        out += f"{i} 0 obj\n".encode() + body + b"\nendobj\n"
+    xref = len(out)
+    out += f"xref\n0 {len(objs) + 1}\n0000000000 65535 f \n".encode()
+    for o in offs:
+        out += f"{o:010d} 00000 n \n".encode()
+    out += (f"trailer\n<< /Size {len(objs) + 1} /Root 1 0 R >>\n"
+            f"startxref\n{xref}\n%%EOF\n").encode()
+    return out
 
 
 def test_partir_el_original_por_secciones():
