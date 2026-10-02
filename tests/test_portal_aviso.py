@@ -16,6 +16,8 @@ import sys
 from datetime import date
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
@@ -40,6 +42,15 @@ def _login(app, user, permisos):
         session["user_id"] = user["id_usuario"]
         g.user = user
         g.permisos = set(permisos)
+
+
+@pytest.fixture(autouse=True)
+def _frenos_libres(monkeypatch):
+    """Los frenos contra el mail repetido (02/10/2026) van a la base; acá,
+    salvo en sus propios tests, el candado está libre y nadie fue avisado."""
+    monkeypatch.setattr(queries, "tomar_envio", lambda: True)
+    monkeypatch.setattr(queries, "soltar_envio", lambda: None)
+    monkeypatch.setattr(queries, "ya_avisado", lambda cod: False)
 
 
 def _mailer_falso(monkeypatch):
@@ -111,7 +122,7 @@ def test_al_cliente_le_va_a_su_correo_y_el_que_no_tiene_se_cuenta(monkeypatch):
     monkeypatch.setattr(queries, "anotar", lambda *a: None)
     monkeypatch.setattr(queries, "correo_del_vendedor", lambda v: "")
     r = envio.mandar([AJT, SIN], "tamara")
-    assert r == {"enviados": 1, "fallidos": 0, "sin_correo": 1}
+    assert r == {"enviados": 1, "fallidos": 0, "sin_correo": 1, "repetidos": 0}
     assert salidos[0]["a"] == ["contabilidad@totoy.com"]
     assert salidos[0]["responder_a"] == ""
 
@@ -323,3 +334,68 @@ def test_la_migracion_0246_agrega_el_whatsapp_al_vendedor():
     # vendedor, no de cada usuario que tenga.
     import inspect
     assert "scintela.vendedor" in inspect.getsource(queries.guardar_whatsapp)
+
+
+# ---------------------------------------------------------------------------
+# TMT 02/10/2026 — "me llegaron dos. ojo con no spamear" / "asegurate sí o sí
+# y restringí mails": los frenos del mail a CLIENTES.
+# ---------------------------------------------------------------------------
+
+
+def test_al_cliente_avisado_hace_poco_no_le_va_otro(monkeypatch):
+    salidos = _mailer_falso(monkeypatch)
+    monkeypatch.setattr(queries, "anotar", lambda *a: None)
+    monkeypatch.setattr(queries, "correo_del_vendedor", lambda v: "")
+    monkeypatch.setattr(queries, "ya_avisado", lambda cod: cod == "AJT")
+    otro = {**AJT, "codigo_cli": "XYZ", "correo": "xyz@x.com"}
+    r = envio.mandar([AJT, otro], "automatico", contenido="recordatorio")
+    assert r["enviados"] == 1 and r["repetidos"] == 1
+    assert [s["a"] for s in salidos] == [["xyz@x.com"]]
+
+
+def test_si_no_se_puede_preguntar_si_ya_fue_avisado_no_se_manda(monkeypatch):
+    salidos = _mailer_falso(monkeypatch)
+    monkeypatch.setattr(queries, "anotar", lambda *a: None)
+    monkeypatch.setattr(queries, "correo_del_vendedor", lambda v: "")
+
+    def roto(cod):
+        raise RuntimeError("sin base")
+
+    monkeypatch.setattr(queries, "ya_avisado", roto)
+    r = envio.mandar([AJT], "automatico")
+    assert r["enviados"] == 0 and r["repetidos"] == 1
+    assert not salidos
+
+
+def test_con_otro_envio_en_curso_no_sale_nada(monkeypatch):
+    salidos = _mailer_falso(monkeypatch)
+    monkeypatch.setattr(queries, "tomar_envio", lambda: False)
+    r = envio.mandar([AJT], "automatico")
+    assert r["enviados"] == 0 and "en curso" in r["motivo"]
+    assert not salidos
+
+
+def test_el_candado_se_suelta_aunque_el_envio_reviente(monkeypatch):
+    from modules._lib import mailer
+    soltado = []
+    monkeypatch.setattr(queries, "soltar_envio", lambda: soltado.append(1))
+    monkeypatch.setattr(queries, "correo_del_vendedor", lambda v: "")
+
+    def explota(*a, **k):
+        raise RuntimeError("SES caído")
+
+    monkeypatch.setattr(mailer, "enviar", explota)
+    with pytest.raises(RuntimeError):
+        envio.mandar([AJT], "automatico")
+    assert soltado == [1]
+
+
+def test_la_prueba_a_la_casa_no_pasa_por_los_frenos(monkeypatch):
+    salidos = _mailer_falso(monkeypatch)
+    monkeypatch.setattr(queries, "anotar", lambda *a: None)
+    monkeypatch.setattr(queries, "correo_del_vendedor", lambda v: "")
+    monkeypatch.setattr(queries, "tomar_envio", lambda: False)
+    monkeypatch.setattr(queries, "ya_avisado", lambda cod: True)
+    r = envio.mandar([AJT], "tamara", tipo="prueba", a="tamara@x.com")
+    assert r["enviados"] == 1
+    assert salidos[0]["a"] == ["tamara@x.com"]

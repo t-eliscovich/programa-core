@@ -91,6 +91,71 @@ def fijar_proxima_corrida_ec(d: date) -> None:
         (CLAVE_PROXIMA_EC, d.isoformat()))
 
 
+def reclamar_corrida_ec(prevista: date, siguiente: date) -> bool:
+    """Toma la corrida del recordatorio de una sola vez: mueve el puntero de
+    `prevista` a `siguiente` SÓLO si todavía dice `prevista`.
+
+    TMT 02/10/2026: el recordatorio salió DOS veces a todos los clientes
+    (09:33 y 09:36 EC). El servidor corre más de un proceso, cada uno con su
+    propio freno en memoria; los dos vieron la fecha vencida y arrancaron,
+    porque el puntero recién se corría al TERMINAR de mandar. Ahora se corre
+    ANTES, con un UPDATE condicional: la base deja ganar a uno solo, y el
+    que pierde no manda nada.
+    """
+    n = db.execute(
+        "UPDATE scintela.nota_config SET valor = %s "
+        " WHERE clave = %s AND TRIM(valor) = %s",
+        (siguiente.isoformat(), CLAVE_PROXIMA_EC, prevista.isoformat()))
+    return n == 1
+
+
+#: Un cliente no recibe dos avisos (de ningún tipo) en esta cantidad de días.
+#: TMT 02/10/2026: *"asegurate sí o sí y restringí mails"*. El recordatorio
+#: es cada 14 días, así que 7 no frena nada legítimo.
+DIAS_SIN_REPETIR = 7
+
+#: El candado del envío a clientes: en `nota_config`, el momento (UTC ISO)
+#: en que alguien lo tomó, o '' si está libre. Uno solo manda a la vez.
+CLAVE_ENVIO_EN_CURSO = "portal_aviso_envio_en_curso"
+
+#: Si un envío se muere a la mitad sin soltar el candado, a los 30 min se
+#: puede volver a tomar (435 mails tardan ~4 min).
+_CANDADO_VENCE_MIN = 30
+
+
+def tomar_envio() -> bool:
+    """True si este proceso tomó el candado del envío a clientes."""
+    from datetime import UTC, datetime, timedelta
+    ahora = datetime.now(UTC)
+    vencido = (ahora - timedelta(minutes=_CANDADO_VENCE_MIN)).strftime("%Y-%m-%dT%H:%M:%S")
+    r = db.execute_returning(
+        "INSERT INTO scintela.nota_config (clave, valor) VALUES (%s, %s) "
+        "ON CONFLICT (clave) DO UPDATE SET valor = EXCLUDED.valor "
+        " WHERE TRIM(COALESCE(scintela.nota_config.valor, '')) = '' "
+        "    OR scintela.nota_config.valor < %s "
+        "RETURNING clave",
+        (CLAVE_ENVIO_EN_CURSO, ahora.strftime("%Y-%m-%dT%H:%M:%S"), vencido))
+    return bool(r)
+
+
+def soltar_envio() -> None:
+    db.execute("UPDATE scintela.nota_config SET valor = '' WHERE clave = %s",
+               (CLAVE_ENVIO_EN_CURSO,))
+
+
+def ya_avisado(codigo_cli: str) -> bool:
+    """¿Este cliente ya recibió un aviso de verdad en los últimos
+    `DIAS_SIN_REPETIR` días? Se pregunta justo antes de cada mail."""
+    r = db.fetch_one(
+        "SELECT 1 AS si FROM scintela.portal_aviso "
+        " WHERE UPPER(TRIM(codigo_cli)) = UPPER(TRIM(%s)) "
+        "   AND tipo = 'cliente' AND ok "
+        "   AND enviado_en > now() - make_interval(days => %s) "
+        " LIMIT 1",
+        (codigo_cli or "", DIAS_SIN_REPETIR))
+    return bool(r)
+
+
 def lista() -> list[dict]:
     """Una fila por cliente con saldo a favor nuestro (saldo > 0) Y que
     compró (factura no anulada) en los últimos `MESES_ULTIMA_COMPRA` meses.

@@ -9,8 +9,10 @@ un anuncio, es un recordatorio.
 
 Cómo se agenda: NO es aritmética de semana par/impar — es un PUNTERO en
 `scintela.nota_config` (`queries.CLAVE_PROXIMA_EC`) con la fecha de la
-próxima corrida. Cada corrida (mande o se salte por feriado) empuja el
-puntero 14 días — como 14 es múltiplo de 7, el puntero SIEMPRE cae lunes,
+próxima corrida. Cada corrida (mande o se salte por feriado) TOMA el puntero
+ANTES de mandar (UPDATE condicional, 02/10/2026: dos procesos lo mandaron
+dos veces) y lo empuja
+14 días — como 14 es múltiplo de 7, el puntero SIEMPRE cae lunes,
 para siempre, sin recalcular nada. Se fija la primera vez a mano desde la
 pantalla (`/portal-aviso`).
 
@@ -94,8 +96,13 @@ def correr_si_toca() -> dict:
 
         siguiente = proxima + timedelta(days=CADA_DIAS)
 
+        # TMT 02/10/2026: la corrida se TOMA antes de hacer nada (UPDATE
+        # condicional). Si otro proceso ya la tomó, éste no manda.
+        if not queries.reclamar_corrida_ec(proxima, siguiente):
+            res["motivo"] = "otro proceso ya tomó esta corrida"
+            return res
+
         if proxima in feriados_ec_quito(proxima.year):
-            queries.fijar_proxima_corrida_ec(siguiente)
             _LOG.info("recordatorio EC: %s es feriado, salteado. Próxima: %s",
                       proxima.isoformat(), siguiente.isoformat())
             res["motivo"] = "feriado, salteado"
@@ -104,17 +111,15 @@ def correr_si_toca() -> dict:
 
         filas = [f for f in queries.lista() if f.get("correo")]
         if not filas:
-            # Nadie a quién mandarle: igual empuja el puntero, si no se
-            # quedaría reintentando cada hora para siempre sin nadie a bordo.
-            queries.fijar_proxima_corrida_ec(siguiente)
+            # Nadie a quién mandarle (el puntero ya avanzó al tomar la corrida).
             res["motivo"] = "nadie con correo"
             return res
 
         r = envio.mandar(filas, "automatico", tipo="cliente", contenido="recordatorio")
-        queries.fijar_proxima_corrida_ec(siguiente)
         res["corrio"] = True
         res["enviados"] = r.get("enviados", 0)
         res["fallidos"] = r.get("fallidos", 0)
+        res["repetidos"] = r.get("repetidos", 0)
 
         try:
             from modules.avisos.queries import avisar

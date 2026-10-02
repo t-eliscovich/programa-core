@@ -130,11 +130,53 @@ def mandar(filas: list[dict], quien: str, tipo: str = "cliente",
     )
 
     res = {"enviados": 0, "fallidos": 0, "sin_correo": 0}
+    # TMT 02/10/2026 — el recordatorio salió dos veces a todos. Dos frenos
+    # para el mail que va a CLIENTES (la prueba a la casa no los necesita):
+    # (1) un solo envío a la vez en todo el servidor (candado en la base);
+    # (2) a ningún cliente le va un segundo aviso dentro de DIAS_SIN_REPETIR
+    #     días — se pregunta a la base justo antes de cada mail.
+    # Si la base no contesta, NO se manda: mejor un aviso de menos que uno
+    # de más.
+    a_clientes = tipo == "cliente" and not a
+    if a_clientes:
+        res["repetidos"] = 0
+        try:
+            tomado = queries.tomar_envio()
+        except Exception:  # noqa: BLE001
+            _LOG.exception("portal_aviso: no pude tomar el candado del envío")
+            tomado = False
+        if not tomado:
+            res["motivo"] = "ya hay un envío en curso"
+            _LOG.warning("portal_aviso: envío a clientes frenado: otro en curso")
+            return res
+    try:
+        return _mandar_cada_uno(filas, quien, tipo, a, texto_fn, html_fn,
+                                res, a_clientes, mailer)
+    finally:
+        if a_clientes:
+            try:
+                queries.soltar_envio()
+            except Exception:  # noqa: BLE001
+                _LOG.exception("portal_aviso: no pude soltar el candado")
+
+
+def _mandar_cada_uno(filas, quien, tipo, a, texto_fn, html_fn, res,
+                     a_clientes, mailer) -> dict:
     for f in filas:
         correo = (a or f.get("correo") or "").strip()
         if not correo:
             res["sin_correo"] += 1
             continue
+        if a_clientes:
+            try:
+                repetido = queries.ya_avisado(f.get("codigo_cli") or "")
+            except Exception:  # noqa: BLE001 -- sin respuesta, no se manda
+                _LOG.exception("portal_aviso: no pude chequear a %s",
+                               f.get("codigo_cli"))
+                repetido = True
+            if repetido:
+                res["repetidos"] += 1
+                continue
         nombre = f.get("nombre") or f.get("codigo_cli") or ""
         env = mailer.enviar(
             ASUNTO, texto_fn(nombre), [correo],
