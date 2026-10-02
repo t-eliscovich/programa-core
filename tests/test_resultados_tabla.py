@@ -150,7 +150,7 @@ def test_sin_ventas_no_rompe():
     assert _row(tab, "Ventas")["ukg"] == 0.0
     # 12 filas: Federico 2026-08-20 sacó "Utilidad Calculada Actual" (la había
     # pedido el 2026-07-27, que las llevó de 12 a 13).
-    assert len(tab) == 12
+    assert len(tab) == 14  # + Devoluciones y Neto (2026-10-02)
 
 
 def test_seccion_costos_presente():
@@ -164,18 +164,49 @@ def test_la_fila_se_llama_ventas_y_todo_lo_que_la_busca_por_ese_nombre():
     ritmo actual, y `balance.html` la usa de clave en el mapa de drill-down y
     para el prefijo "kg." de la columna Proyecciones. Si se renombra en un solo
     lado, el link y el ritmo se caen sin que nadie se entere.
-    """
+
     from pathlib import Path as _P
+    Tamara 2026-10-02: la venta NETA (la fila que se usa para todo) pasó a
+    llamarse "Ventas Neto", con "Ventas" (bruto) y "Devoluciones" arriba.
+    """
     labels = [r["label"] for r in _tabla()]
-    assert "Ventas" in labels and "Venta" not in labels
+    assert labels[:3] == ["Ventas", "Devoluciones", "Ventas Neto"]
+    assert "Venta" not in labels
 
     vistas = (ROOT / "modules/informes/views.py").read_text(encoding="utf-8")
-    assert '_cell("Ventas", "kg")' in vistas
-    assert '_r.get("label") == "Ventas"' in vistas
+    assert '_cell("Ventas Neto", "kg")' in vistas
+    assert '_r.get("label") == "Ventas Neto"' in vistas
 
     tpl = (ROOT / "modules/informes/templates/informes/balance.html").read_text(encoding="utf-8")
     assert "'Ventas':" in tpl                      # mapa _row_links
-    assert "row.label == 'Ventas'" in tpl          # prefijo "kg." en Proyecciones
+    assert "'Devoluciones':" in tpl
+    assert "'Ventas Neto':" in tpl
+    assert "row.label == 'Ventas Neto'" in tpl            # prefijo "kg." en Proyecciones
+
+
+def test_ventas_mas_devoluciones_da_neto():
+    """Tamara 2026-10-02: Ventas + Devoluciones = Neto (kg y U$)."""
+    t = _tabla(venta_kg=16081.0, venta_us=141585.0,
+               devol_kg=-500.0, devol_us=-4200.0)
+    v, d, n = _row(t, "Ventas"), _row(t, "Devoluciones"), _row(t, "Ventas Neto")
+    assert n["kg"] == 16081.0 and n["us"] == 141585.0
+    assert v["kg"] == 16581.0 and v["us"] == 145785.0
+    assert d["kg"] == -500.0 and d["us"] == -4200.0
+    assert abs(d["ukg"] - 8.4) < 1e-9
+    assert v["kg"] + d["kg"] == n["kg"] and v["us"] + d["us"] == n["us"]
+
+
+def test_sin_devoluciones_ventas_igual_a_neto():
+    t = _tabla()
+    v, d, n = _row(t, "Ventas"), _row(t, "Devoluciones"), _row(t, "Ventas Neto")
+    assert (v["kg"], v["us"]) == (n["kg"], n["us"])
+    assert d["kg"] == 0 and d["us"] == 0 and d["ukg"] is None
+
+
+def test_nc_financiera_sin_kg_no_rompe_el_ukg():
+    """Una NC sin kilos: el $ resta, el U$/kg de Devoluciones queda vacío."""
+    d = _row(_tabla(devol_kg=0.0, devol_us=-300.0), "Devoluciones")
+    assert d["us"] == -300.0 and d["ukg"] is None
 
 
 def test_colorantes_kg_y_us_del_mismo_universo():

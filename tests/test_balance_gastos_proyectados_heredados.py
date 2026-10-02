@@ -37,7 +37,7 @@ def _balance_fake():
         "diagnostico": {"advertencias": [], "componentes": {}},
         "resultados": {
             "tabla": [
-                {"label": "Ventas", "kg": 40_000.0, "ukg": 8.10, "us": 324_000.0},
+                {"label": "Ventas Neto", "kg": 40_000.0, "ukg": 8.10, "us": 324_000.0},
                 {"label": "Proyección", "kg": 320_000.0, "ukg": 8.10,
                  "us": 2_592_000.0},
                 {"label": "Materia Prima", "kg": 40_000.0, "ukg": 2.92,
@@ -127,7 +127,7 @@ def test_dia_1_sin_ventas_ni_tintura_no_da_una_utilidad_absurda(app, fake_db):
         "diagnostico": {"advertencias": [], "componentes": {}},
         "resultados": {"tabla": [
             # Día 1: ni una factura, ni un kg tinturado.
-            {"label": "Ventas", "kg": 0.0, "ukg": 0.0, "us": 0.0},
+            {"label": "Ventas Neto", "kg": 0.0, "ukg": 0.0, "us": 0.0},
             {"label": "Proyección", "kg": 320_000.0, "ukg": 8.57,
              "us": 320_000.0 * 8.57, "costo_var_ukg": 2.92 + 0.64},
             {"label": "Materia Prima", "kg": 0.0, "ukg": 2.92, "us": 0.0},

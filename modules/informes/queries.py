@@ -1868,7 +1868,12 @@ def ventas_mes_corriente_resultado(meses_atras: int = 0) -> dict:
             f"""
         SELECT COUNT(*) AS n,
                COALESCE(SUM(kg), 0)      AS kg,
-               COALESCE(SUM(importe), 0) AS importe
+               COALESCE(SUM(importe), 0) AS importe,
+               -- Tamara 2026-10-02: Ventas / Devoluciones / Neto en el cuadro.
+               -- Devolución = documento con importe NEGATIVO (devoluciones y
+               -- notas de crédito). Partición exacta: bruto + devol = neto.
+               COALESCE(SUM(kg)      FILTER (WHERE importe < 0), 0) AS kg_devol,
+               COALESCE(SUM(importe) FILTER (WHERE importe < 0), 0) AS importe_devol
         FROM scintela.factura
         WHERE fecha >= date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s)
           AND fecha <  date_trunc('month', (CURRENT_TIMESTAMP - INTERVAL '5 hours')::date) - make_interval(months => %(meses_atras)s) + INTERVAL '1 month'
@@ -1887,10 +1892,20 @@ def ventas_mes_corriente_resultado(meses_atras: int = 0) -> dict:
         from calendar import monthrange
 
         ultimo_dia = monthrange(hoy.year, hoy.month)[1]
+    kg = float(row.get("kg") or 0)
+    importe = float(row.get("importe") or 0)
+    kg_devol = float(row.get("kg_devol") or 0)
+    importe_devol = float(row.get("importe_devol") or 0)
     return {
         "n": int(row.get("n") or 0),
-        "kg": float(row.get("kg") or 0),
-        "importe": float(row.get("importe") or 0),
+        "kg": kg,
+        "importe": importe,
+        # Devoluciones con su signo (≤ 0) y las ventas en bruto (sin ellas):
+        # kg_bruto + kg_devol = kg (el NETO, que es lo que usa todo el resto).
+        "kg_devol": kg_devol,
+        "importe_devol": importe_devol,
+        "kg_bruto": kg - kg_devol,
+        "importe_bruto": importe - importe_devol,
         "dias_pasados": hoy.day,
         "dias_mes": ultimo_dia,
     }
@@ -4184,6 +4199,11 @@ def resultados_costos_tabla(
     # Es el costo más grande y estaba oculto. Si None, la fila queda solo con $/kg.
     mp_kg: float | None = None,
     mp_us: float | None = None,
+    # Tamara 2026-10-02: el cuadro muestra Ventas (bruto) / Devoluciones / Neto.
+    # `venta_kg`/`venta_us` son el NETO (lo de siempre). Las devoluciones van
+    # con su signo (≤ 0). Default 0 → Ventas = Neto (callers viejos).
+    devol_kg: float = 0.0,
+    devol_us: float = 0.0,
 ) -> list[dict]:
     """Tabla RESULTADOS del /informes/balance — rediseno Federico 2026-05-21.
 
@@ -4336,10 +4356,29 @@ def resultados_costos_tabla(
     up_us = _utproy - float(provision_pendiente or 0)
     up_ukg = _div(up_us, up_kg)
 
+    devol_kg = float(devol_kg or 0)
+    devol_us = float(devol_us or 0)
+    bruto_kg = venta_kg - devol_kg
+    bruto_us = venta_us - devol_us
+
     return [
-        {"label": "Ventas", "kg": venta_kg, "ukg": precio, "us": venta_us,
+        # Tamara 2026-10-02: "ventas, devoluciones y neto; neto sería lo que se
+        # muestra ahora". Ventas + Devoluciones = Neto, columna por columna.
+        # ⚠ La fila "Ventas Neto" es la que antes se llamaba "Ventas": views.balance()
+        # le cuelga el kg al ritmo y balance.html el prefijo "kg." por ESTE
+        # nombre (test_resultados_tabla lo vigila).
+        {"label": "Ventas", "kg": bruto_kg, "ukg": _div(bruto_us, bruto_kg),
+         "us": bruto_us, "clase": "dato",
+         "ayuda": "Facturas del mes en curso (stat != X), sin las devoluciones."},
+        {"label": "Devoluciones", "kg": devol_kg,
+         "ukg": _div(devol_us, devol_kg) if devol_kg else None,
+         "us": devol_us, "clase": "dato",
+         "ayuda": ("Devoluciones y notas de crédito del mes (documentos con "
+                   "importe negativo).")},
+        {"label": "Ventas Neto", "kg": venta_kg, "ukg": precio, "us": venta_us,
          "clase": "dato",
-         "ayuda": "Facturas del mes en curso (stat != X). U$/kg = U$ / Kg."},
+         "ayuda": ("Ventas − Devoluciones. Es la venta con la que se calcula "
+                   "todo el resto del cuadro. U$/kg = U$ / Kg.")},
         {"label": "Proyección", "kg": proy_kg, "ukg": precio_proy, "us": proy_us,
          # `costo_var_ukg` = costo variable unitario con el que hay que proyectar
          # (Materia Prima + Colorantes, tarifas EFECTIVAS). Lo consume
@@ -4365,7 +4404,7 @@ def resultados_costos_tabla(
          "ukg": mp_ukg,
          "us": (float(mp_us) if mp_us else None),
          "clase": "dato",
-         "ayuda": ("kg = kg VENDIDOS del mes (mismos que la fila Ventas). "
+         "ayuda": ("kg = kg VENDIDOS del mes (mismos que la fila Ventas Neto). "
                    "$ = kg vendidos × tarifa del hilado del STOCK. Es el costo "
                    "de la materia prima contenida en lo vendido.")},
         {"label": "Tejeduría", "kg": kg_tejidos, "ukg": tej_ukg, "us": tej_us,
@@ -5610,6 +5649,8 @@ def informe_balance(comp_mes_override: dict | None = None) -> dict:
     tabla_resultados = resultados_costos_tabla(
         venta_kg=h_kvent,
         venta_us=h_uvent,
+        devol_kg=float(vent_mes.get("kg_devol") or 0),
+        devol_us=float(vent_mes.get("importe_devol") or 0),
         dia_actual=today_ec().day,
         mp_ukg=h_um,   # spec dueña 2026-07-12: Materia Prima = tarifa Hilado
         v1=gxg["v1"],

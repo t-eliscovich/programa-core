@@ -47,7 +47,7 @@ def test_sin_ventas_todavia_la_proyeccion_usa_el_precio_meta():
 def test_la_fila_ventas_sigue_diciendo_la_verdad():
     """El fallback es SÓLO para proyectar: sin ventas, Ventas muestra 0."""
     tab = _tabla(precio_meta=8.57)
-    v = _row(tab, "Ventas")
+    v = _row(tab, "Ventas Neto")
     assert v["kg"] == 0.0 and v["us"] == 0.0 and v["ukg"] == 0.0
 
 
