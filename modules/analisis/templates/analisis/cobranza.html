@@ -336,10 +336,16 @@ recibidos cada mes. Toda la casa:
       g+=`<text x="${cx}" y="${h-3}" text-anchor="middle">${EV.meses[i]}</text>`;});
     return `<svg viewBox="0 0 ${w} ${h}">${g}</svg>`;
   }
-  function resumenEvol(e){
+  // Tamara 02/10 (FAT): el panel tiene que decir POR QUÉ está de ese color —
+  // los mismos motivos que el estado de cuenta, no sólo cuánto creció la deuda.
+  function porque(p){
+    const m=(p&&p.m)||[];
+    return m.length ? ' por '+m.map(x=>x.charAt(0).toLowerCase()+x.slice(1)).join('; ') : '';
+  }
+  function resumenEvol(e, p){
     const n=e.c.length, hoyC=e.c[n-1]; let frases=[];
     if(hoyC!=='verde'){ let i=n-1; while(i>0 && e.c[i-1]===hoyC) i--;
-      frases.push(i===0 ? `${nomColor[hoyC]} desde ${EV.meses[0]} (el primer mes que se puede ver)` : `${nomColor[hoyC]} desde ${EV.meses[i]}`); }
+      frases.push((i===0 ? `${nomColor[hoyC]} desde ${EV.meses[0]} (el primer mes que se puede ver)` : `${nomColor[hoyC]} desde ${EV.meses[i]}`)+porque(p)); }
     else if(e.c.some(c=>c!=='verde')) frases.push('Hoy está en verde');
     const i0=e.s.findIndex(v=>v>0), a=e.s[i0], z=e.s[n-1];
     if(i0>=0 && i0<n-1 && a>0){ const pct=Math.round((z-a)/a*100);
@@ -353,11 +359,11 @@ recibidos cada mes. Toda la casa:
     if(!p){ box.hidden=true; box.innerHTML=''; return; }
     const e=EV.cli[p.k];
     if(!e){ box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span><a class="ev-ec" href="${EC.replace('__COD__',encodeURIComponent(p.k))}">Estado de cuenta →</a></div>
-      <div class="ev-res">No tiene facturas impagas. Lo que debe: ${[p.reb>0?fmt(p.reb)+' de cheques devueltos':'', p.ch>0?fmt(p.ch)+' de cheques por cobrar':''].filter(Boolean).join(' y ')||'nada'}.</div>`;
+      <div class="ev-res">${p.m&&p.m.length?esc(p.m.join(' · '))+'. ':''}No tiene facturas impagas. Lo que debe: ${[p.reb>0?fmt(p.reb)+' de cheques devueltos':'', p.ch>0?fmt(p.ch)+' de cheques por cobrar':''].filter(Boolean).join(' y ')||'nada'}.</div>`;
       box.hidden=false; return; }
     const cols=e.c.map(c=>color[c]);
     box.innerHTML=`<div class="ev-tit"><b>${esc(p.k)}</b><span>${esc(p.n)}</span><span class="g">${esc(p.v)}</span><a class="ev-ec" href="${EC.replace('__COD__',encodeURIComponent(p.k))}">Estado de cuenta →</a></div>
-      <div class="ev-res">${esc(resumenEvol(e))}</div>
+      <div class="ev-res">${esc(resumenEvol(e, p))}</div>
       <div class="ev-graf">
         <div><h4>Deuda en facturas al cierre de cada mes</h4>${barras(e.s, cols, 140)}<div class="ley">color = semáforo de ese día</div></div>
         <div><h4>Factura más vieja (días)</h4>${linea(e.e, cols, 140)}<div class="ley">amarillo desde 100 · rojo desde 150</div></div>
