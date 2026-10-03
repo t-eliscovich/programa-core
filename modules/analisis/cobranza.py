@@ -399,7 +399,12 @@ def colores(hoy: date | None = None) -> dict[str, dict]:
         d, _, _ = _semaforo(hoy or today_ec(), saldo_minimo=None)
         out = {c["cod"].strip().upper(): {
                    "color": "inc" if c["incobrable"] else c["color"],
-                   "motivos": c["motivos"], "puntaje": c["puntaje"]}
+                   "motivos": c["motivos"], "puntaje": c["puntaje"],
+                   # Días de cobranza (Tamara 03/10: que los vendedores los
+                   # vean de sus clientes) — los mismos de "contra sí mismo".
+                   "ultimo": c["ultimo"], "antes": c["antes"],
+                   "cambio": c["cambio"], "ultimo_mes": c["ultimo_mes"],
+                   "antes_meses": c["antes_meses"]}
                for c in d["filas"]}
         if hoy is None:
             _colores.update(t=time.monotonic(), d=out)

@@ -284,6 +284,18 @@ def clientes():
     )
     if filtro == "vencidos":
         filas = [c for c in filas if c["vencido"] > 0]
+    elif filtro == "dias":
+        # Tamara 03/10: los días de cobranza de /analisis/cobranza, también
+        # para el vendedor — una pestaña más del mismo .seg, sin tab nuevo.
+        # Sólo los clientes que tienen con qué comparar (pagos en el último
+        # mes y antes); el resto no dice nada.
+        from modules.analisis.cobranza import de_cliente
+        con = []
+        for c in filas:
+            s = de_cliente(c.get("codigo_cli"), incobrable=False)
+            if s and s.get("cambio") is not None:
+                con.append(dict(c, dias=s))
+        filas = con
     if q:
         filas = [
             c for c in filas

@@ -39,10 +39,11 @@
       {# El rótulo tiene que decir lo que se está mostrando: con el filtro
          "Vencidos" puesto decía "22 con saldo", que es otra cosa. #}
       <div class="sub" id="sub-conteo"
-           data-rot-saldo="con saldo" data-rot-venc="con vencido">
+           data-rot-saldo="con saldo" data-rot-venc="con vencido" data-rot-dias="con pagos" data-filtro="{{ filtro }}">
         {{ filas|length }}
         {%- if q %} encontrado{{ '' if filas|length == 1 else 's' }}
         {%- elif filtro == 'vencidos' %} con vencido
+        {%- elif filtro == 'dias' %} con pagos
         {%- else %} con saldo{% endif %}
         · $ {{ total|money_es }} por cobrar
       </div>
@@ -64,7 +65,7 @@
 {% block content %}
 {% set qv = ('&vend=' ~ vend) if preview else '' %}
 <div class="seg">
-  {% for f, rot in [('saldo','Con saldo'), ('vencidos','Vencidos')] %}
+  {% for f, rot in [('saldo','Con saldo'), ('vencidos','Vencidos'), ('dias','Días de pago')] %}
     <a href="?f={{ f }}{% if q %}&q={{ q }}{% endif %}{{ qv }}"
        class="{% if filtro == f %}on{% endif %}">{{ rot }}</a>
   {% endfor %}
@@ -109,7 +110,9 @@
            que empuja la lista para abajo. El aviso vive en la ficha, que es
            donde se va a mirar ese cliente en particular. #}
         {% set _cupo = (c.cupo or 0)|float %}
-        {% if _cupo > 0 %}
+        {% if filtro == 'dias' %}
+          <span class="cupo">En {{ c.dias.ultimo_mes|lower }} · antes {{ c.dias.antes }} días ({{ c.dias.antes_meses|lower }})</span>
+        {% elif _cupo > 0 %}
           {% set _pct = (c.usado or 0)|float * 100 / _cupo %}
           <span class="cupo">Cupo $ {{ _cupo|num_es(0) }} ·
             <b class="{{ 'mal' if _pct >= 100 else ('ojo' if _pct >= 80 else 'bien') }}"
@@ -117,7 +120,16 @@
         {% endif %}
       </div>
       <div class="amt">
+        {% if filtro == 'dias' %}
+        {# Días desde la factura hasta que la plata estuvo disponible: el
+           último mes con pagos contra el promedio de los anteriores (lo
+           mismo que "Cada cliente contra sí mismo" de la oficina). #}
+        <b>{{ c.dias.ultimo }} días</b>
+        <span class="dias-cambio {{ 'sube' if c.dias.cambio > 0 else ('baja' if c.dias.cambio < 0 else '') }}">
+          {%- if c.dias.cambio > 0 %}+{{ c.dias.cambio }}{% elif c.dias.cambio < 0 %}{{ c.dias.cambio }}{% else %}igual{% endif %}</span>
+        {% else %}
         <b>$ {{ c.saldo|money_es }}</b>
+        {% endif %}
         {# Tamara 02/10: se fue la etiqueta Vencido / Al día — el puntito del
            semáforo dice lo mismo sin contradecirse (vencido a 90 días,
            amarillo a 100). El filtro "Vencidos" de arriba sigue. #}
@@ -134,6 +146,7 @@
   <div class="vacio">
     {% if q %}No encontré ningún cliente con “{{ q }}”.
     {% elif filtro == 'vencidos' %}Ningún cliente tuyo tiene facturas vencidas. 👏
+    {% elif filtro == 'dias' %}Todavía no hay pagos para comparar.
     {% else %}No tenés clientes con saldo abierto.{% endif %}
   </div>
 {% endif %}
@@ -157,6 +170,11 @@
   .rowitem .nm .cupo .bien{color:var(--good)}
   .rowitem .nm .cupo .ojo{color:var(--warn)}
   .rowitem .nm .cupo .mal{color:var(--bad)}
+  /* Días de pago: el cambio contra antes, chico bajo los días. */
+  .rowitem .amt .dias-cambio{display:block;font-size:11.5px;font-weight:700;
+                             color:var(--ink-3);margin-top:2px;white-space:nowrap}
+  .rowitem .amt .dias-cambio.sube{color:var(--bad)}
+  .rowitem .amt .dias-cambio.baja{color:var(--good)}
 
   /* El buscador vive en el appbar: separado del título y a todo el ancho. */
   .appbar .search{margin:10px 0 0}
@@ -186,7 +204,9 @@
   var filas = Array.prototype.slice.call(lista.querySelectorAll('.rowitem'));
   var rotSaldo = sub.getAttribute('data-rot-saldo') || 'con saldo';
   var rotVenc  = sub.getAttribute('data-rot-venc')  || 'con vencido';
-  var esVencidos = /[?&]f=vencidos/.test(window.location.search);
+  var rotDias  = sub.getAttribute('data-rot-dias')  || 'con pagos';
+  var esVencidos = sub.getAttribute('data-filtro') === 'vencidos';
+  var esDias = sub.getAttribute('data-filtro') === 'dias';
 
   /* Formato EU/Ecuador: punto para miles, coma para decimales. El resto de la
      app lo hace con el filtro money_es; acá no hay Jinja, así que se arma a
@@ -208,7 +228,7 @@
     }
     /* El encabezado habla de lo que se ve, no de lo que se cargó. */
     var rot = q ? (visibles === 1 ? 'encontrado' : 'encontrados')
-                : (esVencidos ? rotVenc : rotSaldo);
+                : (esDias ? rotDias : (esVencidos ? rotVenc : rotSaldo));
     sub.textContent = visibles + ' ' + rot + ' · $ ' + money(total) + ' por cobrar';
     lista.hidden = visibles === 0;
     if (vacio) { vacio.hidden = visibles !== 0; }
