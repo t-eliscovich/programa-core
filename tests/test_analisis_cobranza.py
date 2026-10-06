@@ -294,3 +294,32 @@ def test_el_puntito_incluye_a_los_que_deben_poco():
     assert not _armar(chico)["filas"]
     d = cob.armar(chico, [], MESES, HOY, saldo_minimo=None)
     assert [c["cod"] for c in d["filas"]] == ["CHI"]
+
+
+# ── Filtrar por un cliente no vacía las tablas (Tamara 06/10) ───────────────
+
+def test_cliente_elegido_que_no_esta_en_las_listas_tiene_su_renglon(app):
+    """«cuando filtro el cliente aca abajo me borra todo»: MJM no pagó nada
+    desde julio, así que no está en "Los que más cambiaron"; al elegirlo, la
+    tabla quedaba con el encabezado solo. Ahora cada cliente con saldo tiene
+    su renglón escondido (solo-sel) que aparece cuando se lo elige, con el
+    porqué en la columna Cambio."""
+    import re
+
+    from flask import g, render_template
+    pm = [dict(cod="AAA", mes=MESES[0], plata=5000, dias=60),
+          dict(cod="AAA", mes=MESES[2], plata=5000, dias=95)]
+    d = _armar([_cli("MJM", fac=66762, edad_max=741), _cli("AAA", fac=20000, edad_max=60)], pm)
+    d["evol"] = None
+    with app.test_request_context("/analisis/cobranza"):
+        g.user = {"usuario": "t", "id_usuario": 1}
+        g.permisos = {"*"}
+        html = render_template("analisis/cobranza.html", d=d, menu_global=[])
+    contra = html.split("Cada cliente contra sí mismo")[1]
+    filas = re.findall(r'<tr class="por-vend([^"]*)"[^>]*data-k="(\w+)"([^>]*)>(.*?)</tr>', contra, re.S)
+    por = {k: (cls, attrs, td) for cls, k, attrs, td in filas}
+    assert por["AAA"][0] == "" and "hidden" not in por["AAA"][1]
+    assert por["MJM"][0] == " solo-sel" and "hidden" in por["MJM"][1]
+    assert "No pagó en estos meses" in por["MJM"][2]
+    # y la tabla que queda sin renglones lo dice
+    assert 'class="vacio"' in contra

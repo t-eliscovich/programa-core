@@ -47,6 +47,7 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 .ley-marcas{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;color:var(--g);margin:4px 0 0;align-items:center}
 .nom{display:block;font-size:12px;color:var(--g)}
 .mot{font-size:12.5px;color:var(--g);max-width:38ch}
+.fuera{display:block;font-size:11.5px;color:#9aa3af;margin-top:2px}
 .sube{color:#b3362a;font-weight:600}.baja{color:#2a7547;font-weight:600}
 .filtros{display:flex;flex-wrap:wrap;gap:8px;align-items:end}
 .filtros label{display:grid;gap:3px;font-size:12px;color:var(--g)}
@@ -128,13 +129,23 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 <div class="caja"><table class="resumen">
 <thead><tr><th>Cliente</th><th>Vendedor</th><th class="n">Saldo</th><th class="n">Puntaje</th><th>Semáforo</th><th>Motivo</th></tr></thead>
 <tbody>
-{% for c in d.prioridad %}
-<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b>{{ marcas(c) }}<span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+{# Tamara 06/10: "cuando filtro el cliente me borra todo". Las tablas
+   listan sólo a algunos (cobrar primero / los que más cambiaron); si el
+   cliente elegido no está, su renglón aparece igual (solo-sel), sólo
+   cuando está elegido. #}
+{% macro fila_pri(c, extra) -%}
+<tr class="por-vend{{ ' solo-sel' if extra }}" data-v="{{ c.vend }}" data-k="{{ c.cod }}"{{ ' hidden' if extra }}><td><b>{{ c.cod }}</b>{{ marcas(c) }}<span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td>
 <td class="n"><span class="punt">{{ c.puntaje }}<i><b style="width:{{ c.puntaje }}%"></b></i></span></td>
 <td>{% if c.incobrable %}<span class="pill p-inc" title="Debe desde hace más de un año y no compró en 90 días">Incobrable</span>{% else %}<span class="pill p-{{ c.color }}">{{ {'rojo':'Rojo','amar':'Amarillo','verde':'Verde'}[c.color] }}</span>{% endif %}</td>
-<td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}</td></tr>
-{% else %}<tr><td colspan="6" class="g">Ningún cliente en esta zona.</td></tr>{% endfor %}
+<td class="mot">{{ c.motivos | join('<br>') | safe if c.motivos else '' }}{% if extra %}<span class="fuera">No está entre los de cobrar primero</span>{% endif %}</td></tr>
+{%- endmacro %}
+{% set pri_cods = d.prioridad | map(attribute='cod') | list %}
+{% for c in d.prioridad %}{{ fila_pri(c, false) }}
+{% endfor %}
+{% for c in d.filas if c.saldo > 0 and c.cod not in pri_cods %}{{ fila_pri(c, true) }}
+{% endfor %}
+<tr class="vacio" hidden><td colspan="6" class="g">Ningún cliente para cobrar primero.</td></tr>
 </tbody></table></div>
 
 <h2>Cada cliente contra sí mismo</h2>
@@ -146,12 +157,18 @@ recibidos cada mes. Toda la casa:
 <thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}</th>{% endfor %}
 <th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
 <tbody>
-{% for c in d.contra_si %}
-<tr class="por-vend" data-v="{{ c.vend }}" data-k="{{ c.cod }}"><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
+{% macro fila_cs(c, extra) -%}
+<tr class="por-vend{{ ' solo-sel' if extra }}" data-v="{{ c.vend }}" data-k="{{ c.cod }}"{{ ' hidden' if extra }}><td><b>{{ c.cod }}</b><span class="nom">{{ c.nombre }}</span></td><td>{{ c.vend }}</td>
 {% for x in c.meses %}<td class="n">{{ (x[0] ~ ' días') if x else '—' }}</td>{% endfor %}
-<td class="n">{% if c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
+<td class="n">{% if c.cambio is none %}{% set con = c.meses | select | list | length %}<span class="g">{{ 'No pagó en estos meses' if con == 0 else ('Pagó en un solo mes' if con == 1 else 'Pagó poco para comparar') }}</span>{% elif c.cambio > 0 %}<span class="sube">+{{ c.cambio }} días</span>{% elif c.cambio < 0 %}<span class="baja">{{ c.cambio }} días</span>{% else %}0{% endif %}</td>
 <td class="n">{{ c.saldo | num_es(0) }}</td></tr>
+{%- endmacro %}
+{% set cs_cods = d.contra_si | map(attribute='cod') | list %}
+{% for c in d.contra_si %}{{ fila_cs(c, false) }}
 {% endfor %}
+{% for c in d.filas if c.saldo > 0 and c.cod not in cs_cods %}{{ fila_cs(c, true) }}
+{% endfor %}
+<tr class="vacio" hidden><td colspan="{{ d.meses | length + 4 }}" class="g">Ningún cliente en esta lista.</td></tr>
 </tbody></table></div></details>
 
 {% endblock %}
@@ -165,7 +182,14 @@ recibidos cada mes. Toda la casa:
   function porVendedor(){
     const v = document.getElementById('fv').value;
     const k = window.__clienteSel;
-    document.querySelectorAll('tr.por-vend').forEach(tr => { tr.hidden = (!!v && tr.dataset.v !== v) || (!!k && tr.dataset.k !== k); });
+    document.querySelectorAll('tr.por-vend').forEach(tr => {
+      const fueraDeLista = tr.classList.contains('solo-sel') && !k;
+      tr.hidden = fueraDeLista || (!!v && tr.dataset.v !== v) || (!!k && tr.dataset.k !== k);
+    });
+    // Tabla que quedó sin renglones: que lo diga, no una tabla muda.
+    document.querySelectorAll('tr.vacio').forEach(tr => {
+      tr.hidden = !!tr.parentNode.querySelector('tr.por-vend:not([hidden])');
+    });
     if (window.__dibujarGrafico) window.__dibujarGrafico();
     const R = v ? RV[v] : R0;
     const f = n => Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g,'.');
@@ -317,7 +341,10 @@ recibidos cada mes. Toda la casa:
     const w=240, m={l:24,r:8,t:18,b:16}, iw=w-m.l-m.r, ih=h-m.t-m.b, n=vals.length;
     const max=Math.max(180,...vals.map(v=>v||0)), Yv=v=>m.t+ih-v/max*ih, Xi=i=>m.l+iw*(i+.5)/n;
     let g='';
-    [[100,'#c98a0b'],[150,'#b3362a']].forEach(([v,c])=>{g+=`<line x1="${m.l}" x2="${w-m.r}" y1="${Yv(v)}" y2="${Yv(v)}" stroke="${c}" stroke-dasharray="3 3" opacity=".7"/><text x="${m.l-3}" y="${Yv(v)+3}" text-anchor="end">${v}</text>`;});
+    // Con facturas de 700 días las dos rayas quedan pegadas: el 150 va arriba
+    // de su raya y el 100 abajo, para que no se pisen.
+    const junto=Yv(100)-Yv(150)<10;
+    [[100,'#c98a0b',junto?9:3],[150,'#b3362a',junto?-2:3]].forEach(([v,c,dy])=>{g+=`<line x1="${m.l}" x2="${w-m.r}" y1="${Yv(v)}" y2="${Yv(v)}" stroke="${c}" stroke-dasharray="3 3" opacity=".7"/><text x="${m.l-3}" y="${Yv(v)+dy}" text-anchor="end">${v}</text>`;});
     const pts=vals.map((v,i)=>v==null?null:[Xi(i),Yv(v)]);
     const tr=pts.filter(Boolean).map(p=>p.join(',')).join(' ');
     if(tr) g+=`<polyline points="${tr}" fill="none" stroke="#6b7280" stroke-width="1.5"/>`;
@@ -367,7 +394,7 @@ recibidos cada mes. Toda la casa:
       <div class="ev-graf">
         <div><h4>Deuda en facturas al cierre de cada mes</h4>${barras(e.s, cols, 140)}<div class="ley">color = semáforo de ese día</div></div>
         <div><h4>Factura más vieja (días)</h4>${linea(e.e, cols, 140)}<div class="ley">amarillo desde 100 · rojo desde 150</div></div>
-        <div><h4>Compró y pagó cada mes</h4>${pares(e.co, e.pa, 140)}<div class="ley"><i style="background:#cbd5e1"></i>compró<i style="background:#1f4f6e"></i>pagó${e.di.some(x=>x!=null)?'<br>días que tardó en pagar: '+e.di.map((x,i)=>EV.meses[i]+' '+(x==null?'—':x)).join(' · '):''}</div></div>
+        <div><h4>Compró y pagó cada mes</h4>${pares(e.co, e.pa, 140)}<div class="ley"><i style="background:#cbd5e1"></i>compró<i style="background:#1f4f6e"></i>pagó${e.pa.every(x=>!x)?' · <b>no pagó nada desde '+EV.meses[0]+'</b>':''}${e.di.some(x=>x!=null)?'<br>días que tardó en pagar: '+e.di.map((x,i)=>EV.meses[i]+' '+(x==null?'—':x)).join(' · '):''}</div></div>
       </div>`;
     box.hidden=false;
   }
