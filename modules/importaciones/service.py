@@ -170,6 +170,11 @@ def adjuntar_grupo_partidas(rows: list[dict]) -> None:
         r["grupo_ims"] = [im] if im else []
         r["grupo_completo"] = True
         r["grupo_aviso"] = None
+        # Las HERMANAS de la partida, sin el corte por mes de recepción: el
+        # anticipo se pagó por las tres aunque lleguen en momentos distintos
+        # (ver `_reparto_por_kilos`). Por defecto, sola.
+        r["partida_ims"] = [im] if im else []
+        r["partida_kg"] = float(r.get("kg") or 0.0)
 
     cand: dict[tuple, list[dict]] = {}
     for r in filas:
@@ -202,7 +207,12 @@ def adjuntar_grupo_partidas(rows: list[dict]) -> None:
                 (fechas[-1] - fechas[0]).days > _VENTANA_PARTIDA_DIAS:
             aviso = (f"las partidas están a {(fechas[-1] - fechas[0]).days} días "
                      f"(máx {_VENTANA_PARTIDA_DIAS}): puede ser otra campaña")
-        elif len(meses) > 1:
+        if not aviso:
+            _ims = sorted(str(m.get("im_numero") or "").strip() for m in miembros)
+            _kg = round(sum(float(m.get("kg") or 0.0) for m in miembros), 2)
+            for m in miembros:
+                m["partida_ims"], m["partida_kg"] = list(_ims), _kg
+        if not aviso and len(meses) > 1:
             aviso = f"las partidas se recibieron en meses distintos: {sorted(meses)}"
         if aviso:
             for m in miembros:
@@ -620,6 +630,39 @@ def importaciones_con_cruce(limite: int = 400) -> list[dict]:
     return rows
 
 
+def _plata_de_las_partidas(ims: list[str], por_im: dict) -> float:
+    """US$ cargados para una importación partida, sumando TODAS sus partidas
+    (lleguen o no): el cruce cuelga la plata de UNA sola, la de fecha más
+    cercana. Si alguna ya tiene compra, mandan las compras (los anticipos
+    convertidos siguen apareciendo y se contarían dos veces)."""
+    miembros = [por_im[i] for i in ims if i in por_im]
+    compras = [m for m in miembros if m.get("fuente") == "compra"]
+    usar = compras or [m for m in miembros if m.get("fuente") == "anticipo"]
+    return round(sum(float(m.get("importe_programa") or 0) for m in usar), 2)
+
+
+def _reparto_por_kilos(r: dict, por_im: dict) -> float | None:
+    """La parte de la plata que le toca a ESTA partida: plata × kg / kg total.
+
+    🚨 Tamara 06/10/2026, MH 71-72 (IM-646/647/648, 71.880 kg, 153.499,23):
+    los anticipos quedaron colgados de una partida y llegó primero OTRA, de
+    24.300 kg. Esos kilos entraron "sin costo" al promedio y la utilidad
+    subió +77 mil seis minutos, hasta que llegó la de la plata. El 21/08,
+    MH 68-69, al revés: la de la plata llegó primero y los 47.580 kg
+    restantes esperaron una hora. *"Fijate por qué no se cruzó, tenemos que
+    arreglar."* Ahora cada partida entra con SU parte: 24.300 kg →
+    51.892,59, a 2,1355 el kilo, desde el primer minuto.
+
+    None si no es una partida con hermanas (sigue la regla de siempre).
+    """
+    ims = [str(x).strip() for x in (r.get("partida_ims") or []) if x]
+    total_kg = float(r.get("partida_kg") or 0.0)
+    if len(ims) < 2 or total_kg <= 0:
+        return None
+    plata = _plata_de_las_partidas(ims, por_im)
+    return round(plata * float(r.get("kg") or 0.0) / total_kg, 2)
+
+
 def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     """Costo-a-la-fecha en USD del hilado RECIBIDO en el mes (yy, mm), tomado de
     NUESTRA base: anticipos (`scintela.dolares`) + compras (`scintela.compra`),
@@ -652,6 +695,9 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
     # vive a nivel (prov, nº, año) y las partidas ---1/---2 lo COMPARTEN, así que
     # "tiene costo" se decide por grupo, no por fila.
     filas: list[tuple] = []
+    nombres: dict[tuple, str] = {}
+    repartidas: list[tuple] = []     # (clave, kg, us) — partidas con hermanas
+    por_im = {str(r.get("im_numero") or "").strip(): r for r in rows or []}
     for r in rows or []:
         if not r.get("recibida"):
             continue
@@ -662,13 +708,21 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
             r.get("numero"),
             str(r.get("fecha") or "")[:4],
         )
-        filas.append((clave, float(r.get("kg") or 0.0), r.get("importe_programa")))
+        nombres.setdefault(clave, str(r.get("codigo") or "").strip())
+        kg = float(r.get("kg") or 0.0)
+        reparto = _reparto_por_kilos(r, por_im)
+        if reparto is not None:
+            repartidas.append((clave, kg, reparto))
+            continue
+        filas.append((clave, kg, r.get("importe_programa")))
 
     grupos_con_costo = {c for c, _kg, imp in filas if imp}
-    total_kg = sum(kg for _c, kg, _i in filas)
-    kg_con_costo = sum(kg for c, kg, _i in filas if c in grupos_con_costo)
+    total_kg = (sum(kg for _c, kg, _i in filas)
+                + sum(kg for _c, kg, _u in repartidas))
+    kg_con_costo = (sum(kg for c, kg, _i in filas if c in grupos_con_costo)
+                    + sum(kg for _c, kg, us in repartidas if us))
 
-    total_us = 0.0
+    total_us = sum(us for _c, _kg, us in repartidas)
     vistos: set[tuple] = set()
     for clave, _kg, imp in filas:
         if not imp or clave in vistos:
@@ -677,11 +731,24 @@ def costo_hilado_recibido_mes(yy: int, mm: int, limite: int = 1000) -> dict:
         total_us += float(imp)
 
     usd_kg = round(total_us / kg_con_costo, 4) if kg_con_costo else None
+    # Cuáles esperan su plata: la traza nombra los kilos que llegan "de
+    # prestado" (Tamara 06/10/2026, MH 71-72).
+    sin_costo: dict[tuple, float] = {}
+    for c, kg, _i in filas:
+        if c not in grupos_con_costo:
+            sin_costo[c] = sin_costo.get(c, 0.0) + kg
+    for c, kg, us in repartidas:
+        if not us:
+            sin_costo[c] = sin_costo.get(c, 0.0) + kg
     return {
         "us": round(total_us, 2),
         "kg": round(total_kg, 2),
         "kg_con_costo": round(kg_con_costo, 2),
         "usd_kg": usd_kg,
+        "sin_costo": [{"codigo": nombres.get(c) or " ".join(
+                           str(x) for x in c[:2] if x),
+                       "kg": round(kg, 2)}
+                      for c, kg in sin_costo.items() if kg > 0],
     }
 
 
@@ -980,6 +1047,24 @@ def adjuntar_recepcion_asinfo(anticipos: list[dict], limite: int = 400) -> None:
             continue
         a["im_numero"] = im.get("im_numero")
         a["fecha_recepcion_im"] = im.get("fecha_recepcion")
+        # 🚨 Tamara 06/10/2026 (MH 71-72): el anticipo se cuelga de UNA
+        # partida, pero pagó las tres. Cuenta como recibido desde que llega
+        # la PRIMERA, por la parte de los kilos que ya llegaron
+        # (`kg_recibido_im` / `kg_partidas_im`); la conversión automática
+        # espera a que lleguen todas (`partidas_completas_im`).
+        _ims = [str(x).strip() for x in (im.get("partida_ims") or []) if x]
+        if len(_ims) > 1:
+            _por_im = {str(c.get("im_numero") or "").strip(): c
+                       for cs in index.values() for c in cs}
+            _miembros = [_por_im[i] for i in _ims if i in _por_im]
+            _llegaron = [m for m in _miembros if m.get("fecha_recepcion")]
+            if _llegaron:
+                a["fecha_recepcion_im"] = min(
+                    str(m.get("fecha_recepcion")) for m in _llegaron)
+            a["kg_recibido_im"] = round(sum(float(m.get("kg") or 0)
+                                            for m in _llegaron), 2)
+            a["kg_partidas_im"] = float(im.get("partida_kg") or 0.0)
+            a["partidas_completas_im"] = len(_llegaron) == len(_ims) == len(_miembros)
         # kg del GRUPO: si la importación viene partida en ---1/---2, el
         # anticipo se pagó por la mercadería entera, no por media.
         a["kg_im"] = im.get("grupo_kg", im.get("kg"))

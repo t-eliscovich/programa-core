@@ -461,6 +461,13 @@ def pendientes(cfg: dict | None = None) -> dict:
         # ── GUARD 3: sólo con recepción REAL en Asinfo ──────────────────────
         if not im or not rec or not cta or ref is None:
             continue
+        # ── GUARD 3b (06/10/2026, MH 71-72): importación partida → se
+        # convierte cuando llegaron TODAS. Mientras tanto el anticipo se
+        # descuenta por la parte que llegó (ver anticipos_con_mercaderia_
+        # recibida); convertir antes se llevaría la plata entera del activo
+        # con kilos que todavía no están en la bodega.
+        if f.get("partidas_completas_im") is False:
+            continue
         # ── GUARD 4: fecha de corte — no dispara el histórico ───────────────
         # La fecha de corte se sella el día que se prende y es INCLUSIVA: las
         # recepciones de ESE día entran (si prendés un lunes, lo que llegó el

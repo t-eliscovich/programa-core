@@ -698,6 +698,9 @@ _ANTIC_RECIBIDOS_ULTIMO_BUENO: float | None = None
 #: con Asinfo puede fallar en una vuelta y acertar en la siguiente; sin esta
 #: memoria, el anticipo volvería al activo y la utilidad subiría sola.
 _ANTIC_RECIBIDOS_VISTOS: set = set()
+#: La parte de cada anticipo cuya mercadería ya llegó (importación partida:
+#: kilos llegados / kilos de todas las partidas). Tampoco "des-llega".
+_ANTIC_RECIBIDOS_PARTE: dict = {}
 
 
 def anticipos_con_mercaderia_recibida() -> float:
@@ -716,6 +719,7 @@ def anticipos_con_mercaderia_recibida() -> float:
         if not filas:
             _ANTIC_RECIBIDOS_ULTIMO_BUENO = 0.0
             _ANTIC_RECIBIDOS_VISTOS.clear()
+            _ANTIC_RECIBIDOS_PARTE.clear()
             return 0.0
         _imp_svc.adjuntar_recepcion_asinfo(filas)
         if not any(f.get("im_numero") for f in filas):
@@ -765,12 +769,25 @@ def anticipos_con_mercaderia_recibida() -> float:
 
         vivos = {f.get("id_dolares") for f in filas}
         _ANTIC_RECIBIDOS_VISTOS.intersection_update(vivos)
+        for k in [k for k in _ANTIC_RECIBIDOS_PARTE if k not in vivos]:
+            del _ANTIC_RECIBIDOS_PARTE[k]
         for f in filas:
             if _en_ventana(f):
-                _ANTIC_RECIBIDOS_VISTOS.add(f.get("id_dolares"))
+                _id = f.get("id_dolares")
+                _ANTIC_RECIBIDOS_VISTOS.add(_id)
+                # 🚨 Tamara 06/10/2026 (MH 71-72): importación partida → se
+                # descuenta la parte de los kilos que ya llegaron, la MISMA
+                # que entra al stock (`costo_hilado_recibido_mes`).
+                _parte = 1.0
+                _tot = float(f.get("kg_partidas_im") or 0)
+                if _tot > 0 and f.get("kg_recibido_im") is not None:
+                    _parte = min(1.0, float(f["kg_recibido_im"]) / _tot)
+                _ANTIC_RECIBIDOS_PARTE[_id] = max(
+                    _parte, _ANTIC_RECIBIDOS_PARTE.get(_id, 0.0))
 
         total = round(sum(
             float(f.get("importe") or 0)
+            * _ANTIC_RECIBIDOS_PARTE.get(f.get("id_dolares"), 1.0)
             for f in filas if f.get("id_dolares") in _ANTIC_RECIBIDOS_VISTOS
         ), 2)
         _ANTIC_RECIBIDOS_ULTIMO_BUENO = total

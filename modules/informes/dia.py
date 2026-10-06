@@ -1722,7 +1722,8 @@ def _fotos_del_dia(desde: dict | None, hasta: dict | None) -> tuple[str, dict]:
             """
             SELECT id_traza, compras_import_us, compras_local_us, al_precio_us,
                    recargos_tardios_us, hilado_insumos,
-                   compras_kg, hilado_kg, hilado_ukg, tejido_kg, terminado_kg
+                   compras_kg, hilado_kg, hilado_ukg, tejido_kg, terminado_kg,
+                   kg_sin_costo, creado_en
               FROM scintela.traza_utilidad
              WHERE id_traza IN (%s, %s)
             """, (t0, t1))

@@ -1532,7 +1532,8 @@ def stock_de_la_ventana(fila: dict | None, anterior: dict | None) -> dict:
     if ck0 is None or ck1 is None or not p0 or not p1:
         return {}
     lote_kg = round(ck1 - ck0, 2)
-    if lote_kg <= 0:
+    sin_costo = _sin_costo_de_la_ventana(fila, anterior)
+    if lote_kg < 0 or (lote_kg == 0 and not sin_costo):
         return {}
     kg, dkg = {}, {}
     for et in ORDEN_ETAPAS:
@@ -1540,7 +1541,55 @@ def stock_de_la_ventana(fila: dict | None, anterior: dict | None) -> dict:
         if k0 is None or k1 is None:
             return {}
         kg[et], dkg[et] = k1, round(k1 - k0, 2)
-    return {"lote_kg": lote_kg, "p0": p0, "p1": p1, "kg": kg, "dkg": dkg}
+    return {"lote_kg": lote_kg, "p0": p0, "p1": p1, "kg": kg, "dkg": dkg,
+            **sin_costo}
+
+
+def _sin_costo_de_la_ventana(fila: dict, anterior: dict) -> dict:
+    """Los kilos de hilado que llegaron a Asinfo SIN su plata cruzada todavía
+    (o que la recibieron) entre las dos fotos.
+
+    🚨 Tamara 06/10/2026, ventanas de las 08:25 y 08:31 (MH 71-72): llegó la
+    primera partida, 24.300 kg, antes de que se cruzaran sus anticipos. Esos
+    kilos entran al stock al $/kg promedio y la utilidad sube +77.462 "de
+    prestado"; seis minutos después se cruzan los anticipos, el lote entra
+    con su plata y los 24.300 kg prestados se devuelven (−77.308). La traza
+    decía "tej. → term. · entró a hil." y "hil. y tej. → term.": ninguna de
+    las dos cosas pasó. Ella eligió dejar el préstamo y NOMBRARLO.
+
+    `kg_sin_costo` es el saldo del mes (vuelve a 0 el día 1): una ventana que
+    cruza de mes no se mira. Los nombres salen de `hilado_insumos.sin_costo`
+    (sólo fotos desde el 06/10/2026); sin ellos el renglón dice "hilado".
+    """
+    def _v(f, col):
+        v = (f or {}).get(col)
+        return None if v is None else float(v)
+    s0, s1 = _v(anterior, "kg_sin_costo"), _v(fila, "kg_sin_costo")
+    if s0 is None or s1 is None:
+        return {}
+    c0, c1 = anterior.get("creado_en"), fila.get("creado_en")
+    if (hasattr(c0, "month") and hasattr(c1, "month")
+            and (c0.year, c0.month) != (c1.year, c1.month)):
+        return {}
+    d = round(s1 - s0, 2)
+    if abs(d) < 1:
+        return {}
+
+    def _nombres(f):
+        ins = (f or {}).get("hilado_insumos")
+        if isinstance(ins, str):
+            try:
+                import json as _json
+                ins = _json.loads(ins)
+            except ValueError:
+                ins = None
+        lista = (ins or {}).get("sin_costo") if isinstance(ins, dict) else None
+        return [str(x.get("codigo") or "").strip() for x in (lista or [])
+                if isinstance(x, dict) and str(x.get("codigo") or "").strip()]
+    antes, ahora = _nombres(anterior), _nombres(fila)
+    cuales = ([n for n in ahora if n not in antes] if d > 0
+              else [n for n in antes if n not in ahora])
+    return {"sin_costo_dkg": d, "sin_costo_nombres": cuales}
 
 
 def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
@@ -1580,6 +1629,7 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
     # el resto los kilos de las otras etapas (y el hilado neto del lote).
     ant["kg"] = {"hilado_kg": stock["lote_kg"]}
     ant["d_ukg"] = None
+    ant["es_lote"] = True
     # 2. La revaluación: el hilado vale lo que trajo el lote al $/kg viejo más
     #    lo que revaluó el $/kg nuevo, y eso no coincide con la plata del
     #    anticipo — el sobreprecio del lote se reparte sobre todo el hilado,
@@ -1617,6 +1667,78 @@ def _partir_el_lote(grupos: dict, ant: dict, tela: dict, tarifa: dict | None,
         tela["fundido"] = True
     if tarifa:
         tarifa["fundido"] = True
+
+
+def _partir_los_kilos_sin_costo(grupos: dict, stock: dict | None) -> None:
+    """Los kilos que llegaron sin plata (o que la recibieron) salen del
+    renglón del stock con nombre propio. Ver `_sin_costo_de_la_ventana`.
+
+    Llegan:  "llegaron 24.300 kg de MH 71-72 sin costo todavía"  +77.462
+    Vuelven: "se le puso costo a los 24.300 kg que llegaron antes" −77.327,
+             pegado debajo del lote (y de su revaluación): es la otra mitad
+             del mismo hecho.
+
+    Los kilos se valúan al $/kg de ANTES de la ventana, que es al que
+    entraron. La suma de los renglones es la de antes: no se inventa un
+    centavo, sólo deja de esconderse el préstamo adentro de "entró a hil.".
+    """
+    d = float((stock or {}).get("sin_costo_dkg") or 0)
+    if abs(d) < 1 or not stock.get("p0") or not stock.get("dkg"):
+        return
+    lote = next((g for g in grupos.values()
+                 if g.get("es_lote") and not g.get("fundido")), None)
+    if d < 0 and not lote:
+        return                 # la plata llega siempre con su lote
+    tela = next((g for g in grupos.values()
+                 if g.get("regla") == "Stock" and not g.get("fundido")), None)
+    if not tela:
+        return
+    from modules.informes.foto import ORDEN_ETAPAS, _texto_stock
+
+    base = tela.get("kg")
+    if base is None:
+        base = {f"{et}_kg": stock["dkg"].get(et, 0.0) for et in ORDEN_ETAPAS}
+    dkg = {et: float(base.get(f"{et}_kg") or 0) for et in ORDEN_ETAPAS}
+    # Sólo si el hilado de la ventana se movió para ese lado: si no, los
+    # kilos no están en este renglón y partirlo sería inventar.
+    if dkg["hilado"] * d <= 0 or abs(dkg["hilado"]) + 1 < abs(d):
+        return
+    p0 = float(stock["p0"])
+    valor = round(d * p0, 2)
+    kg_txt = _num(abs(d), 0)
+    if d > 0:
+        nombres = stock.get("sin_costo_nombres") or []
+        de = " y ".join(nombres) if nombres else "hilado"
+        texto = f"llegaron {kg_txt} kg de {de} sin costo todavía"
+        nota = (f"se valúan a $ {_num(p0, 4)} el kilo hasta que se crucen "
+                "sus anticipos; ahí vuelve")
+    else:
+        texto = f"se le puso costo a los {kg_txt} kg que llegaron antes"
+        nota = (f"habían entrado sin plata a $ {_num(p0, 4)} el kilo; "
+                "ahora los trae el lote")
+    pegado = None
+    if d < 0:
+        pegado = grupos.get(("Revaluación de stock", "#lote"))
+        if not pegado or pegado.get("fundido") or pegado.get("pegado_a") is not lote:
+            pegado = lote
+    grupos[("Sin costo", "#kilos")] = {
+        "regla": "Stock", "aporte": valor, "n": 1,
+        "etiqueta": None, "url": None, "col": "vsto",
+        "por_col": {"vsto": valor}, "quienes": {}, "cuantos": {},
+        "evento": None, "hechos": set(), "signos": set(),
+        "familia": "utilidad", "bruto": abs(valor),
+        "pegado_a": pegado, "texto_unido": texto,
+        "kg": {"hilado_kg": d}, "d_ukg": None, "nota": nota,
+        "sin_costo": True}
+    dkg["hilado"] = round(dkg["hilado"] - d, 2)
+    resto = round(tela["aporte"] - valor, 2)
+    tela["aporte"], tela["por_col"], tela["bruto"] = resto, {"vsto": resto}, abs(resto)
+    tela["kg"] = {f"{et}_kg": v for et, v in dkg.items() if abs(v) >= 1}
+    tela.setdefault("d_ukg", None)          # con `kg` propio el template lo lee
+    tela["texto_unido"] = _abreviar_etapas(
+        _texto_stock({et: {"dkg": v} for et, v in dkg.items()}))
+    if abs(resto) < UMBRAL_VISIBLE and not tela["kg"]:
+        tela["fundido"] = True
 
 
 def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None,
@@ -2135,6 +2257,7 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     _unir_las_dos_patas(grupos)
     _unir_anticipo_de_mercaderia_ya_recibida(grupos)
     _unir_anticipo_con_mercaderia(grupos, hasta, stock)
+    _partir_los_kilos_sin_costo(grupos, stock)
     _unir_conversion_del_anticipo(grupos)
     _partir_el_despacho(grupos, despachos, kilos, venta, d_ukg)
     _unir_la_mezcla_al_stock(grupos, causa_tarifa)
@@ -2334,7 +2457,11 @@ def resumir(movs: list[dict], d_utilidad: float | None,
     # Un renglón "pegado" a otro va inmediatamente debajo de él, aunque por
     # tamaño le tocara más abajo: las dos partes de un mismo movimiento se
     # leen juntas (la revaluación debajo del lote que la causó).
-    pegados = [g for g in out if g.get("pegado_a") is not None]
+    # Un pegado a otro pegado se acomoda DESPUÉS de su ancla: si no, el ancla
+    # se mueve y lo deja atrás (lote → revaluación → kilos sin costo).
+    def _hondo(g, n=0):
+        return n if g.get("pegado_a") is None or n > 5 else _hondo(g["pegado_a"], n + 1)
+    pegados = sorted((g for g in out if g.get("pegado_a") is not None), key=_hondo)
     for g in pegados:
         if g["pegado_a"] in out:
             out.remove(g)

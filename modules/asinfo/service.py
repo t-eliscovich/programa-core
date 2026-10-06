@@ -1893,6 +1893,7 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
         compras = float(_rec.get("kg_con_costo") or 0)
         kg_sin_costo = max(0.0, float(_rec.get("kg") or 0) - compras)
         insumos["import_us"], insumos["import_kg"] = compras_us, compras
+        insumos["sin_costo"] = list(_rec.get("sin_costo") or [])
     except Exception:  # noqa: BLE001
         compras = 0.0
         compras_us = 0.0
