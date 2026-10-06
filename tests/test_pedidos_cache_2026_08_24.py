@@ -89,15 +89,14 @@ def test_el_cache_vence(monkeypatch):
 
 
 def test_las_filas_salen_COPIADAS():
-    """`marcar_acabado` les escribe encima. Sin la copia, la segunda visita
-    encontraría las filas de la primera ya pintadas — y peor: pintadas con un
-    acabado que quizás ya cambió."""
+    """`en_unidad` les escribe encima. Sin la copia, la segunda visita
+    encontraría las filas de la primera ya pintadas."""
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
         a, _ = service.pendientes()
-        a[0]["acabado"] = "TUB"
+        a[0]["pedido_d"] = 99
         b, _ = service.pendientes()
-    assert "acabado" not in b[0]
+    assert "pedido_d" not in b[0]
 
 
 def test_se_puede_apagar_sin_deploy(monkeypatch):

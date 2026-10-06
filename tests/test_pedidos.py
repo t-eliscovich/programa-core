@@ -620,8 +620,9 @@ def test_la_flechita_despliega_el_pedido_y_el_cliente_sin_cambiar_de_pagina(app,
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
-    assert 'data-fila="d-FE96CAF"' in body
-    assert 'data-grupo="d-FE96CAF"' in body
+    # El renglón es producto + acabado; sin acabado en la línea va "_X".
+    assert 'data-fila="d-FE96CAF_X"' in body
+    assert 'data-grupo="d-FE96CAF_X"' in body
     assert "PDCL-29712" in body and ">KAM<" in body
     # el nombre completo no se imprime, pero queda al pasar el mouse
     assert 'title="MALDONADO ANA KARINA"' in body
@@ -659,8 +660,8 @@ def test_los_pedidos_se_agrupan_por_codigo_de_producto():
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)):
         out = service.pedidos_por_color()
-    assert [p["numero"] for p in out["FE96CAF"]] == ["A", "B"]
-    assert len(out["FE96NEG"]) == 1
+    assert [p["numero"] for p in out["FE96CAF_X"]] == ["A", "B"]
+    assert len(out["FE96NEG_X"]) == 1
 
 
 def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
@@ -679,7 +680,7 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
 
     assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
-    fila = body[body.index('data-grupo="d-FE96CAF"'):]
+    fila = body[body.index('data-grupo="d-FE96CAF_X"'):]
     fila = fila[:fila.index("</tr>")]
     assert fila.count("<td") == 5                   # 3 columnas + memo (colspan 2) + N° pedido
     assert 'colspan="2"' in fila
@@ -867,31 +868,23 @@ def test_el_desplegable_del_corte_color_muestra_cliente_y_fecha(app, fake_db):
     assert "PDCL-29712" in body          # y el número
 
 
-def test_marcar_acabado_pega_el_acabado_por_codigo_de_producto():
-    filas = [service._fila(_fila(codigo="FE96CAF"))]
-    with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=([{"codigo": "FE96CAF", "acabado": "TUB"}], True)):
-        service.marcar_acabado(filas)
-    assert filas[0]["acabado"] == "TUB"
+def test_el_acabado_del_renglon_sale_de_la_linea_del_pedido():
+    f = service._fila(_fila(codigo="FE96CAF", aca_min="abi", aca_max="ABI"))
+    assert f["acabado"] == "ABI" and f["clave"] == "FE96CAF_ABI"
 
 
-def test_si_asinfo_no_da_el_acabado_la_pantalla_sigue_sin_punto():
-    filas = [service._fila(_fila(codigo="FE96CAF"))]
-    with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      return_value=([], False)):
-        service.marcar_acabado(filas)
-    assert filas[0]["acabado"] == ""
+def test_sin_acabado_en_la_linea_el_renglon_va_sin_pastilla():
+    f = service._fila(_fila(codigo="FE96CAF"))
+    assert f["acabado"] == "" and f["clave"] == "FE96CAF_X"
 
 
-def test_el_corte_color_muestra_el_punto_de_acabado_tub_abi(app, fake_db):
+def test_el_corte_color_muestra_la_pastilla_de_acabado_tub_abi(app, fake_db):
     c = _login(app, fake_db)
 
     def fake(_db, sql, **_kw):
-        if "saldo_producto_lote" in sql and "id_atributo = 1" in sql:
-            return ([{"codigo": "FE96CAF", "acabado": "TUB"}], True)
         if "ORDER BY pr.codigo, v.fecha" in sql:
             return ([], True)
-        return ([_fila()], True)
+        return ([_fila(aca_min="TUB", aca_max="TUB")], True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         body = c.get("/pedidos").get_data(as_text=True)

@@ -585,7 +585,8 @@ def test_un_pedido_terminado_muestra_terminado(app, fake_db):
 def test_el_acabado_sale_de_la_linea_del_pedido_no_del_producto():
     """Jonathan 10/09: el PDCL-31577 pide JE35 ABIERTO y Rib TUBULAR; el
     producto JE35 tiene lotes TUB — por producto salía todo TUB."""
-    filas = [dict(_FILAS[2], acabado="ABI"), dict(_FILAS[2], codigo="RINEG", acabado="TUB")]
+    filas = [dict(_FILAS[2], aca_min="ABI", aca_max="ABI"),
+             dict(_FILAS[2], codigo="RINEG", aca_min="TUB", aca_max="TUB")]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)), \
          patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
@@ -659,7 +660,7 @@ def test_acabados_de_pedidos_limpia_los_numeros_antes_de_interpolarlos():
 
 
 def test_por_pedido_trae_el_acabado_de_cada_linea():
-    filas = [dict(_FILAS[2], acabado="abi")]
+    filas = [dict(_FILAS[2], aca_min="abi", aca_max="abi")]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)), \
          patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
@@ -675,8 +676,8 @@ def test_el_memo_no_sale_del_cache_de_la_pantalla(monkeypatch):
     y el memo salió con TUB. La foto que se guarda tiene que ir a Asinfo."""
     monkeypatch.setenv("PEDIDOS_CACHE_SECS", "300")
     service.reset_cache()
-    viejas = [dict(f, acabado="TUB") for f in _FILAS]
-    nuevas = [dict(f, acabado="ABI") for f in _FILAS]
+    viejas = [dict(f, aca_min="TUB", aca_max="TUB") for f in _FILAS]
+    nuevas = [dict(f, aca_min="ABI", aca_max="ABI") for f in _FILAS]
     respuestas = [(viejas, True), (nuevas, True)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=lambda *a, **k: respuestas.pop(0)) as fetch, \

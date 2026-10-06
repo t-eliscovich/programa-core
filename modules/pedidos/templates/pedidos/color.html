@@ -36,7 +36,7 @@
 <div class="pc">
   <h1 style="font-size:20px;font-weight:700;color:#0f172a;margin:0">
     <span class="cod">{{ codigo }}</span>
-    {% if ficha %}<span style="font-weight:400;color:#475569">· {{ ficha.tela }} {{ ficha.color }}</span>{% endif %}
+    {% if ficha %}<span style="font-weight:400;color:#475569">· {{ ficha.tela }} {{ ficha.color }}{% if ficha.acabado %} · {{ 'Abierto' if ficha.acabado == 'ABI' else ('Tubular' if ficha.acabado == 'TUB' else ficha.acabado) }}{% endif %}</span>{% endif %}
   </h1>
 
   {% if not disponible %}

@@ -2874,6 +2874,19 @@ def hilo_local():
     return jsonify(_loc.health())
 
 
+# Tamara 2026-10-06 (PDCL-32677, "no nos puede seguir pasando"): el acabado
+# de cada pedido en CADA pantalla que lo muestra (/pedidos, corte Pedido,
+# /mi-cartera, memos mandados) contra la línea del pedido en Asinfo.
+
+
+@bp.route("/acabado-pedidos", methods=["GET"])
+@requiere_login
+@requiere_permiso("usuarios.admin")
+def acabado_pedidos():
+    from modules.pedidos import vigia_acabado as _vig
+    return jsonify(_vig.health())
+
+
 # ---------------------------------------------------------------------------
 # Endpoint combinado: /admin/health/all (para un unico curl del cron)
 # ---------------------------------------------------------------------------
@@ -2919,6 +2932,8 @@ def health_all():
     data28 = json.loads(resp28.get_data(as_text=True))
     # Tamara 2026-10-01: salidas de material que Asinfo no bajó del saldo.
     data29 = json.loads(salidas_sin_saldo().get_data(as_text=True))
+    # Tamara 2026-10-06: el acabado de los pedidos, pantalla por pantalla.
+    data30 = json.loads(acabado_pedidos().get_data(as_text=True))
     # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
     # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
     from modules._lib import servidor as _srv
@@ -2973,7 +2988,8 @@ def health_all():
                and data16["ok"] and data17["ok"] and data19["ok"]
                and data20["ok"] and data21["ok"]
                and data23["ok"] and data24["ok"] and data25["ok"]
-               and data26["ok"] and data28["ok"] and data29["ok"]),
+               and data26["ok"] and data28["ok"] and data29["ok"]
+               and data30["ok"]),
         "usuario_crea_audit": data1,
         "utilidad_watchdog": data2,
         "cartera_coherence": data3,
@@ -3002,6 +3018,7 @@ def health_all():
         "hilo_local": json.loads(resp27.get_data(as_text=True)),
         "debito_sin_banco": data28,
         "salidas_sin_saldo": data29,
+        "acabado_pedidos": data30,
         "servidor": data26,
     })
 

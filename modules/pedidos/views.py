@@ -1,9 +1,9 @@
 """/pedidos — qué pidieron los clientes y todavía no se despachó.
 
 Cinco cortes del mismo dato, en el orden del Excel "Detalle de Pedidos" de la
-dueña: Color · Tipo de tela · Acabado · Cliente · Categoría. El corte por
-acabado no está todavía (el acabado es atributo de LOTE en Asinfo y el pedido
-no tiene lote — no hay fuente limpia a nivel producto).
+dueña: Color · Tipo de tela · Acabado · Cliente · Categoría. El acabado no es
+un corte aparte: desde el 06/10/2026 es parte del RENGLÓN (tela + color +
+acabado), sacado de la LÍNEA del pedido (`service.acabado_de_linea`).
 
   Color      → una fila por color (código grande, nombre chico), con pedido,
                stock, producción y faltante; se abre a sus telas y clientes.
@@ -81,9 +81,6 @@ def lista():
 
     if not disponible or not categorias:
         return render_template("pedidos/lista.html", **ctx)
-
-    if corte in ("color", "tela"):
-        service.marcar_acabado(filas)   # el punto TUB/ABI; fail-soft
 
     if corte == "color":
         ctx["colores"] = service.por_color(filas)
@@ -177,7 +174,6 @@ def excel():
 
     from filters import today_ec
 
-    service.marcar_acabado(filas)
     colores = service.por_color(filas)          # variants ya traen pedido_d, etc.
     categorias = service.por_categoria(filas)
     clientes = service.por_cliente()
@@ -286,7 +282,8 @@ def color(codigo: str):
     podemos distinguir "no existe" de "no pude preguntar", y un 404 ahí
     mentiría. Muestra la ficha vacía con el aviso.
     """
-    ficha, pedidos, ordenes, disponible = service.detalle_color(codigo)
+    aca = request.args.get("aca")
+    ficha, pedidos, ordenes, disponible = service.detalle_color(codigo, aca)
     return render_template(
         "pedidos/color.html",
         codigo=codigo.strip().upper(),

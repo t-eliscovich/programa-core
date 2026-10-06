@@ -133,6 +133,83 @@ CATEGORIAS = (
 CATEGORIAS_EN_UNIDADES = ("Cuellos", "Puños")
 
 
+# ── EL ACABADO (TUB / ABI) ES DE LA LÍNEA DEL PEDIDO — una sola regla ────────
+# Tamara 06/10/2026, tras el PDCL-32677 (GIC, FE96MAR ABI en Asinfo y TUB en
+# los cortes Color y Tipo de tela): *"no es lo mismo pedir abi o tub"*. El
+# renglón de /pedidos pasa a ser TELA + COLOR + ACABADO, y TODA pantalla que
+# muestra el acabado de un pedido (/pedidos en sus cortes, el memo, el sync de
+# memos y /mi-cartera) lo saca de acá:
+#
+#   * `_SQL_ACABADO_LINEA_T` — la CTE `aca` (pedido, producto, aca_min,
+#     aca_max), leída de `detalle_pedido_cliente`. Única SQL del acabado.
+#   * `acabado_de_linea(aca_min, aca_max)` — única función que lo rotula.
+#
+# Por qué hacía falta: desde el 18/08 los cortes Color/Tela pintaban el
+# acabado POR PRODUCTO con `acabados_por_producto()`, que mira los LOTES en
+# stock de bodega 53 y se queda con el MAX — y `MAX('ABI','TUB') = 'TUB'`.
+# FE96MAR tiene lotes de los dos acabados, así que todo salía TUB aunque el
+# pedido dijera ABI (verificado en /admin/sql el 06/10: 153 líneas ABI
+# pendientes). El corte Pedido y el memo ya leían la línea desde el 10/09
+# (PDCL-31577); el agujero quedó en los otros dos cortes. Ese MAX sigue
+# vivo SÓLO para la pantalla de stock (inventario rotativo), nunca para un
+# pedido.
+#
+# El atributo 1 (Acabado) se busca por NÚMERO de atributo, no por slot
+# (verificado 10/09: cae en el slot 3 en 200.105 de 200.107 líneas).
+# `v_saldos_comprometidos_detallado` no trae el id de la línea, así que se une
+# por (pedido, producto): si un pedido pide el MISMO producto en los dos
+# acabados no hay cómo saber qué saldo es de cuál y el renglón dice
+# "ABI/TUB" (el vigía `acabado_pedidos` del health lo nombra; al 06/10 no
+# había ninguno pendiente).
+_SQL_VALOR_ACABADO_LINEA = """CASE
+               WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
+               WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
+               WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
+               WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
+               WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
+               WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
+               WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
+               WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
+               WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
+               WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
+           END"""
+
+#: La CTE `aca`. `{pedidos}` es la sub-consulta de ids de pedido a mirar.
+_SQL_ACABADO_LINEA_T = """
+aca AS (
+    SELECT d.id_pedido_cliente, d.id_producto,
+           MIN(va.codigo) AS aca_min, MAX(va.codigo) AS aca_max
+      FROM detalle_pedido_cliente d
+      JOIN valor_atributo va ON va.id_valor_atributo = """ + _SQL_VALOR_ACABADO_LINEA + """
+     WHERE d.id_pedido_cliente IN ({pedidos})
+     GROUP BY d.id_pedido_cliente, d.id_producto
+)"""
+
+#: La CTE para el universo de la pantalla (pedidos de ≤ {dias} días).
+_SQL_ACABADO_LINEA = _SQL_ACABADO_LINEA_T.replace(
+    "{pedidos}",
+    "SELECT pc.id_pedido_cliente FROM pedido_cliente pc\n"
+    "                WHERE DATEDIFF(day, pc.fecha, {ahora}) <= {dias}")
+
+
+def acabado_de_linea(aca_min, aca_max) -> str:
+    """El rótulo del acabado de una línea de pedido: 'TUB', 'ABI', 'ABI/TUB'
+    (el mismo producto pedido en los dos) o '' (la línea no lo trae). LA
+    única función que rotula un acabado de pedido."""
+    a = str(aca_min or "").strip().upper()
+    b = str(aca_max or "").strip().upper()
+    if not a:
+        return ""
+    return a if a == b else f"{a}/{b}"
+
+
+def clave_renglon(codigo: str, acabado: str) -> str:
+    """La clave del renglón de /pedidos: producto + acabado. Va en los ids
+    del HTML (la flechita que despliega los clientes), así que sin '/'."""
+    return f"{codigo}_{(acabado or 'X').replace('/', '')}"
+
+
+
 # `conv`: cuántas unidades entran en un kilo, por producto. Sale del valor más
 # repetido de `valor_conversion` en las líneas de pedido en unidad — 33,33 para
 # cuellos, 50 para puños. Se saca de la data y no se hardcodea porque es una
@@ -147,8 +224,11 @@ WITH conv AS (
      WHERE id_unidad_venta = {un} AND valor_conversion > 1
      GROUP BY id_producto, valor_conversion
 ),
+""" + _SQL_ACABADO_LINEA.replace("{dias}", "{dias_ped}").lstrip("\n") + """,
 ped AS (
     SELECT v.id_producto,
+           ISNULL(a.aca_min, '')                                   AS aca_min,
+           ISNULL(a.aca_max, '')                                   AS aca_max,
            SUM(CASE WHEN v.id_unidad_pedido = {rollo}
                     THEN v.saldo_comprometido * {kg_rollo}
                     WHEN v.id_unidad_pedido = {kg} THEN v.saldo_comprometido
@@ -161,8 +241,10 @@ ped AS (
            COUNT(DISTINCT v.cliente)                               AS n_clientes,
            MIN(v.fecha)                                            AS mas_viejo
       FROM v_saldos_comprometidos_detallado v
+      LEFT JOIN aca a ON a.id_pedido_cliente = v.id_pedido_cliente
+                     AND a.id_producto = v.id_producto
      WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias_ped}
-     GROUP BY v.id_producto
+     GROUP BY v.id_producto, ISNULL(a.aca_min, ''), ISNULL(a.aca_max, '')
 ),
 inv AS (
     SELECT id_producto, SUM(saldo) AS inv_kg
@@ -173,6 +255,34 @@ inv AS (
              WHERE id_bodega = {bod}) u
      WHERE u.rn = 1 AND u.saldo > 0
      GROUP BY id_producto
+),
+inv_lote AS (
+    SELECT spl.id_producto, spl.id_lote, spl.saldo,
+           ROW_NUMBER() OVER (PARTITION BY spl.id_producto, spl.id_lote, spl.id_bodega
+                              ORDER BY spl.fecha DESC, spl.id_saldo_producto_lote DESC) AS rn
+      FROM saldo_producto_lote spl
+     WHERE spl.id_bodega = {bod}
+       AND spl.id_producto IN (SELECT id_producto FROM ped WHERE aca_min <> '')
+),
+lote_aca AS (
+    SELECT l.id_lote, MAX(va.codigo) AS aca
+      FROM lote l
+      JOIN valor_atributo va
+        ON va.id_atributo = 1
+       AND va.id_valor_atributo IN (
+             l.id_valor_atributo_1, l.id_valor_atributo_2, l.id_valor_atributo_3,
+             l.id_valor_atributo_4, l.id_valor_atributo_5, l.id_valor_atributo_6,
+             l.id_valor_atributo_7, l.id_valor_atributo_8, l.id_valor_atributo_9,
+             l.id_valor_atributo_10)
+     WHERE l.id_lote IN (SELECT id_lote FROM inv_lote WHERE rn = 1 AND saldo > 0)
+     GROUP BY l.id_lote
+),
+inv_aca AS (
+    SELECT u.id_producto, la.aca, SUM(u.saldo) AS inv_kg
+      FROM inv_lote u
+      JOIN lote_aca la ON la.id_lote = u.id_lote
+     WHERE u.rn = 1 AND u.saldo > 0
+     GROUP BY u.id_producto, la.aca
 ),
 padres AS (
     SELECT DISTINCT id_orden_fabricacion_padre AS p
@@ -198,10 +308,13 @@ SELECT pr.nombre_categoria_producto                    AS categoria,
        ISNULL(sub.nombre, 'Sin tela')                  AS tela,
        pr.codigo                                       AS codigo,
        {color}                                         AS color,
+       ped.aca_min, ped.aca_max,
        ped.ped_kg, ped.ped_rollos, ped.ped_un,
        c.valor_conversion                              AS un_por_kg,
        ped.n_pedidos, ped.n_clientes, ped.mas_viejo,
-       ISNULL(inv.inv_kg, 0)                           AS inv_kg,
+       CASE WHEN ped.aca_min <> '' AND ped.aca_min = ped.aca_max
+            THEN ISNULL(ia.inv_kg, 0)
+            ELSE ISNULL(inv.inv_kg, 0) END             AS inv_kg,
        ISNULL(prod.prod_kg, 0)                         AS prod_kg,
        ISNULL(prod.n_ordenes, 0)                       AS n_ordenes
   FROM ped
@@ -210,9 +323,15 @@ SELECT pr.nombre_categoria_producto                    AS categoria,
          ON sub.id_subcategoria_producto = pr.id_subcategoria_producto
   LEFT JOIN conv c ON c.id_producto = ped.id_producto AND c.rn = 1
   LEFT JOIN inv  ON inv.id_producto = ped.id_producto
+  LEFT JOIN inv_aca ia ON ia.id_producto = ped.id_producto AND ia.aca = ped.aca_min
   LEFT JOIN prod ON prod.id_producto = ped.id_producto
 """
 
+
+# ⭐ inv_kg: el stock que sirve es el del MISMO acabado (lotes de bodega 53,
+# último saldo de cada lote — verificado 06/10/2026: FE96CRU 105,05 ABI +
+# 42,5 TUB = 147,55, igual al saldo del producto). Sin acabado en la línea, o
+# con los dos, queda el del producto entero.
 
 #: El color es el ÚLTIMO token del nombre del producto, no "el nombre menos
 #: el de la subcategoría": ese REPLACE fallaba cada vez que las dos etiquetas
@@ -282,11 +401,16 @@ def _fila(row: dict) -> dict:
     inv_kg = _f(row.get("inv_kg"))
     # "En producción" nunca negativo: una orden sobreproducida no resta.
     prod_kg = max(0.0, _f(row.get("prod_kg")))
+    codigo = str(row.get("codigo") or "").strip()
+    acabado = acabado_de_linea(row.get("aca_min"), row.get("aca_max"))
     return {
         "categoria": categoria,
         "tela": str(row.get("tela") or "").strip(),
-        "codigo": str(row.get("codigo") or "").strip(),
+        "codigo": codigo,
         "color": str(row.get("color") or "").strip(),
+        # El renglón es tela + color + ACABADO (Tamara 06/10/2026).
+        "acabado": acabado,
+        "clave": clave_renglon(codigo, acabado),
         "pedido_kg": round(pedido_kg, 1),
         "pedido_rollos": round(_f(row.get("ped_rollos")), 1),
         "pedido_un": round(ped_un, 1),
@@ -304,12 +428,48 @@ def _fila(row: dict) -> dict:
     }
 
 
-def pendientes() -> tuple[list[dict], bool]:
-    """Todos los colores con pedido pendiente. Devuelve `(filas, disponible)`.
+def repartir_produccion(filas: list[dict]) -> list[dict]:
+    """La orden de tintura NO dice el acabado (verificado 06/10/2026: su
+    atributo es el COLOR y `id_detalle_pedido_cliente` está vacío), así que
+    cuando un producto se pide en ABI y en TUB, lo que está en producción se
+    reparte entre sus renglones en proporción a lo que a cada uno le falta
+    después del stock (o a lo pedido, si a ninguno le falta). La suma queda
+    igual a la del producto: nunca se cuenta dos veces. El renglón queda
+    marcado (`prod_repartida`) para que la pantalla lo diga.
+    """
+    por_cod: dict[str, list[dict]] = {}
+    for f in filas:
+        por_cod.setdefault(f["codigo"], []).append(f)
+    for fs in por_cod.values():
+        for f in fs:
+            f["prod_repartida"] = False
+        if len(fs) < 2:
+            continue
+        total = fs[0]["produccion_kg"]
+        if total <= 0:
+            continue
+        pesos = [max(0.0, f["pedido_kg"] - f["inventario_kg"]) for f in fs]
+        if sum(pesos) <= 0:
+            pesos = [f["pedido_kg"] for f in fs]
+        if sum(pesos) <= 0:
+            pesos = [1.0] * len(fs)
+        suma = sum(pesos)
+        for f, w in zip(fs, pesos, strict=True):
+            f["produccion_kg"] = round(total * w / suma, 1)
+            f["faltan_kg"] = round(f["pedido_kg"] - f["inventario_kg"]
+                                   - f["produccion_kg"], 1)
+            f["prod_repartida"] = True
+    return filas
+
+
+def pendientes(fresco: bool = False) -> tuple[list[dict], bool]:
+    """Todos los renglones (tela + color + acabado) con pedido pendiente.
+    Devuelve `(filas, disponible)`.
 
     `disponible=False` significa que Metabase no contestó — distinto de que no
     haya pedidos. La pantalla necesita distinguirlos para no mostrar "no falta
-    nada" cuando en realidad no pudo preguntar.
+    nada" cuando en realidad no pudo preguntar. `fresco=True` va a Asinfo
+    ahora (el vigía del health, que no puede comparar contra una foto vieja).
     """
     def _traer():
         filas, ok = metabase_client.fetch_dataset_estado(
@@ -318,11 +478,14 @@ def pendientes() -> tuple[list[dict], bool]:
             _LOG.warning("pedidos: Asinfo no contestó")
             return [], False
         out = [_fila(r) for r in filas]
+        repartir_produccion(out)
         return [f for f in out if f["categoria"] in CATEGORIAS], True
 
+    if fresco:
+        _CACHE.pop("pendientes", None)
     filas, ok = _cacheado("pendientes", _traer)
-    # Las filas se devuelven COPIADAS: `marcar_acabado` les escribe encima y
-    # sin la copia la segunda visita encontraría las de la primera ya pintadas.
+    # Las filas se devuelven COPIADAS: `en_unidad` les escribe encima y sin
+    # la copia la segunda visita encontraría las de la primera ya pintadas.
     return ([dict(f) for f in filas] if ok else []), ok
 
 
@@ -432,13 +595,20 @@ def por_tela(filas: list[dict], categoria: str,
 # `fetch_dataset` no toma parámetros posicionales en el resto del código y no
 # vamos a estrenar acá una firma que los fakes de los tests no declaran.
 _SQL_DETALLE_PEDIDOS = """
+WITH """ + _SQL_ACABADO_LINEA_T.replace(
+    "{pedidos}",
+    "SELECT v0.id_pedido_cliente FROM v_saldos_comprometidos_detallado v0\n"
+    "                 JOIN producto p0 ON p0.id_producto = v0.id_producto\n"
+    "                WHERE p0.codigo = '{codigo}'").lstrip("\n") + """
 SELECT v.numero, v.cliente, ISNULL(e.nombre_comercial, '') AS codigo_cliente,
        v.fecha, v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad,
-       p.estado
+       p.estado, a.aca_min, a.aca_max
   FROM v_saldos_comprometidos_detallado v
   JOIN producto pr ON pr.id_producto = v.id_producto
   JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
   LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
+  LEFT JOIN aca a ON a.id_pedido_cliente = v.id_pedido_cliente
+                 AND a.id_producto = v.id_producto
  WHERE pr.codigo = '{codigo}'
  ORDER BY v.fecha
 """
@@ -477,18 +647,23 @@ def codigo_seguro(codigo: str) -> str:
     )[:40]
 
 
-def detalle_color(codigo: str) -> tuple[dict | None, list[dict], list[dict], bool]:
-    """`(ficha, pedidos, órdenes, disponible)` de un color.
+def detalle_color(codigo: str, acabado: str | None = None
+                  ) -> tuple[dict | None, list[dict], list[dict], bool]:
+    """`(ficha, pedidos, órdenes, disponible)` de un renglón.
 
-    `ficha` es la fila de `pendientes()` de ese código — None si el color no
-    tiene pedido pendiente (se puede llegar por URL a cualquier código).
+    `ficha` es la fila de `pendientes()` de ese código y acabado — None si no
+    tiene pedido pendiente (se puede llegar por URL a cualquier código). Sin
+    `acabado` (links viejos) toma el primer renglón del producto y muestra
+    todos sus pedidos. Las órdenes de tintura no dicen el acabado: van todas.
     """
     seguro = codigo_seguro(codigo)
     if not seguro:
         return None, [], [], True
+    aca = (acabado or "").strip().upper() if acabado is not None else None
 
     filas, ok = pendientes()
-    ficha = next((f for f in filas if f["codigo"] == seguro), None)
+    ficha = next((f for f in filas if f["codigo"] == seguro
+                  and (aca is None or f["acabado"] == aca)), None)
 
     peds, ok_ped = metabase_client.fetch_dataset_estado(
         ASINFO_DB, _SQL_DETALLE_PEDIDOS.format(codigo=seguro))
@@ -497,9 +672,12 @@ def detalle_color(codigo: str) -> tuple[dict | None, list[dict], list[dict], boo
             codigo=seguro, bod=BODEGA_TERMINADO,
             dias_prod=DIAS_PRODUCCION_VIVA, ahora=AHORA_EC))
 
+    pedidos = [_fila_pedido(r) for r in peds]
+    if aca is not None:
+        pedidos = [p for p in pedidos if p["acabado"] == aca]
     return (
         ficha,
-        [_fila_pedido(r) for r in peds],
+        pedidos,
         [_fila_orden(r) for r in ords],
         bool(ok and ok_ped and ok_ord),
     )
@@ -522,6 +700,7 @@ def _fila_pedido(row: dict) -> dict:
         "es_unidad": unidad == UNIDAD_UN,
         "kg": round(cantidad * KG_POR_ROLLO, 1) if unidad == UNIDAD_ROLLO
              else (round(cantidad, 1) if unidad == UNIDAD_KG else None),
+        "acabado": acabado_de_linea(row.get("aca_min"), row.get("aca_max")),
     }
 
 
@@ -649,20 +828,26 @@ def en_unidad(filas: list[dict], unidad: str) -> list[dict]:
 # consulta por fila desplegada, y hace que la flechita abra al instante sin
 # pegarle a Asinfo de nuevo.
 _SQL_PEDIDOS_TODOS = """
+WITH """ + _SQL_ACABADO_LINEA.lstrip("\n") + """
 SELECT pr.codigo, v.numero, v.cliente,
        ISNULL(e.nombre_comercial, '') AS codigo_cliente,
-       v.fecha, v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad
+       v.fecha, v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad,
+       a.aca_min, a.aca_max
   FROM v_saldos_comprometidos_detallado v
   JOIN producto pr ON pr.id_producto = v.id_producto
   JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
   LEFT JOIN empresa e ON e.id_empresa = p.id_empresa
+  LEFT JOIN aca a ON a.id_pedido_cliente = v.id_pedido_cliente
+                 AND a.id_producto = v.id_producto
  WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias}
  ORDER BY pr.codigo, v.fecha
 """
 
 
 def pedidos_por_color() -> dict[str, list[dict]]:
-    """`{codigo de producto: [pedidos]}` de todo lo pendiente. {} si falla."""
+    """`{clave del renglón (producto + acabado): [pedidos]}` de todo lo
+    pendiente — la flechita de un renglón ABI muestra sólo los pedidos ABI.
+    {} si falla."""
     def _traer():
         return metabase_client.fetch_dataset_estado(
             ASINFO_DB,
@@ -675,7 +860,8 @@ def pedidos_por_color() -> dict[str, list[dict]]:
     for r in filas:
         cod = str(r.get("codigo") or "").strip()
         if cod:
-            out.setdefault(cod, []).append(_fila_pedido(r))
+            p = _fila_pedido(r)
+            out.setdefault(clave_renglon(cod, p["acabado"]), []).append(p)
     return out
 
 
@@ -791,9 +977,12 @@ def por_cliente() -> list[dict]:
     return sorted(acc.values(), key=lambda g: (-g["pedido"], g["cliente"]))
 
 
-# ── Acabado (TUB/ABI) por producto (2026-08-18) ──────────────────────────────
-# La dueña necesita ver si el pedido es abierto o tubular. El acabado NO está en
-# la línea de pedido, pero SÍ es un atributo del producto terminado: se resuelve
+# ── Acabado (TUB/ABI) del STOCK por producto (2026-08-18) ────────────────────
+# 🚫 NUNCA para un pedido (06/10/2026, PDCL-32677): el MAX de los lotes da TUB
+# en cuanto hay un lote tubular. Los pedidos usan `acabado_de_linea`. Queda
+# sólo para la pantalla de stock (inventario rotativo).
+# Historia: la dueña necesitaba ver si el pedido es abierto o tubular y se
+# creyó que el acabado NO estaba en la línea de pedido (sí está — 10/09); se resolvía
 # igual que en stock_asinfo_lote (EAV del lote, `id_atributo = 1`), agrupado por
 # producto (todos los lotes de un producto comparten su acabado). Consulta
 # APARTE y fail-soft: si Asinfo no contesta o la SQL falla, se devuelve {} y la
@@ -843,14 +1032,6 @@ def acabados_por_producto() -> dict[str, str]:
         return {}
 
 
-def marcar_acabado(filas: list[dict]) -> list[dict]:
-    """Agrega `acabado` a cada fila (vacío si no se pudo resolver)."""
-    m = acabados_por_producto()
-    for f in filas:
-        f["acabado"] = m.get(f["codigo"], "")
-    return filas
-
-
 # ── Corte por PEDIDO, dueño y memos (2026-08-27) ─────────────────────────────
 # La dueña pidió ver los pedidos como PEDIDOS (no agrupados por color) con su
 # DUEÑO —el vendedor— presentado igual que en Asinfo, y poder mandarlos como
@@ -861,59 +1042,18 @@ def marcar_acabado(filas: list[dict]) -> list[dict]:
 # (verificado 27/08: `dproducto` cargó 22 pedidos pendientes con agente PPR).
 # El agente 951 es "Cía. Ltda. Intela": pedidos de la casa, sin vendedor.
 
-# ⭐ El ACABADO (TUB / ABI) es de la LÍNEA del pedido, no del producto
-# (Jonathan 10/09: el PDCL-31577 pide Jersey 3.5 ABIERTO y Rib TUBULAR, y
-# el mismo JE35 tiene lotes tubulares en bodega — resolverlo por producto lo
-# mostraba todo TUB). Vive en `detalle_pedido_cliente` como pares
-# `id_atributo_N` / `id_valor_atributo_N` (verificado 10/09: el atributo 1
-# cae en el slot 3 en 200.105 de 200.107 líneas), y acá se busca por el
-# NÚMERO del atributo, no por el slot. La vista de saldos no trae el id de
-# la línea, así que se une por (pedido, producto): si un pedido pide el
-# mismo producto en los dos acabados (5 casos en 120 días) se muestra
-# "ABI/TUB".
-_SQL_ACABADO_LINEA = """
-aca AS (
-    SELECT d.id_pedido_cliente, d.id_producto,
-           MIN(va.codigo) AS aca_min, MAX(va.codigo) AS aca_max
-      FROM detalle_pedido_cliente d
-      JOIN valor_atributo va ON va.id_valor_atributo = CASE
-               WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
-               WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
-               WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
-               WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
-               WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
-               WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
-               WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
-               WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
-               WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
-               WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
-           END
-     WHERE d.id_pedido_cliente IN (
-               SELECT pc.id_pedido_cliente FROM pedido_cliente pc
-                WHERE DATEDIFF(day, pc.fecha, {ahora}) <= {dias})
-     GROUP BY d.id_pedido_cliente, d.id_producto
-)"""
-
+# El ACABADO de cada línea sale de `_SQL_ACABADO_LINEA_T` /
+# `acabado_de_linea` (arriba, la única regla — PDCL-31577 el 10/09,
+# PDCL-32677 el 06/10).
 _SQL_ACABADO_POR_NUMERO = """
-SELECT p.numero, pr.codigo,
-       MIN(va.codigo) AS aca_min, MAX(va.codigo) AS aca_max
-  FROM detalle_pedido_cliente d
-  JOIN pedido_cliente p ON p.id_pedido_cliente = d.id_pedido_cliente
-  JOIN producto pr ON pr.id_producto = d.id_producto
-  JOIN valor_atributo va ON va.id_valor_atributo = CASE
-           WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
-           WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
-           WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
-           WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
-           WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
-           WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
-           WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
-           WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
-           WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
-           WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
-       END
- WHERE p.numero IN ({in_list})
- GROUP BY p.numero, pr.codigo
+WITH """ + _SQL_ACABADO_LINEA_T.replace(
+    "{pedidos}",
+    "SELECT pc.id_pedido_cliente FROM pedido_cliente pc WHERE pc.numero IN ({in_list})"
+).lstrip("\n") + """
+SELECT p.numero, pr.codigo, a.aca_min, a.aca_max
+  FROM aca a
+  JOIN pedido_cliente p ON p.id_pedido_cliente = a.id_pedido_cliente
+  JOIN producto pr ON pr.id_producto = a.id_producto
 """
 
 
@@ -923,13 +1063,6 @@ def _numero_pedido_seguro(numero: str) -> str:
     return "".join(
         c for c in (numero or "").strip().upper() if c.isalnum() or c == "-"
     )[:20]
-
-
-def _acabado_etiqueta(aca_min, aca_max) -> str:
-    a, b = str(aca_min or "").strip().upper(), str(aca_max or "").strip().upper()
-    if not a:
-        return ""
-    return a if a == b else f"{a}/{b}"
 
 
 def acabados_de_pedidos(numeros: list[str]) -> tuple[dict[str, dict[str, str]], bool]:
@@ -950,7 +1083,7 @@ def acabados_de_pedidos(numeros: list[str]) -> tuple[dict[str, dict[str, str]], 
         numero = str(r.get("numero") or "").strip().upper()
         cod = str(r.get("codigo") or "").strip()
         if numero and cod:
-            out.setdefault(numero, {})[cod] = _acabado_etiqueta(r.get("aca_min"), r.get("aca_max"))
+            out.setdefault(numero, {})[cod] = acabado_de_linea(r.get("aca_min"), r.get("aca_max"))
     return out, True
 
 
@@ -963,9 +1096,7 @@ SELECT v.numero, v.fecha, v.cliente,
        ISNULL(p.descripcion, '')                AS descripcion,
        pr.codigo, {color} AS color, ISNULL(sub.nombre, 'Sin tela') AS tela,
        v.saldo_comprometido AS cantidad, v.id_unidad_pedido AS unidad,
-       CASE WHEN a.aca_min IS NULL THEN ''
-            WHEN a.aca_min = a.aca_max THEN a.aca_min
-            ELSE a.aca_min + '/' + a.aca_max END AS acabado
+       a.aca_min, a.aca_max
   FROM v_saldos_comprometidos_detallado v
   JOIN pedido_cliente p ON p.id_pedido_cliente = v.id_pedido_cliente
   JOIN producto pr ON pr.id_producto = v.id_producto
@@ -1070,7 +1201,7 @@ def _linea_pedido(row: dict) -> dict:
         "unidad": _ETIQUETA_UNIDAD.get(unidad, ""),
         "kg": kg,
         # De la LÍNEA del pedido (TUB / ABI / 'ABI/TUB'), '' si no lo trae.
-        "acabado": str(row.get("acabado") or "").strip().upper(),
+        "acabado": acabado_de_linea(row.get("aca_min"), row.get("aca_max")),
     }
 
 
