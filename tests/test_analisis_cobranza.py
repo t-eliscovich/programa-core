@@ -4,7 +4,9 @@ from datetime import date
 from modules.analisis import cobranza as cob
 
 MESES = [date(2026, 7, 1), date(2026, 8, 1), date(2026, 9, 1)]
-HOY = date(2026, 9, 29)
+# Los meses de la lista, CERRADOS (el mes en curso no entra en el Cambio,
+# Tamara 06/10 — ver test_el_mes_en_curso_no_entra_en_el_cambio).
+HOY = date(2026, 10, 1)
 
 
 def _cli(cod, **kw):
@@ -323,3 +325,18 @@ def test_cliente_elegido_que_no_esta_en_las_listas_tiene_su_renglon(app):
     assert "No pagó en estos meses" in por["MJM"][2]
     # y la tabla que queda sin renglones lo dice
     assert 'class="vacio"' in contra
+
+
+def test_el_mes_en_curso_no_entra_en_el_cambio():
+    """Tamara 06/10: con 6 días de octubre no se compara como mes entero —
+    ni Cambio, ni regla amarilla de "pagó más lento"; se muestra igual."""
+    pm = [dict(cod="AAA", mes=MESES[0], plata=5000, dias=60),
+          dict(cod="AAA", mes=MESES[1], plata=5000, dias=60),
+          dict(cod="AAA", mes=MESES[2], plata=5000, dias=120)]
+    d = cob.armar([_cli("AAA", fac=6000, edad_max=30)], pm, MESES, date(2026, 9, 6))
+    c = _uno(d, "AAA")
+    assert d["en_curso"] is True
+    assert (c["antes"], c["ultimo"], c["cambio"]) == (60, 60, 0)
+    assert c["ultimo_mes"] == "ago" and c["color"] == "verde"
+    assert c["meses"][2] == (120, 5000)          # se muestra igual
+    assert d["casa_meses"][2]["dias"] == 120

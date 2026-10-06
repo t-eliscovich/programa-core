@@ -573,6 +573,12 @@ def armar(clientes: list[dict], por_mes: list[dict],
         if plata >= 500:
             serie.setdefault(r["cod"], [None] * len(meses))[i] = (round(dias), plata)
 
+    # Tamara 06/10: el mes en curso (6 días de octubre) no se compara como si
+    # fuera un mes entero — se muestra, pero no entra en el Cambio ni en la
+    # regla amarilla de "pagó más lento".
+    en_curso = (len(meses) - 1 if meses and meses[-1] == date(hoy.year, hoy.month, 1)
+                else None)
+
     filas = []
     # Los totales de la casa van sobre TODOS los clientes, antes de sacar
     # los de saldo chico de la lista.
@@ -609,7 +615,7 @@ def armar(clientes: list[dict], por_mes: list[dict],
         c["cambio"] = c["ultimo"] = c["antes"] = None
         c["ultimo_mes"] = c["antes_meses"] = None
         if s:
-            ult = max((i for i, x in enumerate(s) if x), default=None)
+            ult = max((i for i, x in enumerate(s) if x and i != en_curso), default=None)
             if ult:
                 prev = [x for x in s[:ult] if x]
                 pw = sum(x[1] for x in prev)
@@ -717,6 +723,7 @@ def armar(clientes: list[dict], por_mes: list[dict],
         "normal": normal,
         "prioridad": prioridad,
         "meses": [_MESES[m.month - 1] for m in meses],
+        "en_curso": en_curso is not None,
         "casa_meses": [
             {"mes": _MESES[m.month - 1], "plata": p,
              "dias": round(pd / p) if p else None}

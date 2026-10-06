@@ -151,10 +151,10 @@ padding:1px 9px;font-size:12px;font-weight:600;white-space:nowrap}
 <h2>Cada cliente contra sí mismo</h2>
 <p class="sub">Días desde la factura hasta que el dinero estuvo disponible, en los pagos
 recibidos cada mes. Toda la casa:
-{% for m in d.casa_meses %}<b>{{ m.mes }} {{ m.dias if m.dias is not none else '—' }} días</b>{{ ' · ' if not loop.last }}{% endfor %}.</p>
+{% for m in d.casa_meses %}<b>{{ m.mes }}{{ ' (hasta hoy)' if loop.last and d.en_curso }} {{ m.dias if m.dias is not none else '—' }} días</b>{{ ' · ' if not loop.last }}{% endfor %}.{% if d.en_curso %} El mes en curso no entra en el Cambio.{% endif %}</p>
 <details class="plegable" open><summary>Los que más cambiaron (saldo mayor a 5.000)</summary>
 <div class="caja"><table class="resumen">
-<thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}</th>{% endfor %}
+<thead><tr><th>Cliente</th><th>Vendedor</th>{% for m in d.meses %}<th class="n">{{ m | capitalize }}{% if loop.last and d.en_curso %}<br><span class="g" style="font-weight:400">hasta hoy</span>{% endif %}</th>{% endfor %}
 <th class="n">Cambio</th><th class="n">Saldo</th></tr></thead>
 <tbody>
 {% macro fila_cs(c, extra) -%}
