@@ -220,9 +220,14 @@ def test_con_app_apaga_los_hilos_y_sin_app_corre_igual(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", sin_app)
     for var in ("WARMUP_ASINFO", "VIGIA_SERVIDOR", "AUTOCARGA_FACTURAS", "PDF_NAVEGADOR_PERSISTENTE"):
         monkeypatch.setenv(var, "1")
+    # `_con_app` también prende PDF_POR_LA_OFICINA. Sin anotarla acá, quedaba
+    # en "1" para el resto de la suite y las pruebas del navegador que venían
+    # después iban por el camino de la oficina (fallaban sólo en conjunto).
+    monkeypatch.setenv("PDF_POR_LA_OFICINA", "0")
     assert mod._con_app(lambda: "hecho") == "hecho"
     for var in ("WARMUP_ASINFO", "VIGIA_SERVIDOR", "AUTOCARGA_FACTURAS", "PDF_NAVEGADOR_PERSISTENTE"):
         assert os.environ[var] == "0"
+    assert os.environ["PDF_POR_LA_OFICINA"] == "1"
 
 
 # ─── el health del día 1 ────────────────────────────────────────────────────
