@@ -9,6 +9,14 @@ from unittest.mock import patch
 from modules.facturas import aviso_ventas as av
 
 
+def _tot(n, importe, kg, n_devol=0, kg_devuelto=0.0, importe_devol=0.0):
+    """Lo que devuelve `totales_dia`: facturado aparte y devoluciones aparte."""
+    return {"n": n + n_devol, "importe": importe - importe_devol,
+            "kg": kg - kg_devuelto,
+            "n_fact": n, "importe_fact": importe, "kg_fact": kg,
+            "n_devol": n_devol, "kg_devuelto": kg_devuelto}
+
+
 def _reset(monkeypatch):
     monkeypatch.setattr(av, "_ultimo_dia_avisado", None)
 
@@ -24,7 +32,7 @@ def test_a_las_19_de_ecuador_avisa_con_la_plata_adelante(monkeypatch):
     with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 7, 30)), \
          patch.object(av, "totales_dia",
-                      return_value={"n": 113, "importe": 116230.45, "kg": 13565.54}), \
+                      return_value=_tot(113, 116230.45, 13565.54)), \
          patch("modules.avisos.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         r = av.correr_si_toca()
@@ -43,7 +51,7 @@ def test_una_sola_factura_va_en_singular(monkeypatch):
     with patch.object(av, "_ahora_ec", return_value=_a_las(20)), \
          patch.object(av, "today_ec", return_value=date(2026, 7, 30)), \
          patch.object(av, "totales_dia",
-                      return_value={"n": 1, "importe": 1000.0, "kg": 100.0}), \
+                      return_value=_tot(1, 1000.0, 100.0)), \
          patch("modules.avisos.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         av.correr_si_toca()
@@ -66,7 +74,7 @@ def test_no_repite_el_aviso_en_el_mismo_dia(monkeypatch):
     with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 7, 30)), \
          patch.object(av, "totales_dia",
-                      return_value={"n": 5, "importe": 10.0, "kg": 1.0}), \
+                      return_value=_tot(5, 10.0, 1.0)), \
          patch("modules.avisos.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         av.correr_si_toca()
@@ -80,7 +88,7 @@ def test_un_dia_sin_facturas_no_enciende_la_campanita(monkeypatch):
     with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 7, 30)), \
          patch.object(av, "totales_dia",
-                      return_value={"n": 0, "importe": 0.0, "kg": 0.0}), \
+                      return_value=_tot(0, 0.0, 0.0)), \
          patch("modules.avisos.avisar") as avisar:
         r = av.correr_si_toca()
     assert r["motivo"] == "sin facturas"
@@ -167,7 +175,7 @@ def test_el_cierre_de_las_19_sigue_usando_su_propia_clave(monkeypatch):
     with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
          patch.object(av, "today_ec", return_value=date(2026, 8, 7)), \
          patch.object(av, "totales_dia",
-                      return_value={"n": 9, "importe": 1.0, "kg": 21_000.0}), \
+                      return_value=_tot(9, 1.0, 21_000.0)), \
          patch("modules.avisos.avisar",
                side_effect=lambda **kw: puestos.append(kw) or True):
         av.correr_si_toca()
@@ -176,3 +184,51 @@ def test_el_cierre_de_las_19_sigue_usando_su_propia_clave(monkeypatch):
 
 
 
+
+
+def test_el_aviso_dice_lo_mismo_que_el_recuadro_de_hoy(monkeypatch):
+    """TMT 2026-10-05: el recuadro decía 16.085,75 kg · $ 134.676,31 · 94
+    facturas y el aviso de las 19 decía 13.388,65 kg · $ 113.723,78 · 116
+    facturas — el aviso neteaba las devoluciones y contaba todo documento como
+    factura. Ahora: lo facturado arriba, las devoluciones aparte."""
+    _reset(monkeypatch)
+    puestos = []
+    t = _tot(94, 134676.31, 16085.75, n_devol=11, kg_devuelto=2697.10,
+             importe_devol=20952.53)
+    t["n"] = 116                       # + NC de plata (kg = 0): no son facturas
+    with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
+         patch.object(av, "today_ec", return_value=date(2026, 10, 5)), \
+         patch.object(av, "totales_dia", return_value=t), \
+         patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        av.correr_si_toca()
+    a = puestos[0]
+    assert a["titulo"] == "Ventas de hoy · $ 134.676,31"
+    assert a["detalle"] == ("16.085,75 kg · 94 facturas · "
+                            "11 devoluciones −2.697,10 kg")
+    assert a["importe"] == 134676.31 and a["cantidad"] == 94
+
+
+def test_el_aviso_usa_los_mismos_campos_que_el_recuadro():
+    """Si el recuadro cambia de campos, el aviso tiene que cambiar con él."""
+    import inspect
+
+    from modules.facturas import views
+    src_rec = inspect.getsource(views)
+    src_av = inspect.getsource(av.correr_si_toca)
+    for campo in ("kg_fact", "importe_fact", "n_fact", "kg_devuelto", "n_devol"):
+        assert campo in src_rec and campo in src_av
+
+
+def test_una_devolucion_va_en_singular(monkeypatch):
+    _reset(monkeypatch)
+    puestos = []
+    with patch.object(av, "_ahora_ec", return_value=_a_las(19)), \
+         patch.object(av, "today_ec", return_value=date(2026, 10, 5)), \
+         patch.object(av, "totales_dia",
+                      return_value=_tot(2, 500.0, 50.0, n_devol=1,
+                                        kg_devuelto=10.0)), \
+         patch("modules.avisos.avisar",
+               side_effect=lambda **kw: puestos.append(kw) or True):
+        av.correr_si_toca()
+    assert puestos[0]["detalle"] == "50,00 kg · 2 facturas · 1 devolución −10,00 kg"

@@ -19,8 +19,9 @@ Decisiones que valen la pena recordar:
   campanita para decir cero.
 · El universo es *lo facturado con fecha de hoy, sin las anuladas* — NO la
   cartera: una factura cobrada el mismo día sale de la cartera pero fue venta
-  igual. Las notas de crédito del día restan, así que el número es la venta
-  NETA.
+  igual. Desde el 05/10/2026 dice LO MISMO que el recuadro de "Hoy": lo
+  facturado (facturas y NTEN, sólo lo que suma kilos) y las devoluciones
+  APARTE en el segundo renglón. Antes mandaba el neto y no coincidía.
 
 ── LOS UMBRALES DE KILOS SE RETIRARON (TMT 2026-08-13) ──────────────────────
 
@@ -74,7 +75,7 @@ def totales_dia(fecha) -> dict:
 
     Devuelve:
         n, importe, kg      — la venta NETA del día (las devoluciones y las NC
-                              ya restadas). Es lo que manda el cierre de las 19.
+                              ya restadas). Ya no lo usa nadie del aviso.
         n_fact, importe_fact, kg_fact
                             — sólo los documentos que SUMAN kilos (facturas y
                               NTEN). Es lo que muestra el recuadro de "Hoy".
@@ -140,7 +141,7 @@ def correr_si_toca() -> dict:
             return res
 
         t = totales_dia(hoy)
-        if not t["n"]:
+        if not t["n_fact"] and not t["n_devol"]:
             # Sin facturas no hay nada que contar (y no se marca el día como
             # avisado: si entra una factura a las 19, el aviso sale igual).
             res["motivo"] = "sin facturas"
@@ -148,12 +149,20 @@ def correr_si_toca() -> dict:
 
         from modules.avisos import avisar
 
+        # ⭐ Los MISMOS números que el recuadro de "Hoy" (TMT 2026-10-05):
+        # lo facturado (sólo lo que suma kilos) y las devoluciones aparte. El
+        # aviso seguía con el neto y daba otra cosa que el recuadro.
+        n = t["n_fact"]
+        detalle = f"{num_es(t['kg_fact'], 2)} kg · {n} factura{'' if n == 1 else 's'}"
+        if t["n_devol"]:
+            nd = t["n_devol"]
+            detalle += (f" · {nd} devoluci{'ón' if nd == 1 else 'ones'}"
+                        f" −{num_es(t['kg_devuelto'], 2)} kg")
         avisar(
             fuente="ventas",
-            titulo=f"Ventas de hoy · $ {num_es(t['importe'], 2)}",
-            detalle=(f"{num_es(t['kg'], 2)} kg · {t['n']} "
-                     f"factura{'' if t['n'] == 1 else 's'}"),
-            importe=round(t["importe"], 2), cantidad=t["n"],
+            titulo=f"Ventas de hoy · $ {num_es(t['importe_fact'], 2)}",
+            detalle=detalle,
+            importe=round(t["importe_fact"], 2), cantidad=n,
             url=f"/facturas?desde={clave_dia}&hasta={clave_dia}",
             clave=f"ventas:{clave_dia}",
         )
