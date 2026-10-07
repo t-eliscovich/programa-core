@@ -90,6 +90,10 @@ def items(conn=None) -> list[dict]:
                -- saldo destrabado.
                COALESCE(v.pri, 0)         AS kg_vend_pri,
                COALESCE(v.seg, 0)         AS kg_vend_seg,
+               COALESCE(v.tub_pri, 0)     AS kg_vend_tub_pri,
+               COALESCE(v.tub_seg, 0)     AS kg_vend_tub_seg,
+               COALESCE(v.abi_pri, 0)     AS kg_vend_abi_pri,
+               COALESCE(v.abi_seg, 0)     AS kg_vend_abi_seg,
                f.ultima_venta,
                COALESCE(f.clientes, 0)    AS clientes,
                f.anio_pista,
@@ -140,7 +144,19 @@ def items(conn=None) -> list[dict]:
           LEFT JOIN LATERAL (
               SELECT SUM(pv.kg) FILTER (WHERE pv.calidad = 'SEG') AS seg,
                      SUM(pv.kg) FILTER (WHERE pv.calidad IS DISTINCT FROM 'SEG')
-                                                                  AS pri
+                                                                  AS pri,
+                     -- ⭐ Y por FORMA × CALIDAD (07/10/2026): la fila se abre
+                     -- en tubular y abierta, y cada línea tiene que llevarse
+                     -- lo vendido de SU forma — con sólo la calidad, la línea
+                     -- TUB y la ABI mostraban el mismo vendido dos veces.
+                     SUM(pv.kg) FILTER (WHERE pv.acabado = 'TUB'
+                                          AND pv.calidad IS DISTINCT FROM 'SEG') AS tub_pri,
+                     SUM(pv.kg) FILTER (WHERE pv.acabado = 'TUB'
+                                          AND pv.calidad = 'SEG')              AS tub_seg,
+                     SUM(pv.kg) FILTER (WHERE pv.acabado = 'ABI'
+                                          AND pv.calidad IS DISTINCT FROM 'SEG') AS abi_pri,
+                     SUM(pv.kg) FILTER (WHERE pv.acabado = 'ABI'
+                                          AND pv.calidad = 'SEG')              AS abi_seg
                 FROM scintela.parado_venta pv
                WHERE pv.subcategoria = c.subcategoria AND pv.color = c.color
                  AND pv.cuenta) v ON TRUE
@@ -669,12 +685,22 @@ def abrir_en_lineas(filas: list[dict]) -> list[dict]:
     salida: list[dict] = []
     for f in filas:
         total = float(f.get("stock_kg") or 0)
-        partes = [(forma, cal, float(f.get(col) or 0)) for forma, cal, col in combos]
-        vivas = [p for p in partes if p[2] > 0]
+        # ⭐ Una forma × calidad está "viva" si tiene kilos en bodega O se
+        # vendió (07/10/2026, dueña: "dos renglones"). Con sólo el stock, un
+        # color con todo el stock tubular y ventas abiertas quedaba en un solo
+        # renglón TUB que se llevaba también lo vendido abierto.
+        partes = [(forma, cal, float(f.get(col) or 0), _vend(f, forma, cal))
+                  for forma, cal, col in combos]
+        vivas = [p for p in partes if p[2] > 0 or p[3] > 0]
         if len(vivas) <= 1:
-            salida.append(f)
+            g = dict(f)
+            if vivas:
+                # La forma de la fila es la de lo que tiene (stock o venta),
+                # no la de la mayoría de los lotes de la historia.
+                g["forma_fila"] = vivas[0][0]
+            salida.append(g)
             continue
-        for forma, cal, kg in vivas:
+        for forma, cal, kg, _v in vivas:
             salida.append(_linea(f, kg, forma, cal))
         resto = round(total - sum(p[2] for p in vivas), 2)
         if abs(resto) >= 1:
@@ -685,6 +711,15 @@ def abrir_en_lineas(filas: list[dict]) -> list[dict]:
     for g in salida:
         g["cat"] = categoria_de(g)
     return salida
+
+
+def _vend(f: dict, forma: str, cal: str) -> float:
+    """Lo vendido (que cuenta) de una forma × calidad. 0 si la fila no trae
+    ese desglose (cada refresco de Saldos lo escribe desde el 07/10/2026)."""
+    col = f"kg_vend_{forma.lower()}_{cal.lower()}"
+    if col in f:
+        return float(f.get(col) or 0)
+    return 0.0
 
 
 def _linea(f: dict, kg: float, forma: str, cal: str) -> dict:
@@ -701,9 +736,14 @@ def _linea(f: dict, kg: float, forma: str, cal: str) -> dict:
     # primera no puede llevarse los kilos que se vendieron de segunda.
     # La línea del resto —la que no tiene calidad— no muestra ninguno: no se
     # sabe de cuál era.
-    g["kg_vendidos"] = (float(f.get("kg_vend_pri") or 0) if cal == "PRI"
-                        else float(f.get("kg_vend_seg") or 0) if cal == "SEG"
-                        else 0.0)
+    if forma and f"kg_vend_{forma.lower()}_{cal.lower()}" in f:
+        # Lo vendido de ESTA forma × calidad (07/10/2026): la línea TUB no se
+        # lleva lo vendido abierto ni al revés.
+        g["kg_vendidos"] = _vend(f, forma, cal)
+    else:
+        g["kg_vendidos"] = (float(f.get("kg_vend_pri") or 0) if cal == "PRI"
+                            else float(f.get("kg_vend_seg") or 0) if cal == "SEG"
+                            else 0.0)
     # ⚠ Y los dos detalles también, no sólo el total: la píldora de categoría de
     # una fila VENDIDA se dibuja mirándolos —del stock no se puede, no queda
     # lote— y si quedaran los del ítem entero, la línea de primera de un color

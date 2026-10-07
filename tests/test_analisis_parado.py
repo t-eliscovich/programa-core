@@ -2624,7 +2624,10 @@ def test_un_color_de_una_sola_manera_no_se_abre():
          "puntos_fila": 508, "kg_tub_pri": 0, "kg_tub_seg": 127,
          "kg_abi_pri": 0, "kg_abi_seg": 0}
     out = queries.abrir_en_lineas([f])
-    assert out == [f] and "forma_fila" not in out[0]
+    # Una sola línea, con la forma de lo que tiene (07/10/2026: la forma de la
+    # fila es la de su stock o su venta, no la de la mayoría histórica).
+    assert len(out) == 1 and out[0]["stock_kg"] == 127
+    assert out[0]["forma_fila"] == "TUB"
 
 
 def test_la_hoja_abre_el_color_en_dos_lineas_cuando_hay_las_dos_formas():
@@ -2647,9 +2650,9 @@ def test_la_hoja_abre_el_color_en_dos_lineas_cuando_hay_las_dos_formas():
     assert [f["stock_kg"] for f in dos] == [90, 39]
     assert sum(f["stock_kg"] for f in dos) == 129, "las dos líneas cierran"
     assert [f["puntos_fila"] for f in dos] == [360, 156]
-    # la que tiene una sola forma queda intacta, sin `forma_fila`
+    # la que tiene una sola forma queda en una línea, con su forma
     una = [f for f in out if f["color"] == "BAN"][0]
-    assert "forma_fila" not in una and una["stock_kg"] == 127
+    assert una.get("forma_fila") == "TUB" and una["stock_kg"] == 127
 
 
 def test_lo_que_no_cuadra_entre_las_dos_tablas_va_en_su_propia_linea():
@@ -4938,3 +4941,40 @@ def test_vendidos_y_competencia_muestran_el_acabado_de_la_venta():
         src = _i.getsource(fn)
         assert "COALESCE(NULLIF(v.acabado, '')," in src
         assert "v.acabado" in src.split("GROUP BY")[-1]
+
+
+
+def test_cada_linea_se_lleva_lo_vendido_de_su_forma():
+    """Jersey 3 ROB (07/10/2026): 64,65 kg TUB y 64,1 kg ABI en bodega. La
+    dueña eligió dos renglones; cada uno con lo vendido de SU forma — antes las
+    dos líneas mostraban lo vendido de primera entero, contado dos veces."""
+    f = {"subcategoria": "Jersey 3", "color": "ROB", "stock_kg": 128.75, "puntos": 1,
+         "kg_tub_pri": 64.65, "kg_tub_seg": 0, "kg_abi_pri": 64.1, "kg_abi_seg": 0,
+         "kg_vend_pri": 50.0, "kg_vend_seg": 0,
+         "kg_vend_tub_pri": 30.0, "kg_vend_tub_seg": 0,
+         "kg_vend_abi_pri": 20.0, "kg_vend_abi_seg": 0}
+    tub, abi = queries.abrir_en_lineas([f])
+    assert (tub["forma_fila"], tub["stock_kg"], tub["kg_vendidos"]) == ("TUB", 64.65, 30.0)
+    assert (abi["forma_fila"], abi["stock_kg"], abi["kg_vendidos"]) == ("ABI", 64.1, 20.0)
+
+
+def test_lo_vendido_de_una_forma_sin_stock_tambien_abre_su_renglon():
+    """Todo el stock es tubular pero se vendió abierto: dos renglones, y el ABI
+    con 0 kg en bodega y su venta. Antes era un solo renglón TUB que se llevaba
+    la venta abierta."""
+    f = {"subcategoria": "Fleece 96 Perchado", "color": "CRU", "stock_kg": 100.0,
+         "puntos": 1, "kg_tub_pri": 100.0, "kg_tub_seg": 0, "kg_abi_pri": 0,
+         "kg_abi_seg": 0, "kg_vend_pri": 128.0, "kg_vend_seg": 0,
+         "kg_vend_tub_pri": 0, "kg_vend_tub_seg": 0,
+         "kg_vend_abi_pri": 128.0, "kg_vend_abi_seg": 0}
+    lineas = queries.abrir_en_lineas([f])
+    assert [(x["forma_fila"], x["stock_kg"], x["kg_vendidos"]) for x in lineas] == [
+        ("TUB", 100.0, 0.0), ("ABI", 0.0, 128.0)]
+
+
+def test_la_foto_trae_lo_vendido_por_forma_y_calidad():
+    import inspect as _i
+    src = _i.getsource(queries.items)
+    for col in ("kg_vend_tub_pri", "kg_vend_tub_seg", "kg_vend_abi_pri", "kg_vend_abi_seg"):
+        assert col in src
+    assert "pv.acabado = 'ABI'" in src
