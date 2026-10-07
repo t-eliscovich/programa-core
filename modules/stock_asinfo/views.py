@@ -279,6 +279,28 @@ def lote():
     )
 
 
+@stock_asinfo_bp.route("/asinfo-de-mas")
+@requiere_login
+@requiere_permiso("stock.ver")
+def de_mas():
+    """Los lotes que tienen MÁS kilos en el saldo de Asinfo de los que dicen
+    sus ingresos y salidas. Tamara 2026-10-07: el aviso de la campanita
+    ("la bodega de tela cruda tiene 272 kg de más") no llevaba a ningún lado."""
+    from modules.asinfo import salidas_sin_saldo as _sss
+    try:
+        bodega = int(request.args.get("bodega") or 52)
+    except (TypeError, ValueError):
+        bodega = 52
+    if bodega not in _sss.BODEGAS:
+        abort(404)
+    res = _sss.lotes_de_mas(bodega)
+    return render_template(
+        "stock_asinfo/de_mas.html",
+        bodega=bodega, bodegas=_sss.BODEGAS,
+        bodega_nombre=_sss.BODEGAS[bodega], res=res,
+    )
+
+
 @stock_asinfo_bp.route("/asinfo")
 @requiere_login
 @requiere_permiso("stock.ver")

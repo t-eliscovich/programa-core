@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+{% block title %}Kilos de más en el saldo — {{ bodega_nombre }}{% endblock %}
+{% block breadcrumb %}
+  <a href="{{ url_for('stock.lista') }}" class="hover:underline">Stock</a> /
+  <strong>Kilos de más en el saldo</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .dm { font-feature-settings: "tnum" 1; font-variant-numeric: tabular-nums; }
+  .dm table { border-collapse: collapse; width: 100%; font-size: 12px; }
+  .dm th { background: rgb(248 250 252); text-align: left; padding: 8px 10px;
+           font-weight: 600; font-size: 11px; text-transform: uppercase;
+           color: rgb(71 85 105); border-bottom: 1px solid rgb(203 213 225); }
+  .dm th.num, .dm td.num { text-align: right; }
+  .dm td { padding: 6px 10px; border-bottom: 1px solid rgb(241 245 249); }
+  .dm td.num { font-family: ui-monospace, Menlo, monospace; }
+  .dm td.muted { color: rgb(148 163 184); }
+  .dm td.nw { white-space: nowrap; }
+  .dm .tabs a { display: inline-block; padding: 6px 12px; border-radius: 9999px;
+                font-size: 12px; font-weight: 600; color: rgb(51 65 85);
+                background: rgb(241 245 249); text-decoration: none; margin-right: 6px; }
+  .dm .tabs a.on { background: rgb(30 41 59); color: white; }
+  .dm .kpi { background: white; border: 1px solid rgb(226 232 240); border-radius: 8px;
+             padding: 12px 16px; display: inline-block; margin-right: 10px; min-width: 150px; }
+  .dm .kpi-label { color: rgb(100 116 139); font-size: 11px; text-transform: uppercase; }
+  .dm .kpi-val { font-size: 20px; font-weight: 700; margin-top: 4px; }
+  .dm .de-mas { color: rgb(180 83 9); font-weight: 700; }
+  .dm .tabla { overflow-x: auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-shell dm">
+  <h1 class="text-xl font-semibold">Kilos de más en el saldo de Asinfo</h1>
+  <p class="text-xs text-slate-500 mb-3">Lotes cuyo saldo en Asinfo es mayor que lo que dicen sus ingresos y salidas.
+    Esos kilos inflan el stock y la utilidad hasta que Asinfo los corrija.</p>
+
+  <div class="tabs mb-4">
+    {% for id, nombre in bodegas.items() %}
+      <a href="{{ url_for('stock_asinfo.de_mas', bodega=id) }}" class="{{ 'on' if id == bodega else '' }}">{{ nombre }}</a>
+    {% endfor %}
+  </div>
+
+  {% if not res.ok %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-50 text-red-800 border border-red-200 text-sm">
+      Asinfo no contestó. Probá de nuevo en un rato.
+    </div>
+  {% else %}
+    <div class="mb-4">
+      <div class="kpi">
+        <div class="kpi-label">Kilos de más</div>
+        <div class="kpi-val de-mas">{{ res.nuevo | num_es(0) }} kg</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi-label">Lotes</div>
+        <div class="kpi-val">{{ res.lotes | length }}</div>
+      </div>
+    </div>
+    {% if res.base %}
+      <p class="text-xs text-slate-500 mb-3">Los lotes suman {{ res.total | num_es(0) }} kg; {{ res.base | num_es(0) }} kg ya estaban antes del 13/07/2026 y no se cuentan en el aviso.</p>
+    {% endif %}
+
+    {% if res.lotes %}
+    <div class="tabla">
+    <table>
+      <thead><tr>
+        <th>Producto</th><th>Lote</th>
+        <th class="num">Saldo en Asinfo</th><th class="num">Según movimientos</th>
+        <th class="num">De más</th><th>Última salida</th><th>Fecha</th>
+      </tr></thead>
+      <tbody>
+      {% for x in res.lotes %}
+        <tr>
+          <td><strong>{{ x.codigo }}</strong> <span class="text-slate-500">{{ x.producto }}</span></td>
+          <td class="nw">{{ x.lote }}</td>
+          <td class="num">{{ x.saldo | num_es(2) }}</td>
+          <td class="num">{{ x.movimientos | num_es(2) }}</td>
+          <td class="num de-mas">{{ x.de_mas | num_es(2) }}</td>
+          <td class="nw">{{ x.ultima_salida or '—' }}</td>
+          <td class="nw {{ '' if x.fecha_salida else 'muted' }}">{{ x.fecha_salida or 'sin salidas' }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}
+      <p class="text-sm text-slate-600">No hay lotes con kilos de más en {{ bodega_nombre | lower }}.</p>
+    {% endif %}
+  {% endif %}
+</div>
+{% endblock %}

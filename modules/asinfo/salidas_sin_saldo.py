@@ -312,6 +312,94 @@ def cuadre() -> dict:
     return {"ok": True, "bodegas": bodegas}
 
 
+def _sql_lotes_de_mas(bodega: int) -> str:
+    """Los lotes de UNA bodega que hacen el `stock_de_mas` del cuadre: saldo
+    positivo y más alto que la suma de sus movimientos. Con la última salida
+    del lote, que es por donde se le pregunta a Asinfo."""
+    b = int(bodega)
+    return f"""
+WITH s AS (
+    SELECT id_producto, id_lote, saldo FROM (
+        SELECT id_producto, id_lote, saldo,
+               ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega, id_lote
+                                  ORDER BY fecha DESC, id_saldo_producto_lote DESC) rn
+          FROM saldo_producto_lote WHERE id_bodega = {b}
+    ) z WHERE rn = 1 AND saldo > 0.5
+),
+k AS (
+    SELECT ip.id_producto, ip.id_lote, SUM(ip.operacion * ip.cantidad) kx
+      FROM inventario_producto ip
+      JOIN s ON s.id_producto = ip.id_producto AND s.id_lote = ip.id_lote
+     WHERE ip.id_bodega = {b} AND ISNULL(ip.indicador_anulacion, 0) = 0
+     GROUP BY ip.id_producto, ip.id_lote
+),
+d AS (
+    SELECT s.id_producto, s.id_lote, s.saldo, ISNULL(k.kx, 0) kx
+      FROM s LEFT JOIN k ON k.id_producto = s.id_producto AND k.id_lote = s.id_lote
+     WHERE s.saldo - ISNULL(k.kx, 0) > 0.5
+),
+us AS (
+    SELECT ip.id_producto, ip.id_lote, ip.numero_documento doc, ip.fecha_creacion,
+           ROW_NUMBER() OVER (PARTITION BY ip.id_producto, ip.id_lote
+                              ORDER BY ip.fecha_creacion DESC) rn
+      FROM inventario_producto ip
+      JOIN d ON d.id_producto = ip.id_producto AND d.id_lote = ip.id_lote
+     WHERE ip.id_bodega = {b} AND ip.operacion = -1
+       AND ISNULL(ip.indicador_anulacion, 0) = 0
+)
+SELECT p.codigo AS codigo,
+       COALESCE(NULLIF(p.descripcion, ''), p.nombre, p.codigo) AS producto,
+       l.codigo AS lote,
+       CAST(d.saldo AS decimal(14, 2)) AS saldo,
+       CAST(d.kx AS decimal(14, 2)) AS movimientos,
+       CAST(CASE WHEN d.saldo < d.saldo - d.kx THEN d.saldo ELSE d.saldo - d.kx END
+            AS decimal(14, 2)) AS de_mas,
+       us.doc AS ultima_salida,
+       CONVERT(varchar(16), us.fecha_creacion, 120) AS fecha_salida
+  FROM d
+  JOIN producto p ON p.id_producto = d.id_producto
+  JOIN lote l ON l.id_lote = d.id_lote
+  LEFT JOIN us ON us.id_producto = d.id_producto AND us.id_lote = d.id_lote AND us.rn = 1
+ ORDER BY de_mas DESC
+"""
+
+
+def lotes_de_mas(bodega: int) -> dict:
+    """Para /stock/asinfo-de-mas: los lotes que inflan el saldo de la bodega.
+    {"ok", "lotes": [...], "total", "base", "nuevo"}. Nunca levanta.
+    `nuevo` = total − lo que ya había antes de la falla del 13/07 (es el número
+    del aviso de la campanita)."""
+    b = int(bodega)
+    base = CUADRE_BASE_KG.get(b, 0.0)
+    try:
+        from modules._lib import metabase_client
+        filas, ok = metabase_client.fetch_dataset_estado(
+            2, _sql_lotes_de_mas(b), max_results=5000)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("lotes_de_mas falló: %s", e)
+        return {"ok": False, "error": str(e)[:200], "lotes": [], "base": base}
+    if not ok:
+        return {"ok": False, "error": "Asinfo no contestó", "lotes": [], "base": base}
+    lotes = []
+    for f in filas or []:
+        try:
+            lotes.append({
+                "codigo": str(f.get("codigo") or "").strip(),
+                "producto": str(f.get("producto") or "").strip(),
+                "lote": str(f.get("lote") or "").strip(),
+                "saldo": round(float(f.get("saldo") or 0), 2),
+                "movimientos": round(float(f.get("movimientos") or 0), 2),
+                "de_mas": round(float(f.get("de_mas") or 0), 2),
+                "ultima_salida": str(f.get("ultima_salida") or "").strip(),
+                "fecha_salida": str(f.get("fecha_salida") or ""),
+            })
+        except (TypeError, ValueError):
+            continue
+    total = round(sum(x["de_mas"] for x in lotes), 2)
+    return {"ok": True, "lotes": lotes, "total": total, "base": base,
+            "nuevo": round(total - base, 2)}
+
+
 def detectar(dias: int = 10) -> dict:
     """Salidas de los últimos `dias` con lotes que no bajaron o repetidos.
 
@@ -590,6 +678,7 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
                              "mostrando en la bodega. Inflan el stock y la utilidad. "
                              "Pedirle a Asinfo que lo corrija."),
                     cantidad=int(b["de_mas_nuevo"]) or None,
+                    url=f"/stock/asinfo-de-mas?bodega={b['id']}",
                     clave=f"stock-de-mas:{b['id']}:{paso}",
                 )
         except Exception as e:  # noqa: BLE001 -- avisar nunca rompe el health

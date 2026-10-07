@@ -214,7 +214,12 @@ def listar(*, solo_no_leidos: bool = True, limite: int = 30,
             f"""
             SELECT {col_id} AS id_aviso,
                    fuente, nivel, titulo, detalle, importe, cantidad,
-                   url,
+                   -- Tamara 2026-10-07: los avisos de "kg de más en el saldo"
+                   -- nacieron sin link. Los viejos lo ganan acá, por su clave
+                   -- (stock-de-mas:<bodega>:<paso>), sin tocar la fila.
+                   COALESCE(url, CASE WHEN clave LIKE 'stock-de-mas:%%'
+                       THEN '/stock/asinfo-de-mas?bodega=' || split_part(clave, ':', 2)
+                   END) AS url,
                    {"(leido OR al.usuario IS NOT NULL) AS leido" if usr else "leido"},
                    {"archivado" if hay else "FALSE AS archivado"},
                    -- La hora, en ECUADOR. El server corre en UTC (5 h
