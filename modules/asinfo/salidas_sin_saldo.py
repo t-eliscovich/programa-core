@@ -55,6 +55,8 @@ from __future__ import annotations
 
 import logging
 
+from modules._lib.medicion_reciente import MedicionReciente
+
 _LOG = logging.getLogger("programa_core.asinfo.salidas_sin_saldo")
 
 BODEGAS = {51: "Hilo", 52: "Tela cruda", 53: "Terminado"}
@@ -601,7 +603,20 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
               "lotes_ingreso_de_mas": ing.get("lotes", 0),
               "kg_ingreso_de_mas": ing.get("kg_de_mas", 0),
               "cuadre": cua.get("bodegas") or []}
-    return {"ok": not alerts, "alerts": alerts, "stats": stats}
+    out = {"ok": not alerts, "alerts": alerts, "stats": stats}
+    ULTIMA.guardar(out)
+    return out
+
+
+#: Lo último que midió `health()` (el hilo de fondo lo corre cada 30 min).
+ULTIMA = MedicionReciente()
+
+
+def health_reciente(max_edad_secs: int = 3600) -> dict:
+    """Para /admin/health/all: lo que midió el hilo de fondo si tiene menos de
+    una hora; si no, mide ahora. Tamara 2026-10-07: medir de nuevo acá tardaba
+    ~48 s y era la mitad de por qué el health/all "se colgaba"."""
+    return ULTIMA.leer(max_edad_secs) or health()
 
 
 #: Cada cuánto corre solo el control (hilo de fondo). Default 30 min, todo el

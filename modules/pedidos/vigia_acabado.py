@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 
 from modules._lib import metabase_client
+from modules._lib.medicion_reciente import MedicionReciente
 
 from . import service
 
@@ -278,5 +279,48 @@ def health() -> dict:
                     f"({', '.join(mixtos[:_MUESTRA])}): Asinfo no dice qué "
                     f"saldo es de cuál, así que el renglón sale ABI/TUB."),
         })
-    return {"ok": not any(a["severity"] == "high" for a in alerts),
-            "alerts": alerts, "stats": stats}
+    out = {"ok": not any(a["severity"] == "high" for a in alerts),
+           "alerts": alerts, "stats": stats}
+    ULTIMA.guardar(out)
+    return out
+
+
+#: Lo último que midió `health()` (el hilo de fondo lo corre cada hora).
+ULTIMA = MedicionReciente()
+
+#: Cada cuánto lo corre solo el hilo de fondo. Mide contra Asinfo ~40 s.
+_INTERVALO_SECS = 3600
+_auto_ultimo: float | None = None
+
+
+def health_reciente(max_edad_secs: int = 2 * 3600) -> dict:
+    """Para /admin/health/all: lo que midió el hilo de fondo si tiene menos de
+    dos horas; si no, mide ahora. Tamara 2026-10-07: medir de nuevo acá
+    tardaba ~38 s y era parte de por qué el health/all "se colgaba"."""
+    return ULTIMA.leer(max_edad_secs) or health()
+
+
+def correr_si_toca() -> dict:
+    """Entrada del hilo de fondo (autocarga_facturas): corre el vigía como
+    mucho una vez cada `ACABADO_VIGIA_SECS` (default 1 h). ACABADO_VIGIA_AUTO=0
+    lo apaga. Nunca levanta."""
+    import os
+    import time as _time
+    global _auto_ultimo
+    res: dict = {"corrio": False}
+    if os.environ.get("ACABADO_VIGIA_AUTO", "1") == "0":
+        return res
+    try:
+        intervalo = max(600, int(os.environ.get("ACABADO_VIGIA_SECS", _INTERVALO_SECS)))
+    except ValueError:
+        intervalo = _INTERVALO_SECS
+    ahora = _time.monotonic()
+    if _auto_ultimo is not None and (ahora - _auto_ultimo) < intervalo:
+        return res
+    _auto_ultimo = ahora
+    try:
+        h = health()
+        res.update(corrio=True, ok=h.get("ok"))
+    except Exception as e:  # noqa: BLE001 -- el hilo no se cae por esto
+        _LOG.warning("vigía acabado (fondo): %s", e)
+    return res

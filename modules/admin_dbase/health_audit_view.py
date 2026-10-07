@@ -2931,9 +2931,15 @@ def health_all():
     resp28 = debito_sin_banco()
     data28 = json.loads(resp28.get_data(as_text=True))
     # Tamara 2026-10-01: salidas de material que Asinfo no bajó del saldo.
-    data29 = json.loads(salidas_sin_saldo().get_data(as_text=True))
+    # Tamara 2026-10-07 ("health/all se cuelga"): tardaba ~80 s y la rutina
+    # se rendía. Estos dos chequeos de Asinfo se llevaban ~85 s medidos por
+    # separado; ya corren solos en el hilo de fondo, así que acá se usa esa
+    # medición si es reciente (stats.medido_hace_min dice de cuándo es).
+    from modules.asinfo import salidas_sin_saldo as _sss
+    from modules.pedidos import vigia_acabado as _vig_acab
+    data29 = _sss.health_reciente()
     # Tamara 2026-10-06: el acabado de los pedidos, pantalla por pantalla.
-    data30 = json.loads(acabado_pedidos().get_data(as_text=True))
+    data30 = _vig_acab.health_reciente()
     # Andrés 2026-09-05 ("está super lento el sistema"): la memoria del
     # servidor — cuando falta, TODO se pone lento a la vez (31/08 y 05/09).
     from modules._lib import servidor as _srv

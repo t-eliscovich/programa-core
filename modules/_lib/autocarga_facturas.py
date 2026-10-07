@@ -334,6 +334,14 @@ def _loop() -> None:
                 _sss.correr_si_toca()
             except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
                 _LOG.warning("salidas sin saldo (fondo): %s", e)
+            # Tamara 2026-10-07: el vigía del acabado de los pedidos tarda
+            # ~40 s contra Asinfo; corre acá una vez por hora y el health/all
+            # usa esa medición en vez de repetirla. ACABADO_VIGIA_AUTO=0 lo apaga.
+            try:
+                from modules.pedidos import vigia_acabado as _vig_acab
+                _vig_acab.correr_si_toca()
+            except Exception as e:  # noqa: BLE001 -- nunca frena el ciclo
+                _LOG.warning("vigía acabado (fondo): %s", e)
         except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
             _LOG.warning("auto-carga facturas (fondo) ciclo: %s", e)
         time.sleep(intervalo)

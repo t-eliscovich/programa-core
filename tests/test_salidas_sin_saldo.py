@@ -80,7 +80,7 @@ def test_health_all_lo_incluye():
 
     from modules.admin_dbase import health_audit_view as hav
     src = inspect.getsource(hav.health_all)
-    assert "salidas_sin_saldo()" in src and 'data29["ok"]' in src
+    assert "_sss.health_reciente()" in src and 'data29["ok"]' in src
 
 
 def test_ingreso_sumado_dos_veces_alerta_y_avisa():

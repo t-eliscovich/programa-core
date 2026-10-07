@@ -148,29 +148,6 @@ callándose. Pistas concretas todavía sin mirar:
 
 ## Urgente / destapado por el retiro del dBase
 
-### [M] `/admin/health/all` se cuelga y la foto diaria no se toma (07/10/2026)
-· la rutina de las 08:00 BA lleva días sin foto (log de posdatados salteado: 19–20/09, 27/09, 02–03/10 y 07/10) · `modules/admin_dbase/health_audit_view.py` / `crear_snapshot_diario`
-
-Síntoma (07/10, desde Chrome logueado): la pestaña no cambia de página y el
-renderizador queda congelado; un `fetch('/admin/health/all')` del mismo origen
-no respondió en 45 s (dos intentos). En el mismo momento `/admin/debug-yy`
-cargó bien y el server respondía (302 al login sin sesión).
-
-No sabemos: cuánto tarda de verdad ni qué devuelve; si es todo el endpoint o un
-chequeo puntual (snapshot_diario, utilidad_watchdog, cartera_coherence,
-usuario_crea_audit u otro agregado después); desde cuándo pasa.
-
-Qué mirar:
-1. Cronometrar `/admin/health/all` con sesión y leer el log de esa petición.
-2. Correr los chequeos sueltos (p. ej. `/admin/health/codigos-duplicados`) para
-   ver cuál no termina.
-3. Ver si `crear_snapshot_diario` espera un lock o una consulta lenta.
-4. Memoria/procesos del EC2 en ese momento (antecedente "todo lento a la vez").
-
-Ya hecho: la rutina diaria se reordenó (copia → posdatados → health al final,
-pestaña nueva, un reintento): el cuelgue ya no arrastra lo demás, pero la foto
-del día sigue sin tomarse.
-
 ### [M] La CARTERA de `informe_balance_as_of` no cierra
 
 Encontrado el 26/08/2026 mirando el simulacro de cierre. `crear_snapshot_historia`
