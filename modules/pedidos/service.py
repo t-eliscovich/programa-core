@@ -518,6 +518,21 @@ def total_en_unidad(kilos: float, unidad: str, en_unidades: bool,
     return int(r), 0, "roll"
 
 
+def juntar_acabados(filas: list[dict]) -> list[dict]:
+    """Ordena por lo que falta, pero con los renglones del MISMO producto
+    (el ABI y el TUB de una tela × color) uno abajo del otro.
+
+    Tamara 07/10/2026: *"nunca veo que un color tenga dos renglones"*. Los
+    había (49 en Tipo de tela), pero ordenados sólo por faltante quedaban
+    lejos: FS96BHU en el renglón 2 y en el 14. El producto se ubica por el
+    renglón que más falta, y adentro va primero el que más falta.
+    """
+    peor: dict[str, float] = {}
+    for f in filas:
+        peor[f["codigo"]] = max(peor.get(f["codigo"], f["faltan_kg"]), f["faltan_kg"])
+    return sorted(filas, key=lambda f: (-peor[f["codigo"]], f["codigo"], -f["faltan_kg"]))
+
+
 def por_categoria(filas: list[dict]) -> list[dict]:
     """Resumen por familia de tela, para las pestañas. Ordenado por faltante."""
     acc: dict[str, dict] = {}
@@ -592,7 +607,7 @@ def por_tela(filas: list[dict], categoria: str,
         if f["faltan_kg"] > 0:
             b["faltan_kg"] += f["faltan_kg"]
     for b in acc.values():
-        b["filas"].sort(key=lambda f: -f["faltan_kg"])
+        b["filas"] = juntar_acabados(b["filas"])
         for k in ("pedido_kg", "pedido_rollos", "pedido_un", "faltan_kg"):
             b[k] = round(b[k], 1)
     return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
@@ -915,7 +930,7 @@ def por_color(filas: list[dict]) -> list[dict]:
     out = []
     for cod, fs in acc.items():
         en_unidad(fs, "alt")
-        fs.sort(key=lambda x: -x["faltan_kg"])
+        fs[:] = juntar_acabados(fs)
         # "Desde" del color = el pedido que MÁS espera entre sus telas (igual que
         # la columna Desde del corte por tela).
         viejo = max(fs, key=lambda x: x["dias_espera"])
