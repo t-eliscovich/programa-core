@@ -16,6 +16,9 @@ contra Asinfo:
     su línea en Asinfo.
   * Los memos VIVOS ya mandados a la fábrica (formulas_app): el acabado de
     cada línea de la foto contra Asinfo.
+  * Las ventas de Saldos (Vendidos y el detalle de la Competencia, tabla
+    `parado_venta`) de los últimos `DIAS_VENTAS` días: el acabado guardado
+    contra el de la línea de factura (07/10/2026).
 
 ⭐ La verdad se lee por OTRO camino que el de las pantallas: acá el atributo
 se encuentra por `valor_atributo.id_atributo = 1` entre los diez valores de
@@ -57,6 +60,40 @@ SELECT v.numero, pr.codigo, pr.nombre_categoria_producto AS categoria,
 
 #: Cuántos casos se nombran en cada aviso (el resto va en el número).
 _MUESTRA = 5
+
+#: Cuántos días de ventas de Saldos se comparan (la consulta entera desde la
+#: largada tarda ~30 s; dos semanas alcanzan para ver si el refresco anda).
+DIAS_VENTAS = 14
+
+#: El acabado de cada venta, por OTRO camino que el refresco de Saldos: el
+#: valor con `id_atributo = 1` entre los de la línea; si la línea no trae
+#: (nota de crédito), el de la madre.
+_SQL_VENTAS = """
+SELECT RTRIM(fc.numero) AS numero,
+       pr.nombre_subcategoria_producto AS subcategoria,
+       RIGHT(RTRIM(pr.codigo), 3) AS color,
+       COALESCE(
+         (SELECT MAX(va.codigo) FROM valor_atributo va
+           WHERE va.id_atributo = 1 AND va.id_valor_atributo IN (
+             dfc.id_valor_atributo_1, dfc.id_valor_atributo_2, dfc.id_valor_atributo_3,
+             dfc.id_valor_atributo_4, dfc.id_valor_atributo_5, dfc.id_valor_atributo_6,
+             dfc.id_valor_atributo_7, dfc.id_valor_atributo_8, dfc.id_valor_atributo_9,
+             dfc.id_valor_atributo_10)),
+         (SELECT MAX(va.codigo) FROM detalle_factura_cliente m
+            JOIN valor_atributo va ON va.id_atributo = 1 AND va.id_valor_atributo IN (
+             m.id_valor_atributo_1, m.id_valor_atributo_2, m.id_valor_atributo_3,
+             m.id_valor_atributo_4, m.id_valor_atributo_5, m.id_valor_atributo_6,
+             m.id_valor_atributo_7, m.id_valor_atributo_8, m.id_valor_atributo_9,
+             m.id_valor_atributo_10)
+           WHERE m.id_factura_cliente = fc.id_factura_cliente_padre
+             AND m.id_producto = dfc.id_producto)) AS acabado
+  FROM factura_cliente fc
+  JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
+  JOIN producto pr ON pr.id_producto = dfc.id_producto
+ WHERE fc.id_documento IN (7, 251, 20, 451) AND fc.estado NOT IN (0, 1)
+   AND dfc.cantidad > 0
+   AND fc.fecha >= DATEADD(day, -{dias}, CAST({ahora} AS date))
+"""
 
 
 def verdad() -> tuple[dict[tuple[str, str], str], dict[tuple[str, str], str], bool]:
@@ -140,6 +177,37 @@ def comparar_memos(lineas: dict[tuple[str, str], str],
     return problemas
 
 
+def ventas_saldos() -> tuple[list[str], int, bool]:
+    """Las ventas de Saldos guardadas (`parado_venta`) contra Asinfo.
+    `(problemas, comparadas, ok)`; ok=False si Asinfo no contestó."""
+    filas, ok = metabase_client.fetch_dataset_estado(
+        service.ASINFO_DB, _SQL_VENTAS.format(
+            dias=DIAS_VENTAS, ahora=service.AHORA_EC), max_results=50000)
+    if not ok:
+        return [], 0, False
+    verdad: dict[tuple[str, str, str], set[str]] = {}
+    for r in filas:
+        aca = str(r.get("acabado") or "").strip().upper()
+        if aca:
+            verdad.setdefault((str(r.get("numero") or "").strip(),
+                               str(r.get("subcategoria") or "").strip(),
+                               str(r.get("color") or "").strip()), set()).add(aca)
+    import db
+    guardadas = db.fetch_all(
+        "SELECT numero, subcategoria, color, acabado FROM scintela.parado_venta "
+        "WHERE acabado IS NOT NULL AND numero IS NOT NULL "
+        "AND fecha >= CURRENT_DATE - %s", (DIAS_VENTAS,)) or []
+    problemas = []
+    for g in guardadas:
+        k = (str(g["numero"]).strip(), str(g["subcategoria"]).strip(),
+             str(g["color"]).strip())
+        v = verdad.get(k)
+        if v is not None and g["acabado"] not in v:
+            problemas.append(f"{k[0]} {k[1]} {k[2]}: dice {g['acabado']} y "
+                             f"Asinfo {'/'.join(sorted(v))}")
+    return problemas, len(guardadas), True
+
+
 def _aviso(categoria: str, donde: str, problemas: list[str]) -> dict:
     muestra = "; ".join(problemas[:_MUESTRA])
     resto = len(problemas) - _MUESTRA
@@ -189,6 +257,16 @@ def health() -> dict:
     if p:
         alerts.append(_aviso("acabado_pedidos_memo",
                              "Memos ya mandados a la fábrica", p))
+
+    try:
+        p, n, ok_v = ventas_saldos()
+        stats["ventas_saldos"] = n if ok_v else "sin_datos"
+        if p:
+            alerts.append(_aviso("acabado_saldos_venta",
+                                 "Saldos (Vendidos y Competencia)", p))
+    except Exception as e:  # noqa: BLE001 — sin esta parte, el resto vale
+        _LOG.warning("vigía acabado (saldos): %s", e)
+        stats["ventas_saldos"] = "error"
 
     mixtos = sorted(f"{n} {c}" for (n, c), a in lineas.items() if "/" in a)
     stats["mixtos"] = len(mixtos)

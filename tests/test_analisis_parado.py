@@ -3996,7 +3996,10 @@ def test_la_forma_sale_de_la_tela_cuando_el_stock_no_la_puede_decir():
     assert "forma_de.get(k)" in fuente, "se guarda en la foto, por ítem"
     # y las dos lecturas caen a esa forma cuando los kilos no la dicen
     assert "ELSE COALESCE(f.forma, '') END     AS forma," in _i.getsource(queries.items)
-    assert "ELSE COALESCE(f.forma, '') END)    AS forma_fila," in _i.getsource(queries.vendidos)
+    # En Vendidos manda el acabado de la VENTA; la forma de la tela es el
+    # respaldo de los renglones viejos (07/10/2026, mig 0259).
+    assert "ELSE COALESCE(f.forma, '') END)) AS forma_fila," in _i.getsource(queries.vendidos)
+    assert "COALESCE(NULLIF(v.acabado, '')," in _i.getsource(queries.vendidos)
 
 
 def test_la_lista_no_dibuja_los_items_sin_un_kilo():
@@ -4901,3 +4904,37 @@ def test_la_apagada_por_error_se_vuelve_a_prender_aunque_ya_se_haya_vendido(monk
                   "fuera": True}])
     assert [p for _, p in db.sql_con("SET fuera = FALSE")] == [("Inter", "BLA")]
     assert not db.sql_con("SET fuera = TRUE")
+
+
+
+# ── el acabado de lo que SE VENDIÓ (07/10/2026) ─────────────────────────────
+
+def test_la_venta_trae_su_acabado_de_la_linea_o_de_la_madre():
+    """Vendidos y Competencia mostraban la forma del STOCK de la tela: una
+    venta abierta de una tela con stock tubular salía TUB (117 renglones,
+    8.777 kg desde la largada, medido el 07/10/2026). El acabado sale de la
+    línea de factura con la misma regla que /pedidos, y en la nota de crédito
+    (que viene sin atributos) de la línea madre."""
+    from modules.pedidos import service as ped
+    sql = asinfo_parado._sql_vendido("2026-08-25")
+    assert "AS acabado" in sql
+    assert ped.sql_valor_acabado("dfc") in sql          # la línea
+    assert ped.sql_valor_acabado("m") + " AS va_aca" in sql   # la madre (NC)
+    assert "ISNULL(aca_lin.codigo, '')" in sql.split("GROUP BY")[-1], (
+        "si el acabado no entra al GROUP BY, una factura con ABI y TUB de la "
+        "misma tela se suma en un renglón")
+
+
+def test_el_refresco_guarda_el_acabado_de_la_venta():
+    import inspect as _i
+    fuente = _i.getsource(queries.actualizar)
+    assert "calidad, cuenta, numf, numero, acabado)" in fuente
+    assert 'v.get("acabado")' in fuente
+
+
+def test_vendidos_y_competencia_muestran_el_acabado_de_la_venta():
+    import inspect as _i
+    for fn in (queries.vendidos, queries.vendido_detalle):
+        src = _i.getsource(fn)
+        assert "COALESCE(NULLIF(v.acabado, '')," in src
+        assert "v.acabado" in src.split("GROUP BY")[-1]

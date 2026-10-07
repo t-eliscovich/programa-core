@@ -264,3 +264,34 @@ def test_el_vigia_esta_en_el_health_all():
 
     from modules.admin_dbase import health_audit_view as h
     assert '"acabado_pedidos": data30' in inspect.getsource(h.health_all)
+
+
+# ── el vigía también mira las ventas de Saldos (07/10/2026) ─────────────────
+
+def test_el_vigia_canta_una_venta_de_saldos_con_el_acabado_equivocado():
+    verdad = [{"numero": "001-099-000185071", "subcategoria": "Fleece 96 Perchado",
+               "color": "CRU", "acabado": "ABI"}]
+    guardadas = [{"numero": "001-099-000185071", "subcategoria": "Fleece 96 Perchado",
+                  "color": "CRU", "acabado": "TUB"}]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(verdad, True)), \
+         patch("db.fetch_all", return_value=guardadas):
+        problemas, n, ok = vigia_acabado.ventas_saldos()
+    assert ok and n == 1
+    assert problemas == ["001-099-000185071 Fleece 96 Perchado CRU: dice TUB y Asinfo ABI"]
+
+
+def test_el_vigia_de_saldos_en_verde_cuando_coinciden():
+    verdad = [{"numero": "N1", "subcategoria": "Jersey 3", "color": "BLA", "acabado": "TUB"}]
+    guardadas = [{"numero": "N1", "subcategoria": "Jersey 3", "color": "BLA", "acabado": "TUB"}]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=(verdad, True)), \
+         patch("db.fetch_all", return_value=guardadas):
+        assert vigia_acabado.ventas_saldos() == ([], 1, True)
+
+
+def test_la_verdad_de_saldos_tambien_va_por_otro_camino():
+    from modules.analisis import asinfo_parado
+    assert "va.id_atributo = 1 AND va.id_valor_atributo IN" in vigia_acabado._SQL_VENTAS
+    assert service.sql_valor_acabado("dfc") not in vigia_acabado._SQL_VENTAS
+    assert service.sql_valor_acabado("dfc") in asinfo_parado._sql_vendido("2026-08-25")

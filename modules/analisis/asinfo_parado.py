@@ -67,6 +67,7 @@ from __future__ import annotations
 import logging
 
 from modules._lib import metabase_client
+from modules.pedidos import service as _ped
 
 _LOG = logging.getLogger("programa_core.analisis")
 
@@ -179,7 +180,8 @@ _JOIN_PADRE = ("LEFT JOIN factura_cliente pad "
 # dejaba con `cuenta = false`: la venta sumaba los puntos y la devolución no los
 # restaba. El fallback quedaba para el lado equivocado.
 _JOIN_MADRE_LINEA = """
-OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2 AS va2
+OUTER APPLY (SELECT TOP 1 m.id_valor_atributo_2 AS va2,
+                    """ + _ped.sql_valor_acabado("m") + """ AS va_aca
                FROM detalle_factura_cliente m
               WHERE m.id_factura_cliente = fc.id_factura_cliente_padre
                 AND m.id_producto = dfc.id_producto) mad"""
@@ -216,6 +218,23 @@ LEFT JOIN lote lot_desp ON lot_desp.id_producto = ddc.id_producto
 _CALIDAD_LINEA = (
     "CASE WHEN COALESCE(lot_desp.id_valor_atributo_2, dfc.id_valor_atributo_2, "
     "mad.va2) = 4 THEN 'SEG' ELSE 'PRI' END")
+
+# ⭐ El ACABADO (TUB/ABI) de un kilo VENDIDO (07/10/2026). Hasta ese día la
+# tabla de Vendidos y el detalle de la Competencia mostraban la forma del
+# STOCK de la tela ("la línea de factura no guarda el lote"), así que una
+# venta ABIERTA de una tela con stock tubular salía TUB, y al revés: medido
+# el 07/10, 117 renglones (8.777 kg) desde la largada decían la forma
+# equivocada. La venta SÍ trae su acabado: el atributo 1 de la propia línea
+# de factura y, en las notas de crédito (que vienen sin atributos), el de la
+# línea madre. Misma regla que /pedidos y el rotativo
+# (`pedidos.service.sql_valor_acabado`).
+_JOIN_ACABADO_LINEA = (
+    "\nLEFT JOIN valor_atributo aca_lin ON aca_lin.id_valor_atributo = COALESCE("
+    + _ped.sql_valor_acabado("dfc") + ", mad.va_aca)")
+# ⚠ El lote del despacho NO se mira para el acabado: medido el 07/10/2026
+# sobre 16.673 renglones desde la largada, lote y línea coinciden SIEMPRE, y
+# el join extra llevaba la consulta de ~5 s a 30 s (ver el ⚠ PERF de arriba).
+_ACABADO_LINEA = "ISNULL(aca_lin.codigo, '')"
 
 _VENDEDOR = ("CASE WHEN vv.nombre_vendedor IS NULL "
              "OR RTRIM(vv.nombre_vendedor) IN ('Cía. Ltda. Intela', '') "
@@ -652,6 +671,7 @@ SELECT pr.nombre_subcategoria_producto AS subcategoria,
        {_VENDEDOR}                     AS vendedor,
        RTRIM(e.nombre_comercial)       AS codigo_cli,
        {_CALIDAD_LINEA}                AS calidad,
+       {_ACABADO_LINEA}                AS acabado,
        -- ⭐ El número de la factura, para poder abrirla desde la pantalla
        -- (dueña 26/08/2026). Entra al GROUP BY, así que cada renglón pasa a ser
        -- UNA factura en vez de "todo lo que se vendió ese día de esa tela": es
@@ -664,14 +684,14 @@ FROM factura_cliente fc
 JOIN detalle_factura_cliente dfc ON dfc.id_factura_cliente = fc.id_factura_cliente
 JOIN producto pr ON pr.id_producto = dfc.id_producto
 JOIN empresa e   ON e.id_empresa   = fc.id_empresa
-{_JOIN_PADRE}{_JOIN_MADRE_LINEA}{_JOIN_LOTE_DESPACHO}
+{_JOIN_PADRE}{_JOIN_MADRE_LINEA}{_JOIN_LOTE_DESPACHO}{_JOIN_ACABADO_LINEA}
 {_JOIN_VENDEDOR}
 WHERE fc.id_documento IN {_DOCS} AND fc.estado NOT IN (0, 1)
   AND dfc.cantidad > 0 AND {_FECHA} >= '{desde}'
   AND pr.nombre_categoria_producto NOT IN ({CATS})
 GROUP BY pr.nombre_subcategoria_producto, RIGHT(RTRIM(pr.codigo), 3),
          CAST({_FECHA} AS date), {_VENDEDOR}, RTRIM(e.nombre_comercial),
-         {_CALIDAD_LINEA}, RTRIM(fc.numero)
+         {_CALIDAD_LINEA}, {_ACABADO_LINEA}, RTRIM(fc.numero)
 """
 
 

@@ -54,7 +54,8 @@ se lee con SU acabado, con la misma regla que /pedidos
 (`modules.pedidos.service`):
 
     venta     → el acabado de la LÍNEA de factura (sql_valor_acabado; el 99,9 %
-                de los kilos del último año lo trae, medido el 07/10)
+                de los kilos del último año lo trae, medido el 07/10); la nota
+                de crédito, que viene sin atributos, el de su línea madre
     pedido    → el acabado de la línea del pedido (_SQL_ACABADO_LINEA)
     stock     → el acabado del LOTE (SQL_STOCK_POR_ACABADO)
     producción→ la orden de tintura no lo dice: se reparte entre los
@@ -161,8 +162,14 @@ WITH v AS (
         ON dfc.id_factura_cliente = fc.id_factura_cliente
       LEFT JOIN factura_cliente pad
         ON pad.id_factura_cliente = fc.id_factura_cliente_padre
+      -- La nota de crédito viene SIN atributos (medido el 07/10/2026: todas):
+      -- su acabado es el de la línea madre del mismo producto.
+      OUTER APPLY (SELECT TOP 1 """ + _ped.sql_valor_acabado("m") + """ AS va_aca
+                     FROM detalle_factura_cliente m
+                    WHERE m.id_factura_cliente = fc.id_factura_cliente_padre
+                      AND m.id_producto = dfc.id_producto) mad
       LEFT JOIN valor_atributo va
-        ON va.id_valor_atributo = """ + _ped.sql_valor_acabado("dfc") + """
+        ON va.id_valor_atributo = COALESCE(""" + _ped.sql_valor_acabado("dfc") + """, mad.va_aca)
      WHERE fc.id_documento IN (7, 251, 20, 451)
        AND fc.estado NOT IN (0, 1)
        AND COALESCE(pad.fecha, fc.fecha)
@@ -429,11 +436,11 @@ def rotativo(_ahora=time.monotonic) -> tuple[list[dict], bool]:
         ultima = max(ultima, w)
         clave = (r.get("id_producto"), str(r.get("aca") or "").strip().upper())
         if clave not in renglones:
-            # ⚠ Las notas de crédito (devoluciones) vienen SIN acabado en la
-            # línea (medido el 07/10/2026): se restan del renglón principal
-            # del producto, como restaban antes del producto entero. La venta
-            # de un acabado que no rota (el ABI de una tela que rota en TUB)
-            # no es de ningún renglón y se deja afuera.
+            # ⚠ Una devolución sin acabado —la nota de crédito toma el de su
+            # línea madre en el SQL; esto queda para la que no tiene madre—
+            # se resta del renglón principal del producto. La venta de un
+            # acabado que no rota (el ABI de una tela que rota en TUB) no es
+            # de ningún renglón y se deja afuera.
             if clave[1] or clave[0] not in principal:
                 continue
             clave = (clave[0], principal[clave[0]])

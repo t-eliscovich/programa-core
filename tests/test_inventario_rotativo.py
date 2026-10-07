@@ -924,3 +924,12 @@ def test_la_venta_de_un_acabado_que_no_rota_no_se_suma_a_otro():
                       side_effect=_fake_asinfo([_ficha(aca="TUB")], serie)):
         filas, _ = service.rotativo()
     assert [f["sem_kg"] for f in filas] == [100.0]
+
+
+def test_la_devolucion_toma_el_acabado_de_su_factura_madre():
+    """La NC viene sin atributos: una devolución ABI restaba del TUB. Medido el
+    07/10/2026, el 99,97 % de las NC tienen madre con un solo acabado."""
+    from modules.pedidos import service as ped
+    sql = service._sql_serie()
+    assert "m.id_factura_cliente = fc.id_factura_cliente_padre" in sql
+    assert "COALESCE(" + ped.sql_valor_acabado("dfc") + ", mad.va_aca)" in sql

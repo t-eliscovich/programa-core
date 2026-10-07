@@ -1588,8 +1588,8 @@ def actualizar() -> dict:
                 db.execute(
                     """INSERT INTO scintela.parado_venta
                            (subcategoria, color, vend_pc, vendedor, fecha, kg,
-                            calidad, cuenta, numf, numero)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                            calidad, cuenta, numf, numero, acabado)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (k[0], k[1], v.get("vend_pc"), _quien_vendio(v),
                      _fecha(v["fecha"]), parte,
                      v.get("calidad"), cuenta, v.get("numf"),
@@ -1597,7 +1597,10 @@ def actualizar() -> dict:
                      # repite entre una nota de entrega y una factura vieja de
                      # otro cliente, y sin esto el link abría la que no era
                      # (mig 0233).
-                     v.get("numero")), conn=conn)
+                     v.get("numero"),
+                     # El acabado de lo que SE VENDIÓ, no el del stock
+                     # (07/10/2026, mig 0259).
+                     (v.get("acabado") or "").strip().upper() or None), conn=conn)
 
         db.execute("DELETE FROM scintela.parado_share", conn=conn)
         for s in asinfo_parado.share_por_grupo():
@@ -1776,9 +1779,12 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   -- tienen que ser columnas").
                   COALESCE(UPPER(LEFT(nom.n, 1)) || LOWER(SUBSTRING(nom.n FROM 2)), '')
                                                     AS color_nombre,
-                  MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
-                           WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
-                           ELSE COALESCE(f.forma, '') END) AS forma_fila,
+                  -- ⭐ El acabado de la VENTA (07/10/2026, mig 0259); la
+                  -- forma de la tela queda sólo para filas viejas sin él.
+                  COALESCE(NULLIF(v.acabado, ''),
+                      MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                               WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
+                               ELSE COALESCE(f.forma, '') END)) AS forma_fila,
                   -- ⭐ Dueña 01/09/2026: "poné la última fecha de vendido de
                   -- esa tela como está en saldos" — la MISMA columna que
                   -- `/analisis/parado` (`f.ultima_venta`, de `parado_foto`,
@@ -1810,7 +1816,7 @@ def vendido_detalle(desde) -> dict[str, list[dict]]:
                   LIMIT 1) nom ON TRUE
             WHERE v.fecha >= %s AND v.cuenta
             GROUP BY v.vendedor, v.subcategoria, v.color, v.calidad, v.cuenta,
-                     v.fecha, v.numf, v.numero, dia.numf_completo,
+                     v.fecha, v.numf, v.numero, v.acabado, dia.numf_completo,
                      uno.numf_completo, nom.n
             ORDER BY SUM(v.kg) DESC""", (desde,)) or []
     out: dict[str, list[dict]] = defaultdict(list)
@@ -1866,15 +1872,16 @@ def vendidos(desde) -> list[dict]:
                -- ⭐ La FORMA, igual que en la fila de arriba (dueña 25/08/2026:
                -- "agregá forma dentro de la tabla de vendidos").
                --
-               -- ⚠ Sale de la ficha de la tela, NO de la venta: la forma vive
-               -- en el rollo y la línea de factura no guarda el lote
-               -- (`dfc.id_lote` viene en NULL, igual que para la calidad). Así
-               -- que es la forma de lo que HAY, no la de lo que salió. Cuando
-               -- la tela se vendió entera no queda rollo que mirar y la columna
-               -- dice "—": preferible a inventar una sigla.
-               MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
-                        WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
-                        ELSE COALESCE(f.forma, '') END)    AS forma_fila,
+               -- ⭐ Desde el 07/10/2026 es la forma de lo que SE VENDIÓ: el
+               -- acabado de la línea de factura (o de la madre, si es nota de
+               -- crédito), guardado en `parado_venta.acabado` (mig 0259).
+               -- Antes salía de la ficha de la tela —la forma de lo que HAY— y
+               -- 117 ventas (8.777 kg) decían la equivocada. La ficha queda de
+               -- respaldo sólo para renglones escritos antes de la migración.
+               COALESCE(NULLIF(v.acabado, ''),
+                   MAX(CASE WHEN COALESCE(f.kg_tubular, 0) > 0 THEN 'TUB'
+                            WHEN COALESCE(f.kg_abierta, 0) > 0 THEN 'ABI'
+                            ELSE COALESCE(f.forma, '') END)) AS forma_fila,
                SUM(v.kg)                                   AS kg,
                -- ⭐ Lo que QUEDA de esa tela × color, para que las dos tablas
                -- de la pantalla se lean juntas: arriba «Kg en saldo | Vendido»
@@ -1911,8 +1918,8 @@ def vendidos(desde) -> list[dict]:
                LIMIT 1) nom ON TRUE
          WHERE v.fecha >= %s AND v.cuenta
          GROUP BY v.subcategoria, v.color, v.calidad, v.fecha, v.vendedor,
-                  v.vend_pc, v.numf, v.numero, dia.numf_completo, uno.numf_completo,
-                  nom.n, f.categoria, p.categoria
+                  v.vend_pc, v.numf, v.numero, v.acabado, dia.numf_completo,
+                  uno.numf_completo, nom.n, f.categoria, p.categoria
          -- Lo último arriba: es una lista de lo que va pasando, no un ranking.
          ORDER BY v.fecha DESC, SUM(v.kg) DESC
         """, (desde,)) or []
