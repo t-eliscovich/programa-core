@@ -176,7 +176,6 @@ def _warm_once() -> None:
             # venzan (TMT 2026-08-24).
             ("pedidos_pendientes", lambda: _ped.pendientes()),
             ("pedidos_por_color", lambda: _ped.pedidos_por_color()),
-            ("pedidos_acabados", lambda: _ped.acabados_por_producto()),
             # Órdenes de tintura: pantalla de la bodega, se refresca sola cada
             # 5 min y en frío tardaba ~30 s (01/10/2026).
             ("pedidos_ordenes_tintura", lambda: _ord.ordenes()),

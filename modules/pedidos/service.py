@@ -150,9 +150,8 @@ CATEGORIAS_EN_UNIDADES = ("Cuellos", "Puños")
 # FE96MAR tiene lotes de los dos acabados, así que todo salía TUB aunque el
 # pedido dijera ABI (verificado en /admin/sql el 06/10: 153 líneas ABI
 # pendientes). El corte Pedido y el memo ya leían la línea desde el 10/09
-# (PDCL-31577); el agujero quedó en los otros dos cortes. Ese MAX sigue
-# vivo SÓLO para la pantalla de stock (inventario rotativo), nunca para un
-# pedido.
+# (PDCL-31577); el agujero quedó en los otros dos cortes. Ese MAX se
+# borró el 07/10 (también lo usaba el inventario rotativo).
 #
 # El atributo 1 (Acabado) se busca por NÚMERO de atributo, no por slot
 # (verificado 10/09: cae en el slot 3 en 200.105 de 200.107 líneas).
@@ -161,18 +160,19 @@ CATEGORIAS_EN_UNIDADES = ("Cuellos", "Puños")
 # acabados no hay cómo saber qué saldo es de cuál y el renglón dice
 # "ABI/TUB" (el vigía `acabado_pedidos` del health lo nombra; al 06/10 no
 # había ninguno pendiente).
-_SQL_VALOR_ACABADO_LINEA = """CASE
-               WHEN d.id_atributo_1  = 1 THEN d.id_valor_atributo_1
-               WHEN d.id_atributo_2  = 1 THEN d.id_valor_atributo_2
-               WHEN d.id_atributo_3  = 1 THEN d.id_valor_atributo_3
-               WHEN d.id_atributo_4  = 1 THEN d.id_valor_atributo_4
-               WHEN d.id_atributo_5  = 1 THEN d.id_valor_atributo_5
-               WHEN d.id_atributo_6  = 1 THEN d.id_valor_atributo_6
-               WHEN d.id_atributo_7  = 1 THEN d.id_valor_atributo_7
-               WHEN d.id_atributo_8  = 1 THEN d.id_valor_atributo_8
-               WHEN d.id_atributo_9  = 1 THEN d.id_valor_atributo_9
-               WHEN d.id_atributo_10 = 1 THEN d.id_valor_atributo_10
-           END"""
+def sql_valor_acabado(alias: str) -> str:
+    """El id del valor ACABADO (atributo 1) de una LÍNEA de Asinfo — de pedido
+    (`detalle_pedido_cliente`) o de factura (`detalle_factura_cliente`), que
+    guardan los atributos con los mismos pares `id_atributo_N` /
+    `id_valor_atributo_N`. La única forma en que el programa lee un acabado
+    de una línea."""
+    casos = "\n".join(
+        f"               WHEN {alias}.id_atributo_{n:<2} = 1 THEN {alias}.id_valor_atributo_{n}"
+        for n in range(1, 11))
+    return "CASE\n" + casos + "\n           END"
+
+
+_SQL_VALOR_ACABADO_LINEA = sql_valor_acabado("d")
 
 #: La CTE `aca`. `{pedidos}` es la sub-consulta de ids de pedido a mirar.
 _SQL_ACABADO_LINEA_T = """
@@ -207,6 +207,41 @@ def clave_renglon(codigo: str, acabado: str) -> str:
     """La clave del renglón de /pedidos: producto + acabado. Va en los ids
     del HTML (la flechita que despliega los clientes), así que sin '/'."""
     return f"{codigo}_{(acabado or 'X').replace('/', '')}"
+
+
+#: El stock de bodega 53 por (producto, ACABADO DEL LOTE): CTEs `inv_lote`,
+#: `lote_aca` e `inv_aca` (id_producto, aca, inv_kg). Último saldo de cada
+#: lote (verificado 06/10/2026: FE96CRU 105,05 ABI + 42,5 TUB = 147,55, igual
+#: al saldo del producto). Un lote sin acabado queda con aca ''. Lo usan
+#: /pedidos y el inventario rotativo. `{productos}` es la sub-consulta de ids.
+SQL_STOCK_POR_ACABADO = """inv_lote AS (
+    SELECT spl.id_producto, spl.id_lote, spl.saldo,
+           ROW_NUMBER() OVER (PARTITION BY spl.id_producto, spl.id_lote, spl.id_bodega
+                              ORDER BY spl.fecha DESC, spl.id_saldo_producto_lote DESC) AS rn
+      FROM saldo_producto_lote spl
+     WHERE spl.id_bodega = {bod}
+       AND spl.id_producto IN ({productos})
+),
+lote_aca AS (
+    SELECT l.id_lote, MAX(va.codigo) AS aca
+      FROM lote l
+      JOIN valor_atributo va
+        ON va.id_atributo = 1
+       AND va.id_valor_atributo IN (
+             l.id_valor_atributo_1, l.id_valor_atributo_2, l.id_valor_atributo_3,
+             l.id_valor_atributo_4, l.id_valor_atributo_5, l.id_valor_atributo_6,
+             l.id_valor_atributo_7, l.id_valor_atributo_8, l.id_valor_atributo_9,
+             l.id_valor_atributo_10)
+     WHERE l.id_lote IN (SELECT id_lote FROM inv_lote WHERE rn = 1 AND saldo > 0)
+     GROUP BY l.id_lote
+),
+inv_aca AS (
+    SELECT u.id_producto, ISNULL(la.aca, '') AS aca, SUM(u.saldo) AS inv_kg
+      FROM inv_lote u
+      LEFT JOIN lote_aca la ON la.id_lote = u.id_lote
+     WHERE u.rn = 1 AND u.saldo > 0
+     GROUP BY u.id_producto, ISNULL(la.aca, '')
+)"""
 
 
 
@@ -256,34 +291,7 @@ inv AS (
      WHERE u.rn = 1 AND u.saldo > 0
      GROUP BY id_producto
 ),
-inv_lote AS (
-    SELECT spl.id_producto, spl.id_lote, spl.saldo,
-           ROW_NUMBER() OVER (PARTITION BY spl.id_producto, spl.id_lote, spl.id_bodega
-                              ORDER BY spl.fecha DESC, spl.id_saldo_producto_lote DESC) AS rn
-      FROM saldo_producto_lote spl
-     WHERE spl.id_bodega = {bod}
-       AND spl.id_producto IN (SELECT id_producto FROM ped WHERE aca_min <> '')
-),
-lote_aca AS (
-    SELECT l.id_lote, MAX(va.codigo) AS aca
-      FROM lote l
-      JOIN valor_atributo va
-        ON va.id_atributo = 1
-       AND va.id_valor_atributo IN (
-             l.id_valor_atributo_1, l.id_valor_atributo_2, l.id_valor_atributo_3,
-             l.id_valor_atributo_4, l.id_valor_atributo_5, l.id_valor_atributo_6,
-             l.id_valor_atributo_7, l.id_valor_atributo_8, l.id_valor_atributo_9,
-             l.id_valor_atributo_10)
-     WHERE l.id_lote IN (SELECT id_lote FROM inv_lote WHERE rn = 1 AND saldo > 0)
-     GROUP BY l.id_lote
-),
-inv_aca AS (
-    SELECT u.id_producto, la.aca, SUM(u.saldo) AS inv_kg
-      FROM inv_lote u
-      JOIN lote_aca la ON la.id_lote = u.id_lote
-     WHERE u.rn = 1 AND u.saldo > 0
-     GROUP BY u.id_producto, la.aca
-),
+""" + SQL_STOCK_POR_ACABADO.replace("{productos}", "SELECT id_producto FROM ped WHERE aca_min <> ''") + """,
 padres AS (
     SELECT DISTINCT id_orden_fabricacion_padre AS p
       FROM orden_fabricacion
@@ -977,59 +985,11 @@ def por_cliente() -> list[dict]:
     return sorted(acc.values(), key=lambda g: (-g["pedido"], g["cliente"]))
 
 
-# ── Acabado (TUB/ABI) del STOCK por producto (2026-08-18) ────────────────────
-# 🚫 NUNCA para un pedido (06/10/2026, PDCL-32677): el MAX de los lotes da TUB
-# en cuanto hay un lote tubular. Los pedidos usan `acabado_de_linea`. Queda
-# sólo para la pantalla de stock (inventario rotativo).
-# Historia: la dueña necesitaba ver si el pedido es abierto o tubular y se
-# creyó que el acabado NO estaba en la línea de pedido (sí está — 10/09); se resolvía
-# igual que en stock_asinfo_lote (EAV del lote, `id_atributo = 1`), agrupado por
-# producto (todos los lotes de un producto comparten su acabado). Consulta
-# APARTE y fail-soft: si Asinfo no contesta o la SQL falla, se devuelve {} y la
-# pantalla simplemente no muestra el punto — nunca se cae. Estampado queda
-# afuera a pedido de la dueña.
-_SQL_ACABADO = """
-WITH attr AS (
-    SELECT u.id_lote,
-           MAX(CASE WHEN va.id_atributo = 1 THEN va.nombre END) AS acabado
-      FROM lote l
-      UNPIVOT (idv FOR slot IN (
-          id_valor_atributo_1, id_valor_atributo_2, id_valor_atributo_3,
-          id_valor_atributo_4, id_valor_atributo_5, id_valor_atributo_6,
-          id_valor_atributo_7, id_valor_atributo_8, id_valor_atributo_9,
-          id_valor_atributo_10)) u
-      JOIN valor_atributo va ON va.id_valor_atributo = u.idv
-     GROUP BY u.id_lote
-)
-SELECT pr.codigo, MAX(a.acabado) AS acabado
-  FROM saldo_producto_lote spl
-  JOIN producto pr ON pr.id_producto = spl.id_producto
-  JOIN attr a ON a.id_lote = spl.id_lote
- WHERE spl.id_bodega = {bod} AND a.acabado IS NOT NULL
- GROUP BY pr.codigo
-"""
-
-
-def acabados_por_producto() -> dict[str, str]:
-    """`{código de producto: 'TUB' | 'ABI' | ...}`. `{}` si falla (fail-soft)."""
-    try:
-        def _traer():
-            return metabase_client.fetch_dataset_estado(
-                ASINFO_DB, _SQL_ACABADO.format(bod=BODEGA_TERMINADO))
-
-        filas, ok = _cacheado("acabados", _traer)
-        if not ok:
-            return {}
-        out = {}
-        for r in filas:
-            cod = str(r.get("codigo") or "").strip()
-            aca = str(r.get("acabado") or "").strip().upper()
-            if cod and aca:
-                out[cod] = aca
-        return out
-    except Exception:  # noqa: BLE001 — sin acabado, la pantalla sigue andando
-        _LOG.warning("pedidos: no pude traer el acabado", exc_info=True)
-        return {}
+# (07/10/2026) Acá vivía `acabados_por_producto()`: el acabado POR PRODUCTO
+# sacado del MAX de los lotes en stock. Daba TUB en cuanto había un lote
+# tubular (PDCL-32677 en /pedidos; el inventario rotativo, igual). Se borró:
+# un acabado se lee de la LÍNEA (pedido o factura) o del LOTE, nunca del
+# producto. Ver `sql_valor_acabado` y `SQL_STOCK_POR_ACABADO`.
 
 
 # ── Corte por PEDIDO, dueño y memos (2026-08-27) ─────────────────────────────

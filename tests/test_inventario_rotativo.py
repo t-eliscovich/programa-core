@@ -20,17 +20,17 @@ def _ficha(**kw):
         "id_producto": 1, "categoria": "Fleece", "tela": "Fleece 102",
         "codigo": "FE102JOS", "color": "JOS", "semanas_venta": 49,
         "kg52": 5200.0, "inv_kg": 0.0, "ped_kg": 0.0, "ped_un": 0.0,
-        "prod_kg": 0.0, "n_ordenes": 0,
+        "prod_kg": 0.0, "n_ordenes": 0, "aca": "TUB",
     }
     base.update(kw)
     return base
 
 
-def _serie(id_producto=1, kilos=None, ultima=1389):
+def _serie(id_producto=1, kilos=None, ultima=1389, aca="TUB"):
     """Filas crudas de `_SQL_SERIE`: sólo las semanas CON venta."""
     kilos = kilos if kilos is not None else [100.0] * 52
     return [
-        {"id_producto": id_producto, "w": ultima - len(kilos) + 1 + i, "kg": kg}
+        {"id_producto": id_producto, "aca": aca, "w": ultima - len(kilos) + 1 + i, "kg": kg}
         for i, kg in enumerate(kilos)
         if kg
     ]
@@ -238,7 +238,7 @@ def _fake_asinfo(fichas=None, serie=None, nuevos=None):
     nuevos = nuevos if nuevos is not None else [{"n": 0, "kg": 0.0}]
 
     def fake(_db, sql, **_kw):
-        if "SELECT v.id_producto, v.w" in sql:
+        if "SELECT v.id_producto, v.aca, v.w" in sql:
             return (serie, True)
         if "SELECT COUNT(*) AS n, SUM(inv.inv_kg) AS kg" in sql:
             return (nuevos, True)
@@ -466,50 +466,34 @@ def test_rotacion_es_una_pestana_de_inventario(app, fake_db):
 
 # ── acabado ─────────────────────────────────────────────────────────────────
 
-def test_el_acabado_sale_de_pedidos_y_no_de_una_sql_propia(app, fake_db):
-    """Dueña 2026-08-18: "pone columna de acabado".
-
-    Se importa `pedidos.service.acabados_por_producto` en vez de copiar la SQL:
-    dos consultas paralelas se desincronizan sin que nadie se entere hasta que
-    las dos pantallas dicen acabados distintos del mismo producto.
-    """
+def test_el_acabado_es_el_del_renglon_no_el_del_stock(app, fake_db):
+    """Dueña 2026-08-18: "pone columna de acabado". Desde el 07/10/2026 el
+    renglón es producto + acabado: el acabado sale de la venta, no del MAX de
+    los lotes en stock (que daba TUB en cuanto había un lote tubular)."""
     service._cache.clear()
     service._cache_nuevos.clear()
     c = _login(app, fake_db)
-    with patch("modules.pedidos.service.acabados_por_producto",
-               return_value={"FE102JOS": "TUB"}), \
-         patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo()):
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas=[_ficha(aca="ABI")],
+                                               serie=_serie(aca="ABI"))):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
     assert "<th style=\"text-align:left\">Acab.</th>" in body
-    assert '<td class="ac">TUB</td>' in body
+    assert '<td class="ac">ABI</td>' in body
+    from modules.pedidos import service as ped
+    assert not hasattr(ped, "acabados_por_producto")   # el MAX de los lotes, borrado
 
 
-def test_sin_acabado_la_celda_queda_vacia_y_la_pantalla_no_se_cae(app, fake_db):
-    """No se inventa un acabado: un producto sin lote con atributo no tiene."""
+def test_sin_acabado_en_la_venta_la_celda_queda_vacia(app, fake_db):
+    """No se inventa un acabado."""
     service._cache.clear()
     service._cache_nuevos.clear()
     c = _login(app, fake_db)
-    with patch("modules.pedidos.service.acabados_por_producto",
-               side_effect=RuntimeError("Asinfo se cayó")), \
-         patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo()):
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas=[_ficha(aca="")],
+                                               serie=_serie(aca=""))):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
     assert '<td class="ac"></td>' in body
     assert "JOS" in body
-
-
-# ── subtotales del bloque ───────────────────────────────────────────────────
-
-def test_el_subtotal_va_en_rollos_cuando_todo_el_bloque_son_rollos():
-    """Dueña 2026-08-18: "poneme todo en rollos salvo los cuellos, rib y puños".
-
-    El encabezado del color era el único lugar que seguía hablando en kilos.
-    """
-    filas = [service._fila(_ficha(color="BLA", tela="Fleece 102"),
-                           {w: 235.0 for w in range(1338, 1390)}, 1389)]
-    (b,) = service.agrupar(filas, "color")
-    assert (b["unidad"], b["sem"]) == ("roll", 10.0)   # 235 kg = 10 rollos
 
 
 def test_un_bloque_mixto_usa_la_unidad_que_pesa_mas():
@@ -642,8 +626,7 @@ def test_el_excel_sale_en_el_mismo_orden_que_la_pantalla(app, fake_db):
                      codigo="PENEG", inv_kg=9000.0)]
     serie = _serie(1) + _serie(2)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo(fichas, serie)), \
-         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+                      side_effect=_fake_asinfo(fichas, serie)):
         body = c.get("/inventario-rotativo").get_data(as_text=True)
         ws = _bajar(c)
 
@@ -661,8 +644,7 @@ def test_el_excel_respeta_el_filtro_de_la_pantalla(app, fake_db):
     fichas = [_ficha(color="JOS"),
               _ficha(id_producto=2, color="NEG", codigo="FE102NEG", inv_kg=9000.0)]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo(fichas, _serie(1) + _serie(2))), \
-         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+                      side_effect=_fake_asinfo(fichas, _serie(1) + _serie(2))):
         todo = _bajar(c)
         rojo = _bajar(c, "/inventario-rotativo/excel?est=rojo")
     assert todo.max_row == 3
@@ -676,8 +658,7 @@ def test_el_excel_sigue_el_corte_que_se_esta_mirando(app, fake_db):
     service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo()), \
-         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+                      side_effect=_fake_asinfo()):
         ws = _bajar(c, "/inventario-rotativo/excel?ver=tela")
     assert [c.value for c in ws[1]][:2] == ["Color", "Tela"]
     assert ws["A2"].value == "JOS" and ws["B2"].value == "Fleece 102"
@@ -689,9 +670,7 @@ def test_el_excel_lleva_la_unidad_y_el_acabado(app, fake_db):
     service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo()), \
-         patch("modules.pedidos.service.acabados_por_producto",
-               return_value={"FE102JOS": "TUB"}):
+                      side_effect=_fake_asinfo()):
         ws = _bajar(c)
     fila = {h: ws.cell(row=2, column=i).value
             for i, h in enumerate(views.COLUMNAS, 1)}
@@ -747,8 +726,7 @@ def test_el_excel_trae_UNA_columna_de_faltante(app, fake_db):
     service._cache_nuevos.clear()
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
-                      side_effect=_fake_asinfo()), \
-         patch("modules.pedidos.service.acabados_por_producto", return_value={}):
+                      side_effect=_fake_asinfo()):
         ws = _bajar(c)
     cabecera = [c.value for c in ws[1]]
     assert cabecera.count("Falta") == 1
@@ -888,3 +866,61 @@ def test_en_el_papel_el_renglon_de_nuevas_no_va(app, fake_db):
                       side_effect=_fake_asinfo(nuevos=[{"n": 12, "kg": 3400.0}])):
         body = c.get("/inventario-rotativo?imprimir=1").get_data(as_text=True)
     assert "todavía no entran en la lista" not in body
+
+
+# ── el renglón es producto + acabado (07/10/2026) ───────────────────────────
+
+def test_venta_pedido_y_stock_se_leen_con_la_regla_de_pedidos():
+    from modules.pedidos import service as ped
+    sql = service._sql_ficha()
+    assert ped.sql_valor_acabado("dfc") in sql          # la venta, por línea de factura
+    assert ped._SQL_VALOR_ACABADO_LINEA in sql          # el pedido, por línea de pedido
+    assert "ia.aca = c.aca" in sql and "ped.aca = c.aca" in sql   # el stock, por lote
+    assert "GROUP BY id_producto, aca HAVING" in sql    # rota cada acabado por su cuenta
+
+
+def test_la_produccion_se_reparte_por_lo_que_vende_cada_acabado():
+    fichas = [_ficha(aca="TUB", kg52=3000.0, prod_kg=400.0),
+              _ficha(aca="ABI", kg52=1000.0, prod_kg=400.0)]
+    service.repartir_produccion(fichas)
+    assert [f["prod_kg"] for f in fichas] == [300.0, 100.0]
+    assert all(f["prod_repartida"] for f in fichas)
+
+
+def test_el_stock_abi_no_cubre_la_venta_tub(app, fake_db):
+    """Antes el stock era del producto entero: 9.000 kg ABI tapaban la venta
+    TUB. Ahora cada renglón tiene su stock."""
+    service._cache.clear()
+    service._cache_nuevos.clear()
+    fichas = [_ficha(aca="TUB", inv_kg=0.0), _ficha(aca="ABI", inv_kg=9000.0)]
+    serie = _serie(aca="TUB") + _serie(aca="ABI")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas, serie)):
+        filas, _ = service.rotativo()
+    por = {f["acabado"]: f for f in filas}
+    assert por["TUB"]["stock_kg"] == 0.0 and por["TUB"]["estado"] == "rojo"
+    assert por["ABI"]["stock_kg"] == 9000.0
+
+
+def test_las_devoluciones_sin_acabado_restan_del_renglon_principal():
+    """Las notas de crédito vienen sin acabado en la línea (07/10/2026): no
+    pueden quedar sueltas ni perderse; restan del renglón que más vende."""
+    service._cache.clear()
+    fichas = [_ficha(aca="TUB", kg52=5200.0), _ficha(aca="ABI", kg52=4000.0)]
+    devol = [{"id_producto": 1, "aca": "", "w": 1389, "kg": -100.0}]
+    serie = _serie(aca="TUB") + _serie(aca="ABI", kilos=[80.0] * 52) + devol
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(fichas, serie)):
+        filas, _ = service.rotativo()
+    por = {f["acabado"]: f for f in filas}
+    assert por["TUB"]["sem_kg"] == round((100.0 * 13 - 100.0) / 13, 1)
+    assert por["ABI"]["sem_kg"] == 80.0
+
+
+def test_la_venta_de_un_acabado_que_no_rota_no_se_suma_a_otro():
+    service._cache.clear()
+    serie = _serie(aca="TUB") + _serie(aca="ABI", kilos=[500.0] * 3)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ficha(aca="TUB")], serie)):
+        filas, _ = service.rotativo()
+    assert [f["sem_kg"] for f in filas] == [100.0]

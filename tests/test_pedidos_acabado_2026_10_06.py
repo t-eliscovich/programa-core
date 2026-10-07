@@ -106,9 +106,7 @@ def test_pdcl_32677_sale_abi_aunque_el_stock_tenga_lotes_tub(app, fake_db):
     es ABI. La pantalla NO mira el acabado del stock."""
     c = _login(app, fake_db)
     fake = _fake_pantalla([_renglon()], [_pedido_32677()])
-    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake), \
-         patch.object(service, "acabados_por_producto",
-                      return_value={"FE96MAR": "TUB"}) as por_producto:
+    with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         for corte in ("color", "tela"):
             body = c.get(f"/pedidos?corte={corte}").get_data(as_text=True)
             boton = body[body.index('data-fila="d-FE96MAR_ABI"'):]
@@ -118,7 +116,8 @@ def test_pdcl_32677_sale_abi_aunque_el_stock_tenga_lotes_tub(app, fake_db):
             # La pastilla TUB sólo queda en la leyenda.
             assert body.count('class="aca tub"') <= 1
             assert "PDCL-32677" in body          # el desplegable del renglón ABI
-    por_producto.assert_not_called()
+    # El acabado POR PRODUCTO (MAX de los lotes) ya no existe (07/10).
+    assert not hasattr(service, "acabados_por_producto")
 
 
 def test_el_mismo_color_pedido_abi_y_tub_son_dos_renglones(app, fake_db):

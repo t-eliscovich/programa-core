@@ -589,8 +589,7 @@ def test_el_acabado_sale_de_la_linea_del_pedido_no_del_producto():
              dict(_FILAS[2], codigo="RINEG", aca_min="TUB", aca_max="TUB")]
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(filas, True)), \
-         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
-         patch.object(service, "acabados_por_producto", return_value={"PI28NEG": "TUB"}):
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES):
         m = service.armar_memo("PDCL-26401")
     assert [ln["acabado"] for ln in m["lineas"]] == ["ABI", "TUB"]
     assert m["acabado_v"] == service.ACABADO_VERSION

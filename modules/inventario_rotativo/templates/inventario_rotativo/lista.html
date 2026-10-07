@@ -83,8 +83,8 @@
   /* La unidad va en UNA columna y no repetida en cada celda (dueña
      2026-08-18: "como hace Asinfo, no repetirlo tantas veces"). */
   .iv td.un{text-align:left;color:#94a3b8;font-size:11px}
-  /* Acabado: TUB o ABI. Vacío cuando el producto no tiene lote con atributo
-     —no se inventa—, y en gris porque es una etiqueta, no una cifra. */
+  /* Acabado: TUB o ABI — el renglón es producto + acabado (07/10/2026).
+     Vacío cuando la venta no lo trae; en gris porque es una etiqueta. */
   .iv td.ac{text-align:left;color:#475569;font-size:11px;letter-spacing:.03em}
   /* El faltante va del MISMO color que "Alcanza": dos rojos distintos en una
      fila se leen como dos alarmas donde hay una sola (dueña 2026-08-18). */
@@ -262,7 +262,7 @@
               <td>{{ f.stock | num_es(0) }}</td>
               <td>{% if f.pedido > 0 %}<span class="info">{{ f.pedido | num_es(0) }}</span>
                   {% else %}<span class="cero">—</span>{% endif %}</td>
-              <td>{% if f.proceso > 0 %}{{ f.proceso | num_es(0) }}
+              <td>{% if f.proceso > 0 %}{% if f.prod_repartida %}<span class="cero" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que vende cada uno">≈</span> {% endif %}{{ f.proceso | num_es(0) }}
                   {% else %}<span class="cero">—</span>{% endif %}</td>
               <td class="{{ f.estado }}">
                 {%- if f.alcanza < 0 %}—

@@ -114,9 +114,10 @@ def test_se_puede_apagar_sin_deploy(monkeypatch):
     assert len(n) == 2
 
 
-def test_las_tres_consultas_estan_cacheadas():
-    for fn in (service.pendientes, service.pedidos_por_color,
-               service.acabados_por_producto):
+def test_las_consultas_estan_cacheadas():
+    # (la tercera, acabados_por_producto, se borró el 07/10/2026: el acabado
+    # viene adentro de las otras dos)
+    for fn in (service.pendientes, service.pedidos_por_color):
         assert "_cacheado(" in inspect.getsource(fn), (
             f"{fn.__name__} volvió a preguntarle a Asinfo en cada visita"
         )
@@ -126,5 +127,5 @@ def test_el_calentador_las_deja_listas():
     from modules._lib import warmup
 
     src = inspect.getsource(warmup._warm_once)
-    for paso in ("pedidos_pendientes", "pedidos_por_color", "pedidos_acabados"):
+    for paso in ("pedidos_pendientes", "pedidos_por_color"):
         assert paso in src

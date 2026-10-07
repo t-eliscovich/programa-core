@@ -10,7 +10,7 @@ Fuente única: Asinfo vía Metabase (db 2), igual que /pedidos.
     saldo_producto (bodega 53)       → lo que hay en bodega
     v_saldos_comprometidos_detallado → lo pedido y todavía sin despachar
     orden_fabricacion (bodega 53)    → lo que se está tinturando
-    saldo_producto_lote + lote       → el acabado (TUB/ABI) de cada producto
+    saldo_producto_lote + lote       → el stock de cada acabado (TUB/ABI)
 
 Fail-soft: si Metabase no contesta, devuelve `([], False)` y la pantalla
 muestra el cartel. Nunca levanta.
@@ -45,10 +45,25 @@ y sale inflado. Armar esa grilla en SQL Server (52 × productos, con
 PERCENTILE_CONT por ventana) tardaba más de tres minutos; traer la serie
 cruda y completarla en Python tarda 1,5 s.
 
-**El acabado (TUB/ABI)** se pide prestado a `modules.pedidos.service`: es
-atributo del LOTE en Asinfo y se resuelve por producto (todos los lotes de un
-producto comparten su acabado). Se importa en vez de copiar la SQL para que
-las dos pantallas no puedan decir acabados distintos del mismo producto.
+**El renglón es producto + ACABADO** (07/10/2026, después del PDCL-32677 en
+/pedidos — Tamara: *"no es lo mismo pedir abi o tub"*). Hasta ese día el
+acabado era una columna por producto sacada del MAX de los lotes en stock
+(`'TUB' > 'ABI'`), que se leía TUB en cuanto había un lote tubular, y el
+stock ABI cubría la venta TUB como si fuera la misma tela. Ahora cada cosa
+se lee con SU acabado, con la misma regla que /pedidos
+(`modules.pedidos.service`):
+
+    venta     → el acabado de la LÍNEA de factura (sql_valor_acabado; el 99,9 %
+                de los kilos del último año lo trae, medido el 07/10)
+    pedido    → el acabado de la línea del pedido (_SQL_ACABADO_LINEA)
+    stock     → el acabado del LOTE (SQL_STOCK_POR_ACABADO)
+    producción→ la orden de tintura no lo dice: se reparte entre los
+                renglones del producto según lo que vende cada uno (≈)
+
+"Rota" se decide por renglón: al 07/10 rotan 291 productos en TUB, 3 en ABI
+y 1 sin acabado. El abierto de los otros 97 se vende a pedido y no se
+stockea contra promedio — queda fuera de la lista como cualquier cosa que no
+rota (antes estaba adentro, mezclado con el tubular).
 
 **Las trampas de la fuente** son las mismas tres que documenta
 `modules/pedidos/service.py` — las órdenes de fabricación que se cuentan
@@ -61,6 +76,7 @@ import logging
 import time
 
 from modules._lib import metabase_client
+from modules.pedidos import service as _ped
 
 _LOG = logging.getLogger("programa_core.inventario_rotativo")
 
@@ -136,6 +152,7 @@ SQL_COLOR = (
 _CTE_VENTAS = """
 WITH v AS (
     SELECT dfc.id_producto,
+           ISNULL(va.codigo, '') AS aca,
            DATEDIFF(week, '2000-01-02', COALESCE(pad.fecha, fc.fecha)) AS w,
            SUM(CASE WHEN fc.id_documento IN (20, 451)
                     THEN -dfc.cantidad ELSE dfc.cantidad END) AS kg
@@ -144,29 +161,33 @@ WITH v AS (
         ON dfc.id_factura_cliente = fc.id_factura_cliente
       LEFT JOIN factura_cliente pad
         ON pad.id_factura_cliente = fc.id_factura_cliente_padre
+      LEFT JOIN valor_atributo va
+        ON va.id_valor_atributo = """ + _ped.sql_valor_acabado("dfc") + """
      WHERE fc.id_documento IN (7, 251, 20, 451)
        AND fc.estado NOT IN (0, 1)
        AND COALESCE(pad.fecha, fc.fecha)
            >= DATEADD(week, -{ventana}, CAST({ahora} AS date))
        AND COALESCE(pad.fecha, fc.fecha) < CAST({ahora} AS date)
-     GROUP BY dfc.id_producto,
+     GROUP BY dfc.id_producto, ISNULL(va.codigo, ''),
               DATEDIFF(week, '2000-01-02', COALESCE(pad.fecha, fc.fecha))
 ),
 cand AS (
-    SELECT id_producto, COUNT(*) AS semanas_venta, SUM(kg) AS kg52
+    SELECT id_producto, aca, COUNT(*) AS semanas_venta, SUM(kg) AS kg52
       FROM v WHERE kg > 0
-     GROUP BY id_producto HAVING COUNT(*) >= {minimas}
+     GROUP BY id_producto, aca HAVING COUNT(*) >= {minimas}
 )
 """
 
 _SQL_SERIE = _CTE_VENTAS + """
-SELECT v.id_producto, v.w, v.kg
-  FROM v JOIN cand c ON c.id_producto = v.id_producto
+SELECT v.id_producto, v.aca, v.w, v.kg
+  FROM v
+ WHERE v.id_producto IN (SELECT id_producto FROM cand)
 """
 
 _SQL_FICHA = _CTE_VENTAS + """,
+""" + _ped._SQL_ACABADO_LINEA.replace("{dias}", "{dias_ped}").lstrip("\n") + """,
 ped AS (
-    SELECT v.id_producto,
+    SELECT v.id_producto, ISNULL(a.aca_min, '') AS aca,
            SUM(CASE WHEN v.id_unidad_pedido = {rollo}
                     THEN v.saldo_comprometido * {kg_rollo}
                     WHEN v.id_unidad_pedido = {kg} THEN v.saldo_comprometido
@@ -174,20 +195,13 @@ ped AS (
            SUM(CASE WHEN v.id_unidad_pedido = {un}
                     THEN v.saldo_comprometido ELSE 0 END) AS ped_un
       FROM v_saldos_comprometidos_detallado v
+      LEFT JOIN aca a ON a.id_pedido_cliente = v.id_pedido_cliente
+                     AND a.id_producto = v.id_producto
      WHERE DATEDIFF(day, v.fecha, {ahora}) <= {dias_ped}
-     GROUP BY v.id_producto
+     GROUP BY v.id_producto, ISNULL(a.aca_min, '')
 ),
-inv AS (
-    SELECT id_producto, SUM(saldo) AS inv_kg
-      FROM (SELECT id_producto, saldo,
-                   ROW_NUMBER() OVER (PARTITION BY id_producto, id_bodega
-                                      ORDER BY fecha DESC,
-                                               id_saldo_producto DESC) AS rn
-              FROM saldo_producto
-             WHERE id_bodega = {bod}) u
-     WHERE u.rn = 1 AND u.saldo > 0
-     GROUP BY id_producto
-),
+""" + _ped.SQL_STOCK_POR_ACABADO.replace(
+    "{productos}", "SELECT id_producto FROM cand") + """,
 padres AS (
     SELECT DISTINCT id_orden_fabricacion_padre AS p
       FROM orden_fabricacion
@@ -207,13 +221,13 @@ prod AS (
        AND DATEDIFF(day, o.fecha, {ahora}) <= {dias_prod}
      GROUP BY o.id_producto
 )
-SELECT c.id_producto,
+SELECT c.id_producto, c.aca,
        pr.nombre_categoria_producto AS categoria,
        ISNULL(sub.nombre, 'Sin tela') AS tela,
        RTRIM(pr.codigo) AS codigo,
        {color} AS color,
        c.semanas_venta, c.kg52,
-       ISNULL(inv.inv_kg, 0) AS inv_kg,
+       ISNULL(ia.inv_kg, 0) AS inv_kg,
        ISNULL(ped.ped_kg, 0) AS ped_kg,
        ISNULL(ped.ped_un, 0) AS ped_un,
        ISNULL(prod.prod_kg, 0) AS prod_kg,
@@ -222,8 +236,8 @@ SELECT c.id_producto,
   JOIN producto pr ON pr.id_producto = c.id_producto
   LEFT JOIN subcategoria_producto sub
          ON sub.id_subcategoria_producto = pr.id_subcategoria_producto
-  LEFT JOIN inv  ON inv.id_producto  = c.id_producto
-  LEFT JOIN ped  ON ped.id_producto  = c.id_producto
+  LEFT JOIN inv_aca ia ON ia.id_producto = c.id_producto AND ia.aca = c.aca
+  LEFT JOIN ped  ON ped.id_producto  = c.id_producto AND ped.aca = c.aca
   LEFT JOIN prod ON prod.id_producto = c.id_producto
 """
 
@@ -333,6 +347,9 @@ def _fila(ficha: dict, semanas: dict[int, float], ultima: int) -> dict:
         "tela": str(ficha.get("tela") or "").strip(),
         "color": str(ficha.get("color") or "").strip(),
         "codigo": str(ficha.get("codigo") or "").strip(),
+        # El renglón es producto + acabado (07/10/2026); ver el docstring.
+        "acabado": str(ficha.get("aca") or "").strip().upper(),
+        "prod_repartida": bool(ficha.get("prod_repartida")),
         "unidad": unidad,
         "semanas_venta": int(_f(ficha.get("semanas_venta"))),
         "sem_kg": round(sem_kg, 1),
@@ -354,23 +371,24 @@ def _fila(ficha: dict, semanas: dict[int, float], ultima: int) -> dict:
     }
 
 
-def _marcar_acabado(filas: list[dict]) -> None:
-    """Le pega el acabado a cada fila. Fail-soft: sin acabado, columna vacía.
-
-    La fuente es `modules.pedidos.service`, no una SQL propia: el acabado ya
-    está resuelto ahí y dos consultas paralelas se desincronizan sin que nadie
-    se entere hasta que las dos pantallas dicen cosas distintas del mismo
-    producto.
-    """
-    try:
-        from modules.pedidos.service import acabados_por_producto
-
-        mapa = acabados_por_producto()
-    except Exception:  # noqa: BLE001 — el acabado es una columna, no la pantalla
-        _LOG.warning("inventario rotativo: no pude traer el acabado", exc_info=True)
-        mapa = {}
-    for f in filas:
-        f["acabado"] = mapa.get(f["codigo"], "")
+def repartir_produccion(fichas: list[dict], kg52: dict | None = None) -> None:
+    """La orden de tintura no dice el acabado: cuando un producto rota en
+    los dos, lo que está en producción se reparte entre sus renglones según
+    lo que vendió cada uno en el año (`kg52`). La suma queda igual a la del
+    producto; nunca se cuenta dos veces. El renglón queda marcado."""
+    por_prod: dict = {}
+    for f in fichas:
+        por_prod.setdefault(f.get("id_producto"), []).append(f)
+    for fs in por_prod.values():
+        if len(fs) < 2:
+            continue
+        total = _f(fs[0].get("prod_kg"))
+        pesos = [max(_f(f.get("kg52")), 0.0) for f in fs]
+        if sum(pesos) <= 0:
+            pesos = [1.0] * len(fs)
+        for f, w in zip(fs, pesos, strict=True):
+            f["prod_kg"] = total * w / sum(pesos)
+            f["prod_repartida"] = total > 0
 
 
 def rotativo(_ahora=time.monotonic) -> tuple[list[dict], bool]:
@@ -395,19 +413,38 @@ def rotativo(_ahora=time.monotonic) -> tuple[list[dict], bool]:
         _LOG.warning("inventario rotativo: Asinfo no contestó (serie)")
         return [], False
 
-    por_producto: dict = {}
+    fichas = [dict(f) for f in fichas
+              if str(f.get("categoria") or "").strip() in CATEGORIAS]
+    renglones = {(f.get("id_producto"), str(f.get("aca") or "").strip().upper())
+                 for f in fichas}
+    # El renglón que más vende de cada producto: ahí van las devoluciones.
+    principal: dict = {}
+    for f in sorted(fichas, key=lambda f: _f(f.get("kg52"))):
+        principal[f.get("id_producto")] = str(f.get("aca") or "").strip().upper()
+
+    por_renglon: dict = {}
     ultima = 0
     for r in serie:
         w = int(_f(r.get("w")))
-        por_producto.setdefault(r.get("id_producto"), {})[w] = _f(r.get("kg"))
         ultima = max(ultima, w)
-
+        clave = (r.get("id_producto"), str(r.get("aca") or "").strip().upper())
+        if clave not in renglones:
+            # ⚠ Las notas de crédito (devoluciones) vienen SIN acabado en la
+            # línea (medido el 07/10/2026): se restan del renglón principal
+            # del producto, como restaban antes del producto entero. La venta
+            # de un acabado que no rota (el ABI de una tela que rota en TUB)
+            # no es de ningún renglón y se deja afuera.
+            if clave[1] or clave[0] not in principal:
+                continue
+            clave = (clave[0], principal[clave[0]])
+        sem = por_renglon.setdefault(clave, {})
+        sem[w] = sem.get(w, 0.0) + _f(r.get("kg"))
+    repartir_produccion(fichas)
     filas = [
-        _fila(f, por_producto.get(f.get("id_producto"), {}), ultima)
+        _fila(f, por_renglon.get(
+            (f.get("id_producto"), str(f.get("aca") or "").strip().upper()), {}), ultima)
         for f in fichas
-        if str(f.get("categoria") or "").strip() in CATEGORIAS
     ]
-    _marcar_acabado(filas)
     filas.sort(key=lambda x: (x["alcanza"] < 0, x["alcanza"]))
     _cache.update(filas=filas, t=ahora)
     return filas, True
