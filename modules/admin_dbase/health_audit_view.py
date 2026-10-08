@@ -2892,11 +2892,60 @@ def acabado_pedidos():
 # ---------------------------------------------------------------------------
 
 
+def _entra_un_navegador() -> bool:
+    """True cuando un navegador NAVEGA a la ruta (pide HTML antes que JSON).
+    Un fetch() manda Accept */* y recibe el JSON de siempre."""
+    if request.args.get("json"):
+        return False
+    acc = request.accept_mimetypes
+    return acc.accept_html and acc["text/html"] > acc["application/json"]
+
+
+_PAGINA_QUE_ESPERA = """<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>Health</title>
+<meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="font-family:ui-monospace,Menlo,monospace;font-size:12px;margin:16px">
+<p id="estado">Pidiendo el health (tarda unos 20 segundos)…</p>
+<pre id="json" style="white-space:pre-wrap"></pre>
+<script>
+(function () {
+  var t0 = Date.now();
+  var estado = document.getElementById('estado');
+  var tic = setInterval(function () {
+    estado.textContent = 'Pidiendo el health… ' + Math.round((Date.now() - t0) / 1000) + ' s';
+  }, 1000);
+  fetch('/admin/health/all?json=1', {headers: {'Accept': 'application/json'}})
+    .then(function (r) { return r.text().then(function (t) { return [r.status, t]; }); })
+    .then(function (x) {
+      clearInterval(tic);
+      var seg = Math.round((Date.now() - t0) / 1000);
+      estado.textContent = (x[0] === 200 ? 'Listo' : 'Error ' + x[0]) + ' en ' + seg + ' s.';
+      try { document.getElementById('json').textContent = JSON.stringify(JSON.parse(x[1]), null, 1); }
+      catch (e) { document.getElementById('json').textContent = x[1]; }
+    })
+    .catch(function (e) {
+      clearInterval(tic);
+      estado.textContent = 'No contestó: ' + e;
+    });
+})();
+</script>
+</body></html>
+"""
+
+
 @bp.route("/all", methods=["GET"])
 @requiere_login
 @requiere_permiso("usuarios.admin")
 def health_all():
     """JSON consolidado de las tres auditorías."""
+    # Tamara 2026-10-08: la rutina de la mañana ENTRA con Chrome a esta ruta
+    # y la pestaña se congelaba esperando los ~17 s del JSON (el servidor
+    # contestaba bien). A un navegador que entra se le da al toque una página
+    # liviana que se pide el JSON sola y lo muestra cuando llega; los fetch
+    # (y el que pide ?json=1) siguen recibiendo el JSON directo.
+    if _entra_un_navegador():
+        return _PAGINA_QUE_ESPERA, 200, {"Content-Type": "text/html; charset=utf-8",
+                                         "Cache-Control": "no-store"}
     # Llamada interna sin redirect — usamos las funciones directamente.
     import json
     resp1 = usuario_crea_audit()
