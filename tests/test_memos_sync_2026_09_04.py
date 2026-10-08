@@ -268,3 +268,36 @@ def test_sin_bridge_vivos_y_actualizar_no_rompen(_pool_formulas_memos):
     assert formulas_memos.vivos() == []
     assert formulas_memos.actualizar("PDCL-1", {}, None, "") == (False, "sin_bridge")
     assert memos_sync.correr_si_toca() == {"corrio": False}
+
+
+# ── la edición de una LÍNEA también cuenta (08/10/2026, PDCL-32743) ──────────
+
+def test_la_edicion_de_una_linea_cuenta_aunque_la_cabecera_no_se_selle():
+    """El 07/10 pasaron FE96PLO y FS96PLO de TUB a ABI en el PDCL-32743: la
+    línea quedó sellada a las 11:44 y la cabecera seguía en el 02/10. La SQL
+    tiene que mirar la fecha de las líneas y no exigir la de la cabecera."""
+    sql = memos_sync._SQL_MODIFICADOS
+    assert "detalle_pedido_cliente" in sql
+    assert "d.fecha_modificacion" in sql
+    assert "p.fecha_modificacion IS NOT NULL" not in sql
+
+
+def test_edicion_de_linea_sin_cabecera_pisa_el_acabado_y_avisa():
+    vieja = _foto_vieja()
+    vieja["lineas"][0]["acabado"] = "TUB"
+    vieja["asinfo_modificado"] = "2026-10-02 17:55:29"   # la cabecera
+    memo = {"numero": "PDCL-30949", "estado": "pendiente",
+            "enviado_en": datetime(2026, 10, 6, 18, 19, tzinfo=UTC), "detalle": vieja}
+    filas = [_fila(aca_min="ABI", aca_max="ABI")]
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo(mod_ec="2026-10-07 11:44:10", quien="ncliente",
+                                               filas_pedido=filas)), \
+         patch.object(service, "mapa_vendedores", return_value=_VENDEDORES), \
+         patch.object(memos_sync, "completar_acabados", return_value=[]), \
+         patch.object(formulas_memos, "vivos", return_value=[memo]), \
+         patch.object(formulas_memos, "actualizar", return_value=(True, None)) as act:
+        res = memos_sync.sincronizar()
+    assert res["actualizados"] == ["PDCL-30949"]
+    _, nuevo, cambio, _ = act.call_args.args
+    assert nuevo["asinfo_modificado"] == "2026-10-07 11:44:10"
+    assert any("acabado TUB → ABI" in ln for ln in cambio["lineas"])

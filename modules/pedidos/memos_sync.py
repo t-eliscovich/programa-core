@@ -16,7 +16,8 @@ con la vieja, pisa `detalle` en formulas_app y deja en `cambios` qué
 cambió, en castellano. La fábrica lo ve como alerta roja en /memos y en
 la campanita hasta que apreta "Visto".
 
-Por qué `fecha_modificacion` y no comparar cantidades a secas: las
+La edición se mira en la cabecera Y en las líneas (08/10, ver
+`_SQL_MODIFICADOS`). Por qué `fecha_modificacion` y no comparar cantidades a secas: las
 cantidades del memo son el SALDO comprometido, que también baja con cada
 despacho parcial. Verificado 04/09: el despacho NO toca
 `pedido_cliente.fecha_modificacion` (pedidos con despacho y
@@ -54,13 +55,29 @@ _CHECK_MIN_SECS = 180  # mirar Asinfo a lo sumo cada 3 min
 _lock = threading.Lock()
 _ultimo_check = 0.0
 
+#: La edición más nueva del pedido: la de la CABECERA o la de cualquier
+#: LÍNEA. ⚠ 08/10/2026 (PDCL-32743): cambiar el acabado (u otro dato) de una
+#: línea existente sella `detalle_pedido_cliente.fecha_modificacion` y NO
+#: siempre la cabecera — el 07/10 a las 11:44 pasaron FE96PLO y FS96PLO de TUB
+#: a ABI, la cabecera quedó en el 02/10 y el sync no lo vio nunca (medido:
+#: ~1 de cada 5 ediciones de línea desde el 15/09 no sella la cabecera). El
+#: despacho NO toca la fecha de la línea (0 de 2.105 ediciones coinciden con
+#: un despacho), así que una entrega sigue sin disparar "modificado".
 _SQL_MODIFICADOS = """
 SELECT p.numero,
-       CONVERT(varchar(19), p.fecha_modificacion, 120) AS modificado,
-       ISNULL(p.usuario_modificacion, '') AS usuario
+       CONVERT(varchar(19), m.modificado, 120) AS modificado,
+       ISNULL(m.usuario, '') AS usuario
   FROM pedido_cliente p
+ CROSS APPLY (
+       SELECT TOP 1 t.f AS modificado, t.u AS usuario
+         FROM (SELECT p.fecha_modificacion AS f, p.usuario_modificacion AS u
+               UNION ALL
+               SELECT d.fecha_modificacion, d.usuario_modificacion
+                 FROM detalle_pedido_cliente d
+                WHERE d.id_pedido_cliente = p.id_pedido_cliente) t
+        WHERE t.f IS NOT NULL
+        ORDER BY t.f DESC) m
  WHERE p.numero IN ({in_list})
-   AND p.fecha_modificacion IS NOT NULL
 """
 
 
