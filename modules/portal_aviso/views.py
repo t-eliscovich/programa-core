@@ -203,3 +203,61 @@ def whatsapp_del_vendedor(codigo: str):
     else:
         flash(f"WhatsApp de {codigo.upper()} borrado. Sus clientes ya no ven el botón.", "ok")
     return redirect(url_for("portal_aviso.pantalla"))
+
+
+# ---------------------------------------------------------------------------
+# Contestarle al cliente que escribió desde el portal (Tamara 12/10/2026)
+# ---------------------------------------------------------------------------
+
+
+@portal_aviso_bp.route("/portal-aviso/contestar/<codigo>", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso(PERMISO)
+def contestar(codigo: str):
+    """El cliente escribió desde "Perfil" y la respuesta sale DEL PROGRAMA,
+    con la misma dirección que el resto de los mails del portal, no desde el
+    Gmail de quien conteste. Caso PG1 del 12/10: "NO EXISTEN VALORES".
+
+    Muestra lo que escribió (y lo que ya se le contestó), y un cuadro para
+    contestar. Si el cliente responde ese mail, la respuesta va a la lista de
+    "Mensajes del portal" de /portal-aviso.
+    """
+    from modules._lib import mailer
+    from modules.avisos import queries as avisos
+    from modules.portal import acceso
+    from modules.portal import mas as portal_mas
+
+    cod = (codigo or "").strip().upper()
+    fic = acceso.ficha(cod)
+    if not fic:
+        flash(f"No encuentro al cliente {cod}.", "error")
+        return redirect(url_for("portal_aviso.pantalla"))
+
+    para = (request.form.get("para") or "").strip() if request.method == "POST" \
+        else queries.correo_para_contestar(cod)
+    asunto = (request.form.get("asunto") or "").strip() if request.method == "POST" \
+        else "Intela · respuesta a su mensaje"
+    texto = (request.form.get("texto") or "").strip()
+
+    if request.method == "POST":
+        if "@" not in para or " " in para:
+            flash("Falta el correo del cliente (o no parece un correo).", "error")
+        elif not texto:
+            flash("Escribí la respuesta.", "error")
+        else:
+            lista = portal_mas.mensajes_a()
+            r = mailer.enviar(asunto or "Intela", texto, [para],
+                              responder_a=lista[0] if lista else "")
+            if r.get("ok"):
+                avisos.avisar(fuente="portal", nivel="ok",
+                              titulo=queries.TITULO_RESPUESTA.format(cod=cod),
+                              detalle=f"A {para}, por {_quien()}:\n{texto}",
+                              url=f"/portal-aviso/contestar/{cod}")
+                flash(f"Listo, le salió el mail a {para} desde {mailer.remitente()}.", "ok")
+                return redirect(url_for("portal_aviso.contestar", codigo=cod))
+            flash(f"No salió el mail: {r.get('motivo') or 'sin motivo'}. No se anotó nada.", "error")
+
+    return render_template(
+        "portal_aviso/contestar.html", cod=cod, fic=fic, para=para, asunto=asunto,
+        texto=texto, conversacion=queries.conversacion(cod),
+        remitente=mailer.remitente(), motivo=mailer.motivo_no_disponible())

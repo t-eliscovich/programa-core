@@ -389,3 +389,60 @@ def guardar_whatsapp(codigo: str, numero: str, usuario: str) -> int:
         """,
         ((numero or "").strip()[:20], (usuario or "")[:30], codigo),
     )
+
+
+# ---------------------------------------------------------------------------
+# Contestarle a un cliente que escribió desde el portal (Tamara 12/10/2026)
+# ---------------------------------------------------------------------------
+
+#: El título con que `portal/mas.mensaje_del_cliente` deja el aviso, y el de
+#: la respuesta. La conversación con el cliente vive en `scintela.aviso`: no
+#: hace falta una tabla nueva para tres renglones.
+TITULO_MENSAJE = "{cod} escribió desde el portal"
+TITULO_RESPUESTA = "Le contestamos a {cod}"
+
+
+def conversacion(cod: str, limite: int = 10) -> list[dict]:
+    """Lo que escribió el cliente desde el portal y lo que le contestamos,
+    del más nuevo al más viejo. Cada uno: ``{"de": "cliente"|"nosotros",
+    "texto", "cuando"}``. Fail-soft: sin la tabla, vacío."""
+    cod = (cod or "").strip().upper()
+    try:
+        filas = db.fetch_all(
+            """
+            SELECT titulo, detalle,
+                   TO_CHAR(creado_en AT TIME ZONE 'America/Guayaquil',
+                           'DD/MM/YYYY HH24:MI') AS cuando
+              FROM scintela.aviso
+             WHERE fuente = 'portal' AND titulo IN (%s, %s)
+             ORDER BY creado_en DESC, id_aviso DESC
+             LIMIT %s
+            """,
+            (TITULO_MENSAJE.format(cod=cod), TITULO_RESPUESTA.format(cod=cod), int(limite)),
+        ) or []
+    except Exception:  # noqa: BLE001 -- la pantalla se arma igual
+        return []
+    salida = []
+    for f in filas:
+        texto = f.get("detalle") or ""
+        de = "nosotros" if f.get("titulo") == TITULO_RESPUESTA.format(cod=cod) else "cliente"
+        if de == "cliente" and ":\n" in texto:
+            # "Fulano (vendedor X) escribió desde el portal:\n<texto>"
+            texto = texto.split(":\n", 1)[1]
+        salida.append({"de": de, "texto": texto, "cuando": f.get("cuando") or ""})
+    return salida
+
+
+def correo_para_contestar(cod: str) -> str:
+    """A qué correo se le contesta: el que el cliente nos dejó en el portal
+    ("Sus datos") → el de su acceso al portal → el de la ficha → el de
+    Asinfo. Es el MISMO criterio que para el código de 6 números: le
+    escribimos adonde él mira."""
+    from modules.portal import acceso, datos
+    cod = (cod or "").strip().upper()
+    d = datos.leer(cod) or {}
+    acc = acceso.acceso(cod) or {}
+    return ((d.get("correo_facturas") or "").strip()
+            or (acc.get("mail") or "").strip()
+            or acceso._mail_de_la_ficha(cod)
+            or acceso._mail_de_asinfo(cod))

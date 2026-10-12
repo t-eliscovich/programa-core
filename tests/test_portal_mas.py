@@ -169,7 +169,7 @@ def test_el_mensaje_del_cliente_va_a_novedades_y_por_mail_a_la_lista(monkeypatch
     monkeypatch.setattr(mas, "mensajes_a", lambda: ["teliscovich@gmail.com"])
     assert mas.mensaje_del_cliente("AJT", "TOTOY BUITRON", "EDG", "no me gusta el botón", correo="cliente@x.com") is True
     assert dejados[0]["titulo"] == "AJT escribió desde el portal" and "no me gusta el botón" in dejados[0]["detalle"]
-    assert dejados[0]["url"] == "/clientes/AJT/editar"
+    assert dejados[0]["url"] == "/portal-aviso/contestar/AJT"
     asunto, texto, dest, responder_a = salidos[0]
     assert dest == ["teliscovich@gmail.com"] and "no me gusta el botón" in texto and responder_a == "cliente@x.com"
     assert "AJT" in asunto

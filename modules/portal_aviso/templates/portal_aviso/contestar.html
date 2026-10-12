@@ -1,0 +1,56 @@
+{# Contestarle a un cliente que escribió desde el portal (Tamara 12/10/2026).
+   La respuesta sale con la dirección del programa, no del Gmail de nadie.
+   Sólo clases que ya están en static/tailwind.css (build congelado): las
+   mismas de pantalla.html. #}
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Contestarle a {{ cod }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('portal_aviso.pantalla') }}">Aviso del portal</a> › <strong>Contestarle a {{ cod }}</strong>{% endblock %}
+{% block content %}
+<div class="max-w-7xl">
+  {{ page_hero('Contestarle a ' ~ cod,
+               descripcion=(fic.nombre or cod) ~ ' · el mail sale desde ' ~ remitente) }}
+
+  {% if motivo %}
+    <div class="mb-4 px-4 py-3 rounded bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200 text-sm">
+      <strong>No se puede mandar:</strong> {{ motivo }}
+    </div>
+  {% endif %}
+
+  <div class="grid gap-4 md:grid-cols-2 mb-6">
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Lo que escribió</h2>
+      {% for m in conversacion %}
+        <div class="mb-3">
+          <p class="text-xs text-slate-500 mb-1">{{ m.cuando }} · {{ 'El cliente' if m.de == 'cliente' else 'Le contestamos' }}</p>
+          <pre class="text-xs whitespace-pre-wrap {{ 'bg-slate-50 dark:bg-slate-800' if m.de == 'cliente' else 'bg-emerald-100 dark:bg-emerald-900/40' }} rounded p-3 text-slate-700 dark:text-slate-300">{{ m.texto }}</pre>
+        </div>
+      {% else %}
+        <p class="text-sm text-slate-500">No hay mensajes del portal de este cliente.</p>
+      {% endfor %}
+      <p class="text-xs text-slate-500 mt-2">
+        <a class="text-sky-600" href="/clientes/{{ cod }}/editar">Ficha del cliente</a> ·
+        <a class="text-sky-600" href="/informes/estado-cuenta/{{ cod }}">Estado de cuenta</a>
+      </p>
+    </div>
+
+    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-4 shadow-sm">
+      <h2 class="text-sm font-semibold text-slate-900 dark:text-slate-100 mb-2">Su respuesta</h2>
+      <form method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <label class="block text-xs text-slate-500 mb-1">Para</label>
+        <input type="email" name="para" value="{{ para }}" required
+               class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5 w-full mb-3">
+        <label class="block text-xs text-slate-500 mb-1">Asunto</label>
+        <input type="text" name="asunto" value="{{ asunto }}"
+               class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5 w-full mb-3">
+        <label class="block text-xs text-slate-500 mb-1">Texto</label>
+        <textarea name="texto" rows="10" required
+                  class="text-sm rounded border border-slate-300 dark:border-slate-700 dark:bg-slate-800 px-2 py-1.5 w-full mb-2">{{ texto }}</textarea>
+        <p class="text-xs text-slate-500 mb-3">Si el cliente contesta este mail, la respuesta llega a la lista de "Mensajes del portal".</p>
+        <button class="text-sm px-4 py-2 rounded bg-sky-600 hover:bg-sky-500 text-white">Mandar</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}

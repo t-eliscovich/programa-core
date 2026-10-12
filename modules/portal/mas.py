@@ -61,7 +61,9 @@ def mensaje_del_cliente(cod: str, nombre: str, vend: str, texto: str, correo: st
         fuente="portal", nivel="ok",
         titulo=f"{cod} escribió desde el portal",
         detalle=f"{quien} (vendedor {vend or '—'}) escribió desde el portal:\n{texto}",
-        url=f"/clientes/{cod}/editar")
+        # A la pantalla de contestarle (12/10/2026): desde ahí sale la
+        # respuesta con la dirección del programa, y tiene el link a la ficha.
+        url=f"/portal-aviso/contestar/{cod}")
     destinatarios = mensajes_a()
     if destinatarios:
         try:
@@ -69,6 +71,7 @@ def mensaje_del_cliente(cod: str, nombre: str, vend: str, texto: str, correo: st
             mailer.enviar(
                 f"Portal · {cod} escribió: {texto[:60]}",
                 f"{quien} ({cod}, vendedor {vend or '—'}) escribió desde el portal:\n\n{texto}\n\n"
+                f"Contestarle desde el programa: https://programa.intela.com.ec/portal-aviso/contestar/{cod}\n"
                 f"Ficha: https://programa.intela.com.ec/clientes/{cod}/editar",
                 destinatarios, responder_a=(correo or "").strip())
         except Exception as e:  # noqa: BLE001 -- el mail nunca tumba la pantalla
