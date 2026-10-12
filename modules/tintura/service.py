@@ -404,12 +404,9 @@ class StockProductoAlDia:
                      − consumo en órdenes terminadas posteriores a la lectura
 
     Notas:
-        - El "consumo" es la suma de `orden_lineas.cantidad_kg` para órdenes
-          con `fecha_terminado` posterior a la lectura. Aproximación: NO
-          incluye los ajustes JSONB de `orden_lineas.ajustes` (las dosis
-          sucesivas durante el tinturado). En la práctica son chicos
-          comparados con el consumo base; si en algún momento se necesita
-          la cifra exacta, se cambia esta query.
+        - El "consumo" es `orden_lineas.cantidad_kg` + sus ajustes JSONB (A44
+          /10) de órdenes con `fecha_terminado` >= la lectura — exacto como
+          formulas_app desde oct 2026 (antes sin ajustes y con '>').
         - Si un producto no tiene lectura previa, lectura_inicial=0 y la
           fecha_lectura es None — el stock_al_dia es solo lo que sumaron
           compras y ajustes menos el consumo desde el día 0.
@@ -439,13 +436,14 @@ def stock_quimicos_al_dia(fecha: date | None = None) -> list[StockProductoAlDia]
 
     Para cada producto:
         1. Última lectura de `inventario` con `fecha <= fecha_corte` (= lectura_kg).
-        2. + suma de `inventario_ajustes.cantidad` con `fecha > fecha_lectura
+        2. + suma de `inventario_ajustes.cantidad` con `fecha >= fecha_lectura
               AND fecha <= fecha_corte` (= ajustes_kg).
-        3. + suma de `compras.cantidad` con `fecha > fecha_lectura
+        3. + suma de `compras.cantidad` con `fecha >= fecha_lectura
               AND fecha <= fecha_corte` (= compras_kg).
         4. − suma de `orden_lineas.cantidad_kg` para órdenes con
-              `fecha_terminado > fecha_lectura AND fecha_terminado <= fecha_corte`
-              (= consumo_kg). NO incluye ajustes JSONB intra-línea.
+              `fecha_terminado >= fecha_lectura AND fecha_terminado <= fecha_corte`
+              (= consumo_kg). Incluye ajustes JSONB y A44 /10. Todas las
+              ventanas son desde la lectura INCLUSIVE (como formulas).
 
     Args:
         fecha: corte de cálculo (incluido). Default hoy.
@@ -481,7 +479,7 @@ def stock_quimicos_al_dia(fecha: date | None = None) -> list[StockProductoAlDia]
               FROM inventario_ajustes ia
               LEFT JOIN lectura l ON l.producto_num = ia.producto_num
              WHERE ia.fecha <= %(corte)s
-               AND (l.fecha_lectura IS NULL OR ia.fecha > l.fecha_lectura)
+               AND (l.fecha_lectura IS NULL OR ia.fecha >= l.fecha_lectura)
              GROUP BY ia.producto_num
         ),
         compras_post AS (
@@ -489,20 +487,23 @@ def stock_quimicos_al_dia(fecha: date | None = None) -> list[StockProductoAlDia]
               FROM compras c
               LEFT JOIN lectura l ON l.producto_num = c.producto_num
              WHERE c.fecha <= %(corte)s
-               AND (l.fecha_lectura IS NULL OR c.fecha > l.fecha_lectura)
+               AND (l.fecha_lectura IS NULL OR c.fecha >= l.fecha_lectura)
              GROUP BY c.producto_num
         ),
         consumo_post AS (
-            -- Consumo solo de órdenes terminadas (replica el comportamiento
-            -- de compute_consumption_by_date_terminado en formulas_app).
-            -- NO incluye ajustes JSONB intra-línea — aproximación.
-            SELECT ol.producto_num, SUM(ol.cantidad_kg) AS total
+            -- Consumo solo de órdenes terminadas, IGUAL que formulas_app
+            -- (oct 2026): con los ajustes JSONB, A44 /10 y la ventana del
+            -- conteo INCLUSIVE (el día del conteo cuenta). Antes: sin ajustes
+            -- y con '>' → 3.596 US$ de diferencia en el colorante (12/10).
+            SELECT ol.producto_num,
+                   SUM(""" + sql_kg_linea("ol") + """ * """ + sql_factor_a44("p") + """) AS total
               FROM orden_lineas ol
               JOIN ordenes o ON o.id = ol.orden_id
+              LEFT JOIN productos p ON p.num = ol.producto_num
               LEFT JOIN lectura l ON l.producto_num = ol.producto_num
-             WHERE o.fecha_terminado IS NOT NULL
+             WHERE o.fecha_terminado IS NOT NULL AND o.fecha_terminado <> ''
                AND o.fecha_terminado <= %(corte)s
-               AND (l.fecha_lectura IS NULL OR o.fecha_terminado > l.fecha_lectura)
+               AND (l.fecha_lectura IS NULL OR o.fecha_terminado >= l.fecha_lectura)
              GROUP BY ol.producto_num
         )
         SELECT
