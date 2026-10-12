@@ -78,9 +78,10 @@ def consumo_quimico_desglose(anio: int, mes: int) -> dict | None:
                      WHEN COALESCE(o.tela_cruda_kg, 0) > 0 THEN 'costeado'
                      ELSE 'proceso'
                    END AS clase,
-                   COALESCE(SUM(ol.cantidad_kg
+                   COALESCE(SUM((ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes) = 'array' THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)
+                     * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44 THEN 0.1 ELSE 1.0 END)), 0) AS us
               FROM orden_lineas ol
               JOIN ordenes   o ON o.id  = ol.orden_id
               JOIN productos p ON p.num = ol.producto_num
@@ -148,9 +149,10 @@ def color_movimiento_mes(anio: int, mes: int) -> dict | None:
                   calendar.monthrange(int(anio), int(mes))[1]).isoformat()
         cons = _fdb.fetch_one(
             """
-            SELECT COALESCE(SUM(ol.cantidad_kg
+            SELECT COALESCE(SUM((ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes) = 'array' THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us,
+                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)
+                     * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44 THEN 0.1 ELSE 1.0 END)), 0) AS us,
                    COUNT(DISTINCT o.id) AS n_ordenes
               FROM orden_lineas ol
               JOIN ordenes o   ON o.id  = ol.orden_id
@@ -365,9 +367,10 @@ def consumo_terminadas_mes(anio: int, mes: int) -> dict | None:
                   calendar.monthrange(int(anio), int(mes))[1]).isoformat()
         row = _fdb.fetch_one(
             f"""
-            SELECT COALESCE(SUM(ol.cantidad_kg
+            SELECT COALESCE(SUM((ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes) = 'array' THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
                      * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
-                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)), 0) AS us
+                     * (CASE WHEN ol.producto_num IN (12) THEN 1.0 ELSE 1.15 END)
+                     * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44 THEN 0.1 ELSE 1.0 END)), 0) AS us
               FROM orden_lineas ol
               JOIN ordenes   o ON o.id  = ol.orden_id
               JOIN productos p ON p.num = ol.producto_num

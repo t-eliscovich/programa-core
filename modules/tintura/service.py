@@ -601,6 +601,25 @@ def sql_factor_iva(col: str) -> str:
     return f"(CASE WHEN {col} IN ({exentos}) THEN 1.0 ELSE {1.0 + IVA_QUIMICOS} END)"
 
 
+def sql_kg_linea(ol: str = "ol") -> str:
+    """Kg CONSUMIDOS de una línea de orden de formulas: cantidad_kg + las
+    dosis sucesivas (`ajustes` JSONB). Es lo que usa formulas_app para su
+    costo y su inventario (oct 2026: el costeo por orden de acá no sumaba
+    los ajustes)."""
+    return (f"({ol}.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric) "
+            f"FROM jsonb_array_elements(CASE WHEN jsonb_typeof({ol}.ajustes) = 'array' "
+            f"THEN {ol}.ajustes ELSE '[]'::jsonb END) e), 0))")
+
+
+def sql_factor_a44(p: str = "p") -> str:
+    """A44 (AV SOFT NI): las fórmulas lo dosifican diluido 1:10 y el precio es
+    por kg de escamas → su costo va × 0,1. Mismo criterio que formulas_app
+    (factor_costo) y que quimico_inv_formulas. Verificado 12/10/2026 contra
+    compras: 625 kg comprados vs 5.408 kg en órdenes desde mayo."""
+    return (f"(CASE WHEN ({p}.familia ILIKE 'aux' OR {p}.num < 100) "
+            f"AND {p}.num_visible = 44 THEN 0.1 ELSE 1.0 END)")
+
+
 # Familias que cuentan como STOCK DE COLORANTE valuado. Dueña 2026-07-13:
 # quedó en POLI+ALG (colorantes), SIN auxiliares (AUX se da vuelta solo, ~55k, y
 # no lo valuamos). Antes se incluía AUX → 393.915; ahora POLI+ALG → 338.
@@ -692,9 +711,10 @@ def costo_por_orden(
         f"""
         SELECT o.numero,
                COALESCE(SUM(
-                   ol.cantidad_kg
+                   {sql_kg_linea('ol')}
                    * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
                    * {factor}
+                   * {sql_factor_a44('p')}
                ), 0) AS costo_us
           FROM ordenes o
           JOIN orden_lineas ol ON ol.orden_id = o.id
@@ -779,9 +799,10 @@ def _tinto_equiv_formulas(
         WITH costos AS (
             SELECT ol.orden_id,
                    COALESCE(SUM(
-                       ol.cantidad_kg
+                       {sql_kg_linea('ol')}
                        * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
                        * {factor}
+                       * {sql_factor_a44('p')}
                    ), 0) AS costo_us
               FROM orden_lineas ol
               LEFT JOIN productos p ON p.num = ol.producto_num

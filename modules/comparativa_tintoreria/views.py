@@ -186,8 +186,11 @@ def _build_tintoreria_mensual(anio: int, mes: int, n_meses: int | None = None) -
                 SELECT o.id, COALESCE(o.tela_cruda_kg, 0)     AS cruda,
                        COALESCE(o.tela_terminada_kg, 0)       AS term,
                        COALESCE(o.kil, 0)                     AS kil,
-                       SUM(ol.cantidad_kg
-                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)) AS imp
+                       -- kg + ajustes y A44 x0,1: mismo costo que formulas
+                       -- (ver tintura.service.sql_kg_linea / sql_factor_a44)
+                       SUM((ol.cantidad_kg + COALESCE((SELECT SUM((e->>'kg')::numeric) FROM jsonb_array_elements(CASE WHEN jsonb_typeof(ol.ajustes) = 'array' THEN ol.ajustes ELSE '[]'::jsonb END) e), 0))
+                         * COALESCE(NULLIF(ol.precio_us, 0), p.us, 0)
+                         * (CASE WHEN (p.familia ILIKE 'aux' OR p.num < 100) AND p.num_visible = 44 THEN 0.1 ELSE 1.0 END)) AS imp
                   FROM ordenes o
                   JOIN orden_lineas ol ON ol.orden_id = o.id
                   JOIN productos p    ON p.num = ol.producto_num
