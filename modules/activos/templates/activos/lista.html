@@ -274,7 +274,16 @@
           <td class="px-2 py-1 text-right tabular-nums text-rose-700" title="Cuánto baja la utilidad cada día por este activo: la cuota del mes dividida por los días del mes">
             {{ a.deprec_dia | num_es if a.deprec_dia else '' }}
           </td>
-          <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.vida_util or '' }}</td>
+          <td class="px-2 py-1 text-right tabular-nums text-slate-500" data-stop="1">
+            {# Tamara 2026-10-12: los meses a amortizar se cambian acá y la
+               cuota se recalcula (activos.api_vida_util). #}
+            {% if tiene_permiso('activos.crear') and (a.inicial or 0) - (a.amortizac or 0) > 0.01 %}
+              <input type="number" min="1" step="1" inputmode="numeric"
+                     class="activo-vida-edit bg-slate-100 dark:bg-slate-800 border border-transparent hover:border-slate-300 focus:border-sky-400 rounded px-1 py-0 text-[11px] text-right tabular-nums" style="width:3.5rem;"
+                     value="{{ a.vida_util or '' }}" data-original="{{ a.vida_util or '' }}"
+                     title="Meses a amortizar — cambialo y la cuota se recalcula">
+            {% else %}{{ a.vida_util or '' }}{% endif %}
+          </td>
           <td class="px-2 py-1 text-right tabular-nums text-slate-500">{{ a.ult_mes_amortizado or '' }}</td>
         </tr>
         {% else %}
@@ -455,6 +464,51 @@
           sel.disabled = false;
           notif('Error de red: ' + err.message, false);
         });
+      });
+
+      // ── Meses a amortizar (Tamara 2026-10-12) ─────────────────────
+      // Enter o salir del cuadro guarda; Esc vuelve al valor de antes.
+      function guardarVida(inp) {
+        const orig = inp.dataset.original || '';
+        const val = (inp.value || '').trim();
+        if (val === orig) return;
+        if (!/^[0-9]+$/.test(val) || parseInt(val, 10) <= 0) {
+          notif('Los meses tienen que ser un número mayor a cero.', false);
+          inp.value = orig;
+          return;
+        }
+        const tr = inp.closest('tr.activo-fila');
+        inp.disabled = true;
+        fetch('/activos/_api/' + tr.dataset.idActivo + '/vida-util', {
+          method: 'POST',
+          credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrf },
+          body: JSON.stringify({ vida_util: parseInt(val, 10) }),
+        }).then(r => r.json()).then(j => {
+          inp.disabled = false;
+          if (!j || !j.ok) {
+            notif('No se pudo cambiar: ' + ((j && j.error) || 'error'), false);
+            inp.value = orig;
+            return;
+          }
+          const fmt = n => Number(n).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+          notif(`${j.vida_util} meses · cuota ${fmt(j.cuota_vieja)} → ${fmt(j.cuota)}`, true);
+          setTimeout(() => window.location.reload(), 900);
+        }).catch(err => {
+          inp.disabled = false;
+          inp.value = orig;
+          notif('Error de red: ' + err.message, false);
+        });
+      }
+      tbody.addEventListener('keydown', (e) => {
+        const inp = e.target.closest('.activo-vida-edit');
+        if (!inp) return;
+        if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+        if (e.key === 'Escape') { inp.value = inp.dataset.original || ''; inp.blur(); }
+      });
+      tbody.addEventListener('focusout', (e) => {
+        const inp = e.target.closest('.activo-vida-edit');
+        if (inp) guardarVida(inp);
       });
 
       tbody.addEventListener('drop', (e) => {

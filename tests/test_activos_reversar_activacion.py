@@ -111,12 +111,25 @@ def test_ya_reversada(stub):
         q.reversar_activacion(500)
 
 
-def test_maquina_ya_amortizo(stub):
+def test_maquina_recien_activada_se_puede_reversar(stub):
+    """Tamara 2026-10-12: toda máquina nace con ult_mes_amortizado = mes de
+    alta (desde 0ef03ab2), y el freno viejo la daba por "ya amortizó"."""
     from modules.activos import queries as q
 
-    stub.maq = {"id_activos": 42, "amortizac": 500, "ult_mes_amortizado": None}
-    with pytest.raises(ValueError, match="amortizó"):
-        q.reversar_activacion(500)
+    stub.maq = {"id_activos": 42, "amortizac": 0, "ult_mes_amortizado": 202610}
+    r = q.reversar_activacion(500)
+    assert r["id_activos"] == 42
+    assert "delete from scintela.activos" in _txt(stub.executes)
+
+
+def test_maquina_que_ya_amortizo_tambien_se_reversa(stub):
+    """Ya no frena: la máquina se borra con su depreciación (la pantalla de
+    confirmación avisa cuánto vuelve)."""
+    from modules.activos import queries as q
+
+    stub.maq = {"id_activos": 42, "amortizac": 500, "ult_mes_amortizado": 202609}
+    r = q.reversar_activacion(500)
+    assert r["id_activos"] == 42
 
 
 def test_cuota_ya_pagada_bloquea(stub):

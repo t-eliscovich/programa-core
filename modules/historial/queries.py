@@ -68,6 +68,7 @@ TIPOS_LABEL = {
     "bap_anticipo_a_compra":    "Anticipo → Compra",
     "activacion_maquinaria":        "Activación de maquinaria",
     "activacion_maquinaria_reverso": "Reverso: activación de maquinaria",
+    "activo_vida_util":             "Activo: cambio de meses a amortizar",
     "factura_devolucion":       "Factura: devolución",
     "reverso_cheque_rebote":    "Reverso: cheque rebotado",
     "reverso_cheque_administrativo": "Reverso: cheque (admin)",

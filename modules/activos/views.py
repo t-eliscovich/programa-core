@@ -197,6 +197,27 @@ def api_editar_tipo(id_activos: int):
         return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
 
 
+@activos_bp.route("/activos/_api/<int:id_activos>/vida-util", methods=["POST"])
+@requiere_login
+@requiere_permiso("activos.crear")
+def api_vida_util(id_activos: int):
+    """Inline edit de los meses a amortizar (Vida (m)) desde /activos.
+
+    Tamara 2026-10-12. JSON `{vida_util: int}` → recalcula la cuota
+    (ver queries.cambiar_vida_util)."""
+    data = request.get_json(silent=True) or request.form
+    try:
+        r = queries.cambiar_vida_util(
+            id_activos, data.get("vida_util"),
+            usuario=(g.user or {}).get("username", "web"),
+        )
+        return jsonify({"ok": True, **r})
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"No pude guardar: {e}"}), 500
+
+
 @activos_bp.route("/activos/_api/<int:id_activos>/borrar", methods=["POST"])
 @requiere_login
 @requiere_permiso("activos.crear")
@@ -356,6 +377,27 @@ def reversar_activacion(id_mov_doble: int):
     2026-07-08). GET: confirmación. POST: ejecuta queries.reversar_activacion
     (restaura anticipos + elimina cuotas + elimina la máquina, atómico)."""
     if request.method == "GET":
+        # Si la máquina ya se depreció algo, avisar cuánto vuelve: al
+        # borrarla se va también su amortización (Tamara 2026-10-12).
+        _aviso_amortizado = ""
+        try:
+            import db as _db
+            md = _db.fetch_one(
+                "SELECT origen_id, metadata->>'id_activos' AS id_act "
+                "FROM scintela.mov_doble WHERE id_mov_doble = %s",
+                (id_mov_doble,),
+            ) or {}
+            id_act = int(md.get("id_act") or md.get("origen_id") or 0)
+            amort = queries.amortizado_hasta_hoy(id_act) if id_act else 0
+            if amort >= 0.01:
+                from filters import num_es
+                _aviso_amortizado = (
+                    f" La máquina ya se depreció {num_es(amort)}: al borrarla "
+                    f"esa depreciación se va con ella y la utilidad sube "
+                    f"{num_es(amort)}."
+                )
+        except Exception:  # noqa: BLE001
+            _aviso_amortizado = ""
         return render_template(
             "_confirmar_accion.html",
             titulo="Deshacer activación de maquinaria",
@@ -363,8 +405,9 @@ def reversar_activacion(id_mov_doble: int):
                 "Vas a deshacer esta activación: se ELIMINA la máquina, se "
                 "borran las cuotas (posdatados) creadas y los anticipos "
                 "vuelven a estar vivos (sin consumir). Queda registrado en "
-                "/historial. No se puede si la máquina ya amortizó un mes o "
-                "alguna cuota ya fue registrada al banco."
+                "/historial. No se puede si alguna cuota ya fue registrada "
+                "al banco."
+                + _aviso_amortizado
             ),
             accion_url=url_for("activos.reversar_activacion",
                                id_mov_doble=id_mov_doble),

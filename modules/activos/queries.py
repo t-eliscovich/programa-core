@@ -609,6 +609,111 @@ def editar_tipo(id_activo: int, tipo_nuevo: str, *, usuario: str = "web") -> dic
     }
 
 
+def amortizado_hasta_hoy(id_activo: int) -> float:
+    """Cuánto lleva depreciado el activo HOY (meses cerrados + lo que corrió
+    del mes), con la misma cuenta que la columna de /activos."""
+    row = db.fetch_one(
+        f"""
+        SELECT COALESCE(a.amortizac, 0)
+               + ({coef_hoy_sql()} + {cuota_pendiente_sql("a")})
+                 * COALESCE(a.cuota, 0) AS amortizado
+          FROM scintela.activos a
+         WHERE a.id_activos = %s
+        """,
+        (id_activo,),
+    ) or {}
+    return round(float(row.get("amortizado") or 0), 2)
+
+
+def cambiar_vida_util(id_activo: int, vida_nueva: int, *,
+                      usuario: str = "web") -> dict:
+    """Cambia los meses en que se amortiza un activo y recalcula la cuota.
+
+    Tamara 2026-10-12 (*"dejame cambiar los meses a amortizar una
+    máquina"*). La vida útil cuenta desde el alta; lo que ya se amortizó
+    queda como está y lo que FALTA se reparte en los meses que quedan:
+
+        meses ya hechos = amortizac / cuota vieja (redondeado)
+        cuota nueva     = (inicial − amortizac) / (vida nueva − meses hechos)
+
+    Si el activo no amortizó ningún mes cerrado es simplemente
+    inicial / vida nueva. Queda en /historial (sin ↺: se deshace volviendo
+    a poner los meses de antes).
+    """
+    import mov_doble as _md
+
+    try:
+        vida_nueva = int(vida_nueva)
+    except (TypeError, ValueError):
+        raise ValueError("Los meses tienen que ser un número entero.") from None
+    if vida_nueva <= 0:
+        raise ValueError("Los meses tienen que ser más que cero.")
+    if vida_nueva > 1200:
+        raise ValueError("Más de 100 años de vida útil — revisá el número.")
+
+    with db.tx() as cx:
+        a = db.fetch_one(
+            "SELECT id_activos, concepto, COALESCE(inicial,0) AS inicial, "
+            "       COALESCE(amortizac,0) AS amortizac, "
+            "       COALESCE(cuota,0) AS cuota, vida_util "
+            "  FROM scintela.activos WHERE id_activos = %s FOR UPDATE",
+            (id_activo,), conn=cx,
+        )
+        if not a:
+            raise ValueError(f"El activo #{id_activo} no existe.")
+        inicial = float(a["inicial"])
+        amortizac = float(a["amortizac"])
+        cuota_vieja = float(a["cuota"])
+        vida_vieja = int(a.get("vida_util") or 0)
+        resto = round(inicial - amortizac, 2)
+        if resto <= 0.01:
+            raise ValueError("Este activo ya está amortizado del todo.")
+        meses_hechos = round(amortizac / cuota_vieja) if cuota_vieja > 0 else 0
+        meses_restan = vida_nueva - meses_hechos
+        if meses_restan <= 0:
+            raise ValueError(
+                f"Ya lleva {meses_hechos} mes(es) amortizado(s): la vida útil "
+                f"tiene que ser de más de {meses_hechos} meses."
+            )
+        cuota_nueva = round(resto / meses_restan, 2)
+        db.execute(
+            "UPDATE scintela.activos SET vida_util = %s, cuota = %s "
+            " WHERE id_activos = %s",
+            (vida_nueva, cuota_nueva, id_activo), conn=cx,
+        )
+        _md.registrar(
+            conn=cx,
+            tipo="activo_vida_util",
+            origen_table="activos",
+            origen_id=id_activo,
+            destino_table="activos",
+            destino_id=id_activo,
+            importe=cuota_nueva,
+            fecha=today_ec(),
+            concepto=(
+                f"{a.get('concepto') or ''}: vida útil {vida_vieja} → "
+                f"{vida_nueva} meses · cuota {cuota_vieja:.2f} → {cuota_nueva:.2f}"
+            )[:200],
+            usuario=usuario,
+            metadata={
+                "id_activos": id_activo,
+                "vida_vieja": vida_vieja,
+                "vida_nueva": vida_nueva,
+                "cuota_vieja": cuota_vieja,
+                "cuota_nueva": cuota_nueva,
+                "meses_hechos": meses_hechos,
+            },
+        )
+    return {
+        "id_activos": id_activo,
+        "vida_util": vida_nueva,
+        "cuota": cuota_nueva,
+        "cuota_vieja": cuota_vieja,
+        "meses_hechos": meses_hechos,
+        "meses_restan": meses_restan,
+    }
+
+
 def reordenar(ids_en_orden: list[int], *, usuario: str = "web") -> int:
     """Persiste el orden manual de activos.
 
@@ -939,9 +1044,14 @@ def reversar_activacion(
 
     Guards (rechaza con ValueError):
       - La máquina ya no existe.
-      - La máquina ya amortizó (amortizac>0 o ult_mes_amortizado != NULL) —
-        el valor en libros ya cambió, hay que revisarlo a mano.
       - Alguna cuota ya fue registrada al banco / pagada (banc != 0).
+
+    Tamara 2026-10-12 (*"no me deja reversar la activación de una máquina"*):
+    el freno "ya amortizó" miraba `ult_mes_amortizado != NULL`, y desde el
+    25/09 (commit 0ef03ab2) toda máquina NACE con el mes de alta ahí — así que
+    ninguna activación se podía deshacer. Además ya no frena si amortizó: la
+    máquina se borra entera y con ella la depreciación que llevaba (la
+    pantalla de confirmación avisa cuánto vuelve a la utilidad).
     """
     import json as _json
 
@@ -986,12 +1096,6 @@ def reversar_activacion(
             raise ValueError(
                 f"La máquina #{id_activos} ya no existe (¿ya se deshizo o la "
                 f"borró un sync?). No hay nada que reversar."
-            )
-        if float(maq.get("amortizac") or 0) > 0 or maq.get("ult_mes_amortizado"):
-            raise ValueError(
-                f"La máquina #{id_activos} ya amortizó al menos un mes — el "
-                f"valor en libros cambió. Revisá la amortización a mano antes "
-                f"de reversar."
             )
 
         # Guard cuotas: si alguna ya fue registrada al banco / pagada

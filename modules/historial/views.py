@@ -1428,6 +1428,10 @@ _REVERSO_DISPATCH = {
 _REVERSO_DE_REVERSO_OK = {"reverso_cheque_administrativo"}
 
 _REVERSO_BLOQUEADO = {
+    "activo_vida_util": (
+        "Deshacelo desde /activos: volvé a poner los meses de antes en la "
+        "columna Vida (m) y la cuota se recalcula sola."
+    ),
     # TMT 2026-08-07: `retencion_asinfo_aplicada` salió de acá. El consejo era
     # "deshacelas por período", y sirve para una corrida entera que salió mal —
     # pero para UNA retención aplicada por error deshacer el mes se lleva
