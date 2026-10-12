@@ -54,6 +54,15 @@ LLAVE = "portal_cliente"
 #: se pase a una que su RUC no abre escribiéndola en la URL.
 CUENTAS = "portal_cuentas"
 
+#: En qué ficha vive la clave (`portal_acceso`). Casi siempre es la misma que
+#: mira, pero no tiene por qué: si su RUC cae en dos fichas, la clave vive en
+#: una y puede estar mirando la otra. 🐞 12/10/2026, PGQ/PG1: la clave había
+#: quedado en PG1 —una ficha vieja y VACÍA con el RUC tipeado con un 1 de más—
+#: y el portal la dejaba parada ahí: "NO EXISTEN VALORES", con 45 mil de deuda
+#: en PGQ. Separar las dos cosas deja entrar con la MISMA clave y mirar la
+#: cuenta que importa, sin pedirle clave ni datos de nuevo al cambiar.
+ACCESO = "portal_acceso_cod"
+
 
 @portal_bp.app_context_processor
 def _comunes():
@@ -75,8 +84,93 @@ def _comunes():
 
 
 def cliente_actual() -> str:
-    """El código del cliente logueado, o vacío."""
+    """El código de la cuenta que está mirando, o vacío."""
     return (session.get(LLAVE) or "").strip().upper()
+
+
+def cuenta_de_acceso() -> str:
+    """El código donde vive su clave (y su correo del portal). Una sesión
+    abierta antes del 12/10 no lo tiene: ahí es la que mira, como antes."""
+    return (session.get(ACCESO) or session.get(LLAVE) or "").strip().upper()
+
+
+def _saldos_de(cods: list[str]) -> dict[str, dict]:
+    """``{codigo: {"saldo": float, "vacia": bool}}`` para las cuentas de su RUC.
+
+    Sale del MISMO estado de cuenta de la oficina (`estado_cuenta_lote`, una
+    sola pasada para todas). "Vacía" = sin una factura, un cheque ni un
+    anticipo que mostrarle: una ficha así no tiene nada que ver.
+    Fail-soft: si la base no contesta, ninguna es vacía y todas en cero.
+    """
+    try:
+        from modules.informes import queries as _q
+        ec = _q.estado_cuenta_lote(list(cods))
+    except Exception as e:  # noqa: BLE001 -- ordenar nunca le cierra la puerta
+        _LOG.warning("portal: no pude mirar los saldos de %s (%s)", cods, e)
+        return {c: {"saldo": 0.0, "vacia": False} for c in cods}
+    salida = {}
+    for c in cods:
+        d = ec.get(c) or {}
+        t = d.get("totales") or {}
+        saldo = t.get("saldo_neto") if t.get("saldo_neto") is not None else t.get("saldo")
+        salida[c] = {"saldo": presentacion.numero(saldo),
+                     "vacia": not (d.get("facturas") or d.get("cheques") or d.get("anticipos"))}
+    return salida
+
+
+def cuentas_a_mostrar(cuentas: list[dict]) -> list[dict]:
+    """Las cuentas de su RUC que se le muestran, la que más debe primero.
+
+    - Una ficha VACÍA no se muestra si hay otra con movimiento (PG1 al lado de
+      PGQ). Si están todas vacías, quedan todas: alguna tiene que poder ver.
+    - El orden es por saldo, no por código: con el código, "PG1" ganaba a
+      "PGQ" por un 1 contra una Q.
+    """
+    cuentas = [{"codigo_cli": c["codigo_cli"], "nombre": c.get("nombre") or ""}
+               for c in (cuentas or [])]
+    if len(cuentas) < 2:
+        return cuentas
+    saldos = _saldos_de([c["codigo_cli"] for c in cuentas])
+    con_algo = [c for c in cuentas if not saldos[c["codigo_cli"]]["vacia"]] or cuentas
+    return sorted(con_algo, key=lambda c: -saldos[c["codigo_cli"]]["saldo"])
+
+
+def _abrir_sesion(cod_clave: str, cuentas: list) -> None:
+    """Sesión nueva y limpia: dónde vive la clave, qué cuentas ve, y cuál
+    mira primero (la que más debe)."""
+    visibles = cuentas_a_mostrar(cuentas) or [{"codigo_cli": cod_clave, "nombre": ""}]
+    session.clear()
+    session[ACCESO] = cod_clave
+    session[LLAVE] = visibles[0]["codigo_cli"]
+    session[CUENTAS] = visibles
+    session.permanent = True
+
+
+def _codigos_suyos() -> list[str]:
+    """Todas las fichas de esta sesión: la que mira, la de la clave y las
+    demás de su RUC. Sin repetidos, la que mira primero."""
+    cods = [cliente_actual(), cuenta_de_acceso()] + [
+        (c.get("codigo_cli") or "").strip().upper() for c in (session.get(CUENTAS) or [])]
+    return [c for c in dict.fromkeys(cods) if c]
+
+
+@portal_bp.before_request
+def _poner_al_dia_la_sesion():
+    """Una sesión abierta antes del 12/10 no sabe dónde vive la clave ni
+    descartó las fichas vacías: se pone al día una vez, sin sacarlo. Así el
+    que estaba parado en la ficha vacía pasa a la que tiene su cuenta en el
+    próximo click, sin volver a entrar."""
+    cod = cliente_actual()
+    if not cod or ACCESO in session:
+        return None
+    session[ACCESO] = cod
+    cuentas = session.get(CUENTAS) or []
+    if len(cuentas) > 1:
+        visibles = cuentas_a_mostrar(cuentas)
+        session[CUENTAS] = visibles
+        if cod not in {c["codigo_cli"] for c in visibles}:
+            session[LLAVE] = visibles[0]["codigo_cli"]
+    return None
 
 
 #: Adonde se puede ir SIN haber cargado sus datos: la pantalla misma, salir,
@@ -95,7 +189,9 @@ def _exigir_sus_datos():
     cod = cliente_actual()
     if not cod or request.path in _SIN_DATOS_OK:
         return None
-    if not datos.completo(cod):
+    # Sus datos son de la persona, no de la ficha: si ya los cargó mirando
+    # otra cuenta de su RUC, no se le piden de nuevo al cambiar.
+    if not any(datos.completo(c) for c in _codigos_suyos()):
         return redirect(url_for("portal.sus_datos"))
     return None
 
@@ -147,12 +243,10 @@ def _adentro(codigo_cli: str, cuentas: list):
     """Abre la sesión del cliente y lo manda a lo que vino a ver.
 
     Sesión nueva y limpia en cada ingreso: si quedaba algo de antes, se va.
+    Con dos cuentas que tienen algo, elige él (arrancando en la que más
+    debe); con una sola —o una al lado de una ficha vacía— entra directo.
     """
-    session.clear()
-    session[LLAVE] = codigo_cli
-    session[CUENTAS] = [{"codigo_cli": c["codigo_cli"], "nombre": c.get("nombre") or ""}
-                        for c in (cuentas or [])]
-    session.permanent = True
+    _abrir_sesion(codigo_cli, cuentas)
     if len(session[CUENTAS]) > 1:
         # Su RUC cae en dos fichas: elige él cuál mira. Elegir por él sería
         # mostrarle media deuda sin decírselo.
@@ -176,11 +270,13 @@ def elegir_clave():
     if not cod:
         return _pedir_entrar()
 
+    # La clave se guarda donde vive su acceso, no en la cuenta que mira.
+    cod_acc = cuenta_de_acceso()
     fic = acceso.cliente(cod) or {}
-    acc = acceso.acceso(cod) or {}
+    acc = acceso.acceso(cod_acc) or {}
     # Si todavía no cargó ninguno, se le muestra el que usamos para mandarle
     # los 6 números: es el que tenemos, y ahí mismo lo corrige si es viejo.
-    mail_previo = (acc.get("mail") or "").strip() or acceso.ultimo_mail_usado(cod)
+    mail_previo = (acc.get("mail") or "").strip() or acceso.ultimo_mail_usado(cod_acc)
 
     if request.method == "GET":
         return render_template("portal/elegir_clave.html",
@@ -207,11 +303,11 @@ def elegir_clave():
     if not ok:
         return _volver(msg)
 
-    ok, msg = acceso.guardar_clave(cod, clave)
+    ok, msg = acceso.guardar_clave(cod_acc, clave)
     if not ok:
         return _volver(msg)
 
-    acceso.guardar_mail(cod, mail, mail_previo)
+    acceso.guardar_mail(cod_acc, mail, mail_previo)
     flash(msg, "ok")
     # Dueña 10/09: antes de entrar, sus datos (correo, teléfonos, dirección).
     return redirect(url_for("portal.sus_datos"))
@@ -283,13 +379,9 @@ def codigo():
                                minutos=acceso.MINUTOS_CODIGO), 401
 
     acceso.anotar(cod, "ok", "codigo", ip, navegador)
-    session.clear()
-    session[LLAVE] = cod
-    session[CUENTAS] = [{"codigo_cli": c["codigo_cli"], "nombre": c.get("nombre") or ""}
-                        for c in cuentas]
-    session.permanent = True
+    _abrir_sesion(cod, cuentas)
     # Entró con el correo, no con la clave: lo que sigue es elegir una nueva.
-    flash("Elegí una clave nueva.", "ok")
+    flash("Elija una clave nueva.", "ok")
     return redirect(url_for("portal.elegir_clave"))
 
 
@@ -315,8 +407,9 @@ def mis_cuentas():
         session[LLAVE] = elegida
         return redirect(url_for("portal.inicio"))
 
+    saldos = _saldos_de([c["codigo_cli"] for c in cuentas]) if len(cuentas) > 1 else {}
     return render_template("portal/cuentas.html", cuentas=cuentas,
-                           actual=cliente_actual())
+                           actual=cliente_actual(), saldos=saldos)
 
 
 @portal_bp.route("/salir", methods=["GET", "POST"])
@@ -743,8 +836,11 @@ def sus_datos():
     if not cod:
         return _pedir_entrar()
     fic = acceso.ficha(cod) or {}
-    acc = acceso.acceso(cod) or {}
-    guardado = datos.leer(cod)
+    acc = acceso.acceso(cuenta_de_acceso()) or {}
+    propios = datos.leer(cod)
+    # Si los cargó mirando otra cuenta de su RUC, se los traemos: son suyos.
+    guardado = propios if propios is not None else next(
+        (g for g in (datos.leer(c) for c in _codigos_suyos()[1:]) if g is not None), None)
     editando = guardado is not None
     if request.method == "POST":
         d, errores = datos.validar(request.form)
@@ -752,7 +848,9 @@ def sus_datos():
             flash("Revise los campos marcados.", "error")
             return render_template("portal/sus_datos.html", **_ctx(cod), d=d,
                                    errores=errores, editando=editando), 400
-        datos.guardar(cod, d, previo=None if editando else fic)
+        # La foto de la ficha se guarda la primera vez que quedan en ESTA
+        # cuenta: es contra lo que la oficina compara.
+        datos.guardar(cod, d, previo=None if propios is not None else fic)
         flash("Gracias, sus datos quedaron guardados." if not editando else "Datos actualizados.", "ok")
         return redirect(url_for("portal.inicio"))
     d = {k: guardado.get(k) or "" for k in datos.CAMPOS} if editando \
@@ -767,7 +865,7 @@ def mis_datos():
     if not cod:
         return _pedir_entrar()
     fic = acceso.ficha(cod) or {}
-    acc = acceso.acceso(cod) or {}
+    acc = acceso.acceso(cuenta_de_acceso()) or {}
     if request.method == "POST":
         texto = (request.form.get("texto") or "").strip()
         if mas_.mensaje_del_cliente(cod, fic.get("nombre") or "", fic.get("vend") or "", texto,
@@ -788,7 +886,7 @@ def inicio():
     if not cod:
         return _pedir_entrar()
 
-    acc = acceso.acceso(cod)
+    acc = acceso.acceso(cuenta_de_acceso())
     # Le cortaron el acceso mientras estaba adentro: se va en el próximo click.
     if acc and not acc.get("activo", True):
         session.clear()

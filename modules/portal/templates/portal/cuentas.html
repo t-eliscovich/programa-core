@@ -18,6 +18,12 @@
       <button type="submit" name="codigo_cli" value="{{ c.codigo_cli }}"
               class="{{ 'btn' if c.codigo_cli == actual else 'btn-suave' }}">
         {{ c.nombre|title if c.nombre else c.codigo_cli }} · {{ c.codigo_cli }}
+        {# El saldo de cada una (12/10/2026): sin él, elegir era adivinar —
+           y el que adivinó mal vio "nada" teniendo deuda en la otra. #}
+        {% set s = (saldos or {}).get(c.codigo_cli) %}
+        {% if s %}<span style="display:block;font-size:13px;font-weight:500;opacity:.85;margin-top:2px">
+          {% if s.saldo > 0 %}Saldo $ {{ s.saldo|money_es }}{% elif s.saldo < 0 %}A su favor $ {{ (-s.saldo)|money_es }}{% else %}Sin saldo{% endif %}
+        </span>{% endif %}
       </button>
     {% endfor %}
   </form>

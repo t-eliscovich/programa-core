@@ -300,9 +300,9 @@ def _crear_acceso(cod: str) -> None:
 #: dijera "ese código no existe" contra "la clave está mal", cualquiera podría
 #: averiguar qué códigos de cliente son reales probando de a uno.
 NO_ENTRO = "El RUC o la clave no son correctos."
-TRABADO = ("Probaste demasiadas veces. Esperá {minutos} minutos, "
-           "o llamanos y te destrabamos.")
-CORTADO = "Tu acceso está cerrado. Llamanos y lo abrimos de nuevo."
+TRABADO = ("Probó demasiadas veces. Espere {minutos} minutos, "
+           "o llámenos y lo destrabamos.")
+CORTADO = "Su acceso está cerrado. Llámenos y lo abrimos de nuevo."
 
 
 def entrar(identificador: str, clave: str, ip: str = "",
@@ -373,7 +373,7 @@ def guardar_clave(codigo: str, clave: str) -> tuple[bool, str]:
         "UPDATE scintela.portal_acceso SET clave_hash = %s, "
         "       intentos_fallidos = 0, bloqueado_hasta = NULL "
         " WHERE UPPER(TRIM(codigo_cli)) = %s", (cifrar(clave), cod))
-    return True, "Listo. La próxima vez entrá con tu clave."
+    return True, "Listo. La próxima vez entre con su RUC y esta clave."
 
 
 def mail_aceptable(mail: str, repetido: str) -> tuple[bool, str]:
