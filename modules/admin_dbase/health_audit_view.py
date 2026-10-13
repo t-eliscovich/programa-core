@@ -564,6 +564,17 @@ def ejecutar_foto_diaria() -> dict:
         return {"ok": False, "alerts": alerts + [f"snapshot diario falló: {e}"], "stats": stats}
 
     stats["hoy"] = snap
+
+    # 2b) CARTERA DOCUMENTADA por vendedor (13/10/2026, pedido de Andrés):
+    #     la pantalla Estados de cuenta › Vendedor sólo sabe el hoy; acá se
+    #     guarda la foto para poder ver el % de varios meses. Fail-soft: si
+    #     falla, avisa y la foto del balance sigue.
+    try:
+        from modules.informes import cartera_documentada as _cdoc
+        stats["cartera_documentada"] = _cdoc.guardar_foto(snap.get("fecha"))
+    except Exception as e:  # noqa: BLE001
+        alerts.append(f"foto de cartera documentada falló: {e}")
+
     hoy_patr = float(snap.get("patrimonio") or 0)
     hoy_ustock = float(snap.get("ustock") or 0)
 
