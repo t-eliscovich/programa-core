@@ -238,6 +238,16 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <option value="si">Ya se vendió</option>
     <option value="no">Todavía no</option>
   </select></div>
+  {# ⭐ Filtrar por PUNTOS (dueña 13/10/2026: "agregar filtro por puntaje").
+     Lo que se filtra es lo que vale el kilo de la tela —1, 4 o 10, la columna
+     Vale—, no el total de la fila: ese depende de los kilos y no se agrupa. #}
+  <div class="ff"><label for="puntos">Puntos</label>
+  <select id="puntos" onchange="filtrar()">
+    <option value="">Todos</option>
+    <option value="1">1 × kg</option>
+    <option value="4">4 × kg</option>
+    <option value="10">10 × kg</option>
+  </select></div>
   <div class="ff" {% if mia %}hidden{% endif %}><label for="vend">Vendedor</label>
   <select id="vend" onchange="filtrar()" {% if mia %}hidden{% endif %}>
     <option value="">Todos</option>
@@ -316,6 +326,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-color="{{ f.color }}"
       data-vendido="{{ 'si' if f.kg_vendidos else 'no' }}"
+      data-puntos="{{ f.puntos }}"
       {# ⚠ La categoría sale RESUELTA de `queries.categoria_de`, no se recalcula
          acá: cuando esta línea tenía su propia versión, la fila vendida caía a
          PRI y el filtro "Sólo SEG" escondía justo las que habían entrado por su
@@ -462,6 +473,7 @@ function filtrar(){
   const sg = document.getElementById('subgrupo').value;
   const cal = document.getElementById('calidad').value;
   const vd = document.getElementById('vendido').value;
+  const pt = document.getElementById('puntos').value;
   let vistos = 0, kg = 0;
   // ⚠⚠ `#tabla tr.item` y NO `tr.item`: el 25/08/2026 la tabla de Vendidos
   // nació con la misma clase y este filtro se la comió — filas sin `data-grupo`
@@ -475,7 +487,8 @@ function filtrar(){
                (!g || tr.dataset.grupo === g) &&
                (!sg || tr.dataset.sub === sg) &&
                (!cal || tr.dataset.cal.split(' ').includes(cal)) &&
-               (!vd || tr.dataset.vendido === vd);
+               (!vd || tr.dataset.vendido === vd) &&
+               (!pt || tr.dataset.puntos === pt);
     tr.classList.toggle('oculta', !ok);
     if (!ok) det.classList.remove('abierta');
     det.classList.toggle('oculta', !ok);
@@ -605,7 +618,7 @@ function abrir(tr){
 // entre un vendedor y la oficina en el mismo Chrome) el filtro de uno se lo
 // comía el otro. La llave ahora lleva el USUARIO logueado adentro: cada quien
 // recuerda lo suyo, y alguien que entra por primera vez entra sin filtros.
-const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vendido', 'vend'];
+const CAMPOS = ['q', 'grupo', 'subgrupo', 'calidad', 'vendido', 'vend', 'puntos'];
 const LLAVE = 'saldos-filtros-' + {{ (g.user.username or '')|tojson }};
 
 function guardarFiltros(){

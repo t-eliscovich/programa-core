@@ -2063,6 +2063,19 @@ def test_se_puede_filtrar_por_calidad():
     assert "Sólo SEG" in html
 
 
+def test_se_puede_filtrar_por_puntos():
+    """Dueña 13/10/2026: "agregar filtro por puntaje". Se filtra por lo que
+    vale el kilo (1, 4 o 10), y el filtro se recuerda y se borra como los otros."""
+    html = " ".join(_html_parado().split())
+    assert 'id="puntos"' in html
+    for v in ("1", "4", "10"):
+        assert f'<option value="{v}">{v} × kg</option>' in html
+    assert "data-puntos=" in html
+    assert "(!pt || tr.dataset.puntos === pt)" in html
+    assert "'puntos'" in html[html.index("const CAMPOS"):][:200], (
+        "si no está en CAMPOS, ni se guarda en la dirección ni lo borra el botón")
+
+
 def test_la_calidad_es_una_columna_y_no_una_pildora_suelta():
     """Dueña 18/08/2026: "no asi. no es eficiente. tiene que haber columna PRI
     SEG y que se pueda filtrar". Una píldora con kilos al costado no se ordena
