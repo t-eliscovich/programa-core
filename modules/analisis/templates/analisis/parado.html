@@ -221,11 +221,25 @@ th.ord.desc::after{content:" ↓";opacity:1}
 {% endif %}
 {% if mia %}
 {# ⭐ El buscador y un botón «Filtros» en UN renglón (dueña 13/10/2026: "campo
-   buscar es muy largo"). Los seis desplegables se abren con el botón, que
-   dice cuántos hay puestos: un filtro olvidado no queda escondido. #}
+   buscar es muy largo"). Grupo, Tela y Vendido se abren con el botón, que dice
+   cuántos hay puestos: un filtro olvidado no queda escondido.
+   ⭐ PUNTOS y PRI/SEG quedan A LA VISTA, como botones (dueña, misma tarde:
+   "tienen que poder filtrar por puntaje, no le saques esa funcionalidad; pri y
+   seg también es filtro útil"). Mueven los MISMOS desplegables de siempre
+   (#puntos, #calidad), así que se guardan y se recuerdan igual. #}
 <div class="mia-buscar">
-  <input id="q" type="search" placeholder="Tela, color o cliente…" oninput="filtrar()" aria-label="Buscar">
+  <input id="q" type="search" placeholder="Tela o color…" oninput="filtrar()" aria-label="Buscar tela o color">
   <button type="button" id="mia-fbtn" aria-expanded="false" aria-controls="mia-filtros">Filtros<i id="mia-fn" hidden></i></button>
+</div>
+<div class="mia-segs">
+  <div class="mia-seg" data-para="puntos" role="group" aria-label="Puntos por kilo">
+    <span class="t">Puntos</span>
+    <a href="#" data-v="">Todos</a><a href="#" data-v="10">10×</a><a href="#" data-v="4">4×</a><a href="#" data-v="1">1×</a>
+  </div>
+  <div class="mia-seg" data-para="calidad" role="group" aria-label="Categoría">
+    <span class="t">Categoría</span>
+    <a href="#" data-v="">Todo</a><a href="#" data-v="PRI">PRI</a><a href="#" data-v="SEG">SEG</a>
+  </div>
 </div>
 {% endif %}
 <div class="filtros{{ ' mia' if mia }}" id="mia-filtros"{% if mia %} hidden{% endif %}>
@@ -252,7 +266,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
   {# ⚠ Una sola palabra para esto en toda la pantalla: CATEGORÍA, con PRI y
      SEG. Antes convivían "calidad", "segunda", "de 2ª" y "SEG" para la misma
      cosa — dueña 18/08/2026: "no repetir con segunda". #}
-  <div class="ff"><label for="calidad">Categoría</label>
+  <div class="ff"{% if mia %} hidden{% endif %}><label for="calidad">Categoría</label>
   <select id="calidad" onchange="filtrar()">
     <option value="">Toda</option>
     <option value="PRI">Sólo PRI</option>
@@ -270,7 +284,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
   {# ⭐ Filtrar por PUNTOS (dueña 13/10/2026: "agregar filtro por puntaje").
      Lo que se filtra es lo que vale el kilo de la tela —1, 4 o 10, la columna
      Vale—, no el total de la fila: ese depende de los kilos y no se agrupa. #}
-  <div class="ff"><label for="puntos">Puntos</label>
+  <div class="ff"{% if mia %} hidden{% endif %}><label for="puntos">Puntos</label>
   <select id="puntos" onchange="filtrar()">
     <option value="">Todos</option>
     <option value="1">1 × kg</option>
@@ -328,6 +342,58 @@ th.ord.desc::after{content:" ↓";opacity:1}
   .filtros.mia label{font-size:10px}
   .filtros.mia select{font-size:14px;padding:5px 6px}
   .filtros.mia #limpiar{grid-column:1/-1;margin:0;justify-self:end}
+  /* ⭐ LA TABLA, COMO TARJETAS (dueña 13/10/2026: "se ve para el costado, no
+     me encanta, la tabla está fea"). En el teléfono once columnas no entran
+     ni escondiendo la mitad: había que correrla con el dedo. Para el vendedor
+     cada fila es una tarjeta de tres renglones —tela y kilos; color, forma,
+     categoría y lo que vale el kilo; lo vendido, sus clientes y la última
+     venta—. Es el MISMO <tr> con las mismas celdas: los filtros, el buscador
+     y el desplegable de clientes no se enteran. Se ordena por puntos (el
+     orden de siempre); el ordenar por columna queda en la oficina. */
+  .caja.larga.mia{overflow:visible;border:0;background:none}
+  .caja.mia #tabla,.caja.mia #tabla>tbody{display:block;width:100%}
+  .caja.mia #tabla>thead{display:none}
+  .caja.mia #tabla tr.item{display:flex;flex-wrap:wrap;align-items:center;gap:3px 8px;
+    padding:10px 12px;margin:0 0 6px;border:1px solid var(--l);border-radius:10px;background:#fff;cursor:pointer}
+  .caja.mia #tabla tr.item::before{content:'';order:3;flex-basis:100%;height:0}
+  .caja.mia #tabla tr.item::after{content:'';order:8;flex-basis:100%;height:0}
+  .caja.mia #tabla tr.item>td{display:block;padding:0!important;border:0!important;background:none!important;text-align:left}
+  .caja.mia #tabla td.opt{display:none!important}
+  .caja.mia #tabla td.tela{order:1;flex:1 1 0;min-width:0;font-size:15px;font-weight:600;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .caja.mia #tabla td.tela .qm{display:none!important}
+  .caja.mia #tabla td.tela .flecha{color:var(--g);font-weight:400}
+  .caja.mia #tabla tr.item > td:nth-child(6){order:2;font-size:16px;font-weight:650;white-space:nowrap}
+  .caja.mia #tabla tr.item > td:nth-child(6)::after{content:' kg';font-size:12px;font-weight:400;color:var(--g)}
+  .caja.mia #tabla tr.vendida > td:nth-child(6)::after{content:''}
+  .caja.mia #tabla td.col2{order:4;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:55%}
+  .caja.mia #tabla td.col2 .g{display:inline!important;font-size:13px;margin-left:4px}
+  .caja.mia #tabla td.forma{order:5}
+  .caja.mia #tabla td.cal{order:6;display:block!important}
+  .caja.mia #tabla td.cal>.g{display:none}
+  .caja.mia #tabla td.vale{order:7;margin-left:auto}
+  .caja.mia #tabla td.mv,.caja.mia #tabla td.mu{font-size:12px;color:var(--g);font-weight:400}
+  .caja.mia #tabla td.mv{order:9} .caja.mia #tabla td.mv::before{content:'vendido '} .caja.mia #tabla td.mv::after{content:' kg'}
+  .caja.mia #tabla td.mu{order:11;margin-left:-4px} .caja.mia #tabla td.mu::before{content:'· última venta '}
+  .caja.mia #tabla td.mv.cero ~ td.mu{margin-left:0}
+  .caja.mia #tabla td.mv.cero ~ td.mu::before{content:'última venta '}
+  .caja.mia #tabla td.mc,.caja.mia #tabla td.mv.cero,.caja.mia #tabla td.mu.cero{display:none!important}
+  .caja.mia #tabla .flecha{display:none}
+  .caja.mia #tabla tr.item{cursor:default}
+  .caja.mia #tabla tr.det{display:none}
+  .caja.mia #tabla tr.det.abierta{display:block;margin:0 0 6px;border:1px solid var(--l);border-top:0;
+    border-radius:0 0 10px 10px;background:#f8fafc}
+  .caja.mia #tabla tr.det.abierta>td{display:block;padding:4px 10px 10px!important}
+  .caja.mia #tabla tr.det table{width:100%;font-size:12.5px}
+  .caja.mia #tabla tr.det th{font-size:10px;padding:5px 6px}
+  .caja.mia #tabla tr.det td{padding:5px 6px}
+
+  .mia-segs{display:flex;flex-wrap:wrap;gap:6px 8px;margin:0 0 10px}
+  .mia-seg{flex:1 1 auto;display:flex;align-items:center;background:#EDEFF4;border-radius:9px;padding:2px;min-width:0}
+  .mia-seg .t{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--g);padding:0 4px 0 6px}
+  .mia-seg a{flex:1 1 auto;text-align:center;font-size:13px;font-weight:600;color:#475569;text-decoration:none;
+    padding:5px 4px;border-radius:7px;white-space:nowrap}
+  .mia-seg a.on{background:#fff;color:var(--t);box-shadow:0 1px 2px rgba(15,23,42,.10)}
   .mia-fila{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 6px;font-size:13px}
   .mia-fila .cuenta{color:var(--g)}
   .mia-fila .acciones{display:flex;gap:12px}
@@ -339,7 +405,9 @@ th.ord.desc::after{content:" ↓";opacity:1}
       n = document.getElementById('mia-fn');
   function contar() {
     var k = 0;
-    caja.querySelectorAll('select').forEach(function (s) { if (s.value && !s.hidden) { k++; } });
+    caja.querySelectorAll('select').forEach(function (s) {
+      if (s.value && !s.hidden && !s.closest('.ff').hidden) { k++; }
+    });
     n.hidden = !k; n.textContent = k;
     return k;
   }
@@ -349,12 +417,29 @@ th.ord.desc::after{content:" ↓";opacity:1}
   });
   caja.addEventListener('change', contar);
   document.getElementById('limpiar').addEventListener('click', function () { setTimeout(contar, 0); });
+  // Los botones de Puntos y Categoría mueven los desplegables de siempre.
+  var segs = document.querySelectorAll('.mia-seg');
+  function pintarSegs() {
+    segs.forEach(function (sg) {
+      var val = document.getElementById(sg.dataset.para).value;
+      sg.querySelectorAll('a').forEach(function (a) { a.classList.toggle('on', a.dataset.v === val); });
+    });
+  }
+  segs.forEach(function (sg) {
+    sg.addEventListener('click', function (ev) {
+      var a = ev.target.closest('a'); if (!a) { return; }
+      ev.preventDefault();
+      document.getElementById(sg.dataset.para).value = a.dataset.v;
+      filtrar(); pintarSegs();
+    });
+  });
+  document.getElementById('limpiar').addEventListener('click', function () { setTimeout(pintarSegs, 0); });
   // Los filtros vuelven guardados (dirección / navegador): se cuentan al cargar.
-  window.addEventListener('load', contar);
+  window.addEventListener('load', function () { contar(); pintarSegs(); });
 })();
 </script>
 {% endif %}
-<div class="caja larga"><table id="tabla">
+<div class="caja larga{{ ' mia' if mia }}"><table id="tabla">
 <thead><tr>
 <th class="ord opt" data-i="0">Grupo</th>
 <th class="ord" data-i="1">Tela</th>
@@ -405,7 +490,10 @@ th.ord.desc::after{content:" ↓";opacity:1}
      renglón de la lista que es una buena noticia: sacarlo escondía justo lo
      que la competencia vino a premiar. #}
   {% set vendida = not f.stock_kg and f.kg_vendidos %}
-  <tr class="item{{ ' vendida' if vendida }}" onclick="abrir(this)"
+  {# ⚠ Para el vendedor la fila NO se abre: los clientes ("candidatos") van
+     sólo en Sugerencias (dueña 13/10/2026: "candidato solo en sugerencia, no
+     en saldos"). Saldos es la tela. #}
+  <tr class="item{{ ' vendida' if vendida }}"{% if not mia %} onclick="abrir(this)"{% endif %}
       data-kg="{{ '%.2f' | format(f.stock_kg) }}"
       data-grupo="{{ f.categoria or '' }}" data-sub="{{ f.subcategoria }}"
       data-color="{{ f.color }}"
@@ -421,7 +509,9 @@ th.ord.desc::after{content:" ↓";opacity:1}
          la mitad de las ventas de estas telas. #}
       data-vend="{{ (cand | map(attribute='vend_pc') | select | unique | list
                      + (['INTELA'] if cand | rejectattr('vend_pc') | list else [])) | join(' ') }}"
-      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~ f.forma ~ ' ' ~
+      data-buscar="{{ (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~ f.forma ~ ' ' ~ (f.categoria or '') ~ ' ' ~ (f.cat or '')) | lower
+                      if mia else
+                      (f.subcategoria ~ ' ' ~ f.color ~ ' ' ~ f.color_nombre ~ ' ' ~ f.forma ~ ' ' ~
                        (cand | map(attribute='codigo_cli') | join(' ')) ~ ' ' ~
                        (cand | map(attribute='nombre') | select | join(' ')) ~ ' ' ~
                        (cand | map(attribute='provincia') | select | join(' '))) | lower }}">
@@ -468,7 +558,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
       class="pill vend">vendido</span>{% else %}
       {{ f.stock_kg | num_es(1) if f.stock_kg < 1 else f.stock_kg | num_es(0) }}{% endif %}</td>
     {# El que no vendió nada no dice "0": dice que no se movió. #}
-    <td class="n g" data-v="{{ f.kg_vendidos }}">{% if f.kg_vendidos %}{{
+    <td class="n g mv{{ ' cero' if not f.kg_vendidos }}" data-v="{{ f.kg_vendidos }}">{% if f.kg_vendidos %}{{
       f.kg_vendidos | num_es(1) if f.kg_vendidos < 1 else f.kg_vendidos | num_es(0)
       }}{% else %}—{% endif %}</td>
     <td class="n vale" data-v="{{ f.puntos }}">
@@ -478,8 +568,8 @@ th.ord.desc::after{content:" ↓";opacity:1}
        fila tachada leer "0 puntos" es exactamente al revés de lo que pasó. #}
     {% set pts = (f.kg_vendidos * f.puntos) if vendida else f.puntos_fila %}
     <td class="n pts opt" data-v="{{ pts }}">{{ pts | num_es(0) }}</td>
-    <td class="n {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
-    <td class="g n" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
+    <td class="n mc {{ 'sincli' if not f.clientes }}" data-v="{{ f.clientes }}">{{ f.clientes }}</td>
+    <td class="g n mu{{ ' cero' if not f.ultima_venta }}" data-v="{{ f.ultima_venta.strftime('%Y%m%d') if f.ultima_venta else 0 }}">
       {{ f.ultima_venta.strftime('%d/%m/%y') if f.ultima_venta else '—' }}</td>
   </tr>
   <tr class="det"><td colspan="11">
@@ -535,14 +625,22 @@ th.ord.desc::after{content:" ↓";opacity:1}
 </tbody>
 </table>
 </div>
+{# ⭐ Cuando no hay nada, se dice — y para el vendedor, dónde buscar: Saldos
+   es sólo lo QUIETO; "fleece negro" puede no estar acá y sí haber en bodega
+   (13/10/2026). #}
+<p class="sin-res" id="sin-res" hidden>No hay saldo con «<span id="sin-res-q"></span>».
+  {% if mia %}Saldos es sólo lo quieto; puede haber en bodega.
+  <a id="sin-res-link" href="/mi-cartera/stock{{ ('?vend=' ~ vend) if vend and not (g.user or {}).get('vend') else '' }}">Buscarlo en Stock →</a>{% endif %}</p>
+<style>.sin-res{margin:14px 2px;font-size:14px;color:var(--g)} .sin-res a{color:var(--az)}</style>
 
 
 <footer>
 Saldo = tela terminada (bodega 53) quieta hace 12 meses o más con 20 kg o más,
 MÁS los kilos SEG de cualquier tela, se venda o no.
+{% if mia %}A qué clientes ofrecérselas está en «Sugerencias».{% else %}
 Candidato = el que compró esa tela, en cualquier color, el último año que
 alguien la compró. Si ese año no es éste ni el pasado, va marcado
-<b>improbable</b> con su fecha.
+<b>improbable</b> con su fecha.{% endif %}
 PRI y SEG salen del LOTE en Asinfo, no del producto: por eso una misma tela ×
 color puede tener de las dos.
 </footer>
@@ -551,7 +649,15 @@ color puede tener de las dos.
 {% block scripts %}
 <script>
 function filtrar(){
-  const q = document.getElementById('q').value.trim().toLowerCase();
+  // ⭐ Por PALABRAS y sin tildes (dueña 13/10/2026: "¿pero si quieren fleece
+  // negro?"). Antes la frase entera tenía que aparecer pegada: "fleece negro"
+  // no encontraba nada porque en el renglón dice "Fleece 102 NEG Negro".
+  // Ahora cada palabra tiene que estar en algún lado de la fila —tela, código
+  // o nombre del color, forma, clientes, provincia—, como en Stock.
+  const sinTildes = t => t.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const palabras = sinTildes(document.getElementById('q').value.trim().toLowerCase())
+                     .split(/\s+/).filter(Boolean);
+  const q = palabras.length > 0;
   const v = document.getElementById('vend').value;
   const g = document.getElementById('grupo').value;
   const sg = document.getElementById('subgrupo').value;
@@ -566,7 +672,7 @@ function filtrar(){
   // en el selector.
   document.querySelectorAll('#tabla tr.item').forEach(tr => {
     const det = tr.nextElementSibling;
-    const ok = (!q || tr.dataset.buscar.includes(q)) &&
+    const ok = (!q || palabras.every(p => sinTildes(tr.dataset.buscar).includes(p))) &&
                (!v || tr.dataset.vend.split(' ').includes(v)) &&
                (!g || tr.dataset.grupo === g) &&
                (!sg || tr.dataset.sub === sg) &&
@@ -580,6 +686,18 @@ function filtrar(){
     det.querySelectorAll('tr[data-v]').forEach(f =>
       f.classList.toggle('oculta', !!v && f.dataset.v !== v));
   });
+  const sr = document.getElementById('sin-res');
+  if (sr) {
+    sr.hidden = vistos > 0;
+    const qq = document.getElementById('q').value.trim();
+    document.getElementById('sin-res-q').textContent = qq || 'estos filtros';
+    const ln = document.getElementById('sin-res-link');
+    if (ln) {
+      const u = new URL(ln.href, location.href);
+      if (qq) u.searchParams.set('q', qq); else u.searchParams.delete('q');
+      ln.href = u.pathname + u.search;
+    }
+  }
   document.getElementById('cuenta').textContent =
     vistos + (vistos === 1 ? ' tela' : ' telas') + ' · ' +
     kg.toLocaleString('es-EC', {maximumFractionDigits: 0}) + ' kg';

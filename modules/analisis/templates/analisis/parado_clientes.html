@@ -45,6 +45,13 @@ align-items:baseline;flex-wrap:wrap}
   .cli .meta{font-size:11px;margin:1px 0 5px}
   .cli table{table-layout:auto;font-size:12px}
   .cli col{width:auto!important}
+  /* Vale y Última con ancho propio: las fichas encolumnan igual una debajo
+     de la otra y la fecha no se pega a los puntos ("10 × kg15/05/26"). */
+  .cli td{vertical-align:top}
+  .cli th.n:nth-of-type(3),.cli td.vale{width:62px;padding-left:8px;text-align:right}
+  .cli th.ult,.cli td.ult{width:70px;padding-left:10px}
+  .cli .cols{display:block;font-size:11.5px;color:var(--g);margin-top:2px;line-height:1.35}
+  .cli .cols b{font-weight:600;color:var(--t);font-size:11px}
   .cli .col,.cli .hay,.cli .compro{display:none}
   .cli th{font-size:9px;padding:3px 0}
   .cli td{padding:3px 0}
@@ -63,6 +70,7 @@ align-items:baseline;flex-wrap:wrap}
 .barra.mia select{flex:1 1 auto;min-width:0;width:auto!important}
 .barra.mia button{flex:0 0 auto;width:auto!important}
 .barra.mia a{flex:0 0 auto;width:auto!important;white-space:nowrap}
+@media not screen, (min-width:561px){.cli .cols{display:none}}
 .cabecera-imp{display:none;font-size:12px;color:var(--g);margin:0 0 10px}
 </style>
 
@@ -148,7 +156,11 @@ align-items:baseline;flex-wrap:wrap}
     {% for t in c.telas %}
       {# las clases están para el celular: ahí quedan sólo la tela y la fecha #}
       <tr>
-        <td>{{ t.subcategoria }}</td>
+        <td>{{ t.subcategoria }}{% if t.colores_ver %}
+          {# Los colores, debajo de la tela, sólo en el teléfono (dueña
+             13/10/2026: "en sugerencias no dice el color"): ahí la columna
+             Colores no entra. Código y nombre, como en Stock. #}
+          <span class="cols">{% for k, n in t.colores_ver %}<b>{{ k }}</b>{% if n %} {{ n }}{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</span>{% endif %}</td>
         <td class="g col">{{ t.colores_parados }}</td>
         <td class="n vale">{{ t.puntos }} × kg</td>
         <td class="n hay">{{ t.kg_parado | num_es(0) }}</td>

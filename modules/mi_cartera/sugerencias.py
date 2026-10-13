@@ -235,7 +235,12 @@ def links_oferta(clientes: list[dict]) -> None:
         telas = []
         for t in c.get("telas") or []:
             cods = [x.strip().upper() for x in (t.get("colores_parados") or "").split(",") if x.strip()]
-            telas.append((t["subcategoria"], [nombres.get((t["subcategoria"], k), "") for k in cods]))
+            nom = [nombres.get((t["subcategoria"], k), "") for k in cods]
+            telas.append((t["subcategoria"], nom))
+            # Para la pantalla: código y nombre, como en Stock (dueña 13/10:
+            # "en sugerencias no dice el color").
+            t["colores_ver"] = [(k, (n if n and n.upper() != k else "").capitalize())
+                                for k, n in zip(cods, nom, strict=False)]
         fi = fichas.get((c["codigo"] or "").upper().strip()) or {}
         cel = celular(fi.get("celular"), fi.get("telefono"))
         texto = quote(mensaje_oferta(fi.get("nombre") or c.get("nombre"), telas))

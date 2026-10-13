@@ -236,6 +236,9 @@
       a.classList.add('on'); cal = a.getAttribute('data-cal'); aplicar();
     });
   });
+  // Llega buscando algo (desde Saldos, cuando allá no hay: "fleece negro").
+  var pedido = new URLSearchParams(location.search).get('q');
+  if (pedido) { input.value = pedido; aplicar(); }
 })();
 </script>
 {% endblock %}
