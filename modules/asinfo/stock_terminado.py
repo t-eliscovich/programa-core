@@ -107,10 +107,16 @@ def _armar(filas: list[dict]) -> list[dict]:
             "grupo": grupo, "tela": nombre, "kg": 0.0, "rollos": 0,
             "seg_kg": 0.0, "seg_rollos": 0, "colores": {}})
         cod = str(r.get("cod_color") or "").strip().upper()
+        nombre_color = str(r.get("color") or "").strip()
         c = t["colores"].setdefault(cod, {
-            "cod": cod, "color": str(r.get("color") or "").strip() or cod,
+            "cod": cod, "color": nombre_color or cod, "nombres": [],
             "kg": 0.0, "rollos": 0, "seg_kg": 0.0, "seg_rollos": 0,
             "tub_kg": 0.0, "abi_kg": 0.0})
+        # Algunos rollos del mismo código traen el color escrito distinto
+        # ("NEGRO" / "NEGRO OSC"): se muestra el primero, pero el buscador
+        # mira todos — si no, buscar "negro" pierde kilos.
+        if nombre_color and nombre_color not in c["nombres"]:
+            c["nombres"].append(nombre_color)
         seg = str(r.get("calidad") or "").strip().upper() == "SEG"
         acab = str(r.get("acabado") or "").strip().upper()
         for x in (t, c):

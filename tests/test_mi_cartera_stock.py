@@ -153,3 +153,18 @@ def test_filas_raras_no_rompen_el_armado():
     (c,) = t["colores"]
     assert t["tela"] == "(sin tela)" and c["color"] == "ROJ"
     assert c["kg"] == 10 and c["tub_kg"] == 0 and c["abi_kg"] == 0
+
+
+def test_el_buscador_ve_todos_los_nombres_del_color():
+    """Rollos del mismo código con el color escrito distinto: se muestra el
+    primero, pero el buscador tiene que encontrar cualquiera."""
+    filas = [
+        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO",
+         "calidad": "PRI", "acabado": "TUB", "rollos": 1, "kg": 20},
+        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO OSC",
+         "calidad": "PRI", "acabado": "TUB", "rollos": 1, "kg": 20},
+        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO",
+         "calidad": "SEG", "acabado": "TUB", "rollos": 1, "kg": 20},
+    ]
+    (c,) = st._armar(filas)[0]["colores"]
+    assert c["color"] == "NEGRO" and c["nombres"] == ["NEGRO", "NEGRO OSC"]
