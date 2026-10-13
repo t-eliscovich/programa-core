@@ -1,4 +1,4 @@
--- 0262 · Las FICHAS TÉCNICAS de las telas, adentro de Programa Core (13/10/2026)
+-- 0263 · Las FICHAS TÉCNICAS de las telas, adentro de Programa Core (13/10/2026)
 --
 -- Tamara: los vendedores entraban a F. técnica (un programa aparte, en Render,
 -- con clave propia) y "se van y es difícil volver". Decisión: copiarlas acá

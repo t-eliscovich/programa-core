@@ -10,7 +10,7 @@ vuelve a leer — sólo se compara a mano una vez por mes, tres meses).
 
 Qué vive dónde:
 
-⭐ Lo que CAMBIA de tela a tela está en `scintela.ficha_tecnica` (mig 0262):
+⭐ Lo que CAMBIA de tela a tela está en `scintela.ficha_tecnica` (mig 0263):
    nombre, código FT-…, tubular/abierto, grupo, revisión, la tabla de
    especificaciones y las instrucciones de lavado.
 
