@@ -151,3 +151,13 @@ def test_el_mail_pisa_la_foto_del_cierre_y_la_migracion_agrega_el_saldo():
     assert "_guardar_foto_semaforo(fecha)" in d[i:d.index("def enviar_nota_finde(")]
     sql = (root / "migrations/0262_semaforo_foto_saldo.sql").read_text(encoding="utf-8")
     assert "ADD COLUMN IF NOT EXISTS saldo" in sql
+
+
+def test_sin_foto_anterior_no_dice_quien_entro_ni_salio(monkeypatch):
+    monkeypatch.setattr(sf.cobranza, "colores",
+                        lambda: {"A": _c("A", "rojo", 5000, motivos=["x"])})
+    monkeypatch.setattr(sf, "cobros_del_tramo", lambda d, h: [])
+    monkeypatch.setattr(sf, "foto_anterior", lambda d: (None, {}))
+    r = sf.para_la_nota("2026-10-13", "2026-10-13")
+    assert r["entraron"] == [] and r["salieron"] == []
+    assert r["total"] == {"n": 1, "saldo": 5000}

@@ -172,6 +172,10 @@ def para_la_nota(desde, hasta) -> dict:
     pc = por_cliente(cobros_del_tramo(desde, hasta))
     f_antes, antes = foto_anterior(desde)
     cmp = comparar(antes, ahora, {k: v["us"] for k, v in pc.items()})
+    if f_antes is None:
+        # Sin foto anterior todos los rojos parecerían "nuevos" (13/10, el
+        # primer día salieron los 22 como "entraron al rojo").
+        cmp["salieron"], cmp["entraron"] = [], []
     cmp["fecha_antes"] = f_antes
     cmp["pagos"] = pagos_grandes(pc)
     cmp["umbral"] = UMBRAL_PAGO_GRANDE
