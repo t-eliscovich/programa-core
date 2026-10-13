@@ -109,14 +109,17 @@ def _armar(filas: list[dict]) -> list[dict]:
         cod = str(r.get("cod_color") or "").strip().upper()
         nombre_color = str(r.get("color") or "").strip()
         c = t["colores"].setdefault(cod, {
-            "cod": cod, "color": nombre_color or cod, "nombres": [],
+            "cod": cod, "color": nombre_color or cod, "_kg_nombre": {},
             "kg": 0.0, "rollos": 0, "seg_kg": 0.0, "seg_rollos": 0,
             "tub_kg": 0.0, "abi_kg": 0.0})
-        # Algunos rollos del mismo código traen el color escrito distinto
-        # ("NEGRO" / "NEGRO OSC"): se muestra el primero, pero el buscador
-        # mira todos — si no, buscar "negro" pierde kilos.
-        if nombre_color and nombre_color not in c["nombres"]:
-            c["nombres"].append(nombre_color)
+        # Algunos rollos del mismo código traen OTRO nombre de color en el
+        # lote — a veces un error de carga de Asinfo (13/10: un rollo de 6 kg
+        # del producto BLA, BLANCO, con color "NEGRO" en el lote). Manda el
+        # CÓDIGO (es el producto); el nombre que se muestra y se busca es el
+        # de la mayoría de los kilos. Buscar por todos los nombres hacía que
+        # "negro" trajera el BLANCO (Tamara: buscar por código y por color).
+        if nombre_color:
+            c["_kg_nombre"][nombre_color] = c["_kg_nombre"].get(nombre_color, 0.0) + kg
         seg = str(r.get("calidad") or "").strip().upper() == "SEG"
         acab = str(r.get("acabado") or "").strip().upper()
         for x in (t, c):
@@ -131,6 +134,10 @@ def _armar(filas: list[dict]) -> list[dict]:
             c["tub_kg"] += kg
     out = []
     for t in telas.values():
+        for c in t["colores"].values():
+            kn = c.pop("_kg_nombre")
+            if kn:
+                c["color"] = max(kn.items(), key=lambda x: (x[1], x[0]))[0]
         t["colores"] = sorted(t["colores"].values(), key=lambda c: -c["kg"])
         out.append(t)
     out.sort(key=lambda t: -t["kg"])

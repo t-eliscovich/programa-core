@@ -155,16 +155,51 @@ def test_filas_raras_no_rompen_el_armado():
     assert c["kg"] == 10 and c["tub_kg"] == 0 and c["abi_kg"] == 0
 
 
-def test_el_buscador_ve_todos_los_nombres_del_color():
-    """Rollos del mismo código con el color escrito distinto: se muestra el
-    primero, pero el buscador tiene que encontrar cualquiera."""
+def test_el_nombre_del_color_es_el_de_la_mayoria_de_los_kilos():
+    """Rollos del mismo código con otro nombre de color en el lote (13/10: un
+    rollo de BLANCO con "NEGRO" puesto por error en Asinfo). Manda el código;
+    se muestra y se busca el nombre de la mayoría de los kilos."""
     filas = [
-        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO",
-         "calidad": "PRI", "acabado": "TUB", "rollos": 1, "kg": 20},
-        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO OSC",
-         "calidad": "PRI", "acabado": "TUB", "rollos": 1, "kg": 20},
-        {"grupo": "Rib", "tela": "Rib", "cod_color": "NEG", "color": "NEGRO",
-         "calidad": "SEG", "acabado": "TUB", "rollos": 1, "kg": 20},
+        {"grupo": "Rib", "tela": "Rib", "cod_color": "BLA", "color": "NEGRO",
+         "calidad": "PRI", "acabado": "TUB", "rollos": 1, "kg": 6},
+        {"grupo": "Rib", "tela": "Rib", "cod_color": "BLA", "color": "BLANCO",
+         "calidad": "PRI", "acabado": "TUB", "rollos": 20, "kg": 212},
     ]
     (c,) = st._armar(filas)[0]["colores"]
-    assert c["color"] == "NEGRO" and c["nombres"] == ["NEGRO", "NEGRO OSC"]
+    assert c["color"] == "BLANCO" and c["kg"] == 218 and "_kg_nombre" not in c
+
+
+def test_el_stock_se_busca_por_codigo_y_por_color():
+    from pathlib import Path
+    html = Path("modules/mi_cartera/templates/mi_cartera/stock.html").read_text()
+    assert "data-buscar=\"{{ (c.color ~ ' ' ~ c.cod)|lower }}\"" in html
+    assert '<span class="cc">{{ c.cod }}</span>' in html
+
+
+def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
+    """Tamara 13/10: "chiquito… cuando algo es de la competencia, así tienen
+    incentivo a vender ese en particular". Misma llave que Stock (tela +
+    código de color). Sólo la segunda → el 🏆 va en la etiqueta 2da."""
+    _fuente(monkeypatch, [(FILAS, True)])
+    from modules.analisis import queries as aq
+    monkeypatch.setattr(aq, "items", lambda conn=None: [
+        {"subcategoria": "Fleece 102", "color": "NEG", "motivo": "segunda", "stock_kg": 72},
+        {"subcategoria": "Fleece 102", "color": "GOS", "motivo": "parado", "stock_kg": 224},
+        {"subcategoria": "Jersey 3", "color": "BLA", "motivo": "parado", "stock_kg": 0}])
+    monkeypatch.setattr(aq, "con_puntos", lambda fs: [dict(f, puntos=10) for f in fs])
+    html = vendedor.get("/mi-cartera/stock").data.decode()
+    lista = html[html.index('id="st-lista"'):]
+    assert "2da 🏆 ×10" in lista            # NEG: sólo la segunda
+    assert ">🏆 ×10</em>" in lista          # GOS: entero
+    assert lista.count("🏆") == 2           # BLANCO vendido (0 kg) no se marca
+
+
+def test_si_la_competencia_falla_el_stock_igual_se_ve(vendedor, monkeypatch):
+    _fuente(monkeypatch, [(FILAS, True)])
+    from modules.analisis import queries as aq
+
+    def roto(conn=None):
+        raise RuntimeError("sin base")
+    monkeypatch.setattr(aq, "items", roto)
+    r = vendedor.get("/mi-cartera/stock")
+    assert r.status_code == 200 and "🏆" not in r.data.decode()[r.data.decode().index('id="st-lista"'):]

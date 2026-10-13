@@ -54,12 +54,26 @@
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
     {% for c in t.colores %}
-      <div class="st-col" data-buscar="{{ (c.nombres|join(' ') ~ ' ' ~ c.cod)|lower }}"
+      <div class="st-col" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
            data-kg="{{ '%.1f'|format(c.kg) }}" data-seg="{{ '%.1f'|format(c.seg_kg) }}"
            data-rollos="{{ c.rollos }}" data-seg-rollos="{{ c.seg_rollos }}">
+        {# El código del color va ADELANTE y como hermano (nunca adentro del
+           span con ellipsis: si el nombre no entra, se corta el nombre y el
+           código queda). Tamara 13/10: "que el color también tenga su código
+           y se pueda buscar por ambos" — el buscador ya miraba los dos. #}
+        <span class="cc">{{ c.cod }}</span>
         <span class="cn">{{ c.color }}</span>
         {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
-        {%- if c.seg_kg > 0 %}<em class="tag dos">2da</em>{% endif %}
+        {#- ⭐ La COMPETENCIA, chiquito (Tamara 13/10: "incentivo a vender ese
+            en particular"). Si entra sólo la segunda, el 🏆 va pegado a la
+            etiqueta "2da"; si entra entero, va su propia etiqueta con los
+            puntos de la tela (×4, ×10: cada kilo vale eso). Se marca el COLOR
+            y no la tela: 630 colores están en la competencia y casi todas las
+            telas tienen alguno — un 🏆 en cada tela no diría nada. #}
+        {%- set cp = comp.get((t.tela, c.cod)) %}
+        {%- set _pts = (' ×' ~ cp.puntos) if cp and cp.puntos > 1 else '' %}
+        {%- if cp and not cp.solo_seg %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ _pts }}</em>{% endif %}
+        {%- if c.seg_kg > 0 %}<em class="tag dos{{ ' comp' if cp and cp.solo_seg }}"{% if cp and cp.solo_seg %} title="La segunda está en la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}"{% endif %}>2da{{ ' 🏆' ~ _pts if cp and cp.solo_seg }}</em>{% endif %}
         <span class="rol rol-c">{{ c.rollos }} r</span>
         <b class="kg kg-c">{{ c.kg|num_es(0) }}</b>
       </div>
@@ -100,11 +114,14 @@
   .st-col{display:flex;align-items:baseline;gap:6px;padding:5px 0 5px 10px;font-size:13px;
     border-left:2px solid var(--accent-soft)}
   .st-col:last-child{margin-bottom:8px}
+  .st-col .cc{flex:0 0 auto;min-width:30px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:11.5px;font-weight:700;color:var(--ink-2);white-space:nowrap}
   .st-col .cn{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   .st-col .rol{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
   .st-col .kg{font-weight:600;font-size:13px}
   .tag{flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;padding:1px 4px;
     border-radius:4px;background:#EEF1F6;color:var(--ink-2)}
+  .tag.comp,.tag.dos.comp{background:#EDE9FE;color:#5B21B6}
   .tag.dos{background:var(--warn-soft);color:var(--warn)}
   [hidden]{display:none!important}
 </style>
