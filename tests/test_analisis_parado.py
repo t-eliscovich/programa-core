@@ -931,6 +931,21 @@ def test_la_competencia_del_vendedor_tiene_la_barra_de_mi_cartera():
     assert "request.path.startswith('/analisis/competencia')" in base
 
 
+def test_la_competencia_del_vendedor_va_metida_en_el_portal():
+    """13/10/2026, dueña: "idem con la competencia, ¿puede estar ahí metido?".
+    Para el vendedor la Competencia no lleva la barra de Análisis ni el
+    "← Mi Cartera": lleva sus tres pantallas como selector, igual que el
+    portal. La oficina sigue con la barra de siempre."""
+    from pathlib import Path
+
+    from modules.analisis import views
+    base = Path("modules/analisis/templates/analisis/base.html").read_text()
+    assert 'header class="top portal"' in base and "{% for m in menu_vendedor %}" in base
+    i_portal, i_oficina = base.index('class="top portal"'), base.index('href="/mi-cartera">← Mi Cartera')
+    assert i_portal < base.index("{% else %}", i_portal) < i_oficina
+    assert [m["titulo"] for m in views.MENU_VENDEDOR] == ["Competencia", "Saldos", "Tu hoja"]
+
+
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():
     """El guard del guard: el día que se habilite, que no se cuele /analisis
     entero de un copy-paste."""

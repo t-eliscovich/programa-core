@@ -175,7 +175,7 @@ def test_vendedor_ve_lista_ficha_y_hoja(vendedor):
     barra = html[html.index('<nav class="tabbar">'):]
     assert 'href="/mi-cartera/fichas"' in barra and "onrender" not in barra
     html = vendedor.get("/mi-cartera/fichas/FT-FL-102").data.decode()
-    assert "Imprimir / guardar PDF" in html and "fichas/remojo.png" in html
+    assert "/mi-cartera/fichas/FT-FL-102/imprimir" in html and "fichas/remojo.png" in html
     r = vendedor.get("/mi-cartera/fichas/FT-FL-102/imprimir?volver=//malo.com")
     assert r.status_code == 200
     h = r.data.decode()
@@ -212,3 +212,40 @@ def test_la_oficina_edita(duena):
     assert r.status_code == 302 and "#f-FT-NUEVA" in r.headers["Location"]
     r = duena.post("/admin/fichas-tecnicas/nueva", data=_form(codigo="ft-x", nombre=""))
     assert r.status_code == 400 and "Falta el nombre" in r.data.decode()
+
+
+def test_whatsapp_manda_la_hoja_como_foto_o_pdf(vendedor, monkeypatch):
+    """Tamara 13/10: "me gustaría también enviar por WhatsApp". La MISMA hoja
+    que la de imprimir, sin la barrita de arriba, por los mismos motores que
+    el estado de cuenta."""
+    from modules._lib import imagen_motor, pdf_motor
+    hojas = []
+    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, **k: hojas.append(html) or b"%PDF")
+    monkeypatch.setattr(imagen_motor, "desde_html", lambda html, **k: hojas.append(html) or b"PNG")
+    r = vendedor.get("/mi-cartera/fichas/FT-FL-102/pdf")
+    assert r.status_code == 200 and r.mimetype == "application/pdf"
+    assert "Ficha técnica Fleece 102.pdf" in r.headers["Content-Disposition"]
+    r = vendedor.get("/mi-cartera/fichas/FT-FL-102/imagen")
+    assert r.status_code == 200 and r.mimetype == "image/png"
+    assert all('class="barra"' not in h and "FLEECE 102" in h for h in hojas)
+    assert vendedor.get("/mi-cartera/fichas/FT-JE-X/pdf").status_code == 404
+
+    def sin_motor(html, **k):
+        raise pdf_motor.SinMotor("no hay navegador")
+    monkeypatch.setattr(pdf_motor, "desde_html", sin_motor)
+    r = vendedor.get("/mi-cartera/fichas/FT-FL-102/pdf")
+    assert r.status_code == 503 and "no hay navegador" in r.data.decode()
+
+
+def test_la_ficha_tiene_el_boton_de_whatsapp(vendedor, monkeypatch):
+    from modules._lib import pdf_motor
+    monkeypatch.setattr(pdf_motor, "disponible", lambda: True)
+    html = vendedor.get("/mi-cartera/fichas/FT-FL-102").data.decode()
+    assert "data-wa-pdf" in html and 'data-url="/mi-cartera/fichas/FT-FL-102/pdf"' in html
+    assert 'data-img="/mi-cartera/fichas/FT-FL-102/imagen"' in html
+
+
+def test_la_oficina_baja_la_hoja_de_una_dada_de_baja(duena, monkeypatch):
+    from modules._lib import pdf_motor
+    monkeypatch.setattr(pdf_motor, "desde_html", lambda html, **k: b"%PDF")
+    assert duena.get("/mi-cartera/fichas/FT-JE-X/pdf").status_code == 200

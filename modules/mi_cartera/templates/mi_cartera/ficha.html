@@ -23,8 +23,16 @@
 {% block content %}
 {% set qp = ('?vend=' ~ vend) if preview else '' %}
 {% set aqui = url_for('mi_cartera.ficha', codigo=f.codigo) ~ qp %}
-<a class="fi-imp" href="{{ url_for('mi_cartera.ficha_imprimir', codigo=f.codigo) }}?volver={{ aqui|urlencode }}{{ ('&vend=' ~ vend) if preview else '' }}">
-  🖨 Imprimir / guardar PDF</a>
+{# ⭐ Mandarla por WhatsApp (Tamara 13/10): la MISMA fila de botones que el
+   estado de cuenta — WhatsApp (en el teléfono manda la foto de la hoja), Imagen,
+   Imprimir y PDF—, con el mismo código. Sin motor de PDF queda sólo Imprimir. #}
+{% set cola = ('?vend=' ~ vend) if preview else '' %}
+{% with pdf_url = url_for('mi_cartera.ficha_pdf', codigo=f.codigo) ~ cola,
+        img_url = url_for('mi_cartera.ficha_imagen', codigo=f.codigo) ~ cola,
+        hoja_url = url_for('mi_cartera.ficha_imprimir', codigo=f.codigo) ~ '?volver=' ~ (aqui|urlencode) ~ (('&vend=' ~ vend) if preview else ''),
+        wa_nombre = f.nombre %}
+  <div class="fi-acc">{% include "mi_cartera/_acciones_fila.html" %}</div>
+{% endwith %}
 
 <div class="card fi-card">
   <div class="fi-t">Especificaciones técnicas</div>
@@ -63,8 +71,7 @@
 <style>
   .fi-volver{display:inline-block;font-size:13.5px;font-weight:600;color:var(--accent);margin-bottom:2px}
   .fi-h1{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fi-imp{display:block;text-align:center;font-weight:700;font-size:14.5px;color:#fff;
-    background:var(--accent);border-radius:11px;padding:10px 12px;margin-bottom:12px}
+  .fi-acc{margin-bottom:12px}
   .fi-card{padding:10px 14px;margin-bottom:12px}
   .fi-t{font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);
     padding:2px 0 6px}
@@ -82,4 +89,5 @@
   .fi-obs{margin:0 0 8px;padding-left:18px;font-size:13px;color:var(--ink-2);line-height:1.45}
   p.fi-obs{padding-left:0}
 </style>
+{% include "mi_cartera/_acciones_css.html" %}
 {% endblock %}

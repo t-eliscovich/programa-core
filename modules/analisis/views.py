@@ -100,10 +100,11 @@ def _menu():
     en esta app los links son strings hardcodeados — no se ve desde el código.
     """
     if (g.get("user") or {}).get("vend"):
-        return {"menu_global": MENU_VENDEDOR}
+        return {"menu_global": MENU_VENDEDOR, "menu_vendedor": MENU_VENDEDOR}
     admin = "*" in (g.get("permisos") or set())
     return {"menu_global": [m for m in MENU
-                            if m["listo"] and (admin or not m.get("admin"))]}
+                            if m["listo"] and (admin or not m.get("admin"))],
+            "menu_vendedor": MENU_VENDEDOR}
 
 
 @analisis_bp.route("/analisis")

@@ -46,6 +46,9 @@
   .caja ul{margin:0;padding-left:12px}
   .pie td{border:1px solid #111;text-align:center;font-size:7.5pt;padding:4px;width:33.3%;color:#444}
   .pie b{display:block;color:#111}
+  /* Para la foto y el PDF de WhatsApp: sólo la hoja, sobre blanco. */
+  body.archivo{background:#fff}
+  body.archivo .hoja{margin:0 auto;box-shadow:none;max-width:none;width:880px;padding:10px}
   @media print{
     body{background:#fff}
     .barra{display:none}
@@ -54,11 +57,13 @@
   }
 </style>
 </head>
-<body>
+<body{% if archivo %} class="archivo"{% endif %}>
+{% if not archivo %}
 <div class="barra">
   <a href="{{ volver }}">‹ Volver</a>
   <button type="button" onclick="window.print()">🖨 Imprimir / guardar PDF</button>
 </div>
+{% endif %}
 
 <div class="hoja">
   <table class="cab"><tr>

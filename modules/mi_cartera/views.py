@@ -1152,6 +1152,50 @@ def ficha_imprimir(codigo: str):
     return render_template("mi_cartera/ficha_hoja.html", f=f, fx=fichas, volver=volver)
 
 
+def _ficha_archivo(codigo: str, formato: str):
+    """La hoja de la ficha como PDF o como foto, para mandarla por WhatsApp
+    (Tamara 13/10: "me gustaría también enviar por WhatsApp"). Es la MISMA
+    hoja que la de imprimir, sin la barrita de arriba. Usa el mismo botón y
+    los mismos motores que el estado de cuenta: en el teléfono va la FOTO (es
+    lo que todos los teléfonos saben compartir), en la computadora el PDF."""
+    from flask import Response
+
+    from modules._lib import imagen_motor, pdf_motor
+    if not tiene_permiso("fichas.editar"):
+        _vend_actual()
+    f = fichas.una(codigo)
+    if not f or not (f["activa"] or tiene_permiso("fichas.editar")):
+        abort(404)
+    html = render_template("mi_cartera/ficha_hoja.html", f=f, fx=fichas,
+                           volver="", archivo=True)
+    nombre = f"Ficha técnica {f['nombre'].title()}.{formato}"
+    try:
+        if formato == "pdf":
+            blob, tipo = pdf_motor.desde_html(html), "application/pdf"
+        else:
+            blob, tipo = imagen_motor.desde_html(html, filas=12), "image/png"
+    except pdf_motor.SinMotor as e:
+        return Response(f"No se pudo generar el archivo. {e}", status=503,
+                        mimetype="text/plain; charset=utf-8")
+    return Response(blob, mimetype=tipo, headers={
+        "Content-Disposition": f"inline; filename=\"{nombre}\"",
+        "Cache-Control": "no-store"})
+
+
+@mi_cartera_bp.route("/mi-cartera/fichas/<codigo>/pdf")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def ficha_pdf(codigo: str):
+    return _ficha_archivo(codigo, "pdf")
+
+
+@mi_cartera_bp.route("/mi-cartera/fichas/<codigo>/imagen")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def ficha_imagen(codigo: str):
+    return _ficha_archivo(codigo, "png")
+
+
 # La edición vive en /admin (el candado de vendedores no la deja ver) y pide
 # `fichas.editar`, que no tiene ningún rol: entra sólo quien tiene `*`.
 

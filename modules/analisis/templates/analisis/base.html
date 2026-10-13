@@ -380,6 +380,35 @@ font-size:12px;color:var(--g)}
 </style>
 </head>
 <body>
+{# ⭐ 13/10/2026 (dueña: "idem con la competencia, ¿puede estar ahí metido?").
+   Para el VENDEDOR (y la dueña en vista previa ?vend=) la Competencia ya no
+   tiene la barra de la sección Análisis: lleva el encabezado de Mi Cartera —
+   sus tres pantallas como un selector— y abajo la barra de siete pestañas. Se
+   ve como una pantalla más del portal; no hay "← Mi Cartera" porque nunca
+   salió. La oficina sigue viendo la barra de Análisis de siempre. #}
+{% set _tb_vend = (g.user or {}).get('vend') or ((request.args.get('vend') or '')|upper if '*' in (g.permisos or []) else '') %}
+{% set _en_portal = _tb_vend and request.path.startswith('/analisis/competencia') %}
+{% if _en_portal %}
+  {% set _qp = '' if (g.user or {}).get('vend') else ('?vend=' ~ _tb_vend) %}
+  <header class="top portal">
+    {% if not (g.user or {}).get('vend') %}<div class="pv">Vista previa de {{ _tb_vend }} — así lo ve el vendedor</div>{% endif %}
+    <div class="seg">
+      {% for m in menu_vendedor %}
+        <a href="{{ m.url }}{{ _qp }}" {% if request.path == m.url %}class="act"{% endif %}>{{ m.titulo }}</a>
+      {% endfor %}
+    </div>
+  </header>
+  <style>
+    header.top.portal{display:block;padding:10px 14px;min-height:0;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif}
+    header.top.portal .pv{margin:-10px -14px 10px;padding:6px 14px;background:#FFF7E6;color:#9A5B00;
+      font-size:12.5px;font-weight:600;text-align:center}
+    header.top.portal .seg{display:flex;background:#EDEFF4;border-radius:9px;padding:2px}
+    header.top.portal .seg a{flex:1 1 0;text-align:center;font-size:13.5px;font-weight:600;color:#475569;
+      padding:6px 4px;border-radius:7px;white-space:nowrap}
+    header.top.portal .seg a.act{background:#fff;color:#0F172A;box-shadow:0 1px 2px rgba(15,23,42,.10)}
+    :root{--alto-barra:54px}
+  </style>
+{% else %}
 <header class="top">
   <span class="marca">{% block marca %}Análisis{% endblock %}</span>
   {% for m in menu_global %}
@@ -393,6 +422,7 @@ font-size:12px;color:var(--g)}
     <a class="der" href="/">← Volver al programa</a>
   {% endif %}
 </header>
+{% endif %}
 <main>
 {# La campanita de la competencia, también acá: es la pantalla a la que el
    vendedor viene a mirar la carrera (ver mi_cartera/base.html). #}
@@ -417,8 +447,7 @@ font-size:12px;color:var(--g)}
    y es difícil volver"). El vendedor entra a Competencia desde la pestaña
    "Comp" y ahora sigue viendo sus siete pestañas: nunca sale de la app.
    Para la dueña en vista previa (?vend=) también, así ve lo mismo. #}
-{% set _tb_vend = (g.user or {}).get('vend') or ((request.args.get('vend') or '')|upper if '*' in (g.permisos or []) else '') %}
-{% if _tb_vend and request.path.startswith('/analisis/competencia') %}
+{% if _en_portal %}
   {% set vend = _tb_vend %}
   {% set preview = not (g.user or {}).get('vend') %}
   {% set seccion = 'comp' %}
