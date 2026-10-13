@@ -1239,6 +1239,89 @@ def _cobro_rapido_html(semanas: list[dict]) -> str:
             f'border-bottom:1px solid {_LINEA};margin-top:4px">{cab}{filas}</table>')
 
 
+_COLOR_NOTA = {"amar": "amarillo", "verde": "verde", None: "sin deuda"}
+
+
+def _nombre_cli(x: dict) -> str:
+    """Código en gris y el nombre recortado: el código solo no lo entiende
+    nadie fuera de la oficina, el nombre entero no entra."""
+    nom = (x.get("nombre") or "").strip().title()
+    nom = nom if len(nom) <= 24 else nom[:23].rstrip() + "…"
+    return (f'<span style="color:{_GRIS}">{x["cod"]}</span> {nom}'
+            if nom else x["cod"])
+
+
+def _lista_html(items: list[dict], fmt) -> str:
+    from modules.analisis.semaforo_foto import MAX_NOMBRES
+
+    lin = [f'<div style="padding:2px 0">{fmt(x)}</div>' for x in items[:MAX_NOMBRES]]
+    if len(items) > MAX_NOMBRES:
+        lin.append(f'<div style="padding:2px 0;color:{_GRIS}">'
+                   f'+{len(items) - MAX_NOMBRES} más</div>')
+    return "".join(lin)
+
+
+def _cobranza_semaforo_html(c: dict, cuando: str) -> str:
+    """El bloque "Cobranza" del mail: el semáforo de /analisis/cobranza
+    contra la foto anterior, y los pagos grandes del tramo.
+
+    TMT 2026-10-13: *"quiénes estaban en rojo y se fueron, quiénes pagaron
+    una suma importante"*. Un renglón vacío no va: un día sin movimientos
+    deja sólo el total en rojo.
+    """
+    desde = "ayer" if cuando == "hoy" else "el viernes"
+    bloques = []
+
+    def _titulo(t):
+        return (f'<div style="font-size:12px;color:{_GRIS};padding-top:10px">'
+                f'{t}</div>')
+
+    if c.get("salieron"):
+        def _sal(x):
+            partes = [f"→ {_COLOR_NOTA.get(x['color'], x['color'])}"]
+            if x["pagado"] > 0:
+                partes.append(f"pagó $ {_n(x['pagado'])}")
+            return (f'{_nombre_cli(x)} <span style="color:{_VERDE}">'
+                    f'{" · ".join(partes)}</span>')
+        bloques.append(_titulo("Salieron del rojo") + _lista_html(c["salieron"], _sal))
+    if c.get("entraron"):
+        def _ent(x):
+            return (f'{_nombre_cli(x)} <span style="color:{_GRIS}">'
+                    f'$ {_n(x["saldo"])} · {x["motivo"].lower()}</span>')
+        bloques.append(_titulo("Entraron al rojo") + _lista_html(c["entraron"], _ent))
+    if c.get("pagos"):
+        def _pag(x):
+            forma = " y ".join(x["formas"]) if len(x["formas"]) <= 2 else "varias formas"
+            return (f'{_nombre_cli(x)} <b>$ {_n(x["us"])}</b> '
+                    f'<span style="color:{_GRIS}">{forma}</span>')
+        bloques.append(_titulo(f"Pagos de más de $ {_n(c['umbral'])}")
+                       + _lista_html(c["pagos"], _pag))
+    t, ta = c.get("total") or {}, c.get("total_antes")
+    tot = f'En rojo: <b>{t.get("n", 0)}</b> clientes · $ {_n(t.get("saldo"))}'
+    if ta:
+        tot += (f' <span style="color:{_GRIS}">({desde} {ta.get("n", 0)} · '
+                f'$ {_n(ta.get("saldo"))})</span>')
+    bloques.append(f'<div style="padding-top:10px">{tot}</div>')
+    return (f'<div style="font-size:13px;color:{_TINTA};padding-top:18px;'
+            f'margin-top:16px;border-top:1px solid {_LINEA}">'
+            f'<div style="font-size:12px;letter-spacing:.08em;color:{_GRIS}">'
+            f'COBRANZA</div>{"".join(bloques)}</div>')
+
+
+def _cobranza_semaforo(fecha, cuando: str) -> str:
+    """Fail-soft: si el semáforo falla, el mail sale igual sin el bloque."""
+    from datetime import timedelta
+
+    try:
+        from modules.analisis import semaforo_foto
+
+        desde = fecha if cuando == "hoy" else fecha - timedelta(days=1)
+        return _cobranza_semaforo_html(semaforo_foto.para_la_nota(desde, fecha), cuando)
+    except Exception as e:  # noqa: BLE001 — un adorno no tumba el mail
+        _LOG.warning("dia: no pude armar el bloque de cobranza (%s)", e)
+        return ""
+
+
 def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
     """El cuerpo del HTML, igual para un día que para el fin de semana.
 
@@ -1329,6 +1412,7 @@ def _nota_html(r: dict, fecha, rot: str, cuando: str) -> str:
     cr = cobro_rapido_semanas(fecha)
     if any(s["us"] for s in cr):
         L.append(_cobro_rapido_html(cr))
+    L.append(_cobranza_semaforo(fecha, cuando))
     L.append(f'<div style="font-size:11px;color:{_GRIS};padding-top:14px">'
              f'Mes de {mes}. Cobranzas: cheques, depósitos y efectivo ingresados.</div>')
     L.append("</div>")
@@ -1369,6 +1453,17 @@ def cambiar_destinatario(id_destinatario: int, activo: bool) -> bool:
     except Exception as e:  # noqa: BLE001
         _LOG.warning("dia: no pude cambiar el destinatario (%s)", e)
         return False
+
+
+def _guardar_foto_semaforo(fecha) -> None:
+    """La MISMA foto que la campanita del vendedor (y sus avisos de "pasó a
+    rojo", que son idempotentes por cliente y día)."""
+    try:
+        from modules.mi_cartera import avisos_vend
+
+        avisos_vend.foto_semaforo()
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("dia: no pude guardar la foto del semáforo (%s)", e)
 
 
 def enviar_nota(fecha=None, forzar: bool = False) -> dict:
@@ -1438,6 +1533,9 @@ def enviar_nota(fecha=None, forzar: bool = False) -> dict:
         if forzar:
             db.execute("UPDATE scintela.dia_captura SET nota_enviada_en = "
                        "CURRENT_TIMESTAMP WHERE id_captura = %s", (idc,))
+        # La foto del semáforo queda con el estado del CIERRE: mañana el
+        # mail compara contra ésta (TMT 2026-10-13).
+        _guardar_foto_semaforo(fecha)
         # `destinatarios` es a cuántos les LLEGÓ, no a cuántos se intentó:
         # el mailer manda uno por cabeza y alguno puede rebotar solo. El
         # motivo se arrastra aunque haya salido, para que un fallo parcial no

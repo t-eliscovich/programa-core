@@ -72,7 +72,8 @@ def test_el_primer_dia_solo_saca_la_foto(monkeypatch):
     assert r["pasaron"] == 0
     assert fake.avisos() == []
     # pero la foto sí se grabó, con los cuatro clientes
-    (sql, params), = [(s, p) for s, p in fake.ejecutado if "semaforo_foto" in s]
+    (sql, params), = ((s, p) for s, p in fake.ejecutado
+                      if "INSERT INTO scintela.semaforo_foto" in s)
     assert sorted(params[1]) == ["ABC", "GIC", "MYU", "VER"]
 
 

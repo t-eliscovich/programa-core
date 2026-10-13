@@ -404,7 +404,10 @@ def colores(hoy: date | None = None) -> dict[str, dict]:
                    # vean de sus clientes) — los mismos de "contra sí mismo".
                    "ultimo": c["ultimo"], "antes": c["antes"],
                    "cambio": c["cambio"], "ultimo_mes": c["ultimo_mes"],
-                   "antes_meses": c["antes_meses"]}
+                   "antes_meses": c["antes_meses"],
+                   # Tamara 13/10: el mail diario cuenta el rojo con saldo y
+                   # nombre (y la foto del semáforo los guarda).
+                   "nombre": c["nombre"], "saldo": c["saldo"], "reb": c["reb"]}
                for c in d["filas"]}
         if hoy is None:
             _colores.update(t=time.monotonic(), d=out)

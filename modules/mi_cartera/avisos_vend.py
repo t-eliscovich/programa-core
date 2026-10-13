@@ -59,16 +59,28 @@ def foto_semaforo(hoy: date | None = None, colores: dict | None = None) -> dict:
     if cods:
         db.execute(
             """
-            INSERT INTO scintela.semaforo_foto (fecha, codigo_cli, color, motivos)
-            SELECT %s, c, k, m
-              FROM unnest(%s::text[], %s::text[], %s::text[]) AS t(c, k, m)
+            INSERT INTO scintela.semaforo_foto
+                   (fecha, codigo_cli, color, motivos, nombre, saldo, reb)
+            SELECT %s, c, k, m, n, s, r
+              FROM unnest(%s::text[], %s::text[], %s::text[], %s::text[],
+                          %s::numeric[], %s::numeric[]) AS t(c, k, m, n, s, r)
             ON CONFLICT (fecha, codigo_cli) DO UPDATE
                SET color = EXCLUDED.color, motivos = EXCLUDED.motivos,
-                   creado_en = now()
+                   nombre = EXCLUDED.nombre, saldo = EXCLUDED.saldo,
+                   reb = EXCLUDED.reb, creado_en = now()
             """,
             (hoy, cods, [colores[c]["color"] for c in cods],
-             [" · ".join(colores[c].get("motivos") or []) for c in cods]),
+             [" · ".join(colores[c].get("motivos") or []) for c in cods],
+             # Tamara 13/10 (mail diario): nombre, saldo y devueltos del día,
+             # para contar el rojo de ayer igual que la pantalla.
+             [(colores[c].get("nombre") or "")[:80] for c in cods],
+             [round(float(colores[c].get("saldo") or 0), 2) for c in cods],
+             [round(float(colores[c].get("reb") or 0), 2) for c in cods]),
         )
+        # Un cliente que hoy pagó todo y se fue del semáforo no puede quedar
+        # con el color de la mañana (la foto se pisa varias veces por día).
+        db.execute("DELETE FROM scintela.semaforo_foto "
+                   " WHERE fecha = %s AND NOT (codigo_cli = ANY(%s))", (hoy, cods))
     ant = db.fetch_one(
         "SELECT MAX(fecha) AS f FROM scintela.semaforo_foto WHERE fecha < %s", (hoy,))
     ant_fecha = ant and ant.get("f")
