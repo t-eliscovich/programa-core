@@ -1926,8 +1926,19 @@ def mov_hilado_valuacion(yy: int, mm: int, open_ukg: float) -> dict:
     # un mes sin compras; el testigo de que no lo es está en scintela.compra.
     _sin_compras = (compras <= 0 and compras_us <= 0
                     and dolares_hilo_del_mes(yy, mm) > 0)
+    # Y la APERTURA en cero (TMT 2026-10-13, 02:31): Asinfo no contestó el
+    # inventario al 1° del mes y vino hi0 = 0 con 2,3 millones de kg de hilo
+    # HOY en la bodega. Sin apertura el promedio sale sólo de las compras del
+    # mes (3,205 contra 3,185), revalúa todo el stock (+59.297) y a la foto
+    # siguiente, cuando Asinfo contesta, vuelve (−59.177): dos avisos de un
+    # movimiento que no existió. Un mes con hilo en bodega SIEMPRE arrancó con
+    # hilo: hi0 = 0 con hi1 > 0 es una consulta que no contestó, no un dato.
+    _sin_apertura = hi0 <= 0 < hi1
     _motivo = ""
-    if _asimetrico:
+    if _sin_apertura:
+        _motivo = ("Asinfo no contestó el inventario de hilo al 1° del mes "
+                   "(vino en cero)")
+    elif _asimetrico:
         _motivo = (f"los kg y los dólares de las compras del mes no se "
                    f"corresponden ({compras:,.0f} kg / {compras_us:,.2f} US$)")
     elif _sin_compras:

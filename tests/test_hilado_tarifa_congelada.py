@@ -209,3 +209,34 @@ def test_sin_foto_el_balance_avisa_que_valua_con_el_dbase(fake_balance_db, monke
     assert b["stock_fuente"] == "dbase"
     avisos = (b.get("diagnostico") or {}).get("advertencias") or []
     assert any("kilos del dBase" in a for a in avisos), avisos
+
+
+# ── La APERTURA en cero (TMT 2026-10-13, 02:31) ────────────────────────────
+# Asinfo devolvió vacío el inventario al 1° de octubre: hi0 = 0 con 2,3
+# millones de kg en bodega. El $/kg pasó de 3,185 a 3,205 sólo con las
+# compras del mes (+59.297) y a los 7 minutos volvió (−59.177).
+
+def _valuar_sin_apertura(previa):
+    rec = {"us": 964_072.65, "kg": 300_755.44, "kg_con_costo": 300_755.44}
+    with patch.object(sv, "inventario_por_etapa_a_fecha", return_value={}), \
+         patch.object(sv, "inventario_por_etapa",
+                      return_value={"hilo": 2_306_316.0, "en_proceso_tc": 48_115.0}), \
+         patch.object(sv, "hilado_recibido_mes", return_value=300_755.44), \
+         patch.object(isv, "costo_hilado_recibido_mes", return_value=rec), \
+         patch("modules.compras_locales.service.hilado_local_recibido_mes",
+               return_value={"kg": 0.0, "us": 0.0}), \
+         patch.object(sv, "dolares_hilo_del_mes", return_value=964_072.65), \
+         patch.object(sv, "_tarifa_hilado_previa", return_value=previa):
+        return sv.mov_hilado_valuacion(2026, 10, 3.1822)
+
+
+def test_la_apertura_en_cero_sostiene_la_tarifa():
+    out = _valuar_sin_apertura(previa=3.185)
+    assert out["stock_act_ukg"] == pytest.approx(3.185)
+    assert out["tarifa_congelada"] is True
+    assert "1° del mes" in out["tarifa_motivo"]
+
+
+def test_la_apertura_en_cero_no_queda_como_ancla():
+    _valuar_sin_apertura(previa=3.185)
+    assert sv._ULTIMA_TARIFA_HILADO is None
