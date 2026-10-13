@@ -413,6 +413,27 @@ font-size:12px;color:var(--g)}
 {% endwith %}
 {% block contenido %}{% endblock %}
 </main>
+{# ⭐ La barra de abajo de Mi Cartera, también acá (13/10/2026, dueña: "se van
+   y es difícil volver"). El vendedor entra a Competencia desde la pestaña
+   "Comp" y ahora sigue viendo sus siete pestañas: nunca sale de la app.
+   Para la dueña en vista previa (?vend=) también, así ve lo mismo. #}
+{% set _tb_vend = (g.user or {}).get('vend') or ((request.args.get('vend') or '')|upper if '*' in (g.permisos or []) else '') %}
+{% if _tb_vend and request.path.startswith('/analisis/competencia') %}
+  {% set vend = _tb_vend %}
+  {% set preview = not (g.user or {}).get('vend') %}
+  {% set seccion = 'comp' %}
+  {% set n_campanita = campanita_competencia() if campanita_competencia is defined else 0 %}
+  {% set n_avisos_cp = campanita_avisos() if campanita_avisos is defined else 0 %}
+  <style>
+    .tabbar{--surface:#fff;--line:#E6E9EF;--ink-3:#94A3B8;--accent:#4338CA;
+            font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,sans-serif;line-height:normal}
+    .tabbar a{text-decoration:none}
+    {% include "mi_cartera/_tabbar_css.html" %}
+    .tabbar{position:fixed;left:0;right:0;bottom:0;z-index:50}
+    body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+  </style>
+  {% include "mi_cartera/_tabbar.html" %}
+{% endif %}
 {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -902,7 +902,7 @@ def test_el_vendedor_llega_a_la_competencia_desde_su_portal():
     son la misma cosa (dueña 25/08/2026: "que el boton diga competencia no
     saldos"). Sin el link, la pantalla abierta no la encuentra nadie."""
     from pathlib import Path
-    barra = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
+    barra = Path("modules/mi_cartera/templates/mi_cartera/_tabbar.html").read_text()
     assert 'href="/analisis/competencia' in barra
     assert ">Comp</a>" in barra
 
@@ -918,6 +918,17 @@ def test_al_vendedor_se_le_abrio_la_competencia_y_nada_mas():
                 if p.startswith("/analisis")]
     assert abiertos == ["/analisis/competencia"], (
         f"la Competencia y nada más de /analisis: {abiertos}")
+
+
+def test_la_competencia_del_vendedor_tiene_la_barra_de_mi_cartera():
+    """13/10/2026, dueña: "cuando acceden a competencia… pueden quedar dentro
+    de la app? porque se van y es difícil volver". La sección Competencia
+    dibuja la MISMA barra de abajo (el parcial único `_tabbar.html`) cuando
+    mira un vendedor — y sólo en /analisis/competencia."""
+    from pathlib import Path
+    base = Path("modules/analisis/templates/analisis/base.html").read_text()
+    assert '{% include "mi_cartera/_tabbar.html" %}' in base
+    assert "request.path.startswith('/analisis/competencia')" in base
 
 
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():

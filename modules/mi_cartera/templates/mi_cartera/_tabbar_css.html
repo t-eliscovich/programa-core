@@ -1,0 +1,21 @@
+{# Las reglas de la barra de abajo, sin <style>: las incluyen _estilos.html
+   (Mi Cartera) y analisis/base.html (Competencia, para el vendedor). #}
+  .tabbar{position:sticky;bottom:0;flex:0 0 auto;display:flex;background:var(--surface);
+          border-top:1px solid var(--line);justify-content:center;
+          padding:5px 2px calc(7px + env(safe-area-inset-bottom))}
+  /* 13/10/2026: siete pestañas (entró Stock, "Competencia" pasó a "Comp").
+     2px de costado, letra 10px y -.02em: con la letra del celular a 1,3× en 320
+     px se pasaba por 12 px. Medido 320/360/390 × 1 y 1,3. */
+  .tabbar a{flex:1 1 0;max-width:104px;text-align:center;font-size:10px;
+            letter-spacing:-.02em;
+            font-weight:600;color:var(--ink-3);white-space:nowrap}
+  .tabbar a.on{color:var(--accent)}
+  .tabbar em{display:block;font-size:15px;font-style:normal;margin-bottom:2px;opacity:.55}
+  .tabbar a.on em{opacity:1}
+  /* La campanita de la competencia (28/09/2026). El numerito va FLOTANDO
+     sobre el ícono: si ocupara lugar, la barra cambiaría de alto. */
+  .tabbar em{position:relative}
+  .tabbar em .cp-n{position:absolute;top:-4px;left:50%;margin-left:5px;min-width:15px;height:15px;
+    padding:0 4px;border-radius:8px;background:#E5484D;color:#fff;font-size:10px;line-height:15px;
+    font-weight:700;font-style:normal;opacity:1}
+  .tabbar a:not(.on) em:has(.cp-n){opacity:1}

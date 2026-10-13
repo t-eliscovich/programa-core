@@ -1,0 +1,60 @@
+{# La barra de abajo del portal, en UN solo lugar (13/10/2026): la usan el
+   cascarón de Mi Cartera y, para un vendedor, también la sección Competencia
+   (/analisis/competencia) — así el vendedor nunca "sale" de la app.
+   Espera: vend, preview, seccion, n_campanita, n_avisos_cp. #}
+<nav class="tabbar">
+  {% set qp = ('?vend=' ~ vend) if preview else '' %}
+  <a href="{{ url_for('mi_cartera.inicio') }}{{ qp }}"
+     class="{% if seccion == 'inicio' %}on{% endif %}"><em>◉{% if n_campanita + n_avisos_cp %}<i class="cp-n">{{ n_campanita + n_avisos_cp }}</i>{% endif %}</em>Inicio</a>
+  <a href="{{ url_for('mi_cartera.clientes') }}{{ qp }}"
+     class="{% if seccion == 'clientes' %}on{% endif %}"><em>☰</em>Clientes</a>
+  {# ⭐ La sexta pestaña, 27/08/2026 (dueña): SUS pedidos, con el dueño tal
+     como lo tiene Asinfo, y el botón de mandarlos como memo a la fábrica. #}
+  <a href="{{ url_for('mi_cartera.pedidos') }}{{ qp }}"
+     class="{% if seccion == 'pedidos' %}on{% endif %}"><em>▤</em>Pedidos</a>
+  {# ⭐ La séptima, 13/10/2026: TODO el stock de producto terminado. Al lado de
+     Pedidos porque se miran juntos: "esto me pidieron, esto hay". #}
+  <a href="{{ url_for('mi_cartera.stock') }}{{ qp }}"
+     class="{% if seccion == 'stock' %}on{% endif %}"><em>▦</em>Stock</a>
+  <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
+     class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
+  {# ⭐ La cuarta pestaña, 25/08/2026: la Competencia. Va acá y no adentro de
+     otra pantalla porque es una de las cuatro cosas que el vendedor hace.
+     Dice "Competencia" y no "Saldos" (dueña: "que el boton diga competencia no
+     saldos") y por eso lleva al tablero, no a la lista: el rótulo y el destino
+     tienen que ser la misma cosa.
+     ⚠ Sale del portal hacia la sección Análisis, que tiene su propio cascarón:
+     allá arriba a la derecha hay un "← Mi Cartera" para volver. #}
+  {# TMT 13/10/2026 (dueña): con la séptima pestaña (Stock) "Competencia" no
+     entraba —se pisaba con la de al lado aun a 390 px—; ella eligió "Comp".
+     Sigue llevando al tablero de la competencia, no a "Saldos". #}
+  <a href="/analisis/competencia{{ qp }}"
+     class="{% if seccion == 'comp' %}on{% endif %}"><em>◈</em>Comp</a>
+  {# ⭐ La quinta pestaña, 25/08/2026 (dueña): las FICHAS TÉCNICAS de las telas.
+     Van al tabbar y no adentro de otra pantalla por el mismo motivo que la
+     Competencia: el vendedor las abre delante del cliente.
+
+     ⚠ Abre en OTRA pestaña. Es un programa aparte, con su propio "Salir" y sin
+     un "← volver": si abriera encima, el vendedor queda afuera de Mi Cartera y
+     la única salida sería el botón de atrás del celular.
+
+     ⚠ `rel="noopener"`: sin eso la pestaña nueva puede manotear el
+     `window.opener` de ésta.
+
+     ⚠ Está en el plan gratis de Render: se duerme sola y la PRIMERA visita del
+     día tarda ~40 s mostrando una pantalla negra que dice "SERVICE WAKING UP".
+     Medido el 25/08/2026. Si algún día molesta, se arregla del lado de las
+     fichas (plan pago o un ping), no acá.
+
+     TMT 27/08: con la SEXTA pestaña (Pedidos) "Ficha técnica" ya no entraba
+     en un renglón (390/6 = 65 px) y envolvía — la barra entera se hacía más
+     alta. Por eso el rótulo es "F. técnica" y .tabbar a lleva nowrap: la
+     barra no se agranda nunca. #}
+  {# ⭐ 13/10/2026 (dueña): "se van y es difícil volver". Ya NO abre en otra
+     pestaña: abre en la MISMA ventana. Con Mi Cartera instalada (PWA), un
+     sitio de afuera se abre DENTRO de la app con una barra arriba y una ✕
+     que vuelve; en el navegador, vuelve con "atrás". Meterla en un iframe
+     no sirve: es un programa aparte con su propio login, y el navegador no
+     guarda la sesión de otro sitio adentro de una página (en iPhone, nunca). #}
+  <a href="https://fichas-tecnicas-czvd.onrender.com/" rel="noopener"><em>▣</em>F. técnica</a>
+</nav>
