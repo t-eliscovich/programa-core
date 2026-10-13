@@ -904,7 +904,7 @@ def test_el_vendedor_llega_a_la_competencia_desde_su_portal():
     from pathlib import Path
     barra = Path("modules/mi_cartera/templates/mi_cartera/base.html").read_text()
     assert 'href="/analisis/competencia' in barra
-    assert ">Competencia</a>" in barra
+    assert ">Comp</a>" in barra
 
 
 def test_al_vendedor_se_le_abrio_la_competencia_y_nada_mas():

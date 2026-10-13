@@ -1,0 +1,176 @@
+{# Stock — TODO el producto terminado de la bodega, tela por tela.
+
+   Pedido de los vendedores, 13/10/2026: "quieren ver todo el stock". Hasta acá
+   veían sólo lo parado y la segunda (Competencia).
+
+   ⭐ Es lo que hay EN BODEGA, no lo disponible: Asinfo no reserva y lo pedido
+   no se puede restar (ver modules/asinfo/stock_terminado.py). Lo dice arriba,
+   siempre — un vendedor que promete un rollo que ya está vendido es peor que
+   uno que no sabe.
+
+   Una tela es un <details>: cerrada muestra el total; abierta, sus colores. El
+   buscador filtra MIENTRAS SE TIPEA (tela, color o código de color) y abre
+   las telas donde encontró un color. Sin plata: ni precio ni costo. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'stock' %}
+{% block title %}Stock{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Stock</h1>
+      <div class="sub"><span id="st-sub">{{ total_kg|num_es(0) }} kg · {{ total_rollos|num_es(0) }} rollos</span> · sin descontar pedidos</div>
+    </div>
+    {% if leido %}<div class="st-hora{{ ' viejo' if viejo }}">{{ leido|hora_ec('%H:%M') }}</div>{% endif %}
+  </div>
+  <form class="search" id="st-form" onsubmit="return false">
+    <input type="search" id="st-q" placeholder="Buscar tela o color…"
+           autocomplete="off" enterkeyhint="search" aria-label="Buscar tela o color">
+  </form>
+  <div class="st-filtros">
+    <select id="st-grupo" aria-label="Grupo">
+      <option value="">Todo</option>
+      {% for g_ in grupos %}<option value="{{ g_ }}">{{ g_ }}</option>{% endfor %}
+    </select>
+    <div class="st-cal" id="st-cal">
+      <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">1ra</a><a href="#" data-cal="seg">2da</a>
+    </div>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% if viejo %}
+  <div class="st-aviso">Asinfo no contestó: es el stock de las {{ leido|hora_ec('%H:%M') }}.</div>
+{% endif %}
+
+{% if telas %}
+<div class="card st-lista" id="st-lista">
+{% for t in telas %}
+  <details class="st-tela" data-grupo="{{ t.grupo }}"
+           data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
+    <summary>
+      <b class="tn">{{ t.tela }}</b>
+      <span class="nc"><i class="n-col">{{ t.colores|length }}</i> col.</span>
+      <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
+    </summary>
+    {% for c in t.colores %}
+      <div class="st-col" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
+           data-kg="{{ '%.1f'|format(c.kg) }}" data-seg="{{ '%.1f'|format(c.seg_kg) }}"
+           data-rollos="{{ c.rollos }}" data-seg-rollos="{{ c.seg_rollos }}">
+        <span class="cn">{{ c.color }}</span>
+        {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
+        {%- if c.seg_kg > 0 %}<em class="tag dos">2da</em>{% endif %}
+        <span class="rol rol-c">{{ c.rollos }} r</span>
+        <b class="kg kg-c">{{ c.kg|num_es(0) }}</b>
+      </div>
+    {% endfor %}
+  </details>
+{% endfor %}
+</div>
+<div class="vacio" id="st-vacio" hidden>No encontré nada con “<span id="st-eco"></span>”.</div>
+{% else %}
+  <div class="vacio">No pude leer el stock de Asinfo. Probá de nuevo en un rato.</div>
+{% endif %}
+
+<style>
+  .st-hora{font-size:12px;font-weight:700;color:var(--ink-2);background:var(--surface-2);
+    border:1px solid var(--line);border-radius:8px;padding:3px 7px;white-space:nowrap;flex:0 0 auto}
+  .st-hora.viejo{color:var(--bad);background:var(--bad-soft);border-color:#F3C7C7}
+  .appbar .search{margin:8px 0 0}
+  .appbar .search input{padding:8px 12px;font-size:15px;width:100%;min-width:0;box-sizing:border-box}
+  .st-filtros{display:flex;gap:8px;margin-top:8px}
+  .st-filtros select{flex:1 1 0;min-width:0;font:inherit;font-size:15px;padding:6px 8px;
+    border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
+  .st-cal{flex:0 0 auto;display:flex;background:#EDEFF4;border-radius:9px;padding:2px}
+  .st-cal a{font-size:13px;font-weight:600;color:var(--ink-2);padding:5px 10px;border-radius:7px;white-space:nowrap}
+  .st-cal a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.10)}
+  .st-aviso{font-size:12.5px;color:var(--bad);background:var(--bad-soft);border-radius:10px;
+    padding:7px 10px;margin-bottom:10px}
+  .st-lista{padding:0 12px}
+  .st-tela{border-bottom:1px solid var(--line)}
+  .st-tela:last-child{border-bottom:0}
+  .st-tela summary{list-style:none;display:flex;align-items:baseline;gap:8px;padding:10px 0;cursor:pointer}
+  .st-tela summary::-webkit-details-marker{display:none}
+  .st-tela .tn{flex:1 1 auto;min-width:0;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .st-tela .nc{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .st-tela .nc i{font-style:normal}
+  .kg{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:52px}
+  .st-tela summary .kg{font-size:14.5px}
+  .st-tela[open] summary .tn{color:var(--accent)}
+  .st-col{display:flex;align-items:baseline;gap:6px;padding:5px 0 5px 10px;font-size:13px;
+    border-left:2px solid var(--accent-soft)}
+  .st-col:last-child{margin-bottom:8px}
+  .st-col .cn{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+  .st-col .rol{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .st-col .kg{font-weight:600;font-size:13px}
+  .tag{flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;padding:1px 4px;
+    border-radius:4px;background:#EEF1F6;color:var(--ink-2)}
+  .tag.dos{background:var(--warn-soft);color:var(--warn)}
+  [hidden]{display:none!important}
+</style>
+
+<script>
+(function () {
+  var input = document.getElementById('st-q');
+  var lista = document.getElementById('st-lista');
+  if (!input || !lista) { return; }
+  var grupoSel = document.getElementById('st-grupo');
+  var sub = document.getElementById('st-sub');
+  var vacio = document.getElementById('st-vacio');
+  var eco = document.getElementById('st-eco');
+  var telas = Array.prototype.slice.call(lista.querySelectorAll('.st-tela'));
+  var cal = 'todo';
+
+  function n0(n) { return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.'); }
+
+  function aplicar() {
+    var q = (input.value || '').trim().toLowerCase();
+    var g = grupoSel.value;
+    var vis = 0, kgTot = 0, rolTot = 0;
+    telas.forEach(function (t) {
+      var okGrupo = !g || t.getAttribute('data-grupo') === g;
+      var okTela = !q || t.getAttribute('data-buscar').indexOf(q) !== -1;
+      var kg = 0, nCol = 0, porColor = false;
+      t.querySelectorAll('.st-col').forEach(function (c) {
+        var seg = parseFloat(c.getAttribute('data-seg')), tot = parseFloat(c.getAttribute('data-kg'));
+        c._k = 0; var k = cal === 'seg' ? seg : (cal === 'pri' ? tot - seg : tot);
+        var okColor = okTela || c.getAttribute('data-buscar').indexOf(q) !== -1;
+        var ok = okGrupo && okColor && k > 0.05;
+        c.hidden = !ok;
+        if (ok) {
+          nCol++; kg += k;
+          if (!okTela) { porColor = true; }
+          c.querySelector('.kg-c').textContent = n0(k); c._k = k;
+          var rT = parseInt(c.getAttribute('data-rollos'), 10), rS = parseInt(c.getAttribute('data-seg-rollos'), 10);
+          var r = cal === 'seg' ? rS : (cal === 'pri' ? rT - rS : rT);
+          rolTot += r;
+          c.querySelector('.rol-c').textContent = r + ' r';
+        }
+      });
+      var cols = Array.prototype.slice.call(t.querySelectorAll('.st-col'));
+      cols.sort(function (a, b) { return (b._k || 0) - (a._k || 0); }).forEach(function (c) { t.appendChild(c); });
+      var ok = nCol > 0;
+      t.hidden = !ok;
+      if (ok) {
+        vis++; kgTot += kg;
+        t.querySelector('.kg-t').textContent = n0(kg);
+        t.querySelector('.n-col').textContent = nCol;
+        if (q && porColor) { t.open = true; }
+      }
+    });
+    sub.textContent = n0(kgTot) + ' kg · ' + n0(rolTot) + ' rollos' + (cal === 'seg' ? ' de segunda' : (cal === 'pri' ? ' de primera' : ''));
+    vacio.hidden = vis !== 0;
+    eco.textContent = input.value;
+  }
+  input.addEventListener('input', aplicar);
+  grupoSel.addEventListener('change', aplicar);
+  document.querySelectorAll('#st-cal a').forEach(function (a) {
+    a.addEventListener('click', function (ev) {
+      ev.preventDefault();
+      document.querySelectorAll('#st-cal a').forEach(function (x) { x.classList.remove('on'); });
+      a.classList.add('on'); cal = a.getAttribute('data-cal'); aplicar();
+    });
+  });
+})();
+</script>
+{% endblock %}

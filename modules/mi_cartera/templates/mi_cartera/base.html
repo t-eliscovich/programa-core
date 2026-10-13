@@ -76,6 +76,10 @@
      como lo tiene Asinfo, y el botón de mandarlos como memo a la fábrica. #}
   <a href="{{ url_for('mi_cartera.pedidos') }}{{ qp }}"
      class="{% if seccion == 'pedidos' %}on{% endif %}"><em>▤</em>Pedidos</a>
+  {# ⭐ La séptima, 13/10/2026: TODO el stock de producto terminado. Al lado de
+     Pedidos porque se miran juntos: "esto me pidieron, esto hay". #}
+  <a href="{{ url_for('mi_cartera.stock') }}{{ qp }}"
+     class="{% if seccion == 'stock' %}on{% endif %}"><em>▦</em>Stock</a>
   <a href="{{ url_for('mi_cartera.comision') }}{{ qp }}"
      class="{% if seccion == 'comision' %}on{% endif %}"><em>◆</em>Comisión</a>
   {# ⭐ La cuarta pestaña, 25/08/2026: la Competencia. Va acá y no adentro de
@@ -85,7 +89,10 @@
      tienen que ser la misma cosa.
      ⚠ Sale del portal hacia la sección Análisis, que tiene su propio cascarón:
      allá arriba a la derecha hay un "← Mi Cartera" para volver. #}
-  <a href="/analisis/competencia{{ qp }}"><em>◈</em>Competencia</a>
+  {# TMT 13/10/2026 (dueña): con la séptima pestaña (Stock) "Competencia" no
+     entraba —se pisaba con la de al lado aun a 390 px—; ella eligió "Comp".
+     Sigue llevando al tablero de la competencia, no a "Saldos". #}
+  <a href="/analisis/competencia{{ qp }}"><em>◈</em>Comp</a>
   {# ⭐ La quinta pestaña, 25/08/2026 (dueña): las FICHAS TÉCNICAS de las telas.
      Van al tabbar y no adentro de otra pantalla por el mismo motivo que la
      Competencia: el vendedor las abre delante del cliente.

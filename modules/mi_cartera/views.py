@@ -1040,3 +1040,30 @@ def sugerencia_whatsapp(fecha: str, orden: int):
         except Exception:  # noqa: BLE001 — medir nunca frena el WhatsApp
             pass
     return redirect(sug["link"])
+
+
+@mi_cartera_bp.route("/mi-cartera/stock")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def stock():
+    """TODO el producto terminado de la bodega, tela por tela (13/10/2026).
+
+    Lo mismo para los seis: el stock no es de nadie, así que no se recorta por
+    vendedor — pero igual pide `_vend_actual()` para que sólo entre un vendedor
+    (o la dueña en preview). Sin plata: ni precio, ni costo, ni proveedor.
+    """
+    vend = _vend_actual()
+    from modules.asinfo import stock_terminado
+    st = stock_terminado.por_tela()
+    telas = st["telas"]
+    return render_template(
+        "mi_cartera/stock.html",
+        seccion="stock",
+        telas=telas,
+        grupos=sorted({t["grupo"] for t in telas if t["grupo"]}),
+        total_kg=sum(t["kg"] for t in telas),
+        total_rollos=sum(t["rollos"] for t in telas),
+        leido=st["leido"],
+        viejo=st["viejo"],
+        **_ctx_base(vend),
+    )
