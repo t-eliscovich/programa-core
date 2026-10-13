@@ -1,0 +1,107 @@
+{# La HOJA de la ficha técnica — A4, igual a la ficha original del programa
+   de fichas (Word/PDF de "Ficha_Tecnica_<tela>_INTELA"), para imprimir o
+   "Guardar como PDF" y mandársela al cliente. 13/10/2026.
+
+   Página suelta (sin el cascarón del portal) para que lo impreso sea sólo la
+   hoja. La barrita de arriba (Volver / Imprimir) no sale en el papel. #}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ficha técnica {{ f.nombre }} · Intela</title>
+<style>
+  @page{size:A4;margin:12mm}
+  *{box-sizing:border-box}
+  body{margin:0;background:#E9ECF1;font-family:Arial,Helvetica,sans-serif;color:#111}
+  .barra{position:sticky;top:0;z-index:2;display:flex;gap:8px;justify-content:space-between;
+    padding:10px 12px;background:#1F2937}
+  .barra a,.barra button{font:600 14px/1 Arial,sans-serif;border:0;border-radius:9px;
+    padding:10px 14px;text-decoration:none;cursor:pointer}
+  .barra a{color:#fff;background:rgba(255,255,255,.12)}
+  .barra button{color:#111;background:#fff}
+  .hoja{width:100%;max-width:190mm;margin:14px auto;background:#fff;padding:9mm 8mm;
+    box-shadow:0 2px 10px rgba(0,0,0,.12);font-size:9.5pt}
+  table{width:100%;border-collapse:collapse}
+  .cab td{border:1px solid #111;vertical-align:middle;text-align:center}
+  .cab .logo{width:30%;background:#B91C1C;color:#fff;padding:6px}
+  .cab .logo b{display:block;font-size:20pt;letter-spacing:.02em}
+  .cab .logo small{display:block;font-size:6.5pt;line-height:1.25}
+  .cab .tit{width:42%;background:#111;color:#fff;font-weight:700;padding:6px}
+  .cab .tit span{display:block;font-size:12pt}
+  .cab .tit b{display:block;font-size:12pt;margin-top:8px}
+  .cab .cod{width:28%;padding:6px;font-size:7pt;color:#444}
+  .cab .cod b{display:block;font-size:11pt;color:#111;margin:4px 0}
+  .bar{margin:10px 0 0;background:#111;color:#fff;font-weight:700;font-size:9pt;
+    padding:3px 8px;border-left:6px solid #B91C1C}
+  .grilla th{background:#D9D9D9;font-size:8pt;padding:3px 6px;border:1px solid #111}
+  .grilla td{border:1px solid #111;padding:3px 6px;font-size:8.5pt}
+  .grilla .d{font-weight:700;text-align:center;background:#F2F2F2;width:24%}
+  .grilla .c{text-align:center}
+  .lav td{height:30px}
+  .lav .n{width:7%;text-align:center}
+  .lav .s{width:20%;text-align:center}
+  .lav img{width:24px;height:24px;vertical-align:middle}
+  .caja{border:1px solid #111;padding:5px 8px;font-size:8pt;line-height:1.4}
+  .caja ul{margin:0;padding-left:12px}
+  .pie td{border:1px solid #111;text-align:center;font-size:7.5pt;padding:4px;width:33.3%;color:#444}
+  .pie b{display:block;color:#111}
+  @media print{
+    body{background:#fff}
+    .barra{display:none}
+    .hoja{margin:0;max-width:none;box-shadow:none;padding:0}
+    *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+<div class="barra">
+  <a href="{{ volver }}">‹ Volver</a>
+  <button type="button" onclick="window.print()">🖨 Imprimir / guardar PDF</button>
+</div>
+
+<div class="hoja">
+  <table class="cab"><tr>
+    <td class="logo"><b>intela</b><small>INDUSTRIA TEXTIL<br>LATINOAMERICANA C. LTDA.</small></td>
+    <td class="tit"><span>FICHA TÉCNICA</span><b>{{ f.nombre }}</b></td>
+    <td class="cod">CÓDIGO<b>{{ f.codigo }}</b>REV. {{ f.revision }} &nbsp;|&nbsp; {{ f.emision }}</td>
+  </tr></table>
+
+  <div class="bar">ESPECIFICACIONES TÉCNICAS</div>
+  <table class="grilla">
+    <tr><th>DESCRIPCIÓN</th><th>PARÁMETRO</th><th>UNIDAD</th><th>ESPECIFICACIÓN (+/-)</th></tr>
+    {% for desc, filas in f.bloques %}
+      {% for param, unidad, valor in filas %}
+        <tr>
+          {% if loop.first %}<td class="d" rowspan="{{ filas|length }}">{{ desc }}</td>{% endif %}
+          <td>{{ param }}</td><td class="c">{{ unidad }}</td><td class="c">{{ valor }}</td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+  </table>
+
+  {% if f.lavado %}
+  <div class="bar">CONDICIONES DE LAVADO</div>
+  <table class="grilla lav">
+    <tr><th>N°</th><th>INSTRUCCIONES DE CUIDADO</th><th>SÍMBOLO</th></tr>
+    {% for l in f.lavado %}
+      <tr><td class="n">{{ loop.index }}</td><td>{{ l.texto }}</td>
+        <td class="s">{% if l.simbolo %}<img src="{{ url_for('static', filename='fichas/' ~ l.simbolo) }}" alt="">{% endif %}</td></tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  <div class="bar">OBSERVACIONES TÉCNICAS</div>
+  <div class="caja"><ul>{% for o in fx.OBSERVACIONES %}<li>{{ o }}</li>{% endfor %}</ul></div>
+
+  <div class="bar">COMPROMISO AMBIENTAL</div>
+  <div class="caja">{{ fx.COMPROMISO }}</div>
+
+  <table class="pie" style="margin-top:8px"><tr>
+    <td>Elaborado por:<b>{{ fx.ELABORADO[0] }}</b>{{ fx.ELABORADO[1] }}</td>
+    <td>Aprobado por:<b>{{ fx.APROBADO[0] }}</b>{{ fx.APROBADO[1] }}</td>
+    <td>Fecha de emisión:<b>{{ f.emision }}</b>Revisión: {{ f.revision }}</td>
+  </tr></table>
+</div>
+</body>
+</html>

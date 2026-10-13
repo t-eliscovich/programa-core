@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}{{ 'Nueva ficha' if nueva else 'Ficha ' ~ f.nombre }}{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('mi_cartera.fichas_admin') }}">Fichas técnicas</a> › <strong>{{ 'Nueva' if nueva else f.codigo }}</strong>{% endblock %}
+
+{% block content %}
+{# Editar una ficha técnica (13/10/2026). La tabla de especificaciones es la
+   misma de la hoja: un renglón por parámetro; la DESCRIPCIÓN vacía hereda la
+   de arriba (como la celda combinada del Word). Un renglón sin parámetro ni
+   especificación se borra. El lavado va un renglón por instrucción; el
+   dibujo sale solo del texto (fichas.py → simbolo). #}
+{% set inp = 'padding:6px 8px;border:1px solid rgb(203 213 225);border-radius:7px;font:inherit;width:100%;box-sizing:border-box' %}
+<div style="max-width:820px">
+  {{ page_hero('Nueva ficha técnica' if nueva else f.nombre,
+       descripcion='Lo que guardes lo ven los vendedores al instante en Mi Cartera → F. técnica.') }}
+
+  <form method="post" style="display:grid;gap:14px;margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div style="display:grid;grid-template-columns:2fr 1.3fr 1fr;gap:10px">
+      <label>Tela<br><input name="nombre" value="{{ f.nombre }}" required style="{{ inp }}"></label>
+      <label>Código<br>
+        {% if nueva %}<input name="codigo" value="{{ f.codigo }}" required pattern="FT-.+" style="{{ inp }};font-family:ui-monospace,monospace">
+        {% else %}<input value="{{ f.codigo }}" disabled style="{{ inp }};font-family:ui-monospace,monospace;background:rgb(248 250 252)">{% endif %}</label>
+      <label>Sección<br><select name="seccion" style="{{ inp }}">
+        {% for s in fx.SECCIONES %}<option value="{{ s }}" {{ 'selected' if f.seccion == s }}>{{ s|capitalize }}</option>{% endfor %}
+      </select></label>
+      <label>Grupo<br><input name="grupo" value="{{ f.grupo }}" list="fe-grupos" style="{{ inp }}">
+        <datalist id="fe-grupos">{% for g_ in fx.ORDEN_GRUPOS %}<option value="{{ g_ }}">{% endfor %}</datalist></label>
+      <label>Revisión<br><input name="revision" value="{{ f.revision }}" style="{{ inp }}"></label>
+      <label>Fecha de emisión<br><input name="emision" value="{{ f.emision }}" placeholder="Julio 2026" required style="{{ inp }}"></label>
+    </div>
+
+    <fieldset style="border:1px solid rgb(226 232 240);border-radius:10px;padding:10px 12px">
+      <legend style="font-weight:700;padding:0 4px">Especificaciones técnicas</legend>
+      <table id="fe-spec" style="width:100%;border-collapse:collapse;font-size:13px">
+        <tr style="color:rgb(100 116 139);text-align:left"><th>Descripción</th><th>Parámetro</th><th>Unidad</th><th>Especificación (+/-)</th></tr>
+        {% set filas = (f.spec or []) + [['', '', '', '']] * 3 %}
+        {% for r in filas %}
+          {% set prev = filas[loop.index0 - 1] if not loop.first else None %}
+          <tr>
+            <td style="padding:2px"><input name="s_desc" value="{{ '' if prev and prev[0] == r[0] else r[0] }}" style="{{ inp }}"></td>
+            <td style="padding:2px"><input name="s_param" value="{{ r[1] }}" style="{{ inp }}"></td>
+            <td style="padding:2px;width:90px"><input name="s_unidad" value="{{ r[2] }}" style="{{ inp }}"></td>
+            <td style="padding:2px"><input name="s_valor" value="{{ r[3] }}" style="{{ inp }}"></td>
+          </tr>
+        {% endfor %}
+      </table>
+      <button type="button" id="fe-mas" style="margin-top:6px;padding:4px 10px;border-radius:7px;border:1px solid rgb(203 213 225);background:#fff">+ renglón</button>
+      <p style="font-size:12px;color:rgb(100 116 139);margin:6px 0 0">Descripción vacía = la misma de arriba. Para borrar un renglón, vaciá parámetro y especificación.</p>
+    </fieldset>
+
+    <label style="display:block"><b>Condiciones de lavado</b> <span style="font-size:12px;color:rgb(100 116 139)">— una instrucción por renglón; el dibujo sale solo</span><br>
+      <textarea name="lavado" rows="9" style="{{ inp }};font-size:13px;line-height:1.5">{% for l in f.lavado %}{{ l.texto }}
+{% endfor %}</textarea></label>
+
+    <label><input type="checkbox" name="activa" value="1" {{ 'checked' if f.activa }}> Activa (la ven los vendedores)</label>
+
+    <div style="display:flex;gap:10px">
+      <button type="submit" style="padding:8px 16px;border-radius:8px;border:0;background:rgb(67 56 202);color:#fff;font-weight:600">Guardar</button>
+      <a href="{{ url_for('mi_cartera.fichas_admin') }}" style="padding:8px 12px">Cancelar</a>
+      {% if not nueva %}<a href="{{ url_for('mi_cartera.ficha_imprimir', codigo=f.codigo) }}?volver={{ request.path|urlencode }}" style="padding:8px 12px;margin-left:auto">Ver hoja →</a>{% endif %}
+    </div>
+  </form>
+</div>
+<script>
+document.getElementById('fe-mas').addEventListener('click', function () {
+  var t = document.getElementById('fe-spec'), ult = t.rows[t.rows.length - 1].cloneNode(true);
+  ult.querySelectorAll('input').forEach(function (i) { i.value = ''; });
+  t.tBodies[0].appendChild(ult);
+});
+</script>
+{% endblock %}

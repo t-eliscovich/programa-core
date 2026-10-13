@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Fichas técnicas{% endblock %}
+{% block breadcrumb %}<strong>Fichas técnicas</strong>{% endblock %}
+
+{% block content %}
+{# 13/10/2026 — las fichas técnicas que ven los vendedores en Mi Cartera
+   (pestaña F. técnica). Copiadas una vez del programa de fichas de afuera;
+   desde acá se corrigen. Permiso fichas.editar, sin rol: entra por *.
+   Tailwind está congelado → estilos inline. #}
+<div style="max-width:980px;font-variant-numeric:tabular-nums;">
+  {{ page_hero('Fichas técnicas',
+       descripcion='Las que ven los vendedores en Mi Cartera → F. técnica. Lo que cambies acá lo ven al instante.',
+       kpi_valor=(fichas|selectattr('activa')|list|length) ~ '',
+       kpi_extra='activas') }}
+
+  <div style="display:flex;gap:10px;align-items:center;margin:12px 0">
+    <input id="fa-q" type="search" placeholder="Buscar tela o código…" autocomplete="off"
+           style="flex:1;max-width:320px;padding:7px 10px;border:1px solid rgb(203 213 225);border-radius:8px">
+    <a href="{{ url_for('mi_cartera.ficha_editar') }}"
+       style="padding:7px 12px;border-radius:8px;background:rgb(67 56 202);color:#fff;font-weight:600;text-decoration:none">+ Nueva ficha</a>
+  </div>
+
+  {% if sin_base %}
+    <p style="color:rgb(185 28 28)">No pude leer las fichas de la base.</p>
+  {% endif %}
+
+  <table id="fa-tabla" style="width:100%;border-collapse:collapse;font-size:13px;background:#fff;border:1px solid rgb(226 232 240)">
+    <thead><tr style="background:rgb(248 250 252);text-align:left;color:rgb(71 85 105)">
+      <th style="padding:7px 10px">Tela</th><th style="padding:7px 10px">Código</th>
+      <th style="padding:7px 10px">Sección · grupo</th><th style="padding:7px 10px">Composición</th>
+      <th style="padding:7px 10px">Peso · ancho · rend.</th><th style="padding:7px 10px">Última edición</th><th></th>
+    </tr></thead>
+    <tbody>
+    {% for f in fichas %}
+      <tr id="f-{{ f.codigo }}" data-buscar="{{ f.buscar }}" style="border-top:1px solid rgb(241 245 249){{ ';opacity:.5' if not f.activa }}">
+        <td style="padding:6px 10px;font-weight:600">{{ f.nombre }}{% if not f.activa %} <span style="font-weight:400;color:rgb(185 28 28)">(dada de baja)</span>{% endif %}</td>
+        <td style="padding:6px 10px;font-family:ui-monospace,monospace;font-size:12px">{{ f.codigo }}</td>
+        <td style="padding:6px 10px">{{ f.seccion|capitalize }} · {{ f.grupo }}</td>
+        <td style="padding:6px 10px">{{ f.resumen_comp }}</td>
+        <td style="padding:6px 10px;white-space:nowrap">{{ f.resumen_car }}</td>
+        <td style="padding:6px 10px;color:rgb(100 116 139);font-size:12px;white-space:nowrap">
+          {% if f.actualizado_por %}{{ f.actualizado_por }} · {{ f.actualizado_en|fecha_hora_ec }}{% else %}copia original{% endif %}</td>
+        <td style="padding:6px 10px;white-space:nowrap">
+          <a href="{{ url_for('mi_cartera.ficha_editar', codigo=f.codigo) }}">Editar</a> ·
+          <a href="{{ url_for('mi_cartera.ficha_imprimir', codigo=f.codigo) }}?volver={{ url_for('mi_cartera.fichas_admin')|urlencode }}">Ver hoja</a>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+<script>
+(function () {
+  var q = document.getElementById('fa-q');
+  var filas = document.querySelectorAll('#fa-tabla tbody tr');
+  function norm(s) { return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  q.addEventListener('input', function () {
+    var p = norm(q.value).split(/\s+/).filter(Boolean);
+    filas.forEach(function (f) { f.style.display = p.every(function (x) { return f.dataset.buscar.indexOf(x) >= 0; }) ? '' : 'none'; });
+  });
+})();
+</script>
+{% endblock %}

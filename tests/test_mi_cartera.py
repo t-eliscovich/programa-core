@@ -2729,17 +2729,14 @@ def test_el_vendedor_puede_cerrar_sesion(vendedor_logueado, monkeypatch):
     assert "csrf_token" in cuenta
 
 
-def test_la_ficha_tecnica_abre_en_la_misma_ventana(vendedor_logueado, monkeypatch):
-    """⚖️ DECISIÓN REVERTIDA el 2026-10-13.
+def test_la_ficha_tecnica_es_una_pantalla_de_la_app(vendedor_logueado, monkeypatch):
+    """⚖️ DECISIÓN REVERTIDA DOS VECES.
 
-    Desde el 25/08 la ficha técnica abría en OTRA pestaña (con el argumento
-    de que abriendo encima el vendedor quedaba afuera de Mi Cartera). La dueña:
-    *"se van y es difícil volver"* — la pestaña nueva era justamente lo que
-    los perdía. Ahora abre en la MISMA ventana: con Mi Cartera instalada
-    (PWA), un sitio de afuera se abre DENTRO de la app con una ✕ que vuelve;
-    en el navegador, vuelve con "atrás". Un iframe no sirve: es otro programa
-    con su propio login y el navegador no guarda esa sesión adentro de una
-    página ajena.
+    25/08: la ficha técnica abría el programa de fichas de AFUERA (Render) en
+    otra pestaña. 13/10 a la mañana: en la misma ventana (*"se van y es difícil
+    volver"*). 13/10 a la tarde (dueña, "caso B: copiamos todo lo de ficha
+    técnica"): las 90 fichas viven ADENTRO de Programa Core y la pestaña es
+    una pantalla más del portal. Nada del tabbar sale de la app.
     """
     monkeypatch.setattr(q, "mis_clientes", lambda vend: [])
     monkeypatch.setattr(q, "nombre_vendedor", lambda vend: "Roberto Miranda")
@@ -2757,10 +2754,8 @@ def test_la_ficha_tecnica_abre_en_la_misma_ventana(vendedor_logueado, monkeypatc
     # TMT 27/08: el rótulo es "F. técnica" — el largo envolvía a dos
     # renglones con 6 pestañas y agrandaba la barra.
     assert "F. técnica" in tabbar
-    tags = [x for x in tabbar.split("<a ") if "fichas-tecnicas" in x]
-    assert len(tags) == 1, "la ficha técnica es UN link del tabbar"
-    assert 'target="_blank"' not in tags[0]
-    assert "noopener" in tags[0]
+    assert 'href="/mi-cartera/fichas"' in tabbar
+    assert "onrender.com" not in tabbar and "http" not in tabbar
 
 
 def test_la_ruta_de_salida_no_esta_bloqueada_por_el_allowlist():

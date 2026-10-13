@@ -56,5 +56,10 @@
      que vuelve; en el navegador, vuelve con "atrás". Meterla en un iframe
      no sirve: es un programa aparte con su propio login, y el navegador no
      guarda la sesión de otro sitio adentro de una página (en iPhone, nunca). #}
-  <a href="https://fichas-tecnicas-czvd.onrender.com/" rel="noopener"><em>▣</em>F. técnica</a>
+  {# ⭐ 13/10/2026 (dueña, "caso B: copiamos todo lo de ficha técnica"): las 90
+     fichas ahora viven ADENTRO de Programa Core (mig 0262, fichas.py). La
+     pestaña ya no sale de la app; lo de arriba sobre Render queda como
+     historia. Se editan en /admin/fichas-tecnicas. #}
+  <a href="{{ url_for('mi_cartera.fichas_lista') }}{{ qp }}"
+     class="{% if seccion == 'fichas' %}on{% endif %}"><em>▣</em>F. técnica</a>
 </nav>

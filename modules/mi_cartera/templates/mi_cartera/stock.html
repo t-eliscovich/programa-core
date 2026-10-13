@@ -50,6 +50,7 @@
            data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
     <summary>
       <b class="tn">{{ t.tela }}</b>
+      {%- if ficha_de and ficha_de.get(t.tela) %}<a class="st-ft" href="{{ url_for('mi_cartera.ficha', codigo=ficha_de[t.tela]) }}{{ ('?vend=' ~ vend) if preview else '' }}" title="Ficha técnica" aria-label="Ficha técnica de {{ t.tela }}">📄</a>{% endif %}
       <span class="nc n-col">{{ t.colores|length }} color{{ '' if t.colores|length == 1 else 'es' }}</span>
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
@@ -111,6 +112,7 @@
   .kg{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:52px}
   .st-tela summary .kg{font-size:14.5px}
   .st-tela[open] summary .tn{color:var(--accent)}
+  .st-ft{flex:0 0 auto;font-size:13px;text-decoration:none;opacity:.75}
   .st-col{display:flex;align-items:baseline;gap:6px;padding:5px 0 5px 10px;font-size:13px;
     border-left:2px solid var(--accent-soft)}
   .st-col:last-child{margin-bottom:8px}

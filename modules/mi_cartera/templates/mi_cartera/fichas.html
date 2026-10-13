@@ -1,0 +1,117 @@
+{# F. técnica — las fichas técnicas de las telas, ADENTRO de Mi Cartera.
+
+   13/10/2026 (Tamara): antes la pestaña llevaba a un programa aparte y el
+   vendedor "se iba y le costaba volver". Ahora son una copia propia (ver
+   modules/mi_cartera/fichas.py), con la barra de abajo siempre a mano.
+
+   La lista muestra lo que el vendedor busca con el cliente adelante —la
+   composición y peso · ancho · rendimiento— sin abrir nada. El buscador es el
+   mismo que el de Stock: por palabras, sin tildes, mientras se tipea; busca
+   en el nombre, el código FT-… y el grupo. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'fichas' %}
+{% block title %}Fichas técnicas{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Fichas técnicas</h1>
+      <div class="sub"><span id="ft-sub">{{ fichas|length }} telas</span></div>
+    </div>
+  </div>
+  <form class="search" onsubmit="return false">
+    <input type="search" id="ft-q" placeholder="Buscar tela o código…"
+           autocomplete="off" enterkeyhint="search" aria-label="Buscar tela o código">
+  </form>
+  <div class="ft-sec" id="ft-sec">
+    <a href="#" data-sec="" class="on">Todas</a><a href="#" data-sec="tubular">Tubular <i>{{ n_tub }}</i></a><a href="#" data-sec="abierto">Abierto <i>{{ n_abi }}</i></a>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% set qp = ('?vend=' ~ vend) if preview else '' %}
+{% if sin_base %}
+  <div class="vacio">No pude leer las fichas. Probá de nuevo en un rato.</div>
+{% elif fichas %}
+<div class="card ft-lista" id="ft-lista">
+  {% for f in fichas %}
+    {% if loop.first or f.seccion != loop.previtem.seccion or f.grupo != loop.previtem.grupo %}
+      <div class="ft-g" data-sec="{{ f.seccion }}">{{ f.seccion|capitalize }} · {{ f.grupo }}</div>
+    {% endif %}
+    <a class="ft-f" href="{{ url_for('mi_cartera.ficha', codigo=f.codigo) }}{{ qp }}"
+       data-sec="{{ f.seccion }}" data-buscar="{{ f.buscar }}">
+      <span class="ft-t">
+        <b>{{ f.nombre }}</b>
+        <span class="ft-c">{{ f.resumen_comp }}</span>
+        <span class="ft-c">{{ f.resumen_car }}</span>
+      </span>
+      <span class="ft-k">{{ f.codigo }}</span>
+      <span class="ft-a" aria-hidden="true">›</span>
+    </a>
+  {% endfor %}
+</div>
+<div class="vacio" id="ft-vacio" hidden></div>
+{% else %}
+  <div class="vacio">Todavía no hay fichas cargadas.</div>
+{% endif %}
+
+<style>
+  .appbar .search{margin:8px 0 0}
+  .appbar .search input{padding:8px 12px;font-size:15px;width:100%;min-width:0;box-sizing:border-box}
+  .ft-sec{display:flex;background:#EDEFF4;border-radius:9px;padding:2px;margin-top:8px}
+  .ft-sec a{flex:1 1 0;text-align:center;font-size:13px;font-weight:600;color:var(--ink-2);
+    padding:5px 6px;border-radius:7px;white-space:nowrap}
+  .ft-sec a i{font-style:normal;font-weight:500;color:var(--ink-3);font-size:11.5px}
+  .ft-sec a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.10)}
+  .ft-lista{padding:0 12px}
+  .ft-g{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--ink-3);padding:12px 0 4px;border-bottom:1px solid var(--line)}
+  .ft-f{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);
+    color:inherit;text-decoration:none}
+  .ft-f:last-child{border-bottom:0}
+  .ft-t{flex:1 1 auto;min-width:0;display:flex;flex-direction:column}
+  .ft-t b{font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ft-c{font-size:12px;color:var(--ink-2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+    font-variant-numeric:tabular-nums}
+  .ft-k{flex:0 0 auto;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10.5px;
+    color:var(--ink-3);max-width:34%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .ft-a{flex:0 0 auto;font-size:20px;color:var(--ink-3);line-height:1}
+  [hidden]{display:none!important}
+</style>
+
+<script>
+(function () {
+  var q = document.getElementById('ft-q'), lista = document.getElementById('ft-lista');
+  if (!q || !lista) { return; }
+  var filas = lista.querySelectorAll('.ft-f'), grupos = lista.querySelectorAll('.ft-g');
+  var vacio = document.getElementById('ft-vacio'), sub = document.getElementById('ft-sub');
+  var total = filas.length, sec = '', t = null;
+  function norm(s) { return (s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase(); }
+  function aplicar() {
+    var palabras = norm(q.value).split(/\s+/).filter(Boolean), n = 0;
+    filas.forEach(function (f) {
+      var ok = (!sec || f.dataset.sec === sec) && palabras.every(function (p) {
+        return f.dataset.buscar.indexOf(p) >= 0; });
+      f.hidden = !ok; if (ok) { n++; }
+    });
+    // Un título de grupo se ve si queda alguna ficha suya debajo.
+    grupos.forEach(function (g) {
+      var el = g.nextElementSibling, alguna = false;
+      while (el && el.classList.contains('ft-f')) { if (!el.hidden) { alguna = true; } el = el.nextElementSibling; }
+      g.hidden = !alguna;
+    });
+    lista.hidden = n === 0;
+    vacio.hidden = n !== 0;
+    vacio.textContent = 'Ninguna ficha con «' + q.value.trim() + '»' + (sec ? ' en ' + sec : '') + '.';
+    sub.textContent = n === total ? total + ' telas' : n + ' de ' + total + ' telas';
+  }
+  q.addEventListener('input', function () { clearTimeout(t); t = setTimeout(aplicar, 120); });
+  document.getElementById('ft-sec').addEventListener('click', function (e) {
+    var a = e.target.closest('a'); if (!a) { return; }
+    e.preventDefault(); sec = a.dataset.sec;
+    this.querySelectorAll('a').forEach(function (x) { x.classList.toggle('on', x === a); });
+    aplicar();
+  });
+})();
+</script>
+{% endblock %}

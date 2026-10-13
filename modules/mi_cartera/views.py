@@ -42,7 +42,7 @@ from modules.pedidos import service as pedidos_service
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
-from . import avisos_vend, queries, sugerencias
+from . import avisos_vend, fichas, queries, sugerencias
 
 mi_cartera_bp = Blueprint("mi_cartera", __name__, template_folder="templates")
 
@@ -1086,10 +1086,15 @@ def stock():
                     "solo_seg": f.get("motivo") == "segunda"}
     except Exception:  # noqa: BLE001 — la marca es un adorno, no un freno
         comp = {}
+    # La ficha técnica de cada tela, si hay una con el mismo nombre (13/10):
+    # un 📄 chiquito al lado del nombre, para no ir a buscarla a otra pestaña.
+    mapa = fichas.por_tela()
+    ficha_de = {t["tela"]: cod for t in telas
+                if (cod := mapa.get(fichas.clave_tela(t["tela"])))}
     return render_template(
         "mi_cartera/stock.html",
         seccion="stock",
-        telas=telas, comp=comp,
+        telas=telas, comp=comp, ficha_de=ficha_de,
         grupos=sorted({t["grupo"] for t in telas if t["grupo"]}),
         total_kg=sum(t["kg"] for t in telas),
         total_rollos=sum(t["rollos"] for t in telas),
@@ -1097,6 +1102,106 @@ def stock():
         viejo=st["viejo"],
         **_ctx_base(vend),
     )
+
+
+# ── F. técnica: las fichas de las telas, ADENTRO de la app (13/10/2026) ──────
+# Antes la pestaña llevaba a un programa aparte (Render, otra clave) y el
+# vendedor se perdía afuera. Ahora es una copia propia: ver fichas.py.
+
+@mi_cartera_bp.route("/mi-cartera/fichas")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def fichas_lista():
+    vend = _vend_actual()
+    filas = fichas.lista()
+    return render_template(
+        "mi_cartera/fichas.html", seccion="fichas", fichas=filas or [],
+        sin_base=filas is None,
+        n_tub=sum(1 for f in filas or [] if f["seccion"] == "tubular"),
+        n_abi=sum(1 for f in filas or [] if f["seccion"] == "abierto"),
+        **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/fichas/<codigo>")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def ficha(codigo: str):
+    vend = _vend_actual()
+    f = fichas.una(codigo)
+    if not f or not f["activa"]:
+        abort(404)
+    return render_template("mi_cartera/ficha.html", seccion="fichas", f=f,
+                           fx_obs=fichas.OBSERVACIONES, fx_compromiso=fichas.COMPROMISO,
+                           **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/fichas/<codigo>/imprimir")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def ficha_imprimir(codigo: str):
+    """La hoja A4, igual a la ficha original, para imprimir o guardar en PDF
+    y mandársela al cliente. La usan el vendedor y la oficina."""
+    if not tiene_permiso("fichas.editar"):
+        _vend_actual()
+    f = fichas.una(codigo)
+    if not f or not (f["activa"] or tiene_permiso("fichas.editar")):
+        abort(404)
+    volver = request.args.get("volver") or ""
+    if not volver.startswith("/") or volver.startswith("//"):
+        volver = url_for("mi_cartera.ficha", codigo=f["codigo"])
+    return render_template("mi_cartera/ficha_hoja.html", f=f, fx=fichas, volver=volver)
+
+
+# La edición vive en /admin (el candado de vendedores no la deja ver) y pide
+# `fichas.editar`, que no tiene ningún rol: entra sólo quien tiene `*`.
+
+@mi_cartera_bp.route("/admin/fichas-tecnicas")
+@requiere_login
+@requiere_permiso("fichas.editar")
+def fichas_admin():
+    filas = fichas.lista(todas=True)
+    return render_template("mi_cartera/fichas_admin.html", fichas=filas or [],
+                           sin_base=filas is None)
+
+
+@mi_cartera_bp.route("/admin/fichas-tecnicas/nueva", methods=["GET", "POST"])
+@mi_cartera_bp.route("/admin/fichas-tecnicas/<codigo>", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("fichas.editar")
+def ficha_editar(codigo: str | None = None):
+    nueva = codigo is None
+    f = None if nueva else fichas.una(codigo)
+    if not nueva and not f:
+        abort(404)
+    if request.method == "POST":
+        cod = (request.form.get("codigo") or "") if nueva else f["codigo"]
+        try:
+            datos = fichas.leer_form(request.form)
+            fichas.guardar(cod, datos, nueva=nueva,
+                           por=(g.get("user") or {}).get("username") or "")
+        except ValueError as e:
+            flash(str(e), "error")
+            borrador = {**(f or {}), **request.form.to_dict(), "codigo": cod,
+                        "spec": [list(x) for x in zip(
+                            request.form.getlist("s_desc"), request.form.getlist("s_param"),
+                            request.form.getlist("s_unidad"), request.form.getlist("s_valor"),
+                            strict=False)],
+                        "lavado": [{"texto": t} for t in
+                                   (request.form.get("lavado") or "").splitlines() if t.strip()],
+                        "activa": bool(request.form.get("activa"))}
+            return render_template("mi_cartera/ficha_editar.html", f=borrador,
+                                   nueva=nueva, fx=fichas), 400
+        flash(f"Ficha {cod.strip().upper()} guardada.", "success")
+        return redirect(url_for("mi_cartera.fichas_admin") + f"#f-{cod.strip().upper()}")
+    if nueva:
+        f = {"codigo": "FT-", "nombre": "", "seccion": "tubular", "grupo": "",
+             "revision": "01", "emision": "", "activa": True,
+             "spec": [["COMPOSICIÓN", "Poliéster", "%", ""],
+                      ["CARACTERÍSTICAS", "Peso", "g/m²", ""],
+                      ["", "Ancho", "cm", ""], ["", "Rendimiento", "m/kg", ""],
+                      ["ENCOGIMIENTO", "Ancho", "%", "5 MAX"], ["", "Largo", "%", "5 MAX"]],
+             "lavado": []}
+    return render_template("mi_cartera/ficha_editar.html", f=f, nueva=nueva, fx=fichas)
 
 
 @mi_cartera_bp.route("/mi-cartera/avisos")
