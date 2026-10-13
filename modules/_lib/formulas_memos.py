@@ -336,3 +336,127 @@ def actualizar(numero: str, detalle: dict, cambio: dict | None,
     except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
         _log.warning("formulas_memos.actualizar falló: %s", e)
         return False, "sin_bridge"
+
+
+# ── Mensajes del memo entre el vendedor y la fábrica (2026-10-13) ───────────
+# Tamara: "para la oficina puede ser para memos… que le llegue a Jonathan en
+# la aplicación de formulas app". La tabla `memo_mensajes` es de formulas_app
+# (la crea su init_db); este rol puede INSERT y UPDATE sólo de `leido_en`.
+# `de` = 'vendedor' (lo escribe Programa Core) o 'fabrica' (Jonathan, en
+# /memos). `leido_en` = lo leyó el OTRO lado.
+
+def _vend_de_memo_sql() -> str:
+    # 'PPR · Patricio Proano' → 'PPR'. El formato lo arma Programa Core.
+    return "UPPER(TRIM(split_part(m.vendedor, '·', 1)))"
+
+
+def mensajes_disponible() -> bool:
+    """True si el bridge está y la tabla existe (formulas_app ya deployado)."""
+    if _pool is None:
+        return False
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute("SELECT to_regclass('public.memo_mensajes') IS NOT NULL")
+            ok = bool(cur.fetchone()[0])
+            c.rollback()
+        return ok
+    except Exception as e:  # noqa: BLE001
+        _log.warning("formulas_memos.mensajes_disponible falló: %s", e)
+        return False
+
+
+def mensajes(numeros: list[str]) -> dict[str, list[dict]]:
+    """`{pedido_numero: [{de, autor, texto, creado_en, leido_en}]}`, el más
+    viejo primero. {} si no hay bridge."""
+    if _pool is None or not numeros:
+        return {}
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                SELECT pedido_numero, de, autor, texto, creado_en, leido_en
+                  FROM memo_mensajes
+                 WHERE pedido_numero = ANY(%s)
+                 ORDER BY creado_en, id
+                """, (list(numeros),))
+            filas = cur.fetchall()
+            c.rollback()
+    except Exception as e:  # noqa: BLE001
+        _log.warning("formulas_memos.mensajes falló: %s", e)
+        return {}
+    out: dict[str, list[dict]] = {}
+    for num, de, autor, texto, creado, leido in filas:
+        out.setdefault(num, []).append({"de": de, "autor": autor, "texto": texto,
+                                        "creado_en": creado, "leido_en": leido})
+    return out
+
+
+def escribir_mensaje(numero: str, vend: str, texto: str) -> tuple[bool, str]:
+    """El vendedor le escribe a la fábrica sobre SU memo. Sólo si el memo
+    existe y es de ese vendedor (el cerco de dueño lo hace también la vista)."""
+    texto = (texto or "").strip()[:1000]
+    if not texto:
+        return False, "vacio"
+    if _pool is None:
+        return False, "sin_bridge"
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT 1 FROM memos m
+                 WHERE m.pedido_numero = %s AND {_vend_de_memo_sql()} = %s
+                """, (numero, (vend or "").upper()))
+            if not cur.fetchone():
+                c.rollback()
+                return False, "sin_memo"
+            cur.execute(
+                "INSERT INTO memo_mensajes (pedido_numero, de, autor, texto) "
+                "VALUES (%s, 'vendedor', %s, %s)", (numero, (vend or "").upper(), texto))
+            c.commit()
+        return True, "ok"
+    except Exception as e:  # noqa: BLE001
+        _log.warning("formulas_memos.escribir_mensaje falló: %s", e)
+        return False, "error"
+
+
+def marcar_leidos_por_vendedor(numeros: list[str]) -> None:
+    """El vendedor vio sus pedidos: los mensajes de la fábrica quedan leídos."""
+    if _pool is None or not numeros:
+        return
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE memo_mensajes SET leido_en = now()
+                 WHERE pedido_numero = ANY(%s) AND de = 'fabrica' AND leido_en IS NULL
+                """, (list(numeros),))
+            c.commit()
+    except Exception as e:  # noqa: BLE001
+        _log.warning("formulas_memos.marcar_leidos_por_vendedor falló: %s", e)
+
+
+def nuevos_de_la_fabrica(vend: str, dias: int = 30) -> list[dict]:
+    """Los mensajes de la fábrica en los memos de este vendedor (30 días),
+    con si ya los leyó. Para su campanita."""
+    if _pool is None or not vend:
+        return []
+    try:
+        with _conn() as c, c.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT mm.pedido_numero, m.detalle->'cliente'->>'codigo', mm.texto,
+                       mm.creado_en, mm.leido_en
+                  FROM memo_mensajes mm
+                  JOIN memos m ON m.pedido_numero = mm.pedido_numero
+                 WHERE mm.de = 'fabrica' AND {_vend_de_memo_sql()} = %s
+                   AND mm.creado_en >= now() - make_interval(days => %s)
+                 ORDER BY mm.creado_en DESC
+                 LIMIT 50
+                """, ((vend or "").upper(), dias))
+            filas = cur.fetchall()
+            c.rollback()
+    except Exception as e:  # noqa: BLE001
+        _log.warning("formulas_memos.nuevos_de_la_fabrica falló: %s", e)
+        return []
+    return [{"numero": n, "cliente": cli or "", "texto": t, "creado_en": cr,
+             "leido": le is not None} for n, cli, t, cr, le in filas]

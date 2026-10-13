@@ -72,6 +72,11 @@
     <span class="cp-v">Ver →</span>
   </a>
 {% endif %}
+{# Los mensajes de confirmación/error (flash). El portal no los dibujaba
+   nunca: "Memo enviado a la fábrica" no le aparecía al vendedor. 13/10/2026. #}
+{% with msgs = get_flashed_messages(with_categories=true) %}{% for cat, txt in msgs %}
+  <div class="flash {{ 'mal' if cat in ('error', 'danger') else ('ojo' if cat == 'warning' else 'bien') }}">{{ txt }}</div>
+{% endfor %}{% endwith %}
 {% block content %}{% endblock %}
 </main>
 

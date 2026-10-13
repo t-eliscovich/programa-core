@@ -194,3 +194,113 @@ def test_abrir_los_avisos_los_marca_vistos(vendedor, monkeypatch):
     r = vendedor.get("/mi-cartera/avisos")
     assert r.status_code == 200 and "GIC pasó a rojo" in r.data.decode()
     assert vistos == ["PPR"]
+
+
+# ---------------------------------------------------------------------------
+# Mensajes con Jonathan (formulas_app.memo_mensajes)
+# ---------------------------------------------------------------------------
+
+from unittest.mock import MagicMock  # noqa: E402
+
+from modules._lib import formulas_memos as fm  # noqa: E402
+
+
+@pytest.fixture
+def pool_fake():
+    original = fm._pool
+    cur = MagicMock()
+    conn = MagicMock()
+    conn.cursor.return_value.__enter__.return_value = cur
+    fm._pool = MagicMock()
+    fm._pool.getconn.return_value = conn
+    yield cur, conn
+    fm._pool = original
+
+
+def test_el_vendedor_no_escribe_en_un_memo_ajeno(pool_fake):
+    cur, conn = pool_fake
+    cur.fetchone.return_value = None  # el memo no es suyo
+    assert fm.escribir_mensaje("PDCL-1", "PPR", "hola") == (False, "sin_memo")
+    assert not any("INSERT" in str(c) for c in cur.execute.call_args_list)
+    conn.commit.assert_not_called()
+
+
+def test_el_vendedor_escribe_en_su_memo(pool_fake):
+    cur, conn = pool_fake
+    cur.fetchone.return_value = (1,)
+    assert fm.escribir_mensaje("PDCL-1", "ppr", "  para el viernes  ") == (True, "ok")
+    sql, params = cur.execute.call_args_list[-1].args
+    assert "INSERT INTO memo_mensajes" in sql and params == ("PDCL-1", "PPR", "para el viernes")
+    conn.commit.assert_called_once()
+
+
+def test_mensaje_vacio_ni_pregunta(pool_fake):
+    cur, _ = pool_fake
+    assert fm.escribir_mensaje("PDCL-1", "PPR", "   ") == (False, "vacio")
+    cur.execute.assert_not_called()
+
+
+def test_sin_bridge_los_mensajes_no_rompen():
+    original = fm._pool
+    fm._pool = None
+    try:
+        assert fm.mensajes(["X"]) == {}
+        assert fm.escribir_mensaje("X", "PPR", "hola") == (False, "sin_bridge")
+        assert fm.nuevos_de_la_fabrica("PPR") == []
+        assert fm.mensajes_disponible() is False
+        fm.marcar_leidos_por_vendedor(["X"])
+    finally:
+        fm._pool = original
+
+
+def test_los_mensajes_de_jonathan_van_a_la_campanita(monkeypatch):
+    from datetime import UTC, datetime
+    monkeypatch.setattr(av, "charla_disponible", lambda: True)
+    monkeypatch.setattr(fm, "nuevos_de_la_fabrica", lambda v: [
+        {"numero": "PDCL-32677", "cliente": "GIC", "texto": "Sale el jueves",
+         "creado_en": datetime(2026, 10, 13, 19, 20, tzinfo=UTC), "leido": False},
+        {"numero": "PDCL-1", "cliente": "", "texto": "viejo",
+         "creado_en": datetime(2026, 10, 1, tzinfo=UTC), "leido": True}])
+    monkeypatch.setattr(av, "db", _DB())
+    monkeypatch.setattr(av, "asegurar_foto_de_hoy", lambda: None)
+    monkeypatch.setattr(av, "_competencia", lambda v: (None, False))
+    nuevos, viejos = av.lista("PPR")
+    assert [x["titulo"] for x in nuevos] == ["Jonathan, sobre PDCL-32677 (GIC)"]
+    assert nuevos[0]["url"] == "/mi-cartera/pedidos#ped-PDCL-32677"
+    assert [x["detalle"] for x in viejos] == ["viejo"]
+    assert av.n_nuevos("PPR") == 1
+
+
+def test_charlas_cuenta_solo_lo_no_leido_de_la_fabrica(monkeypatch):
+    from datetime import UTC, datetime
+    t = datetime(2026, 10, 13, 15, tzinfo=UTC)
+    monkeypatch.setattr(av, "charla_disponible", lambda: True)
+    monkeypatch.setattr(fm, "mensajes", lambda nums: {"A": [
+        {"de": "vendedor", "texto": "?", "creado_en": t, "leido_en": None},
+        {"de": "fabrica", "texto": "sí", "creado_en": t, "leido_en": None},
+        {"de": "fabrica", "texto": "ok", "creado_en": t, "leido_en": t}]})
+    charla, nuevos = av.charlas(["A"], "PPR")
+    assert [m["de"] for m in charla["A"]] == ["vendedor", "fabrica", "fabrica"]
+    assert nuevos == {"A": 1}
+
+
+def test_mandar_mensaje_de_un_pedido_ajeno_da_404(vendedor, monkeypatch):
+    from modules.mi_cartera import views
+    monkeypatch.setattr(views.pedidos_service, "por_pedido",
+                        lambda *a, **k: ([{"numero": "PDCL-9", "dueno": {"codigo": "EDG"}}], True))
+    escritos = []
+    monkeypatch.setattr(fm, "escribir_mensaje", lambda *a: escritos.append(a) or (True, "ok"))
+    r = vendedor.post("/mi-cartera/pedidos/mensaje", data={"numero": "PDCL-9", "texto": "hola"})
+    assert r.status_code == 404 and escritos == []
+
+
+def test_mandar_mensaje_de_un_pedido_propio(vendedor, monkeypatch):
+    from modules.mi_cartera import views
+    monkeypatch.setattr(views.pedidos_service, "por_pedido",
+                        lambda *a, **k: ([{"numero": "PDCL-9", "dueno": {"codigo": "PPR"}}], True))
+    escritos = []
+    monkeypatch.setattr(views.formulas_memos, "escribir_mensaje",
+                        lambda *a: escritos.append(a) or (True, "ok"))
+    r = vendedor.post("/mi-cartera/pedidos/mensaje", data={"numero": "PDCL-9", "texto": "hola"})
+    assert r.status_code in (302, 303) and r.headers["Location"].endswith("#ped-PDCL-9")
+    assert escritos == [("PDCL-9", "PPR", "hola")]

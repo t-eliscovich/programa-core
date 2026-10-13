@@ -200,8 +200,19 @@ def lista(vend: str) -> tuple[list[dict], list[dict]]:
         filas = []
     for f in filas:
         it = {"tipo": f["tipo"], "titulo": f["titulo"], "detalle": f["detalle"],
-              "url": f["url"] or "/mi-cartera", "cuando": _cuando(f["creado_en"])}
+              "url": f["url"] or "/mi-cartera", "cuando": _cuando(f["creado_en"]),
+              "_t": f["creado_en"]}
         (viejos if f["visto_en"] else nuevos).append(it)
+    try:
+        for it, nuevo in _de_jonathan(vend):
+            (nuevos if nuevo else viejos).append(it)
+    except Exception as e:  # noqa: BLE001
+        _LOG.warning("mensajes de Jonathan para %s: %s", vend, e)
+    def _orden(it):
+        t = it.get("_t")
+        return t.timestamp() if isinstance(t, datetime) else 0
+    nuevos.sort(key=_orden, reverse=True)
+    viejos.sort(key=_orden, reverse=True)
     comp, comp_nueva = _competencia(vend)
     if comp:
         (nuevos if comp_nueva else viejos).insert(0, comp)
@@ -225,6 +236,10 @@ def n_nuevos(vend: str) -> int:
         n = int((r or {}).get("n") or 0)
     except Exception:  # noqa: BLE001
         n = 0
+    try:
+        n += sum(1 for _, nuevo in _de_jonathan(vend) if nuevo)
+    except Exception:  # noqa: BLE001
+        pass
     return n
 
 
@@ -355,14 +370,54 @@ def foto_de(id_reporte: int) -> tuple[bytes, str] | None:
 
 # ── Mensajes del memo (fase 2: formulas_app) ─────────────────────────────────
 
+_charla_ok = {"t": 0.0, "ok": False}
+
+
 def charla_disponible() -> bool:
-    """Los mensajes con Jonathan necesitan su tabla en formulas_app (fase 2).
-    Hasta entonces la conversación no se muestra: mejor nada que un cuadro
-    donde se escribe y no le llega a nadie."""
-    return False
+    """Los mensajes con Jonathan necesitan su tabla en formulas_app. Sin ella
+    la conversación no se muestra: mejor nada que un cuadro donde se escribe
+    y no le llega a nadie. Se pregunta cada 5 minutos, no en cada pantalla."""
+    import time
+
+    from modules._lib import formulas_memos
+    if time.monotonic() - _charla_ok["t"] > 300:
+        _charla_ok.update(t=time.monotonic(), ok=formulas_memos.mensajes_disponible())
+    return _charla_ok["ok"]
 
 
 def charlas(numeros: list[str], vend: str) -> tuple[dict, dict]:
-    """({numero: [mensajes]}, {numero: n_no_leidos}). Vacío hasta que exista
-    la tabla de mensajes en formulas_app."""
-    return {}, {}
+    """({numero: [mensajes]}, {numero: n_no_leidos}) de los pedidos del
+    vendedor. Los de la fábrica que no leyó cuentan como nuevos."""
+    if not numeros or not charla_disponible():
+        return {}, {}
+    from modules._lib import formulas_memos
+    crudo = formulas_memos.mensajes(numeros)
+    out, nuevos = {}, {}
+    for num, msgs in crudo.items():
+        out[num] = [{"de": m["de"], "texto": m["texto"],
+                     "cuando": _cuando(m["creado_en"])} for m in msgs]
+        n = sum(1 for m in msgs if m["de"] == "fabrica" and not m["leido_en"])
+        if n:
+            nuevos[num] = n
+    return out, nuevos
+
+
+def marcar_charlas_leidas(numeros: list[str]) -> None:
+    if numeros and charla_disponible():
+        from modules._lib import formulas_memos
+        formulas_memos.marcar_leidos_por_vendedor(numeros)
+
+
+def _de_jonathan(vend: str) -> list[tuple[dict, bool]]:
+    """Los mensajes de la fábrica para la campanita: (item, nuevo)."""
+    if not charla_disponible():
+        return []
+    from modules._lib import formulas_memos
+    out = []
+    for m in formulas_memos.nuevos_de_la_fabrica(vend):
+        cli = f" ({m['cliente']})" if m["cliente"] else ""
+        out.append(({"tipo": "jonathan", "titulo": f"Jonathan, sobre {m['numero']}{cli}",
+                     "detalle": (m["texto"] or "")[:200], "cuando": _cuando(m["creado_en"]),
+                     "url": f"/mi-cartera/pedidos#ped-{m['numero']}", "_t": m["creado_en"]},
+                    not m["leido"]))
+    return out

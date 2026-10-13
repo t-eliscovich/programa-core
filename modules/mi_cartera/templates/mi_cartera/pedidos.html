@@ -109,9 +109,9 @@
   {% if loop.first or (_con != (loop.previtem.numero in memo_estados)) %}
   <div class="ped-grupo" data-grupo="{{ 'con' if _con else 'sin' }}">{{ 'Memo enviado' if _con else 'Para enviar memo' }}</div>
   {% endif %}
-  <div class="card ped-card" data-grupo="{{ 'con' if _con else 'sin' }}"
+  <div class="card ped-card" id="ped-{{ p.numero }}" data-grupo="{{ 'con' if _con else 'sin' }}"
        data-buscar="{{ (p.numero ~ ' ' ~ (p.codigo_cliente or '') ~ ' ' ~ (p.cliente or ''))|lower }}">
-    <details>
+    <details{% if charlas_nuevas.get(p.numero) or request.args.get('abrir') == p.numero %} open{% endif %}>
       <summary>
         <div class="ped-sumrow">
           <span class="ped-chev" aria-hidden="true"></span>

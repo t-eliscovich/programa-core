@@ -927,6 +927,10 @@ def pedidos():
                  key=lambda p: (p["fecha"], p["numero"]), reverse=True)
     mios = con + sin
     _ch = avisos_vend.charlas([p["numero"] for p in mios if p["numero"] in activos], vend)
+    if _ch[1] and vendedor_de(g.get("user")):
+        # Los mensajes nuevos se muestran abiertos en esta misma pantalla:
+        # quedan leídos (la dueña en preview no apaga nada).
+        avisos_vend.marcar_charlas_leidas(list(_ch[1]))
     return render_template(
         "mi_cartera/pedidos.html",
         seccion="pedidos",
@@ -1142,8 +1146,22 @@ def avisar_problema():
 @requiere_login
 @requiere_permiso("micartera.ver")
 def pedidos_mensaje():
-    """Mensaje del vendedor a Jonathan sobre un memo PROPIO (13/10/2026)."""
-    abort(404)
+    """Mensaje del vendedor a Jonathan sobre un memo PROPIO (13/10/2026).
+
+    Mismo cerco que enviar memo: el pedido tiene que ser de este vendedor
+    (agente comercial de Asinfo); ajeno → 404. Y formulas_memos vuelve a
+    chequear que el memo exista y sea de él antes de escribir."""
+    vend = _vend_actual()
+    numero = (request.form.get("numero") or "").strip()
+    todos, _ = pedidos_service.por_pedido()
+    if not any(p["numero"] == numero and p["dueno"]["codigo"] == vend for p in todos):
+        abort(404)
+    ok, motivo = formulas_memos.escribir_mensaje(numero, vend, request.form.get("texto") or "")
+    if not ok:
+        flash({"vacio": "Escribí el mensaje.",
+               "sin_memo": "Ese pedido todavía no tiene memo: primero mandá el memo."}
+              .get(motivo, "No se pudo mandar el mensaje. Probá de nuevo en un rato."), "error")
+    return redirect(_url_mis_pedidos() + f"#ped-{numero}")
 
 
 # ── La bandeja de Tamara: "Problemas de la app" (13/10/2026) ────────────────
