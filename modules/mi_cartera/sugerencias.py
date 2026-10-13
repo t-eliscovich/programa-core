@@ -203,6 +203,46 @@ def mensaje(sug: dict) -> str:
             f"Le separo?")
 
 
+def mensaje_oferta(nombre: str | None, telas: list[tuple[str, list[str]]]) -> str:
+    """El texto de «Sugerencias» (antes «Tu hoja») (Tamara 13/10/2026: "que de tu hoja salga
+    whatsapp directo"). Las mismas reglas que `mensaje`: de usted, sin decir
+    qué es de segunda, sin "¿". Hasta dos telas —las que más puntos dan, que
+    son las primeras de la ficha— con hasta tres colores cada una."""
+    pila = nombre_de_pila(nombre)
+    partes = []
+    for tela, colores in telas[:2]:
+        cs = [c.strip().lower() for c in colores if c and c.strip()][:3]
+        partes.append(f"{tela} en {_enumerar(cs)}" if cs else tela)
+    return (f"Hola{' ' + pila if pila else ''}, cómo está? Le cuento que "
+            f"tenemos {', y también '.join(partes)}, "
+            f"{'lista' if len(partes) == 1 else 'listas'} para entregar. Le separo?")
+
+
+def links_oferta(clientes: list[dict]) -> None:
+    """Le pone a cada ficha de «Sugerencias» su `wa`: el chat del cliente con el
+    texto ya escrito. Sin celular cargado, WhatsApp abre la lista de chats con
+    el texto (el vendedor elige a quién). Best-effort: si algo falla, la hoja
+    sale igual, sin el botón."""
+    try:
+        from modules.analisis import queries as aq
+        nombres = {(f["subcategoria"], (f["color"] or "").upper()): f.get("color_nombre") or f["color"]
+                   for f in aq.items() if float(f.get("stock_kg") or 0) > 0}
+        fichas = _fichas([c["codigo"] for c in clientes])
+    except Exception:  # noqa: BLE001
+        _LOG.warning("no pude armar los WhatsApp de la hoja", exc_info=True)
+        return
+    for c in clientes:
+        telas = []
+        for t in c.get("telas") or []:
+            cods = [x.strip().upper() for x in (t.get("colores_parados") or "").split(",") if x.strip()]
+            telas.append((t["subcategoria"], [nombres.get((t["subcategoria"], k), "") for k in cods]))
+        fi = fichas.get((c["codigo"] or "").upper().strip()) or {}
+        cel = celular(fi.get("celular"), fi.get("telefono"))
+        texto = quote(mensaje_oferta(fi.get("nombre") or c.get("nombre"), telas))
+        c["wa"] = f"https://wa.me/{cel}?text={texto}" if cel else f"https://wa.me/?text={texto}"
+        c["wa_directo"] = bool(cel)
+
+
 def link_whatsapp(sug: dict) -> str | None:
     if not sug.get("whatsapp"):
         return None

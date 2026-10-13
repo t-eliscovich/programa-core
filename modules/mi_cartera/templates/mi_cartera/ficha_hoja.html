@@ -91,7 +91,7 @@
     <tr><th>N°</th><th>INSTRUCCIONES DE CUIDADO</th><th>SÍMBOLO</th></tr>
     {% for l in f.lavado %}
       <tr><td class="n">{{ loop.index }}</td><td>{{ l.texto }}</td>
-        <td class="s">{% if l.simbolo %}<img src="{{ url_for('static', filename='fichas/' ~ l.simbolo) }}" alt="">{% endif %}</td></tr>
+        <td class="s">{% if l.simbolo %}<img src="{{ url_for('static', filename=l.img) }}" alt="">{% endif %}</td></tr>
     {% endfor %}
   </table>
   {% endif %}

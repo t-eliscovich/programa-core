@@ -88,7 +88,8 @@ MENU_VENDEDOR = [
     {"url": "/analisis/competencia", "titulo": "Competencia", "listo": True},
     {"url": "/analisis/competencia/telas", "titulo": "Saldos",
      "listo": True},
-    {"url": "/analisis/competencia/mi-hoja", "titulo": "Tu hoja", "listo": True},
+    # Se llamaba «Tu hoja»; dueña 13/10/2026: "podríamos llamarlo sugerencias".
+    {"url": "/analisis/competencia/mi-hoja", "titulo": "Sugerencias", "listo": True},
 ]
 
 
@@ -641,12 +642,17 @@ def mi_hoja():
     orden = request.args.get("orden") or "codigo"
     if orden not in queries.ORDENES:
         orden = "oportunidad"
+    hoja = queries.por_cliente(None, orden, cartera_de=vend)
+    # ⭐ WhatsApp directo desde cada ficha (dueña 13/10/2026: "que de tu hoja
+    # salga whatsapp directo"): el chat del cliente con la oferta ya escrita.
+    from modules.mi_cartera import sugerencias
+    sugerencias.links_oferta(hoja["clientes"] + hoja["improbables"])
     return render_template(
         "analisis/parado_clientes.html",
         vend=vend, mia=True, ordenes=queries.ORDENES,
         estado=queries.estado(),
         codigos_ambiguos=CODIGOS_AMBIGUOS,
-        **queries.por_cliente(None, orden, cartera_de=vend))
+        **hoja)
 
 
 def _vend_actual() -> str | None:

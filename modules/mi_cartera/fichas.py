@@ -138,7 +138,8 @@ def _armar(f: dict) -> dict:
         "actualizado_por": f.get("actualizado_por"),
         "spec": spec,
         "bloques": bloques,
-        "lavado": [{"texto": t, "simbolo": simbolo(t)} for t in lav],
+        "lavado": [{"texto": t, "simbolo": simbolo(t),
+                    "img": f"fichas/{simbolo(t)}" if simbolo(t) else None} for t in lav],
         "buscar": sin_tildes(f"{f['nombre']} {f['codigo']} {f['grupo']}"),
     }
 

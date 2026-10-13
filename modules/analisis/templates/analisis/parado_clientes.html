@@ -15,6 +15,9 @@ align-items:baseline;flex-wrap:wrap}
 .cli h3 .nom{color:var(--g)}
 .cli h3 .kg{margin-left:auto;font-weight:400;font-size:13px;color:var(--g)}
 .cli .meta{color:var(--g);font-size:12px;margin:2px 0 8px}
+.cli .meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.cli .wa{flex:0 0 auto;font-size:12.5px;font-weight:700;color:#fff;background:#25D366;
+  border-radius:8px;padding:5px 12px;text-decoration:none}
 /* ⚠ Sin `table-layout:fixed` cada ficha arma sus columnas según el largo de
    SU contenido: un cliente con "Fleece 96 Sin Perchar" y otro con "Naty"
    quedaban con las cifras en lugares distintos, y la hoja se lee saltando de
@@ -41,23 +44,30 @@ align-items:baseline;flex-wrap:wrap}
   .cli h3 .kg{display:none}
   .cli .meta{font-size:11px;margin:1px 0 5px}
   .cli table{table-layout:auto;font-size:12px}
+  .cli col{width:auto!important}
   .cli .col,.cli .hay,.cli .compro{display:none}
   .cli th{font-size:9px;padding:3px 0}
   .cli td{padding:3px 0}
   .cli td.ult,.cli th.ult{text-align:right}
 }
 @media print{
-  header.top,.barra,.nota,footer .noimp{display:none!important}
+  header.top,.barra,.nota,footer .noimp,.cli .wa{display:none!important}
   body{padding:0} main{max-width:none;padding:0}
   .cli{break-inside:avoid;page-break-inside:avoid;border:0;border-bottom:1px solid #ccc;
        border-radius:0;padding:8px 0;margin:0}
   h1{font-size:17px} .cabecera-imp{display:block!important}
   @page{margin:14mm}
 }
+/* El vendedor: ordenar, imprimir y Excel en UN renglón (13/10/2026). */
+.barra.mia{display:flex!important;flex-direction:row!important;flex-wrap:nowrap;gap:6px;align-items:center}
+.barra.mia select{flex:1 1 auto;min-width:0;width:auto!important}
+.barra.mia button{flex:0 0 auto;width:auto!important}
+.barra.mia a{flex:0 0 auto;width:auto!important;white-space:nowrap}
 .cabecera-imp{display:none;font-size:12px;color:var(--g);margin:0 0 10px}
 </style>
 
-<h1>{% if mia %}Su hoja — a quién ofrecerle qué{% else %}A quién ofrecerle qué{% endif %}</h1>
+{# El vendedor ya ve «Sugerencias» en el selector de arriba: sin título (13/10/2026). #}
+{% if not mia %}<h1>A quién ofrecerle qué</h1>{% endif %}
 <p class="sub">
   {% if mia %}Sus clientes{% elif vend == 'INTELA' %}Intela — mostrador y facturas sin vendedor
   {% elif vend %}Cartera de {{ vend }}{% else %}Todos los vendedores{% endif %} ·
@@ -69,7 +79,7 @@ align-items:baseline;flex-wrap:wrap}
 {# ⚠ El selector de vendedor NO va en la hoja propia: para un vendedor sería un
    desplegable con las carteras de los otros seis, aunque el backend las
    ignore. Un control que no puede hacer lo que promete confunde igual. #}
-<div class="barra">
+<div class="barra{{ ' mia' if mia }}">
   {% if not mia %}
   <select onchange="location.href=this.value">
     {% for c, etiqueta in [('', 'Todos los vendedores'), ('INTELA', 'Intela (mostrador)'),
@@ -91,10 +101,11 @@ align-items:baseline;flex-wrap:wrap}
   </select>
   <button onclick="window.print()">Imprimir</button>
   <a href="{{ base }}{{ '.csv' if mia else '.csv' }}?orden={{ orden }}{% if vend and not mia %}&vend={{ vend }}{% endif %}"
-     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">Bajar a Excel</a>
-  <a href="{{ '/analisis/competencia' if mia else '/analisis/parado' }}"
-     style="margin-left:auto;color:var(--g);font-size:14px">
-    {{ '← Volver a la competencia' if mia else '← Ver por tela' }}</a>
+     style="align-self:center;color:var(--az);font-size:14px;text-decoration:none">{{ 'Excel' if mia else 'Bajar a Excel' }}</a>
+  {# El vendedor ya tiene arriba el selector Competencia · Saldos · Sugerencias:
+     el «← Volver a la competencia» sobraba (13/10/2026). #}
+  {% if not mia %}<a href="/analisis/parado"
+     style="margin-left:auto;color:var(--g);font-size:14px">← Ver por tela</a>{% endif %}
 </div>
 
 <p class="cabecera-imp">Intela · saldos para ofrecer
@@ -114,7 +125,13 @@ align-items:baseline;flex-wrap:wrap}
     <span class="kg">hay {{ c.kg_potencial | num_es(0) }} kg para ofrecerle · {{ c.puntos_potencial | num_es(0) }} puntos</span>
   </h3>
   {# en su propia hoja el vendedor no necesita leer su código en cada ficha #}
-  <p class="meta">{{ c.provincia }}{% if not mia %} · {{ c.vend_pc or 'mostrador' }}{% endif %}</p>
+  <p class="meta"><span>{{ c.provincia }}{% if not mia %} · {{ c.vend_pc or 'mostrador' }}{% endif %}</span>
+    {# ⭐ WhatsApp directo (dueña 13/10/2026: "que de tu hoja salga whatsapp
+       directo"): abre el chat del cliente con la oferta ya escrita —sus dos
+       telas que más puntos dan, con colores—. Si el cliente no tiene celular
+       cargado, abre WhatsApp para elegir a quién. #}
+    {% if mia and c.wa %}<a class="wa" href="{{ c.wa }}" target="_blank" rel="noopener"
+       title="{{ 'Abre el chat del cliente con la oferta escrita' if c.wa_directo else 'Sin celular cargado: elegís el chat en WhatsApp' }}">WhatsApp</a>{% endif %}</p>
   <table>
     <colgroup><col class="c1"><col class="c2"><col class="c3"><col class="c4"><col class="c5"><col class="c6"></colgroup>
     {# ⚠ Los encabezados decían "Kg en saldo" y "Le vendimos": dos cifras de
@@ -161,7 +178,7 @@ align-items:baseline;flex-wrap:wrap}
 
 <footer>
 <span class="noimp">
-«Bajar a Excel» baja lo que está viendo.<br>
+«{{ 'Excel' if mia else 'Bajar a Excel' }}» baja lo que está viendo.<br>
 ⚠ Los kilos <b>no se suman entre clientes</b>: el mismo saldo aparece en la
 lista de todos los que compran esa tela. Sirve para ordenar, no para
 prometer.<br>

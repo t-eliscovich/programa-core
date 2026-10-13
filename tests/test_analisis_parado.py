@@ -943,7 +943,7 @@ def test_la_competencia_del_vendedor_va_metida_en_el_portal():
     assert 'header class="top portal"' in base and "{% for m in menu_vendedor %}" in base
     i_portal, i_oficina = base.index('class="top portal"'), base.index('href="/mi-cartera">← Mi Cartera')
     assert i_portal < base.index("{% else %}", i_portal) < i_oficina
-    assert [m["titulo"] for m in views.MENU_VENDEDOR] == ["Competencia", "Saldos", "Tu hoja"]
+    assert [m["titulo"] for m in views.MENU_VENDEDOR] == ["Competencia", "Saldos", "Sugerencias"]
 
 
 def test_si_algun_dia_se_abre_que_sea_solo_la_competencia():
@@ -4123,7 +4123,7 @@ def test_por_grupo_se_pliega_y_los_filtros_tienen_su_cuadro():
     fin = html.index("</summary>", i)
     assert "Por grupo" in html[i:fin], "el desplegable no es el de Por grupo"
     assert " open" not in html[i:i + 60], "arranca abierta: sigue ocupando lo mismo"
-    assert '<div class="filtros">' in html
+    assert '<div class="filtros' in html
     for campo in ("q", "grupo", "subgrupo", "calidad", "vend"):
         assert f'<label for="{campo}">' in html, f"el filtro {campo} no tiene rótulo"
     # Los botones se van a su propio renglón: no son filtros.
@@ -4132,7 +4132,7 @@ def test_por_grupo_se_pliega_y_los_filtros_tienen_su_cuadro():
     # el test cuida sigue siendo lo mismo: que los botones no estén mezclados
     # adentro del cuadro de filtros.
     import re
-    ini = html.index('<div class="filtros">')
+    ini = html.index('<div class="filtros')
     fin = html.index("</div>", html.index('id="cuenta"'))
     assert 'id="excel"' not in html[ini:fin], (
         "los botones volvieron adentro del cuadro de filtros")
@@ -4613,8 +4613,8 @@ def test_el_contador_no_ocupa_un_renglon_propio():
     html = _html_parado()
     i = html.index('id="tela-por-tela"')
     assert 'id="cuenta"' in html[i:i + 220], "el contador no está en el título"
-    fin = html.index("</div>", html.index('<div class="filtros">'))
-    assert 'id="cuenta"' not in html[html.index('<div class="filtros">'):fin], (
+    fin = html.index("</div>", html.index('<div class="filtros'))
+    assert 'id="cuenta"' not in html[html.index('<div class="filtros'):fin], (
         "quedó también abajo de los filtros")
 
 

@@ -51,7 +51,7 @@
   <div class="fi-t">Condiciones de lavado</div>
   <ol class="fi-lav">
     {% for l in f.lavado %}
-      <li>{% if l.simbolo %}<img src="{{ url_for('static', filename='fichas/' ~ l.simbolo) }}" alt="" width="30" height="30">{% else %}<span class="sin"></span>{% endif %}<span>{{ l.texto }}</span></li>
+      <li>{% if l.simbolo %}<img src="{{ url_for('static', filename=l.img) }}" alt="" width="30" height="30">{% else %}<span class="sin"></span>{% endif %}<span>{{ l.texto }}</span></li>
     {% endfor %}
   </ol>
 </div>

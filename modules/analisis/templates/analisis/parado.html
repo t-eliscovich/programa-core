@@ -57,6 +57,19 @@ th.ord.desc::after{content:" ↓";opacity:1}
    Las dos pantallas muestran los mismos clientes: la diferencia es el EJE —
    ésta va por tela, la otra por cliente. Si las dos prometen lo mismo en el
    título, el que entra no sabe cuál abrir. #}
+{% if mia %}
+{# ⭐ EL VENDEDOR, EN EL CELULAR (dueña 13/10/2026: "lo de arriba ocupa mucho,
+   los filtros muy abajo, tardo mil hasta la info que quiero"). Arriba ya dice
+   «Saldos» (el selector del portal), así que no va título; de las seis cifras
+   quedan las tres que se leen de corrido —queda, vendido, en juego— en UN
+   renglón chico, y enseguida el buscador. Lo demás (al arrancar, SEG, sus
+   clientes, por grupo) sigue en la pantalla de la oficina. #}
+<div class="mia-resumen">
+  <span><b>{{ resumen.kg | num_es(0) }}</b> kg quedan</span>
+  <span><b>{{ resumen.kg_vendidos | num_es(0) }}</b> kg vendidos</span>
+  <span><b class="pts">{{ bolsa | num_es(0) }}</b> pts en juego</span>
+</div>
+{% else %}
 <h1>Saldos, tela por tela</h1>
 <p class="sub">
 {% if estado.actualizado %}
@@ -125,6 +138,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
     <b>{{ resumen.kg_segunda | num_es(0) }} kg</b>
     <span class="mini">en {{ resumen.n_segunda }} ítems · el resto es PRI</span></span>
 </div>
+{% endif %}
 
 {# ⚠ Acá decía "lo que se vende no desaparece de la lista — así se ve si
    funcionó". Se fue el 26/08/2026 ("todo simplifica"): ahora se VE, en las
@@ -138,6 +152,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
    tan grande"). Son ocho renglones que se miran una vez y después estorban:
    entre el encabezado y la tabla que sí se usa había media pantalla de
    subtotales. Cerrada por defecto — el que la quiere, la abre. #}
+{% if not mia %}
 <details class="plegable" id="por-grupo">
 <summary><h2 style="display:inline;border:0;padding:0;margin:0">Por grupo</h2>
 <span class="sub" style="margin:0 0 0 8px">los mismos kilos, agrupados</span></summary>
@@ -164,6 +179,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
 <td class="n"><b>{{ resumen.kg_segunda | num_es(0) }}</b></td></tr></tfoot>
 </table></div>
 </details>
+{% endif %}
 
 {# ⭐ EL TÍTULO Y LAS ACCIONES, EN UN RENGLÓN (dueña 25/08/2026: "esto ocupa un
    montón de renglones"). Entre el título, tres líneas de bajada y una barra de
@@ -174,6 +190,7 @@ th.ord.desc::after{content:" ↓";opacity:1}
      «A quién ofrecerle qué» del menú de arriba.
    · Imprimir y PDF pasan al lado del título, chiquitos: se usan una vez cada
      tanto y ocupaban un renglón entero al lado del buscador. #}
+{% if not mia %}
 <div class="titulo-fila">
   {# ⭐ El contador va PEGADO AL TÍTULO (dueña 26/08/2026: "el total abajo
      molesta, en otro lado que no sea un renglón más"). Abajo del cuadro de
@@ -201,9 +218,21 @@ th.ord.desc::after{content:" ↓";opacity:1}
   </span>
 </div>
 
-<div class="filtros">
+{% endif %}
+{% if mia %}
+{# ⭐ El buscador y un botón «Filtros» en UN renglón (dueña 13/10/2026: "campo
+   buscar es muy largo"). Los seis desplegables se abren con el botón, que
+   dice cuántos hay puestos: un filtro olvidado no queda escondido. #}
+<div class="mia-buscar">
+  <input id="q" type="search" placeholder="Tela, color o cliente…" oninput="filtrar()" aria-label="Buscar">
+  <button type="button" id="mia-fbtn" aria-expanded="false" aria-controls="mia-filtros">Filtros<i id="mia-fn" hidden></i></button>
+</div>
+{% endif %}
+<div class="filtros{{ ' mia' if mia }}" id="mia-filtros"{% if mia %} hidden{% endif %}>
+{% if not mia %}
 <div class="ff"><label for="q">Buscar</label>
   <input id="q" placeholder="Tela, color, cliente, provincia…" oninput="filtrar()"></div>
+{% endif %}
 <div class="ff"><label for="grupo">Grupo</label>
   <select id="grupo" onchange="grupoCambio()">
     <option value="">Todos</option>
@@ -270,6 +299,61 @@ th.ord.desc::after{content:" ↓";opacity:1}
    de emergencia si Asinfo estuvo caído y no se puede esperar 15 minutos.
    ⚠ Y la barra entera se fue con ella: Excel, Imprimir y PDF subieron al lado
    del título, y «Ver por cliente» salió porque ya es una pestaña del menú. #}
+{% if mia %}
+<div class="mia-fila">
+  <span class="cuenta" id="cuenta">&nbsp;</span>
+  <span class="acciones">
+    <a href="/analisis/competencia/telas.xlsx{{ ('?vend=' ~ vend) if vend else '' }}" id="excel">Excel</a>
+    <a href="/analisis/competencia/telas/imprimir" target="_blank">Imprimir</a>
+    <a href="/analisis/competencia/telas/imprimir.pdf" target="_blank">PDF</a>
+  </span>
+</div>
+<style>
+  .mia-resumen{display:flex;gap:6px;margin:0 0 10px}
+  .mia-resumen span{flex:1 1 0;min-width:0;background:#F6F7F9;border-radius:10px;padding:6px 8px;
+    font-size:11.5px;color:var(--g);line-height:1.25}
+  .mia-resumen b{display:block;font-size:16px;color:var(--t);font-weight:650}
+  .mia-resumen b.pts{color:var(--az)}
+  .mia-buscar{display:flex;gap:6px;margin:0 0 8px}
+  .mia-buscar input{flex:1 1 auto;min-width:0;font-size:15px;padding:8px 10px}
+  .mia-buscar button{flex:0 0 auto;font:inherit;font-size:14px;font-weight:600;padding:0 12px;
+    border:1px solid var(--l);border-radius:9px;background:#fff;color:var(--t);white-space:nowrap}
+  .mia-buscar button[aria-expanded="true"]{background:#EEF2FF;border-color:#C7D2FE}
+  .mia-buscar button i{font-style:normal;margin-left:6px;background:var(--az);color:#fff;
+    border-radius:9px;padding:0 6px;font-size:12px}
+  .filtros.mia{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:0 0 8px;padding:10px;
+    border:1px solid var(--l);border-radius:10px}
+  .filtros.mia[hidden]{display:none}
+  .filtros.mia .ff[hidden]{display:none}
+  .filtros.mia label{font-size:10px}
+  .filtros.mia select{font-size:14px;padding:5px 6px}
+  .filtros.mia #limpiar{grid-column:1/-1;margin:0;justify-self:end}
+  .mia-fila{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin:0 0 6px;font-size:13px}
+  .mia-fila .cuenta{color:var(--g)}
+  .mia-fila .acciones{display:flex;gap:12px}
+  .mia-fila .acciones a{color:var(--az);text-decoration:none}
+</style>
+<script>
+(function () {
+  var btn = document.getElementById('mia-fbtn'), caja = document.getElementById('mia-filtros'),
+      n = document.getElementById('mia-fn');
+  function contar() {
+    var k = 0;
+    caja.querySelectorAll('select').forEach(function (s) { if (s.value && !s.hidden) { k++; } });
+    n.hidden = !k; n.textContent = k;
+    return k;
+  }
+  btn.addEventListener('click', function () {
+    var abrir = caja.hidden; caja.hidden = !abrir;
+    btn.setAttribute('aria-expanded', abrir ? 'true' : 'false');
+  });
+  caja.addEventListener('change', contar);
+  document.getElementById('limpiar').addEventListener('click', function () { setTimeout(contar, 0); });
+  // Los filtros vuelven guardados (dirección / navegador): se cuentan al cargar.
+  window.addEventListener('load', contar);
+})();
+</script>
+{% endif %}
 <div class="caja larga"><table id="tabla">
 <thead><tr>
 <th class="ord opt" data-i="0">Grupo</th>
