@@ -218,6 +218,24 @@
             <td class="num">{{ ate.get('ingresos_kg') | num_es(0) if ate.get('ingresos_kg') else '—' }}</td>
             <td class="num">{{ aco.get('ingresos_us') | num_es(0) if aco.get('ingresos_us') else '—' }}</td>
           </tr>
+          {# Federico 13/10/2026 ("el promedio sube con hilo más barato"):
+             la plata sin kilos que el $/kg SÍ suma — recargos tardíos de
+             importaciones recibidas el mes anterior y compras al precio del
+             hilo. Sin este renglón el promedio subía sin explicación y la
+             columna $ no cerraba. #}
+          {% set _rec_us = ahl.get('recargos_us') or 0 %}
+          {% if _rec_us|round(0) %}
+          <tr>
+            <td class="lbl" title="Flete, seguro y CAE de importaciones recibidas antes, cargados este mes{% if ahl.get('recargos_detalle') %}: {{ ahl.get('recargos_detalle') | join(', ') }}{% endif %}. Es costo del hilo que ya está en el stock: sube el $/kg sin sumar kilos.">Recargos</td>
+            <td class="num">—</td>
+            <td class="num">—</td>
+            <td class="num">+{{ _rec_us | num_es(0) }}</td>
+            <td></td>
+            <td class="num"></td>
+            <td class="num"></td>
+            <td class="num">—</td>
+          </tr>
+          {% endif %}
           {# Fila AJUSTES INVENTARIO BORRADA (dueña 2026-07-21 segunda pasada:
              "tenemos que borrar la fila ajustes") — los ajustes que la planta
              registre quedan en el residuo del chequeo de coherencia. #}

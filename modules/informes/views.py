@@ -360,6 +360,40 @@ def _build_mov_asinfo(data, inv_inic, inv_act, anio=None, mes=None,
     hl["egresos_ukg"] = _avg_ukg
     hl["egresos_us"] = hl["egresos_kg"] * _avg_ukg
 
+    # ── RECARGOS: plata del mes SIN kilos que el promedio SÍ usa ────────────
+    # Federico 13/10/2026: *"Valor inicial 3.182, entra hilo más barato a
+    # 3.159, y el promedio sube a 3.185. No está bien. O hace mal las cuentas
+    # o faltan kg"*. Ni una ni otra: el promedio (mov_hilado_valuacion) suma
+    # los RECARGOS TARDÍOS (flete/CAE de importaciones recibidas el mes
+    # anterior y cargados éste — regla del 05/09) y las compras "al precio
+    # del hilo" (botón, mig 0241). Son costo de hilo que YA está en el stock,
+    # pero el cuadro no tenía renglón para ellos: el promedio subía sin que se
+    # viera por qué y la columna $ no cerraba (octubre: 13.865 = AI 33, AI 29,
+    # AC 66, MH 62 y AI 53). Ahora tienen su renglón.
+    _ins = (_hv_hil.get("insumos") or {}) if _hv_ok else {}
+    _rec_us = (float(_hv_hil.get("recargos_tardios_us") or 0)
+               + float(_ins.get("al_precio_us") or 0)) if _hv_ok else 0.0
+    hl["recargos_us"] = _rec_us
+    hl["recargos_detalle"] = [
+        str(d.get("codigo") or "").strip()
+        for d in (_ins.get("recargos_tardios") or []) if d.get("codigo")
+    ]
+    if _ins.get("al_precio_n"):
+        hl["recargos_detalle"].append(
+            f"{int(_ins['al_precio_n'])} compra(s) al precio del hilo")
+    # El EGRESO $ es el consumo que hace CERRAR la columna (mismo criterio que
+    # los kg desde el 31/07): inic + ingresos + recargos + máquinas − egresos
+    # = stock act. Sin esto queda un residuo chico porque el Stock inic. que
+    # se muestra es el del corte de las pantallas de producción y el promedio
+    # se arma con el saldo al 1° del mes (Tamara 01/10: el $/kg del balance
+    # no cambia con el corte). En octubre fueron ~40 US$.
+    if _hv_ok and hl["egresos_kg"]:
+        _cierre = (hl["stock_inic_us"] + hl["ingresos_us"] + _rec_us
+                   + _maq_us - hl["stock_act_us"])
+        if abs(_cierre - hl["egresos_us"]) <= max(500.0, 0.005 * abs(hl["egresos_us"])):
+            hl["egresos_us"] = _cierre
+            hl["egresos_ukg"] = _cierre / hl["egresos_kg"]
+
     # CRUDO — ingreso = cruda producida (real), egreso = crudo consumido a
     # tintura (real). El % = rendimiento: cruda producida / hilo consumido.
     # CRUDO — ingreso/egreso = MOVIMIENTO REAL de bodega 52 (deltas del saldo) →
