@@ -50,7 +50,7 @@
            data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
     <summary>
       <b class="tn">{{ t.tela }}</b>
-      <span class="nc"><i class="n-col">{{ t.colores|length }}</i> col.</span>
+      <span class="nc n-col">{{ t.colores|length }} color{{ '' if t.colores|length == 1 else 'es' }}</span>
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
     {% for c in t.colores %}
@@ -171,7 +171,7 @@
       if (nCol) {
         vis++; kgTot += kg;
         t.querySelector('.kg-t').textContent = n0(kg);
-        t.querySelector('.n-col').textContent = nCol;
+        t.querySelector('.n-col').textContent = nCol + (nCol === 1 ? ' color' : ' colores');
       }
       /* Se abre sola si la búsqueda la encontró por un COLOR (si la encontró
          por el nombre de la tela, mostrar 200 colores no ayuda); se cierra
