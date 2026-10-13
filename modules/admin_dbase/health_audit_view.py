@@ -575,6 +575,14 @@ def ejecutar_foto_diaria() -> dict:
     except Exception as e:  # noqa: BLE001
         alerts.append(f"foto de cartera documentada falló: {e}")
 
+    # 2c) FOTO DEL SEMÁFORO de cobranza (13/10/2026): el color de cada
+    #     cliente, para avisarle al vendedor los que PASARON a rojo. Fail-soft.
+    try:
+        from modules.mi_cartera import avisos_vend as _avv
+        stats["semaforo"] = _avv.foto_semaforo()
+    except Exception as e:  # noqa: BLE001
+        alerts.append(f"foto del semáforo falló: {e}")
+
     hoy_patr = float(snap.get("patrimonio") or 0)
     hoy_ustock = float(snap.get("ustock") or 0)
 

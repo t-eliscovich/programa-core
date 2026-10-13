@@ -1,0 +1,26 @@
+{# La conversación del memo entre el vendedor y Jonathan (Tamara 13/10/2026:
+   "para la oficina puede ser para memos… que le llegue a jonatan en la
+   aplicación de formulas app"). Va adentro de la tarjeta del pedido, debajo
+   de las líneas, SÓLO en pedidos con memo enviado.
+
+   Contexto: p (el pedido), charla (lista de {de, texto, cuando}, vieja
+   primero). Jonathan también puede escribir primero. #}
+<div class="mc">
+  <div class="mc-t">Mensajes con Jonathan</div>
+  {% for m in charla %}
+    <div class="mc-m {{ 'yo' if m.de == 'vendedor' else 'el' }}">
+      <span class="mc-x">{{ m.texto }}</span>
+      <span class="mc-c">{{ 'Vos' if m.de == 'vendedor' else 'Jonathan' }} · {{ m.cuando }}</span>
+    </div>
+  {% else %}
+    <div class="mc-vacio">Si tenés que avisarle algo de este pedido a Jonathan, escribile acá.</div>
+  {% endfor %}
+  <form class="mc-f" method="post" action="{{ url_for('mi_cartera.pedidos_mensaje') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="numero" value="{{ p.numero }}">
+    {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+    <input type="text" name="texto" maxlength="1000" required autocomplete="off"
+           placeholder="Escribile a Jonathan…" aria-label="Mensaje para Jonathan">
+    <button type="submit">Enviar</button>
+  </form>
+</div>

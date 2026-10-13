@@ -1,0 +1,75 @@
+{# La CAMPANITA del vendedor (Tamara 13/10/2026): todo lo que le avisa el
+   programa, en una sola lista.
+
+   Qué entra (cada tipo con su ícono y adónde lleva):
+     rojo        un cliente suyo PASÓ a rojo en el semáforo de cobranza
+                 (comparado contra la foto del día anterior) → su ficha
+     jonathan    Jonathan le escribió sobre un memo → el pedido
+     respuesta   Tamara le contestó un "Avisar un problema" → ese aviso
+     competencia las sugerencias de hoy → el Inicio
+
+   "Nuevos" son los que no vio; al abrir esta pantalla quedan vistos (el
+   numerito se apaga), pero la lista los sigue mostrando abajo, en
+   "Anteriores", 30 días. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'inicio' %}
+{% block title %}Avisos{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Avisos</h1>
+      <div class="sub">{% if nuevos %}{{ nuevos|length }} nuevo{{ '' if nuevos|length == 1 else 's' }}{% else %}Nada nuevo{% endif %}</div>
+    </div>
+    <a class="iconbtn" href="{{ url_for('mi_cartera.inicio') }}{{ ('?vend=' ~ vend) if preview else '' }}" aria-label="Volver al inicio">✕</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% macro item(a) %}
+  <a class="av {{ a.tipo }}" href="{{ a.url }}">
+    <span class="av-i" aria-hidden="true">{{ {'rojo': '', 'jonathan': '💬', 'respuesta': '🛠', 'competencia': '🧵'}[a.tipo] }}</span>
+    <span class="av-t">
+      <b>{{ a.titulo }}</b>
+      {% if a.detalle %}<span class="av-d">{{ a.detalle }}</span>{% endif %}
+    </span>
+    <span class="av-c">{{ a.cuando }}</span>
+  </a>
+{% endmacro %}
+
+{% if nuevos %}
+<div class="card-t av-h">Nuevos</div>
+<div class="card av-lista">{% for a in nuevos %}{{ item(a) }}{% endfor %}</div>
+{% endif %}
+
+{% if anteriores %}
+<div class="card-t av-h">Anteriores</div>
+<div class="card av-lista viejos">{% for a in anteriores %}{{ item(a) }}{% endfor %}</div>
+{% endif %}
+
+{% if not nuevos and not anteriores %}
+<div class="vacio">No tenés avisos todavía. Acá te van a llegar los clientes que pasan a rojo y lo que te escriba Jonathan.</div>
+{% endif %}
+
+<a class="av-problema" href="{{ url_for('mi_cartera.avisar_problema') }}{{ ('?vend=' ~ vend) if preview else '' }}">
+  <span>Algo de la app no anda</span><b>Avisar un problema →</b>
+</a>
+
+<style>
+  .av-h{margin:4px 2px 8px}
+  .av-lista{padding:0 12px}
+  .av{display:flex;align-items:flex-start;gap:10px;padding:11px 0;border-bottom:1px solid var(--line);text-decoration:none;color:inherit}
+  .av:last-child{border-bottom:0}
+  .av-i{flex:0 0 auto;width:26px;height:26px;border-radius:8px;display:grid;place-items:center;font-size:14px;background:var(--surface-2)}
+  .av.rojo .av-i{background:var(--bad-soft)}
+  .av.rojo .av-i::before{content:"";width:10px;height:10px;border-radius:50%;background:#b3362a}
+  .av-t{flex:1 1 auto;min-width:0}
+  .av-t b{display:block;font-size:14px;font-weight:600;line-height:1.3}
+  .av-d{display:block;font-size:12.5px;color:var(--ink-2);margin-top:2px;line-height:1.35}
+  .av-c{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap;padding-top:2px}
+  .viejos .av-t b{font-weight:500;color:var(--ink-2)}
+  .av-problema{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:16px;padding:12px 14px;
+    border:1px dashed var(--line);border-radius:14px;text-decoration:none;color:var(--ink-2);font-size:13px}
+  .av-problema b{color:var(--accent);white-space:nowrap}
+</style>
+{% endblock %}

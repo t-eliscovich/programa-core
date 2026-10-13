@@ -75,6 +75,19 @@
   .ped-steps .st.on{color:#1d4ed8;font-weight:700}
   .ped-steps .sep{flex:1 1 0;height:2px;border-radius:1px;background:#e2e8f0;min-width:2px}
   .ped-steps .sep.done{background:#86efac}
+  /* Mensajes con Jonathan (13/10/2026) — ver _memo_charla.html. */
+  .mc{margin-top:10px;padding-top:8px;border-top:1px solid #f1f5f9}
+  .mc-t{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em;margin-bottom:6px}
+  .mc-m{display:flex;flex-direction:column;max-width:85%;margin:0 0 6px}
+  .mc-m.yo{margin-left:auto;align-items:flex-end}
+  .mc-x{font-size:13.5px;line-height:1.35;padding:7px 10px;border-radius:12px;background:#f1f5f9;overflow-wrap:anywhere}
+  .mc-m.yo .mc-x{background:var(--accent-soft,#EEF0FE)}
+  .mc-c{font-size:10.5px;color:#94a3b8;margin-top:2px;white-space:nowrap}
+  .mc-vacio{font-size:12.5px;color:#64748b;margin-bottom:6px}
+  .mc-f{display:flex;gap:6px;margin-top:4px}
+  .mc-f input{flex:1 1 auto;min-width:0;font:inherit;font-size:15px;padding:8px 10px;border:1px solid var(--line,#e2e8f0);border-radius:10px}
+  .mc-f button{flex:0 0 auto;border:0;border-radius:10px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:0 12px}
+  .mc-n{flex:0 0 auto;font-size:10.5px;font-weight:700;color:#fff;background:#E5484D;border-radius:8px;padding:1px 6px;white-space:nowrap}
   .btn-memo{border:0;border-radius:9px;background:var(--tinta,#0f172a);color:#fff;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
   .btn-memo--cancelar{border:1px solid #dc2626;border-radius:9px;background:#fff;color:#dc2626;font-size:13px;font-weight:600;padding:9px 14px;cursor:pointer}
 </style>
@@ -110,6 +123,7 @@
           <span class="ped-kg">{{ _vals|sum(attribute='fab')|num_es(0) }}/{{ _vals|sum(attribute='plan')|num_es(0) }} kg</span>
           {%- endif %}
           <span class="ped-fecha">{{ p.fecha_es }}</span>
+          {% if charlas_nuevas is defined and charlas_nuevas.get(p.numero) %}<span class="mc-n">💬 {{ charlas_nuevas[p.numero] }}</span>{% endif %}
         </div>
         {# Los pasos del pedido (dueña 27/08): siempre a la vista, con la
            ficha abierta o cerrada. #}
@@ -159,6 +173,7 @@
         {% endfor %}
         {% endfor %}
       </ul>
+      {% if m and charla_disponible %}{% set charla = charlas.get(p.numero, []) %}{% include "mi_cartera/_memo_charla.html" %}{% endif %}
       {# Sin memo → el botón. Con memo, nada: el chip de arriba ya lo dice
          (TMT 27/08: "acá hay información de más"). #}
       {% if not m %}

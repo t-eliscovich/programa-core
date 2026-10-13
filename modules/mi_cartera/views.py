@@ -42,7 +42,7 @@ from modules.pedidos import service as pedidos_service
 from parsers import parse_int
 from scope_vendedor import vendedor_de
 
-from . import queries, sugerencias
+from . import avisos_vend, queries, sugerencias
 
 mi_cartera_bp = Blueprint("mi_cartera", __name__, template_folder="templates")
 
@@ -152,7 +152,15 @@ def _campanita_competencia():
         if not vend and tiene_permiso("*"):
             vend = (request.args.get("vend") or "").strip().upper()
         return sugerencias.pendientes(vend, today_ec()) if vend else 0
-    return {"campanita_competencia": _n}
+
+    def _avisos() -> int:
+        """Los avisos nuevos de la campanita (13/10/2026): clientes que
+        pasaron a rojo, respuestas, mensajes. Las sugerencias van aparte."""
+        vend = vendedor_de(g.get("user"))
+        if not vend and tiene_permiso("*"):
+            vend = (request.args.get("vend") or "").strip().upper()
+        return avisos_vend.n_nuevos(vend) if vend else 0
+    return {"campanita_competencia": _n, "campanita_avisos": _avisos}
 
 
 @mi_cartera_bp.route("/mi-cartera")
@@ -216,6 +224,7 @@ def inicio():
     sem = _semaforo_de_mis_clientes(vend)
     return render_template(
         "mi_cartera/inicio.html",
+        n_avisos=avisos_vend.n_nuevos(vend),
         # Las 5 de la competencia: se arman una vez por día y se guardan
         # (ver `sugerencias.py`). Si algo falla viene [] y no hay tarjeta.
         sugerencias=sugerencias.del_dia(vend, hoy),
@@ -917,6 +926,7 @@ def pedidos():
     sin = sorted((p for p in mios if p["numero"] not in activos),
                  key=lambda p: (p["fecha"], p["numero"]), reverse=True)
     mios = con + sin
+    _ch = avisos_vend.charlas([p["numero"] for p in mios if p["numero"] in activos], vend)
     return render_template(
         "mi_cartera/pedidos.html",
         seccion="pedidos",
@@ -924,6 +934,8 @@ def pedidos():
         pedidos=mios,
         etapas=pedidos_service.etapas_por_pedido(mios, activos),
         memo_estados=activos,
+        charlas=_ch[0], charlas_nuevas=_ch[1],
+        charla_disponible=avisos_vend.charla_disponible(),
         **_ctx_base(vend),
     )
 
@@ -1067,3 +1079,113 @@ def stock():
         viejo=st["viejo"],
         **_ctx_base(vend),
     )
+
+
+@mi_cartera_bp.route("/mi-cartera/avisos")
+@requiere_login
+@requiere_permiso("micartera.ver")
+def avisos():
+    """La campanita del vendedor (Tamara 13/10/2026)."""
+    vend = _vend_actual()
+    nuevos, anteriores = avisos_vend.lista(vend)
+    if vendedor_de(g.get("user")):
+        avisos_vend.marcar_vistos(vend)  # la dueña en preview no apaga nada
+    return render_template("mi_cartera/avisos.html", nuevos=nuevos,
+                           anteriores=anteriores, **_ctx_base(vend))
+
+
+@mi_cartera_bp.route("/mi-cartera/avisar-problema", methods=["GET", "POST"])
+@requiere_login
+@requiere_permiso("micartera.ver")
+def avisar_problema():
+    """"Algo de la app no anda" — le llega a Tamara (13/10/2026).
+
+    Se pega solo lo que el vendedor no tiene que escribir: la pantalla de la
+    que vino, el celular/navegador y la hora."""
+    from modules.uso import registro
+    vend = _vend_actual()
+    usuario = (g.get("user") or {}).get("username") or ""
+    ua = request.headers.get("User-Agent") or ""
+    pantalla = (request.values.get("pantalla") or request.referrer or "").strip()
+    ruta = pantalla.split(request.host, 1)[-1].split("?")[0] if pantalla else ""
+    error = None
+    enviado = request.args.get("ok") == "1"
+    if request.method == "POST":
+        archivo = request.files.get("foto")
+        foto = archivo.read() if archivo and archivo.filename else None
+        try:
+            avisos_vend.guardar_reporte(
+                usuario=usuario, vend=vendedor_de(g.get("user")) or None,
+                texto=request.form.get("texto") or "", pantalla=ruta,
+                dispositivo=registro.dispositivo_de(ua), user_agent=ua,
+                foto=foto, foto_tipo=(archivo.mimetype if foto else None))
+            destino = url_for("mi_cartera.avisar_problema", ok=1)
+            if not vendedor_de(g.get("user")):
+                destino += f"&vend={vend}"
+            return redirect(destino)
+        except ValueError as e:
+            error = str(e)
+    return render_template(
+        "mi_cartera/avisar_problema.html",
+        pantalla=ruta,
+        pantalla_nombre=(registro.nombre_de(ruta) if ruta else "") or "Mi Cartera",
+        dispositivo=registro.dispositivo_de(ua),
+        ahora=today_ec().strftime("%d/%m"),
+        volver=url_for("mi_cartera.inicio") + (f"?vend={vend}" if not vendedor_de(g.get("user")) else ""),
+        enviado=enviado, error=error,
+        mios=avisos_vend.reportes_de(usuario),
+        **_ctx_base(vend),
+    )
+
+
+@mi_cartera_bp.route("/mi-cartera/pedidos/mensaje", methods=["POST"])
+@requiere_login
+@requiere_permiso("micartera.ver")
+def pedidos_mensaje():
+    """Mensaje del vendedor a Jonathan sobre un memo PROPIO (13/10/2026)."""
+    abort(404)
+
+
+# ── La bandeja de Tamara: "Problemas de la app" (13/10/2026) ────────────────
+# `app.reportes` no lo tiene ningún rol: entra sólo quien tiene `*`. Vive en
+# /admin, así que el candado de vendedores tampoco la deja ver.
+
+@mi_cartera_bp.route("/admin/reportes-app")
+@mi_cartera_bp.route("/admin/reportes-app/<int:id_reporte>")
+@requiere_login
+@requiere_permiso("app.reportes")
+def reporte_app(id_reporte: int | None = None):
+    sel = avisos_vend.reporte(id_reporte) if id_reporte else None
+    if id_reporte and not sel:
+        abort(404)
+    return render_template("mi_cartera/reportes_app.html",
+                           filas=avisos_vend.reportes(), sel=sel)
+
+
+@mi_cartera_bp.route("/admin/reportes-app/<int:id_reporte>/foto")
+@requiere_login
+@requiere_permiso("app.reportes")
+def reporte_app_foto(id_reporte: int):
+    from flask import Response
+    f = avisos_vend.foto_de(id_reporte)
+    if not f:
+        abort(404)
+    return Response(f[0], mimetype=f[1],
+                    headers={"Cache-Control": "private, max-age=3600"})
+
+
+@mi_cartera_bp.route("/admin/reportes-app/<int:id_reporte>/responder", methods=["POST"])
+@requiere_login
+@requiere_permiso("app.reportes")
+def reporte_app_responder(id_reporte: int):
+    try:
+        ok = avisos_vend.responder(
+            id_reporte, request.form.get("respuesta") or "",
+            por=(g.get("user") or {}).get("username") or "",
+            resuelto=bool(request.form.get("resuelto")))
+    except ValueError as e:
+        flash(str(e), "error")
+        ok = True
+    if not ok:
+        abort(404)
+    return redirect(url_for("mi_cartera.reporte_app", id_reporte=id_reporte))

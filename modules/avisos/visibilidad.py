@@ -33,6 +33,9 @@ from __future__ import annotations
 #: no de qué es el aviso. Hacen falta las dos llaves.
 #: `tests/test_avisos_visibilidad.py` valida que toda fuente conocida esté acá.
 FUENTE_PERMISO: dict[str, str] = {
+    # 13/10/2026: los problemas que avisan los vendedores — sólo Tamara
+    # (`app.reportes` no lo tiene ningún rol; entra por `*`).
+    "reporte_app": "app.reportes",
     "ventas": "facturas.ver",
     "tejeduria": "tejeduria.ver",
     "quimicos": "tintura.ver",

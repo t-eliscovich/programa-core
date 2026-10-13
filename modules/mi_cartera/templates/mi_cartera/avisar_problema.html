@@ -1,0 +1,94 @@
+{# "Avisar un problema de la app" (Tamara 13/10/2026: "algo para que puedan
+   quejarse de algo de la app"). Le llega a Tamara, a nadie más.
+
+   Lo que el vendedor NO tiene que escribir se pega solo: en qué pantalla
+   estaba (de dónde vino), qué celular y navegador, y la hora. Es justo lo
+   que hubo que adivinar con el WhatsApp de Patricio en agosto. La foto es
+   opcional — una captura de la pantalla dice más que tres renglones.
+
+   Abajo, sus avisos anteriores con la respuesta, si ya la hay. #}
+{% extends "mi_cartera/base.html" %}
+{% set seccion = 'inicio' %}
+{% block title %}Avisar un problema{% endblock %}
+
+{% block appbar %}
+  <div class="row">
+    <div>
+      <h1>Avisar un problema</h1>
+      <div class="sub">Le llega a Tamara</div>
+    </div>
+    <a class="iconbtn" href="{{ volver }}" aria-label="Volver">✕</a>
+  </div>
+{% endblock %}
+
+{% block content %}
+{% if error %}
+<div class="pr-ok" style="color:var(--bad);background:var(--bad-soft)">{{ error }}</div>
+{% endif %}
+{% if enviado %}
+<div class="pr-ok">Listo, le llegó a Tamara. Te va a contestar acá y en tus avisos.</div>
+{% endif %}
+
+<form class="card pr-form" method="post" enctype="multipart/form-data"
+      action="{{ url_for('mi_cartera.avisar_problema') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="pantalla" value="{{ pantalla }}">
+  {% if preview %}<input type="hidden" name="vend" value="{{ vend }}">{% endif %}
+  <label for="pr-texto" class="pr-l">Qué pasó</label>
+  <textarea id="pr-texto" name="texto" rows="4" required maxlength="2000"
+            placeholder="Ej.: toco WhatsApp en la ficha de GIC y no pasa nada"></textarea>
+
+  <label class="pr-foto">
+    <input type="file" name="foto" accept="image/*">
+    <span class="pr-foto-b">📷 Agregar foto</span>
+    <span class="pr-foto-n" id="pr-foto-n"></span>
+  </label>
+
+  <div class="pr-auto">Se manda solo: {{ pantalla_nombre }} · {{ dispositivo }} · {{ ahora }}</div>
+  <button type="submit" class="pr-btn">Enviar</button>
+</form>
+
+{% if mios %}
+<div class="card-t" style="margin:16px 2px 8px">Tus avisos</div>
+<div class="card pr-lista">
+  {% for r in mios %}
+  <div class="pr-item">
+    <div class="pr-q"><span class="pr-f">{{ r.cuando }}</span> {{ r.texto }}</div>
+    {% if r.respuesta %}
+      <div class="pr-a"><b>Tamara:</b> {{ r.respuesta }}</div>
+    {% else %}
+      <div class="pr-esp">Todavía sin respuesta</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<style>
+  .pr-ok{font-size:13px;color:var(--good);background:var(--good-soft);border-radius:10px;padding:9px 12px;margin-bottom:10px}
+  .pr-form{display:flex;flex-direction:column;gap:10px}
+  .pr-l{font-size:12px;font-weight:700;color:var(--ink-2)}
+  .pr-form textarea{width:100%;box-sizing:border-box;font:inherit;font-size:15px;padding:10px 12px;border:1px solid var(--line);
+    border-radius:11px;resize:vertical;min-height:96px}
+  .pr-foto{display:flex;align-items:center;gap:8px;flex-wrap:wrap;cursor:pointer}
+  .pr-foto input{position:absolute;width:1px;height:1px;opacity:0}
+  .pr-foto-b{font-size:13.5px;font-weight:600;color:var(--accent);border:1px solid var(--accent-soft);background:var(--accent-soft);
+    border-radius:10px;padding:8px 11px;white-space:nowrap}
+  .pr-foto-n{font-size:12px;color:var(--ink-2);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pr-auto{font-size:11.5px;color:var(--ink-3)}
+  .pr-btn{border:0;border-radius:11px;background:var(--accent);color:#fff;font:inherit;font-size:15px;font-weight:700;padding:11px}
+  .pr-lista{padding:0 12px}
+  .pr-item{padding:11px 0;border-bottom:1px solid var(--line)}
+  .pr-item:last-child{border-bottom:0}
+  .pr-q{font-size:13.5px}
+  .pr-f{font-size:11.5px;color:var(--ink-3);margin-right:4px}
+  .pr-a{font-size:13px;margin-top:6px;padding:7px 10px;border-radius:10px;background:var(--accent-soft)}
+  .pr-esp{font-size:12px;color:var(--ink-3);margin-top:4px}
+</style>
+<script>
+(function () {
+  var f = document.querySelector('.pr-foto input'), n = document.getElementById('pr-foto-n');
+  if (f && n) f.addEventListener('change', function () { n.textContent = f.files[0] ? f.files[0].name : ''; });
+})();
+</script>
+{% endblock %}

@@ -32,6 +32,9 @@ FUENTES = {
     # TMT 2026-09-23 (caso AQ 166): débitos que el banco no tiene y facturas
     # de proveedor pagadas dos veces.
     "bancos": "Bancos",
+    # 13/10/2026: los vendedores avisan problemas de la app desde Mi Cartera;
+    # le llegan sólo a Tamara (la pantalla pide `app.reportes`, sin rol).
+    "reporte_app": "Problemas de la app",
 }
 
 NIVELES = ("ok", "alerta", "error")

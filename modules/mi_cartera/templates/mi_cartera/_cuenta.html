@@ -21,6 +21,7 @@
   </summary>
   <div class="cuenta-menu">
     <div class="cuenta-quien">{{ vend_nombre }}<small>{{ vend }}</small></div>
+    <a class="cuenta-prob" href="{{ url_for('mi_cartera.avisar_problema') }}{{ ('?vend=' ~ vend) if preview else '' }}">🛠 Avisar un problema</a>
     <form method="post" action="{{ url_for('auth.logout') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit">⏻ Salir</button>

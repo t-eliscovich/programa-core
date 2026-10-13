@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% from "_ui.html" import page_hero %}
+{% block title %}Problemas de la app{% endblock %}
+{% block breadcrumb %}<strong>Problemas de la app</strong>{% endblock %}
+
+{% block content %}
+{# 13/10/2026 — lo que avisan los vendedores desde "Avisar un problema" de Mi
+   Cartera. La ve sólo Tamara (permiso app.reportes, sin rol: entra por *).
+   Tailwind está congelado → estilos inline. #}
+<div style="max-width:860px;font-variant-numeric:tabular-nums;">
+  {{ page_hero('Problemas de la app',
+       descripcion='Lo que avisan los vendedores desde Mi Cartera. Al contestar, la respuesta les llega a su campanita.',
+       kpi_valor=(filas|selectattr('resuelto', 'equalto', false)|list|length) ~ '',
+       kpi_extra='sin resolver') }}
+
+  {% if sel %}
+  <div style="border:1px solid rgb(226 232 240);border-radius:12px;padding:16px;margin:14px 0;background:#fff">
+    <div style="font-size:12px;color:rgb(100 116 139)">
+      <b style="color:rgb(15 23 42)">{{ sel.vend or sel.usuario }}</b> · {{ sel.creado_en|fecha_hora_ec }}
+      · {{ sel.dispositivo or '—' }} · pantalla <code>{{ sel.pantalla or '—' }}</code>
+    </div>
+    <p style="font-size:15px;margin:10px 0 12px;white-space:pre-wrap">{{ sel.texto }}</p>
+    {% if sel.tiene_foto %}
+      <a href="{{ url_for('mi_cartera.reporte_app_foto', id_reporte=sel.id_reporte) }}" target="_blank" rel="noopener">
+        <img src="{{ url_for('mi_cartera.reporte_app_foto', id_reporte=sel.id_reporte) }}" alt="Foto que mandó"
+             style="max-width:280px;max-height:420px;border:1px solid rgb(226 232 240);border-radius:8px"></a>
+    {% endif %}
+    <details style="margin-top:8px;font-size:11px;color:rgb(148 163 184)"><summary>Navegador</summary>{{ sel.user_agent }}</details>
+    <form method="post" action="{{ url_for('mi_cartera.reporte_app_responder', id_reporte=sel.id_reporte) }}" style="margin-top:14px">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <textarea name="respuesta" rows="3" required placeholder="La respuesta le llega a su campanita"
+                style="width:100%;box-sizing:border-box;border:1px solid rgb(203 213 225);border-radius:8px;padding:8px;font:inherit">{{ sel.respuesta or '' }}</textarea>
+      <div style="display:flex;align-items:center;gap:12px;margin-top:8px">
+        <label style="font-size:13px"><input type="checkbox" name="resuelto" value="1" {{ 'checked' if sel.resuelto or not sel.respuesta }}> Resuelto</label>
+        <button type="submit" style="border:0;border-radius:8px;background:rgb(67 56 202);color:#fff;font-weight:600;padding:8px 14px">
+          {{ 'Cambiar respuesta' if sel.respuesta else 'Contestar' }}</button>
+        {% if sel.respondido_en %}<span style="font-size:12px;color:rgb(100 116 139)">Contestado {{ sel.respondido_en|fecha_hora_ec }}</span>{% endif %}
+      </div>
+    </form>
+  </div>
+  {% endif %}
+
+  <table style="width:100%;border-collapse:collapse;font-size:13px;margin-top:10px">
+    <thead><tr style="text-align:left;color:rgb(100 116 139);font-size:11px;text-transform:uppercase">
+      <th style="padding:6px">Cuándo</th><th style="padding:6px">Quién</th><th style="padding:6px">Qué pasó</th><th style="padding:6px">Estado</th></tr></thead>
+    <tbody>
+    {% for f in filas %}
+      <tr style="border-top:1px solid rgb(241 245 249);{{ 'background:rgb(238 242 255);' if sel and sel.id_reporte == f.id_reporte }}">
+        <td style="padding:6px;white-space:nowrap">{{ f.cuando }}</td>
+        <td style="padding:6px;white-space:nowrap"><b>{{ f.vend or f.usuario }}</b></td>
+        <td style="padding:6px"><a href="{{ url_for('mi_cartera.reporte_app', id_reporte=f.id_reporte) }}">{{ f.texto|truncate(90) }}</a>{{ ' 📷' if f.tiene_foto }}</td>
+        <td style="padding:6px;white-space:nowrap">{% if f.resuelto %}<span style="color:rgb(21 128 61)">✓ Resuelto</span>{% elif f.respuesta %}Contestado{% else %}<b style="color:rgb(180 83 9)">Nuevo</b>{% endif %}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="4" style="padding:16px;color:rgb(100 116 139)">Todavía nadie avisó nada.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}

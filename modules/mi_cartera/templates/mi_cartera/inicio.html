@@ -8,8 +8,26 @@
       <h1>Hola, {{ vend_nombre.split()[0] if vend_nombre else vend }}</h1>
       <div class="sub">{{ vend }} · {{ pendiente.n_clientes }} cliente{{ '' if pendiente.n_clientes == 1 else 's' }} con saldo</div>
     </div>
-    {% include "mi_cartera/_cuenta.html" %}
+    {# ⭐ La campanita (13/10/2026): al lado de la cuenta, sólo en el Inicio —
+       en las otras pantallas avisa el cartelito de arriba y el numerito de
+       la pestaña Inicio, así no se toca la cabecera de cada pantalla. #}
+    <div class="ini-der">
+      <a class="campana" href="{{ url_for('mi_cartera.avisos') }}{{ ('?vend=' ~ vend) if preview else '' }}"
+         aria-label="Avisos{% if n_avisos %}: {{ n_avisos }} nuevos{% endif %}">
+        <i class="ico-campana"></i>{% if n_avisos %}<span class="campana-n">{{ n_avisos }}</span>{% endif %}
+      </a>
+      {% include "mi_cartera/_cuenta.html" %}
+    </div>
   </div>
+  <style>
+    .ini-der{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+    .campana{position:relative;width:36px;height:36px;border-radius:10px;border:1px solid var(--line);display:grid;place-items:center;color:var(--ink-2)}
+    .ico-campana{display:block;width:19px;height:19px;background:currentColor;
+      -webkit-mask:center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/%3E%3Cpath d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/%3E%3C/svg%3E");
+      mask:center/contain no-repeat url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/%3E%3Cpath d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/%3E%3C/svg%3E")}
+    .campana-n{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 5px;border-radius:9px;
+      background:#E5484D;color:#fff;font-size:11px;font-weight:700;line-height:18px;text-align:center}
+  </style>
 {% endblock %}
 
 {% block content %}
