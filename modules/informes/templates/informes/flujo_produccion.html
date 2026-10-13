@@ -227,7 +227,7 @@
           {% set _rec_us = ahl.get('recargos_us') or 0 %}
           {% if _rec_us|round(0) %}
           <tr>
-            <td class="lbl" title="Flete, seguro y CAE de importaciones recibidas antes, cargados este mes{% if ahl.get('recargos_detalle') %}: {{ ahl.get('recargos_detalle') | join(', ') }}{% endif %}. Es costo del hilo que ya está en el stock: sube el $/kg sin sumar kilos.">Recargos</td>
+            <td class="lbl" title="Flete, seguro y CAE de importaciones recibidas antes, cargados este mes{% if ahl.get('recargos_detalle') %}: {{ ahl.get('recargos_detalle') | join(', ') }}{% endif %}. Es costo del hilo que ya está en el stock: sube el $/kg sin sumar kilos.">Recargos mes anterior</td>
             <td class="num">—</td>
             <td class="num">—</td>
             <td class="num">+{{ _rec_us | num_es(0) }}</td>
