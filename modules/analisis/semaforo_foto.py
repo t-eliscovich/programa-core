@@ -26,7 +26,7 @@ from modules.analisis import cobranza
 #: Un pago es "grande" desde este monto (por cliente, en el tramo).
 UMBRAL_PAGO_GRANDE = 5000
 #: Cuántos nombres por renglón; el resto va como "+N más".
-MAX_NOMBRES = 3
+MAX_NOMBRES = 5  # Tamara 13/10: "no puedo ver más" → de 3 a 5
 #: Un cheque es "al día" si se puede depositar a menos de estos días.
 DIAS_AL_DIA = 3
 ROJOS = ("rojo", "inc")

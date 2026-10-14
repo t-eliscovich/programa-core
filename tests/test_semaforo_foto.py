@@ -84,11 +84,11 @@ def test_html_sin_foto_anterior_no_compara():
     assert "ayer" not in _bloque(total_antes=None)
 
 
-def test_html_corta_en_tres_y_dice_cuantos_mas():
+def test_html_corta_en_cinco_y_dice_cuantos_mas():
     sal = [{"cod": f"C{i}", "nombre": "x", "color": "verde", "antes": 1, "ahora": 0,
-            "pagado": 0} for i in range(5)]
+            "pagado": 0} for i in range(7)]
     h = _bloque(salieron=sal)
-    assert "C2" in h and "C3" not in h and "+2 más" in h
+    assert "C4" in h and "C5" not in h and "+2 más" in h
 
 
 def test_el_bloque_no_tumba_el_mail(monkeypatch):
