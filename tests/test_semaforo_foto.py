@@ -161,3 +161,37 @@ def test_sin_foto_anterior_no_dice_quien_entro_ni_salio(monkeypatch):
     r = sf.para_la_nota("2026-10-13", "2026-10-13")
     assert r["entraron"] == [] and r["salieron"] == []
     assert r["total"] == {"n": 1, "saldo": 5000}
+
+
+def test_el_mas_es_un_link_a_la_pantalla_completa():
+    sal = [{"cod": f"C{i}", "nombre": "x", "color": "verde", "antes": 1,
+            "pagado": 0} for i in range(7)]
+    base = {"salieron": sal, "entraron": [], "pagos": [], "umbral": 5000,
+            "total": {"n": 1, "saldo": 1}, "total_antes": None}
+    from datetime import date
+    link = dia.link_cobranza_del_dia(date(2026, 10, 13))
+    assert link.endswith("/analisis/cobranza/dia?fecha=2026-10-13")
+    h = dia._cobranza_semaforo_html(base, "hoy", link=link)
+    assert f'href="{link}"' in h and "+2 más" in h
+    todo = dia._cobranza_semaforo_html(base, "hoy", maximo=10 ** 6)
+    assert "C6" in todo and "más" not in todo.replace("de más de", "")
+    assert dia.link_cobranza_del_dia(date(2026, 10, 12), "finde").endswith("&finde=1")
+
+
+def test_un_dia_pasado_se_lee_de_su_foto(monkeypatch):
+    llamado = {}
+    monkeypatch.setattr(sf, "foto_de", lambda f: llamado.setdefault(
+        "f", {"A": _c("A", "rojo", 5000)}))
+    monkeypatch.setattr(sf.cobranza, "colores", lambda: {})
+    monkeypatch.setattr(sf, "cobros_del_tramo", lambda d, h: [])
+    monkeypatch.setattr(sf, "foto_anterior", lambda d: ("2026-01-01", {}))
+    r = sf.para_la_nota("2026-01-02", "2026-01-02")
+    assert r["total"] == {"n": 1, "saldo": 5000}
+
+
+def test_la_pantalla_existe_y_pide_el_permiso_de_cobranza():
+    from pathlib import Path
+    v = (Path(__file__).resolve().parents[1] / "modules/analisis/views.py").read_text(
+        encoding="utf-8")
+    i = v.index('@analisis_bp.route("/analisis/cobranza/dia")')
+    assert '@requiere_permiso("analisis.cobranza")' in v[i:i + 200]

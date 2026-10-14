@@ -295,6 +295,34 @@ def cobranza():
                            menu_global=[])
 
 
+@analisis_bp.route("/analisis/cobranza/dia")
+@requiere_login
+@requiere_permiso("analisis.cobranza")
+def cobranza_del_dia():
+    """Las listas COMPLETAS del bloque Cobranza del mail diario.
+
+    Tamara 13/10/2026: el mail corta en 5 nombres por renglón y *"más en una
+    pantalla, total abre mientras estés loggeado"*. Es el mismo cálculo que
+    el mail (`dia._cobranza_semaforo_html`), sin el corte.
+    """
+    from datetime import timedelta
+
+    from modules.analisis import semaforo_foto
+    from modules.informes import dia as _dia
+
+    try:
+        fecha = date.fromisoformat(request.args.get("fecha") or "")
+    except ValueError:
+        fecha = today_ec()
+    finde = request.args.get("finde") == "1"
+    desde = fecha - timedelta(days=1) if finde else fecha
+    c = semaforo_foto.para_la_nota(desde, fecha)
+    html = _dia._cobranza_semaforo_html(c, "finde" if finde else "hoy",
+                                        maximo=10 ** 6)
+    return render_template("analisis/cobranza_dia.html", html=html,
+                           fecha=fecha, finde=finde, menu_global=[])
+
+
 @analisis_bp.route("/analisis/vendidos.xlsx")
 @requiere_login
 @requiere_permiso("analisis.ver")

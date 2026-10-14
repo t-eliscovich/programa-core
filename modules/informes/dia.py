@@ -1251,17 +1251,25 @@ def _nombre_cli(x: dict) -> str:
             if nom else x["cod"])
 
 
-def _lista_html(items: list[dict], fmt) -> str:
+def _lista_html(items: list[dict], fmt, link: str | None = None,
+                maximo: int | None = None) -> str:
+    """Hasta `maximo` renglones; el resto va como "+N más", que abre la
+    lista completa en el programa (Tamara 13/10: *"más en una pantalla,
+    total abre mientras estés loggeado"*)."""
     from modules.analisis.semaforo_foto import MAX_NOMBRES
 
-    lin = [f'<div style="padding:2px 0">{fmt(x)}</div>' for x in items[:MAX_NOMBRES]]
-    if len(items) > MAX_NOMBRES:
-        lin.append(f'<div style="padding:2px 0;color:{_GRIS}">'
-                   f'+{len(items) - MAX_NOMBRES} más</div>')
+    maximo = MAX_NOMBRES if maximo is None else maximo
+    lin = [f'<div style="padding:2px 0">{fmt(x)}</div>' for x in items[:maximo]]
+    if len(items) > maximo:
+        mas = f"+{len(items) - maximo} más"
+        if link:
+            mas = f'<a href="{link}" style="color:{_GRIS}">{mas} →</a>'
+        lin.append(f'<div style="padding:2px 0;color:{_GRIS}">{mas}</div>')
     return "".join(lin)
 
 
-def _cobranza_semaforo_html(c: dict, cuando: str) -> str:
+def _cobranza_semaforo_html(c: dict, cuando: str, link: str | None = None,
+                            maximo: int | None = None) -> str:
     """El bloque "Cobranza" del mail: el semáforo de /analisis/cobranza
     contra la foto anterior, y los pagos grandes del tramo.
 
@@ -1283,19 +1291,19 @@ def _cobranza_semaforo_html(c: dict, cuando: str) -> str:
                 partes.append(f"pagó $ {_n(x['pagado'])}")
             return (f'{_nombre_cli(x)} <span style="color:{_VERDE}">'
                     f'{" · ".join(partes)}</span>')
-        bloques.append(_titulo("Salieron del rojo") + _lista_html(c["salieron"], _sal))
+        bloques.append(_titulo("Salieron del rojo") + _lista_html(c["salieron"], _sal, link, maximo))
     if c.get("entraron"):
         def _ent(x):
             return (f'{_nombre_cli(x)} <span style="color:{_GRIS}">'
                     f'$ {_n(x["saldo"])} · {x["motivo"].lower()}</span>')
-        bloques.append(_titulo("Entraron al rojo") + _lista_html(c["entraron"], _ent))
+        bloques.append(_titulo("Entraron al rojo") + _lista_html(c["entraron"], _ent, link, maximo))
     if c.get("pagos"):
         def _pag(x):
             forma = " y ".join(x["formas"]) if len(x["formas"]) <= 2 else "varias formas"
             return (f'{_nombre_cli(x)} <b>$ {_n(x["us"])}</b> '
                     f'<span style="color:{_GRIS}">{forma}</span>')
         bloques.append(_titulo(f"Pagos de más de $ {_n(c['umbral'])}")
-                       + _lista_html(c["pagos"], _pag))
+                       + _lista_html(c["pagos"], _pag, link, maximo))
     t, ta = c.get("total") or {}, c.get("total_antes")
     tot = f'En rojo: <b>{t.get("n", 0)}</b> clientes · $ {_n(t.get("saldo"))}'
     if ta:
@@ -1308,6 +1316,15 @@ def _cobranza_semaforo_html(c: dict, cuando: str) -> str:
             f'COBRANZA</div>{"".join(bloques)}</div>')
 
 
+def link_cobranza_del_dia(fecha, cuando: str = "hoy") -> str:
+    """La pantalla con las listas completas del bloque Cobranza del mail."""
+    import os
+
+    base = (os.environ.get("APP_BASE_URL") or "https://programa.intela.com.ec").rstrip("/")
+    q = f"fecha={fecha.isoformat()}" + ("" if cuando == "hoy" else "&finde=1")
+    return f"{base}/analisis/cobranza/dia?{q}"
+
+
 def _cobranza_semaforo(fecha, cuando: str) -> str:
     """Fail-soft: si el semáforo falla, el mail sale igual sin el bloque."""
     from datetime import timedelta
@@ -1316,7 +1333,8 @@ def _cobranza_semaforo(fecha, cuando: str) -> str:
         from modules.analisis import semaforo_foto
 
         desde = fecha if cuando == "hoy" else fecha - timedelta(days=1)
-        return _cobranza_semaforo_html(semaforo_foto.para_la_nota(desde, fecha), cuando)
+        return _cobranza_semaforo_html(semaforo_foto.para_la_nota(desde, fecha), cuando,
+                                       link=link_cobranza_del_dia(fecha, cuando))
     except Exception as e:  # noqa: BLE001 — un adorno no tumba el mail
         _LOG.warning("dia: no pude armar el bloque de cobranza (%s)", e)
         return ""

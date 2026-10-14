@@ -70,6 +70,14 @@ def foto_anterior(antes_de) -> tuple[object, dict[str, dict]]:
     return f, {(x["codigo_cli"] or "").strip().upper(): dict(x) for x in filas}
 
 
+def foto_de(fecha) -> dict[str, dict]:
+    """La foto de UN día, con la forma de `cobranza.colores()`."""
+    filas = db.fetch_all(
+        "SELECT codigo_cli, color, motivos, nombre, saldo, reb "
+        "  FROM scintela.semaforo_foto WHERE fecha = %s", (fecha,)) or []
+    return {(x["codigo_cli"] or "").strip().upper(): dict(x) for x in filas}
+
+
 def _total(filas) -> dict | None:
     filas = list(filas)
     if any(c.get("saldo") is None for c in filas):
@@ -168,7 +176,13 @@ def para_la_nota(desde, hasta) -> dict:
     Compara contra la última foto ANTERIOR a `desde` (para el día, la de ayer;
     para el fin de semana, la del viernes). Sin foto anterior van sólo los
     pagos grandes y el total."""
-    ahora = {k.strip().upper(): v for k, v in cobranza.colores().items()}
+    from filters import today_ec
+
+    # Un día que ya pasó se lee de SU foto (la del cierre): abrir mañana el
+    # link del mail de hoy tiene que mostrar lo mismo que decía el mail.
+    ahora = foto_de(hasta) if str(hasta) < str(today_ec()) else {}
+    if not ahora:
+        ahora = {k.strip().upper(): v for k, v in cobranza.colores().items()}
     pc = por_cliente(cobros_del_tramo(desde, hasta))
     f_antes, antes = foto_anterior(desde)
     cmp = comparar(antes, ahora, {k: v["us"] for k, v in pc.items()})

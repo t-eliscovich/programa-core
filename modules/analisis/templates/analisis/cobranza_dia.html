@@ -1,0 +1,13 @@
+{% extends "analisis/base.html" %}
+{% block titulo %}Cobranza del {{ fecha.strftime('%d/%m') }}{% endblock %}
+{% block marca %}Análisis de cartera{% endblock %}
+{% block contenido %}
+{# Tamara 13/10/2026: el "+N más" del mail diario abre acá, con todo. #}
+<div style="max-width:560px">
+  <div style="font-size:14px;margin-bottom:6px">
+    Cobranza {{ 'del fin de semana' if finde else 'del' }} {{ fecha.strftime('%d/%m/%Y') }}
+    · <a href="/analisis/cobranza">ver el semáforo</a>
+  </div>
+  {{ html|safe }}
+</div>
+{% endblock %}
