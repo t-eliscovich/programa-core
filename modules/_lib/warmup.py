@@ -289,6 +289,12 @@ def _loop() -> None:
     time.sleep(5)  # dejar terminar el arranque de la app
     while True:
         devengar_posdatados_del_dia()
+        try:
+            # Tamara 13/10: cheques a depositar a más de 360 días → campanita.
+            from modules.cheques import vigia_plazo
+            vigia_plazo.vigilar()
+        except Exception as e:  # noqa: BLE001 -- el hilo no muere nunca
+            _LOG.warning("vigía de plazo: %s", e)
         t0 = time.time()
         try:
             _warm_once()

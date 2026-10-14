@@ -35,6 +35,8 @@ FUENTES = {
     # 13/10/2026: los vendedores avisan problemas de la app desde Mi Cartera;
     # le llegan sólo a Tamara (la pantalla pide `app.reportes`, sin rol).
     "reporte_app": "Problemas de la app",
+    # 13/10/2026: cheques con la fecha de depósito a más de 360 días.
+    "cheques": "Cheques",
 }
 
 NIVELES = ("ok", "alerta", "error")

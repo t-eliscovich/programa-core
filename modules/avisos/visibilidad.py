@@ -52,6 +52,9 @@ FUENTE_PERMISO: dict[str, str] = {
     # TMT 2026-09-23 (caso AQ 166): débitos que el banco no tiene y facturas
     # de proveedor pagadas dos veces — los ve quien concilia.
     "bancos": "bancos.conciliar",
+    # 13/10/2026 (Tamara: "ponele campanita a Alex"): cheques con la fecha
+    # de depósito a más de 360 días — los ve quien carga la cobranza.
+    "cheques": "cheques.ver",
 }
 
 #: "La ruta no resolvió" — distinto de "resolvió y no pide permiso" (None).
