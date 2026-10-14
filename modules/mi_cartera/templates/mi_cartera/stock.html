@@ -36,6 +36,10 @@
       <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">PRI</a><a href="#" data-cal="seg">SEG</a>
     </div>
   </div>
+  {# La leyenda, arriba (Tamara 13/10: "contá arriba que el botón FT te lleva
+     a la ficha técnica"). Un renglón chico: se lee una vez y no estorba. #}
+  <div class="st-ley"><span class="st-ft">FT</span> ficha técnica de la tela ·
+    <em class="tag comp">🏆</em> en la competencia (×10: lo que vale el kilo)</div>
 {% endblock %}
 
 {% block content %}
@@ -101,6 +105,9 @@
   .appbar .search{margin:8px 0 0}
   .appbar .search input{padding:8px 12px;font-size:15px;width:100%;min-width:0;box-sizing:border-box}
   .st-filtros{display:flex;gap:8px;margin-top:8px}
+  .st-ley{margin-top:7px;font-size:11px;line-height:1.5;color:var(--ink-3)}
+  .st-ley .st-ft{margin-left:0;padding:0 5px;font-size:9.5px}
+  .st-ley .tag{font-size:9px;padding:0 3px}
   .st-filtros select{flex:1 1 0;min-width:0;font:inherit;font-size:15px;padding:6px 8px;
     border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
   .st-cal{flex:0 0 auto;display:flex;background:#EDEFF4;border-radius:9px;padding:2px}
@@ -123,19 +130,24 @@
   .st-ft{flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.02em;text-decoration:none;
     color:var(--accent);border:1px solid var(--accent-soft);background:#fff;border-radius:6px;padding:2px 6px;
     margin-left:auto}
-  .st-col{display:flex;align-items:center;gap:6px;padding:5px 0 5px 10px;font-size:13px;
+  /* ⭐ Los colores, CHICOS (Tamara 13/10: "letra más chiquita así se ve todo
+     sin tener que scrollear"): renglones apretados para que una tela abierta
+     entre casi entera en la pantalla. */
+  .st-col{display:flex;align-items:center;gap:5px;padding:2px 0 2px 8px;font-size:11.5px;line-height:1.2;
     border-left:2px solid var(--accent-soft)}
   .st-col:last-child{margin-bottom:8px}
-  .st-col .cc{flex:0 0 auto;min-width:30px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-size:11.5px;font-weight:700;color:var(--ink-2);white-space:nowrap}
+  .st-col .cc{flex:0 0 auto;min-width:26px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-size:10.5px;font-weight:700;color:var(--ink-2);white-space:nowrap}
   .st-col .cn{flex:1 1 auto;min-width:30%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
   /* Las etiquetas (ABI · PRI/SEG · competencia) van juntas y, si no entran al lado del
      color, se acomodan en dos renglones DENTRO de su lugar: el nombre del
      color nunca queda reducido a "N…" (medido a 320 px, 13/10/2026). */
   .st-col .tg{flex:0 1 auto;min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}
-  .st-col .kgr{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;min-width:44px}
-  .st-col .rol{font-size:10.5px;color:var(--ink-3);white-space:nowrap}
-  .st-col .kg{font-weight:600;font-size:13px}
+  .st-col .kgr{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.05;min-width:40px}
+  .st-col .rol{font-size:9.5px;color:var(--ink-3);white-space:nowrap}
+  .st-col .kg{font-weight:600;font-size:12px;min-width:0}
+  .st-col .tag{font-size:9px;padding:0 3px;line-height:1.45}
+  .st-col .tg{gap:2px}
   .tag{flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;padding:1px 4px;
     border-radius:4px;background:#EEF1F6;color:var(--ink-2)}
   .tag.comp{background:#EDE9FE;color:#5B21B6}
