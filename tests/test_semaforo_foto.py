@@ -158,7 +158,11 @@ def test_sin_foto_anterior_no_dice_quien_entro_ni_salio(monkeypatch):
                         lambda: {"A": _c("A", "rojo", 5000, motivos=["x"])})
     monkeypatch.setattr(sf, "cobros_del_tramo", lambda d, h: [])
     monkeypatch.setattr(sf, "foto_anterior", lambda d: (None, {}))
-    r = sf.para_la_nota("2026-10-13", "2026-10-13")
+    # Hoy (no una fecha fija): un día pasado se lee de su foto en la base, y
+    # con "2026-10-13" escrito a mano el test se rompió solo al día siguiente.
+    from filters import today_ec
+    hoy = str(today_ec())
+    r = sf.para_la_nota(hoy, hoy)
     assert r["entraron"] == [] and r["salieron"] == []
     assert r["total"] == {"n": 1, "saldo": 5000}
 
