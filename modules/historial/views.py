@@ -1142,6 +1142,21 @@ def reverso_preview(id_mov_doble: int):
         if concepto:
             detalle["Se había borrado"] = concepto
 
+    if tipo == "cheque_stat_cambio":
+        from modules.cheques import queries as _chq
+        try:
+            plan = _chq.plan_deshacer_cambio_estado(id_mov_doble)
+        except ValueError as e:
+            return jsonify({"ok": False, "error": str(e)}), 409
+        _ch = plan["cheque"]
+        _no = (_ch.get("no_cheque") or "").strip() or f"#{_ch['id_cheque']}"
+        titulo = f"Deshacer el cambio de estado del cheque {_no}"
+        mensaje = (f"El cheque vuelve a {plan['stat_prev']}, como estaba antes. "
+                   "No mueve banco, caja ni facturas.")
+        detalle = {"Cheque": _no, "Cliente": _ch.get("codigo_cli") or "—",
+                   "Importe": money_es(_ch.get("importe") or 0),
+                   "Estado": f"{plan['stat_destino']} → {plan['stat_prev']}"}
+
     # Siempre posteamos a reverso-inline: ejecuta los tipos atómicos en el acto
     # y, para los complejos, redirige al wizard de siempre (fallback graceful).
     accion_url = url_for("historial.reversar_mov_inline", id_mov_doble=id_mov_doble)
@@ -1154,7 +1169,7 @@ def reverso_preview(id_mov_doble: int):
         "movimientos": movimientos,
         "titulo_movimientos": titulo_movs,
         "accion_url": accion_url,
-        "confirm_label": "Deshacer" if tipo == "posdat_anulada" else "Reversar",
+        "confirm_label": "Deshacer" if tipo in ("posdat_anulada", "cheque_stat_cambio") else "Reversar",
     })
 
 
@@ -1567,6 +1582,9 @@ _PERMISO_REVERSO_INLINE = {
     # TMT 2026-10-01 (Tamara: "desde el historial deshacer") — la OP 100352
     # se borró con el tacho sin haberse retirado. Deshacer la vuelve a la vida.
     "posdat_anulada": "posdat.anular",
+    # TMT 2026-10-14 (Tamara: "tuve que entrar al cheque para deshacer") —
+    # un cambio de estado sin plata (X/Z/P/D/T) se deshace acá mismo.
+    "cheque_stat_cambio": "cheques.transicionar",
 }
 
 
@@ -1653,6 +1671,20 @@ def reversar_mov_inline(id_mov_doble: int):
             flash(str(e), "warn")
         except Exception as e:
             flash_exc("No pude deshacer la eliminación (no se tocó nada)", e)
+        return redirect(_next_seguro())
+
+    if tipo == "cheque_stat_cambio":
+        from modules.cheques import queries as _chq
+        try:
+            res = _chq.deshacer_cambio_estado(id_mov_doble, usuario=usuario)
+            flash(
+                f"Cheque {res['no_cheque'] or ('#' + str(res['id_cheque']))} de vuelta "
+                f"en {res['stat_restaurado']} (se deshizo el paso a "
+                f"{res['stat_deshecho']}).", "ok")
+        except ValueError as e:
+            flash(str(e), "warn")
+        except Exception as e:
+            flash_exc("No pude deshacer el cambio de estado (no se tocó nada)", e)
         return redirect(_next_seguro())
 
     # TMT 2026-07-06: retiro_op tiene reverso atómico propio — deshacer_op

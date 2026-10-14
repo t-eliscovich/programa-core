@@ -8914,3 +8914,113 @@ def deshacer_devuelto(
         "matches_deshechos": matches_deshechos,
     }
 
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Deshacer un CAMBIO DE ESTADO sin plata (X / Z / P / D / T) desde el
+# historial. TMT 2026-10-14 (dueña: "tuve que entrar al cheque para deshacer.
+# me debería haber dejado desde el historial"). El ↺ de la fila "Cheque:
+# cambio de estado" no tenía handler y mandaba a buscar la ficha.
+#
+# Esos saltos, en `transicionar_stat`, son SÓLO un UPDATE del stat (la rama
+# "anulado, postdat, daniela"): no crean banco, caja, posdat ni tocan
+# aplicaciones. Por eso el inverso exacto es volver el stat a `stat_prev`.
+# Freno: el cheque tiene que seguir en el estado al que lo llevó ESE
+# movimiento — si después se movió de nuevo, se deshace primero lo último.
+# ─────────────────────────────────────────────────────────────────────────
+TIPO_MD_DESHACER_STAT = "reverso_cheque_stat_cambio"
+
+
+def _mov_stat_cambio(id_mov_doble: int, conn=None) -> tuple[dict, dict]:
+    import json as _json
+    import re as _re
+
+    mv = db.fetch_one(
+        "SELECT id_mov_doble, tipo, estado, origen_id, importe, concepto, metadata "
+        "  FROM scintela.mov_doble WHERE id_mov_doble = %s",
+        (id_mov_doble,), conn=conn,
+    )
+    if not mv:
+        raise ValueError("No encuentro ese movimiento.")
+    if (mv.get("tipo") or "") != TIPO_MD_TRANSICION_OTRO:
+        raise ValueError(f"Ese movimiento es '{mv.get('tipo')}', no un cambio de estado.")
+    if (mv.get("estado") or "") != "activo":
+        raise ValueError("Ese cambio de estado ya se deshizo.")
+    meta = mv.get("metadata") or {}
+    if isinstance(meta, str):
+        try:
+            meta = _json.loads(meta)
+        except Exception:  # noqa: BLE001
+            meta = {}
+    prev, dest = (meta.get("stat_prev") or ""), (meta.get("stat_destino") or "")
+    if not (prev and dest):
+        # Filas sin metadata: el concepto siempre arranca "X→Z cheque …".
+        m = _re.match(r"\s*([0-9A-Z?])\s*→\s*([0-9A-Z])\b", mv.get("concepto") or "")
+        if m:
+            prev, dest = m.group(1), m.group(2)
+    prev, dest = prev.upper().strip(), dest.upper().strip()
+    if not prev or prev == "?" or not dest:
+        raise ValueError("No sé de qué estado venía el cheque — deshacelo desde su ficha.")
+    return mv, {"stat_prev": prev, "stat_destino": dest}
+
+
+def plan_deshacer_cambio_estado(id_mov_doble: int) -> dict:
+    """Qué hace el ↺ sobre un cambio de estado. NO escribe nada."""
+    mv, st = _mov_stat_cambio(id_mov_doble)
+    ch = db.fetch_one(
+        "SELECT id_cheque, no_cheque, stat, codigo_cli, importe "
+        "  FROM scintela.cheque WHERE id_cheque = %s",
+        (int(mv.get("origen_id") or 0),),
+    )
+    if not ch:
+        raise ValueError("El cheque de ese movimiento ya no existe.")
+    actual = (ch.get("stat") or "").upper()
+    if actual != st["stat_destino"]:
+        raise ValueError(
+            f"El cheque ya no está en {st['stat_destino']} (ahora está en {actual}): "
+            "se movió después. Deshacé primero el último cambio.")
+    return {"cheque": ch, **st}
+
+
+def deshacer_cambio_estado(id_mov_doble: int, *, usuario: str = "web") -> dict:
+    """El cheque vuelve al estado de antes y el movimiento queda reversado."""
+    import mov_doble as _md
+
+    asegurar_fecha_abierta(today_ec())
+    with db.tx() as conn:
+        mv, st = _mov_stat_cambio(id_mov_doble, conn=conn)
+        id_cheque = int(mv.get("origen_id") or 0)
+        ch = db.fetch_one(
+            "SELECT id_cheque, no_cheque, stat, codigo_cli, importe "
+            "  FROM scintela.cheque WHERE id_cheque = %s FOR UPDATE",
+            (id_cheque,), conn=conn,
+        )
+        if not ch:
+            raise ValueError("El cheque de ese movimiento ya no existe.")
+        actual = (ch.get("stat") or "").upper()
+        if actual != st["stat_destino"]:
+            raise ValueError(
+                f"El cheque ya no está en {st['stat_destino']} (ahora está en {actual}): "
+                "se movió después. Deshacé primero el último cambio.")
+        db.execute(
+            "UPDATE scintela.cheque SET stat = %s, usuario_modifica = %s, "
+            "       fecha_modifica = CURRENT_TIMESTAMP WHERE id_cheque = %s",
+            (st["stat_prev"], usuario, id_cheque), conn=conn,
+        )
+        _no = ch.get("no_cheque") or f"#{id_cheque}"
+        _md.registrar(
+            conn=conn,
+            tipo=TIPO_MD_DESHACER_STAT,
+            origen_table="cheque", origen_id=id_cheque,
+            destino_table="cheque", destino_id=id_cheque,
+            importe=float(ch.get("importe") or 0),
+            fecha=today_ec(),
+            concepto=(f"DESHACE {st['stat_destino']}→{st['stat_prev']} cheque {_no} "
+                      f"{ch.get('codigo_cli') or ''}").strip()[:200],
+            usuario=usuario,
+            metadata={"id_cheque": id_cheque, "stat_prev": st["stat_destino"],
+                      "stat_destino": st["stat_prev"]},
+            id_original=id_mov_doble,
+        )
+    return {"id_cheque": id_cheque, "no_cheque": ch.get("no_cheque"),
+            "stat_restaurado": st["stat_prev"], "stat_deshecho": st["stat_destino"]}
