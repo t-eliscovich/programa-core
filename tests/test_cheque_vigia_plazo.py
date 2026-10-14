@@ -14,10 +14,16 @@ class _DB:
     def fetch_all(self, sql, params=None, conn=None):
         return self.abiertos if "scintela.aviso" in sql else self.malos
 
+    def fetch_one(self, sql, params=None, conn=None):
+        return {"fechad": self.fechad_hoy} if getattr(self, "fechad_hoy", None) else None
 
-def _correr(monkeypatch, malos, abiertos):
+
+def _correr(monkeypatch, malos, abiertos, fechad_hoy=None):
     avisos, resueltos = [], []
-    monkeypatch.setattr(vp, "db", _DB(malos, abiertos))
+    fake = _DB(malos, abiertos)
+    fake.fechad_hoy = fechad_hoy
+    monkeypatch.setattr(vp, "db", fake)
+    monkeypatch.setattr(avq, "archivar", lambda i, u="web", **k: resueltos.append((i, "archivado")) or True)
     monkeypatch.setattr(avq, "avisar", lambda **k: avisos.append(k) or True)
     monkeypatch.setattr(avq, "resolver", lambda i, **k: resueltos.append((i, k)) or True)
     return vp.vigilar(forzar=True), avisos, resueltos
@@ -38,7 +44,8 @@ def test_avisa_el_3616_con_link_a_su_ficha(monkeypatch):
 def test_cuando_se_corrige_da_vuelta_el_aviso(monkeypatch):
     r, avisos, resueltos = _correr(monkeypatch, [], [{
         "id_aviso": 9, "clave": "plazo:106327",
-        "titulo": "Cheque 3616 de GUG a depositar el 31/12/2027: 444 días"}])
+        "titulo": "Cheque 3616 de GUG a depositar el 31/12/2027: 444 días"}],
+        fechad_hoy=date(2026, 12, 31))
     assert r == {"avisados": 0, "resueltos": 1}
     assert resueltos[0][1]["titulo"] == "Cheque 3616 de GUG: fecha corregida"
 
@@ -46,3 +53,15 @@ def test_cuando_se_corrige_da_vuelta_el_aviso(monkeypatch):
 def test_la_fuente_tiene_nombre_y_permiso():
     assert avq.FUENTES["cheques"] == "Cheques"
     assert visibilidad.FUENTE_PERMISO["cheques"] == "cheques.ver"
+
+
+def test_si_la_fecha_no_cambio_se_archiva_sin_decir_corregida(monkeypatch):
+    r, _, hechos = _correr(monkeypatch, [], [{
+        "id_aviso": 7, "clave": "plazo:99453",
+        "titulo": "Cheque  de MSJ a depositar el 15/10/2026: 715 días"}],
+        fechad_hoy=date(2026, 10, 15))
+    assert hechos == [(7, "archivado")] and r["resueltos"] == 0
+
+
+def test_un_postergado_cuenta_desde_la_postergacion():
+    assert "fecha_postergacion" in vp._DESDE.split(",")[0]

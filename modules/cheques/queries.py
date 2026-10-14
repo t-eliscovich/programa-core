@@ -927,7 +927,8 @@ def editar(
     # con prefix [C], preservando la intención sin agregar una columna.
     ch = db.fetch_one(
         "SELECT id_cheque, no_cheque, stat, fechad, doc_banco, no_banco, "
-        "codigo_cli, importe, fecha FROM scintela.cheque WHERE id_cheque = %s",
+        "codigo_cli, importe, fecha, fecha_recibido, fecha_postergacion "
+        "FROM scintela.cheque WHERE id_cheque = %s",
         (id_cheque,),
     )
     if not ch:
@@ -957,8 +958,8 @@ def editar(
         if fechad_nueva != ch["fechad"]:
             # Sólo si la fecha CAMBIA: un cheque viejo con plazo largo se
             # puede seguir editando (y corregir) sin que lo frene.
-            validar_plazo(fechad_nueva, ch.get("fecha_recibido") or ch.get("fecha")
-                          or today_ec())
+            validar_plazo(fechad_nueva, ch.get("fecha_postergacion")
+                          or ch.get("fecha_recibido") or ch.get("fecha") or today_ec())
 
     # Combinar concepto (si vino) + observación en un solo append a `observacion`.
     obs_partes: list[str] = []
