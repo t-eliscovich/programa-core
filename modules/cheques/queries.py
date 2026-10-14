@@ -306,6 +306,27 @@ def _banco_real_para_deposito(virtual: int, conn=None) -> int:
     return 10 if virtual == 90 else 32
 
 
+#: Tamara 13/10/2026: "que no se pueda pagar a más de 360" — un cheque no se
+#: deposita a más de 360 días de haber entrado. Salió del cheque 3616 de GUG,
+#: cargado el 13/10/2026 a depositar el 31/12/2027 (el año tipeado de más).
+PLAZO_MAX_DIAS = 360
+
+
+def validar_plazo(fechad, desde) -> None:
+    """Frena una fecha de depósito a más de PLAZO_MAX_DIAS de `desde`."""
+    if not fechad or not desde:
+        return
+    try:
+        dias = (fechad - desde).days
+    except TypeError:
+        return
+    if dias > PLAZO_MAX_DIAS:
+        raise ValueError(
+            f"La fecha de depósito {fechad.strftime('%d/%m/%Y')} está a {dias} "
+            f"días: el máximo es {PLAZO_MAX_DIAS}. Revisá el año."
+        )
+
+
 def _domingo_a_lunes(f: date) -> date:
     """Si fecha cae domingo (weekday=6 en Python, 1 en Clipper DOW), shift a lunes."""
     if f and f.weekday() == 6:
@@ -933,6 +954,11 @@ def editar(
         fechad_lunes = _domingo_a_lunes(fechad)
         fechad_shifted = fechad_lunes != fechad
         fechad_nueva = fechad_lunes
+        if fechad_nueva != ch["fechad"]:
+            # Sólo si la fecha CAMBIA: un cheque viejo con plazo largo se
+            # puede seguir editando (y corregir) sin que lo frene.
+            validar_plazo(fechad_nueva, ch.get("fecha_recibido") or ch.get("fecha")
+                          or today_ec())
 
     # Combinar concepto (si vino) + observación en un solo append a `observacion`.
     obs_partes: list[str] = []
@@ -1981,6 +2007,7 @@ def transicionar_stat(
                     raise ValueError(
                         "La nueva fecha del protestado debe ser hoy o futura."
                     )
+                validar_plazo(nueva_fechad, today_ec())
                 set_fecha = (
                     ", fechad=%s, fecha_postergacion=CURRENT_DATE, "
                     "fechad_original=COALESCE(fechad_original, fechad)"
@@ -4524,6 +4551,7 @@ def crear(
     # (línea 115). 3 cheques en cartera tenían fechad domingo por este bug.
     fechad = _domingo_a_lunes(fechad)
     fecha_recibido = fecha_recibido or today_ec()
+    validar_plazo(fechad, fecha_recibido)
     # Cheques nuevos SIEMPRE arrancan en cartera (Z), aunque fechad > fecha.
     # 'P' (postergado) sólo se aplica cuando la usuaria mueve un cheque YA
     # vencido hacia adelante — no es el estado inicial de un cheque recibido.
@@ -5184,6 +5212,7 @@ def postergar(
             raise ValueError(
                 "La nueva fecha no puede ser más de 3 días anterior a hoy."
             )
+        validar_plazo(nueva_fechad, today_ec())
 
         # TMT 2026-06-16 dueña: postergar un cheque DEVUELTO (1/2) o de Daniela (D)
         # debe cambiar SOLO la fecha, NO el estado (antes lo flipeaba a 'P').
