@@ -44,6 +44,11 @@ def fuera_de_plazo() -> list[dict]:
           FROM scintela.cheque c
          WHERE UPPER(TRIM(COALESCE(c.stat, ''))) IN ('Z', 'P')
            AND COALESCE(c.no_banco, 0) <> 98
+           -- Postergado del dBase sin fecha de postergación (JHM, cargado en
+           -- 2023): no hay contra qué medirlo. Lo nuevo nace en Z y el
+           -- postergar ya frena por su cuenta.
+           AND NOT (UPPER(TRIM(COALESCE(c.stat, ''))) = 'P'
+                    AND c.fecha_postergacion IS NULL)
            AND c.fechad - {_DESDE} > %s
         """, (PLAZO_MAX_DIAS,)) or []
 

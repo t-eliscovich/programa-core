@@ -65,3 +65,9 @@ def test_si_la_fecha_no_cambio_se_archiva_sin_decir_corregida(monkeypatch):
 
 def test_un_postergado_cuenta_desde_la_postergacion():
     assert "fecha_postergacion" in vp._DESDE.split(",")[0]
+
+
+def test_un_postergado_sin_fecha_de_postergacion_no_se_mide():
+    import inspect
+    src = inspect.getsource(vp.fuera_de_plazo)
+    assert "c.fecha_postergacion IS NULL" in src
