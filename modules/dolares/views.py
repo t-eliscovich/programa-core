@@ -402,7 +402,21 @@ def nuevo_anticipo():
         if not cta or importe <= 0:
             flash("Faltan datos (cliente / importe).", "warn")
             return redirect(url_for("dolares.lista"))
-        usuario = (getattr(g, "user", None) or {}).get("username", "web")
+        # 🚨 Tamara 14/10/2026: $ 71.021 a la AC 49 —que ya había llegado—
+        # cuando era la AI 49. Un anticipo a una importación recibida no queda
+        # como anticipo: se pasa a compra y baja la utilidad. El formulario
+        # avisa y pide confirmar; esto es la red si el aviso no se vio.
+        if request.form.get("ya_llego_ok") != "1":
+            from modules.importaciones import picker
+            llego = picker.ya_llego(cta, concepto)
+            if llego:
+                cuando = str(llego.get("fecha_recepcion") or "")
+                cuando = (f" el {cuando[8:10]}/{cuando[5:7]}" if len(cuando) == 10 else "")
+                flash(f"No se cargó: la {llego.get('codigo') or cta} ya llegó{cuando}. "
+                      "Si es flete, CAE o saldo de esa importación, confirmalo en el aviso "
+                      "del formulario. Si era otra, cambiá el proveedor o el número.", "warn")
+                return redirect(url_for("dolares.lista"))
+        usuario =(getattr(g, "user", None) or {}).get("username", "web")
         # clave = operador (paridad dBase). g.user no trae 'clave' → prefijo
         # del username en mayúsculas (andres→AND). Mismo patrón que compras/gastos.
         clave = (getattr(g, "user", None) or {}).get("clave") or usuario[:3].upper()

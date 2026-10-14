@@ -1823,7 +1823,8 @@ def _unir_anticipo_con_mercaderia(grupos: dict, hasta=None,
 
 def _unir_anticipo_de_mercaderia_ya_recibida(grupos: dict) -> None:
     """Un anticipo que se entrega para una importación que YA está en stock
-    no mueve la utilidad: el descuento sintético lo tapa en la misma foto.
+    no queda como anticipo: el descuento sintético lo tapa en la misma foto.
+    Lo que sí queda es la salida del banco, que baja la utilidad (nota).
 
     ⭐ Tamara 23/09/2026 (ventana 17:22 del 21/09): "5 AN entregado +6.429"
     y, suelto, "Menos anticipos cuya mercadería ya está en stock −6.429".
@@ -1848,7 +1849,11 @@ def _unir_anticipo_de_mercaderia_ya_recibida(grupos: dict) -> None:
         ent["por_col"][c] = round(ent["por_col"].get(c, 0.0) + v, 2)
     ent["n"] += sint["n"]
     ent["bruto"] = bruto
-    ent["nota"] = "la mercadería ya estaba en stock: no mueve plata"
+    # 🚨 Tamara 14/10/2026: decía "no mueve plata" y la AC 49 (ya recibida)
+    # se llevó 71.021 del banco sin nada del otro lado. El anticipo se tapa,
+    # pero el pago SÍ baja la utilidad: va a costo de una importación que ya
+    # está en el stock. El cartel tiene que decir eso.
+    ent["nota"] = "esa importación ya había llegado: el pago va a costo y baja la utilidad"
     sint["fundido"] = True
 
 

@@ -321,7 +321,8 @@
         <input name="importe" required inputmode="decimal" placeholder="1.234,56"
                class="w-32 rounded border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-950 px-2 py-1 text-sm text-right">
       </div>
-      <button class="px-4 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">+ Anticipo</button>
+      <input type="hidden" name="ya_llego_ok" value="">
+      <button id="dol-btn-anticipo" class="px-4 py-1.5 rounded bg-sky-600 text-white hover:bg-sky-700">+ Anticipo</button>
       <button type="button" class="text-sm text-slate-500 hover:text-slate-700 dark:hover:text-slate-300"
               onclick="document.getElementById('panel-nuevo-anticipo').classList.add('hidden')">Cerrar</button>
       {# TMT 2026-07-07 (dueña): el picker va DEBAJO/APARTE del campo Concepto.
@@ -332,6 +333,26 @@
          es justo el alto de esa ayudita.
          Toma el ancho completo del form (flex-basis 100%) y lista en grilla
          inline (grid-cols-N responsive NO está en el tailwind congelado). #}
+      {# 🚨 Tamara 14/10/2026: $ 71.021 a la AC 49 —ya llegada— cuando era la
+         AI 49, sin un solo cartel. Si el número tipeado es de una importación
+         que YA LLEGÓ, esto avisa, sugiere la otra con el mismo número y frena
+         «+ Anticipo» hasta confirmar. El flete, el CAE y el saldo siguen
+         pasando: se confirman con el botón de abajo. #}
+      <div id="dol-llego" class="hidden rounded text-sm"
+           style="flex-basis:100%;width:100%;margin-top:1.1rem;padding:.75rem .9rem;background:#fff7ed;border:2px solid #f59e0b;color:#7c2d12;">
+        <p style="font-weight:700;font-size:.95rem;margin:0 0 .25rem;">⚠ <span id="dol-llego-titulo"></span></p>
+        <p id="dol-llego-que" style="margin:0 0 .25rem;"></p>
+        <p id="dol-llego-grande" class="hidden" style="margin:0 0 .25rem;font-weight:600;"></p>
+        <div id="dol-llego-otras" class="hidden" style="margin:.5rem 0 .25rem;">
+          <span>¿Era otra?</span>
+          <span id="dol-llego-otras-list"></span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin-top:.5rem;">
+          <button type="button" id="dol-llego-si"
+                  style="padding:.3rem .7rem;border-radius:.375rem;border:1px solid #b45309;background:#fff;color:#7c2d12;font-weight:600;"></button>
+          <span id="dol-llego-ok" class="hidden" style="color:#047857;font-weight:600;"></span>
+        </div>
+      </div>
       <div id="dol-imp-panel" class="hidden rounded border border-sky-300 p-2 text-xs"
            style="background:#f0f9ff;flex-basis:100%;width:100%;margin-top:1.1rem;">
         <p class="font-semibold text-sky-800 mb-1">Importaciones de este proveedor — elegí con cuál matchea:</p>
@@ -810,12 +831,12 @@ document.addEventListener('click', function (ev) {
   let timer = null;
   function cargar() {
     const p = (cta.value || '').trim().toUpperCase();
-    if (!p || p.length < 2) { panel.classList.add('hidden'); return; }
+    if (!p || p.length < 2) { panel.classList.add('hidden'); avisoLlego(null); return; }
     fetch('/importaciones/_api/abiertas/' + encodeURIComponent(p))
       .then(r => r.ok ? r.json() : {importaciones: []})
       .then(d => {
         const ims = d.importaciones || [];
-        if (!ims.length) { panel.classList.add('hidden'); return; }
+        if (!ims.length) { panel.classList.add('hidden'); avisoLlego(null); return; }
         list.innerHTML = '';
         ims.forEach(im => {
           const b = document.createElement('button');
@@ -824,10 +845,18 @@ document.addEventListener('click', function (ev) {
           b.style.border = '1px solid #bae6fd';
           if (im.numero != null) b.dataset.num = String(im.numero);
           if (im.anio) b.dataset.anio = String(im.anio);
+          // Tamara 14/10/2026: lo que necesita el aviso "ya llegó".
+          b.dataset.codigo = im.codigo || (d.prov + ' ' + im.numero);
+          b.dataset.sufijo = im.sufijo || '';
+          b.dataset.recibida = im.recibida ? '1' : '';
+          b.dataset.fechaRec = im.fecha_recepcion || '';
+          b.dataset.comprasUsd = String(im.compras_usd || 0);
           const ant = im.anticipos ? (' · ant $ ' + Number(im.anticipos).toLocaleString('es-EC', {minimumFractionDigits: 2})) : '';
           const yac = im.compras_n ? (' · ya ' + im.compras_n + ' compra' + (im.compras_n > 1 ? 's' : '')) : '';
+          const lle = im.recibida ? (' · llegó ' + ddmm(im.fecha_recepcion)) : '';
           b.textContent = (im.codigo || (d.prov + ' ' + im.numero)) + ' — ' + im.im_numero
-            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac;
+            + (im.kg ? ' · ' + Math.round(im.kg).toLocaleString('es-EC') + ' kg' : '') + ant + yac + lle;
+          if (im.recibida) b.style.color = '#92400e';
           b.addEventListener('click', () => {
             // TMT 2026-07-29 (dueña): el concepto se llena con nº + AÑO de la
             // importación elegida (`58/26`). El número solo no alcanza: se
@@ -871,6 +900,7 @@ document.addEventListener('click', function (ev) {
       b.style.display = (!buscado || !empiezan.length || empiezan.indexOf(b) >= 0)
         ? '' : 'none';
     });
+    avisoLlego(chips.find(b => buscado != null && b.dataset.num === buscado) || null);
     if (aviso) {
       const nada = buscado && !empiezan.length;
       aviso.textContent = nada
@@ -879,6 +909,109 @@ document.addEventListener('click', function (ev) {
       aviso.classList.toggle('hidden', !nada);
     }
   }
+  // 🚨 Tamara 14/10/2026 — "ojo, esta importación ya llegó". El anticipo de
+  // $ 71.021 a la AC 49 (ya recibida el 09/10) era de la AI 49: salió del
+  // banco, se pasó a compra de la AC 49 y bajó la utilidad sin un cartel.
+  // Si el número tipeado es de una importación que ya llegó: se dice qué
+  // pasa con la plata, se ofrece la otra con el mismo número que NO llegó, y
+  // «+ Anticipo» queda frenado hasta confirmar que es flete, CAE o saldo.
+  const form = cta.closest('form');
+  const importe = form.querySelector('input[name="importe"]');
+  const okInput = form.querySelector('input[name="ya_llego_ok"]');
+  const btn = document.getElementById('dol-btn-anticipo');
+  const card = document.getElementById('dol-llego');
+  const L = id => document.getElementById(id);
+  let llegoKey = '';
+  let llegoUsd = 0;
+  function ddmm(f) { return f && f.length >= 10 ? f.slice(8, 10) + '/' + f.slice(5, 7) : ''; }
+  function usd(n) { return '$ ' + Number(n || 0).toLocaleString('es-EC', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+  function parseImporte() {
+    const t = (importe && importe.value || '').trim().replace(/\./g, '').replace(',', '.');
+    const n = parseFloat(t);
+    return isNaN(n) ? 0 : n;
+  }
+  function frenar(si) {
+    if (!btn) return;
+    btn.disabled = si;
+    btn.style.opacity = si ? '.45' : '';
+    btn.style.cursor = si ? 'not-allowed' : '';
+    btn.title = si ? 'Primero confirmá el aviso de abajo' : '';
+  }
+  function grande() {
+    const el = L('dol-llego-grande');
+    const imp = parseImporte();
+    const mucho = llegoKey && llegoUsd > 0 && imp >= 0.25 * llegoUsd;
+    el.textContent = mucho
+      ? usd(imp) + ' es mucho para un flete o un CAE: toda la importación costó ' + usd(llegoUsd) + '.'
+      : '';
+    el.classList.toggle('hidden', !mucho);
+  }
+  function avisoLlego(hit) {
+    if (!card) return;
+    const llego = hit && hit.dataset.recibida === '1';
+    const key = llego ? hit.dataset.codigo + '|' + (hit.dataset.anio || '') : '';
+    if (key !== llegoKey) {          // cambió la importación: hay que volver a confirmar
+      okInput.value = '';
+      L('dol-llego-ok').classList.add('hidden');
+      L('dol-llego-si').classList.remove('hidden');
+    }
+    llegoKey = key;
+    if (!llego) { card.classList.add('hidden'); frenar(false); return; }
+    const anio = hit.dataset.anio ? '/' + hit.dataset.anio.slice(-2) : '';
+    const nombre = hit.dataset.codigo + anio;
+    llegoUsd = parseFloat(hit.dataset.comprasUsd || '0') || 0;
+    L('dol-llego-titulo').textContent = 'La ' + nombre + ' ya llegó'
+      + (hit.dataset.fechaRec ? ' el ' + ddmm(hit.dataset.fechaRec) : '');
+    L('dol-llego-que').textContent = (llegoUsd ? 'Ya tiene su compra (' + usd(llegoUsd) + '). ' : 'Ya tiene su compra. ')
+      + 'Lo que cargues acá no queda como anticipo: se pasa a compra de la ' + nombre + ' y baja la utilidad.';
+    L('dol-llego-si').textContent = 'Sí, es flete, CAE o saldo de la ' + nombre;
+    L('dol-llego-ok').textContent = '✔ Se carga y se pasa a compra de la ' + nombre + '.';
+    grande();
+    frenar(okInput.value !== '1');
+    card.classList.remove('hidden');
+    otras(parseInt(hit.dataset.num, 10), (cta.value || '').trim().toUpperCase(), key);
+  }
+  function otras(num, prov, key) {
+    const box = L('dol-llego-otras');
+    const list = L('dol-llego-otras-list');
+    box.classList.add('hidden');
+    fetch('/importaciones/_api/sin-llegar/' + num + '?excluir=' + encodeURIComponent(prov))
+      .then(r => r.ok ? r.json() : {importaciones: []})
+      .then(d => {
+        if (key !== llegoKey) return;   // ya cambió lo tipeado
+        const ims = d.importaciones || [];
+        list.innerHTML = '';
+        ims.forEach(im => {
+          const yy = im.anio ? '/' + String(im.anio).slice(-2) : '';
+          const o = document.createElement('button');
+          o.type = 'button';
+          o.textContent = (im.codigo || (im.prov + ' ' + im.numero)) + yy + ' (no llegó) →';
+          o.style.cssText = 'margin-left:.4rem;padding:.15rem .55rem;border-radius:.375rem;border:1px solid #059669;background:#ecfdf5;color:#065f46;font-weight:600;';
+          o.addEventListener('click', () => {
+            cta.value = im.prov;
+            concepto.value = String(im.numero) + (im.sufijo || '') + yy + ' ';
+            card.classList.add('hidden');
+            frenar(false);
+            cargar();
+            concepto.focus();
+          });
+          list.appendChild(o);
+        });
+        box.classList.toggle('hidden', !ims.length);
+      })
+      .catch(() => box.classList.add('hidden'));
+  }
+  if (L('dol-llego-si')) L('dol-llego-si').addEventListener('click', () => {
+    okInput.value = '1';
+    L('dol-llego-si').classList.add('hidden');
+    L('dol-llego-ok').classList.remove('hidden');
+    frenar(false);
+  });
+  if (importe) importe.addEventListener('input', grande);
+  form.addEventListener('submit', e => {
+    if (llegoKey && okInput.value !== '1') { e.preventDefault(); card.scrollIntoView({block: 'center'}); }
+  });
+
   ['input', 'change', 'blur'].forEach(ev => cta.addEventListener(ev, () => {
     clearTimeout(timer); timer = setTimeout(cargar, 450);
   }));

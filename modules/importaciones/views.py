@@ -712,60 +712,30 @@ def api_importaciones_abiertas(prov):
     el CONCEPTO con el número de la Nota → el cruce (codigo_prov +
     concepto-numérico, ver service._buscar_compras) matchea seguro.
     """
-    from modules.importaciones import service
+    from modules.importaciones import picker
 
     prov = (prov or "").strip().upper()
     if not prov:
         return {"importaciones": []}, 400
-    try:
-        rows = service.importaciones_con_cruce(limite=400)
-    except Exception:  # noqa: BLE001
-        return {"importaciones": []}
-    out = []
-    for r in rows:
-        if (r.get("prov") or "").strip().upper() != prov:
-            continue
-        # TMT 2026-07-06 v2 (dueña): "sí podés matchear varias veces en
-        # compras y anticipos" — se listan TODAS las importaciones del
-        # proveedor; lo ya matcheado va como referencia, no como filtro.
-        _comp = r.get("compra") or {}
-        out.append({
-            "im_numero": r.get("im_numero"),
-            "codigo": r.get("codigo"),
-            "numero": r.get("numero"),
-            # Tamara 2026-09-21: la letra pegada al número ("AC 83A") viaja al
-            # concepto del anticipo, para que se llame igual que en la Nota.
-            "sufijo": r.get("sufijo"),
-            "nota": r.get("nota"),
-            "fecha": str(r.get("fecha") or ""),
-            # TMT 2026-07-29: año de la importación (el de la CAMPAÑA de la
-            # nota, o el de la fecha si no la trae). El picker de /dolares lo
-            # escribe en el concepto del anticipo como `58/26`, para que el
-            # match no se pegue al mismo número de otra campaña.
-            "anio": service._anio_de(r).get("anio"),
-            "kg": r.get("kg"),
-            "anticipos": float(r.get("anticipo_aplicado") or 0)
-                         if r.get("anticipo_aplicado") is not None else
-                         float((r.get("anticipo") or {}).get("importe_total") or 0),
-            "compras_n": int(_comp.get("n") or 0),
-            "compras_usd": float(_comp.get("importe_total") or 0),
-        })
-    # Federico 2026-08-20: acá había un `out = out[:30]` ("las 30 más
-    # recientes"). AC ya tiene 31 importaciones abiertas, así que la más vieja
-    # —AC 39, IM-0000584, con 3 anticipos encima— se caía de la lista y el
-    # picker "no la encontraba". El corte por antigüedad escondía justo las que
-    # llevan más tiempo abiertas, que son las que más se siguen pagando.
-    #
-    # Lo que sí corta es la CAMPAÑA: sólo las del año más alto que tenga el
-    # proveedor. Tamara 2026-08-20: *"no debería buscar en años anteriores,
-    # nadie va a cargar un anticipo para algo que ya llegó"*. Va por el año más
-    # alto de los DATOS y no por el reloj: en enero el año del calendario
-    # todavía no tiene ninguna importación. Sin el corte quedaban ~120 de AC
-    # con campañas de 2024 y 2025 mezcladas.
-    top = max((r["anio"] for r in out if r.get("anio")), default=None)
-    if top is not None:
-        out = [r for r in out if r.get("anio") == top]
-    # TMT 2026-07-23 (dueña): "mostrar en orden numérico, está difícil de
-    # encontrar" — se ordenan por número de AC ascendente para escanear.
-    out.sort(key=lambda x: (x.get("numero") is None, x.get("numero") or 0))
+    # TMT 2026-07-06 v2 (dueña): "sí podés matchear varias veces en compras y
+    # anticipos" — se listan TODAS las importaciones del proveedor; lo ya
+    # matcheado va como referencia, no como filtro.
+    # Federico 2026-08-20: sin corte de 30 (la AC 39, la más vieja, se caía);
+    # el único corte es la CAMPAÑA (año más alto del proveedor). Ver picker.py.
+    top, out = picker.del_proveedor(prov)
     return {"prov": prov, "anio": top, "importaciones": out}
+
+
+@importaciones_bp.route("/importaciones/_api/sin-llegar/<int:numero>")
+@requiere_login
+@requiere_permiso("compras.ver")
+def api_sin_llegar_con_numero(numero):
+    """Otras importaciones con ese número que todavía no llegaron.
+
+    Tamara 14/10/2026: alimenta el "¿era la AI 49?" del aviso de /dolares
+    cuando el anticipo apunta a una importación que ya llegó.
+    """
+    from modules.importaciones import picker
+
+    excluir = (request.args.get("excluir") or "").strip().upper()
+    return {"importaciones": picker.sin_llegar_con_numero(numero, excluir)}

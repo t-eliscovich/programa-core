@@ -155,7 +155,8 @@ def test_anticipo_de_mercaderia_ya_recibida_es_un_renglon():
     idx = ev.indice(_con_label(filas))
     out = t.resumir(movs, 0.0, idx)
     assert [g["texto"] for g in out] == ["2 AN entregado · AI 20/26, AC 48/26"]
-    assert out[0]["nota"] == "la mercadería ya estaba en stock: no mueve plata"
+    assert out[0]["nota"] == ("esa importación ya había llegado: "
+                            "el pago va a costo y baja la utilidad")
     assert out[0]["aporte"] == 0.0
 
 

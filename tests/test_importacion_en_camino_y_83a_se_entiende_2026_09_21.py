@@ -122,8 +122,10 @@ def test_el_picker_manda_la_letra_al_concepto():
     `83A/26` (Tamara: "se tiene que llamar 83A")."""
     import inspect
 
-    from modules.importaciones import views
-    src = inspect.getsource(views.api_importaciones_abiertas)
+    # 14/10/2026: el armado de la fila se mudó a picker._fila (lo usa
+    # también el aviso "ya llegó" del alta del anticipo).
+    from modules.importaciones import picker
+    src = inspect.getsource(picker._fila)
     assert '"sufijo": r.get("sufijo")' in src
     from pathlib import Path
     html = (Path(_REPO_ROOT) / "modules" / "dolares" / "templates" / "dolares"
