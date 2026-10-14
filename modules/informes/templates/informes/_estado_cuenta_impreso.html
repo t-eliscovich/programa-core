@@ -148,9 +148,10 @@
           {% set _es_nc = ((f.tipo or '') | string | upper) == 'NC' %}
           {% set _neg = (f.importe or 0) < 0 %}
           {# TMT 2026-09-30: la nota de débito (cheque devuelto que se le
-             entregó al cliente) se nombra como tal. #}
+             entregó al cliente) se nombra como tal. 2026-10-14: con el
+             paréntesis, porque sin él la buscaban en Asinfo. #}
           {% set _es_nd = ((f.tipo or '') | string | upper) == 'ND' %}
-          {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-violet-700 font-medium' if _es_nd else ('text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '')) }}">{{ 'Nota de débito' if _es_nd else ('Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura')) }}</td>{% endif %}
+          {% if interactivo %}<td class="ec-c-off px-4 py-2 text-xs whitespace-nowrap no-print {{ 'text-violet-700 font-medium' if _es_nd else ('text-rose-700 font-medium' if _es_nc else ('text-amber-700 font-medium' if _neg else '')) }}">{{ 'Nota de débito (cheque devuelto)' if _es_nd else ('Nota de crédito' if _es_nc else ('Devolución' if _neg else 'Factura')) }}</td>{% endif %}
           <td class="ec-c-imp px-4 py-2 text-right text-mono">{{ f.importe | money_es }}</td>
           <td class="ec-c-ret px-4 py-2 text-right text-mono {{ 'text-violet-700 dark:text-violet-300' if (f.retencion or 0) > 0 else 'text-slate-300 dark:text-slate-600' }}">{{ f.retencion | money_es }}</td>
           <td class="ec-c-abo px-4 py-2 text-right text-mono text-slate-500">{{ f.abono | money_es }}</td>

@@ -68,7 +68,10 @@ ETIQUETAS = {
     NTEN: "NTEN",
     NC_FINANCIERA: "NC financiera",
     NCNT: "NCNT",
-    NOTA_DEBITO: "Nota de débito",
+    # TMT 2026-10-14 (dueña): con "Nota de débito" a secas la oficina la
+    # buscaba en Asinfo, y no está: la crea Programa Core al devolverle el
+    # cheque al cliente. El paréntesis dice de dónde sale.
+    NOTA_DEBITO: "Nota de débito (cheque devuelto)",
 }
 
 # El color con el que la lista pinta cada letra.

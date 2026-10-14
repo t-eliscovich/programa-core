@@ -222,7 +222,7 @@ def test_la_nota_de_debito_no_es_venta():
 def test_el_tipo_nd_es_parte_del_vocabulario():
     from modules.facturas import tipo_doc
     assert tipo_doc.normalizar("ND") == "ND"
-    assert tipo_doc.etiqueta("ND") == "Nota de débito"
+    assert tipo_doc.etiqueta("ND") == "Nota de débito (cheque devuelto)"
 
 
 def test_el_historial_sabe_deshacerlo():
