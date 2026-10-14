@@ -65,22 +65,21 @@
            y se pueda buscar por ambos" — el buscador ya miraba los dos. #}
         <span class="cc">{{ c.cod }}</span>
         <span class="cn">{{ c.color }}</span>
-        <span class="tg">
-        {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
-        {#- ⭐ CATEGORÍA y COMPETENCIA, cada una en su etiqueta (Tamara 13/10,
-            segunda vuelta: "mostrá PRI o SEG separado de la competencia y
-            aparte si está en la comp"). Primero PRI y/o SEG —un color puede
-            tener kilos de las dos—, después el 🏆 con lo que vale el kilo
-            (×4, ×10). Si de ese color entra SÓLO la segunda y además hay
-            primera, el 🏆 lo dice ("🏆 SEG"): si no, la primera parecería
-            sumar. Se marca el COLOR y no la tela: casi todas las telas tienen
-            algún color en la competencia y un 🏆 en cada tela no diría nada. #}
+        {#- ⭐ Las etiquetas, en este orden (Tamara 13/10, tercera vuelta:
+            "competencia ponelo primero así queda prolijo"):
+              🏆 ×N   si el color está en la competencia (lo que vale el kilo);
+                      sólo dice que está — no si es por la segunda ("sólo hace
+                      falta que diga competencia, no competencia y segunda").
+              ABI     si tiene rollos abiertos.
+              PRI/SEG lo que hay en bodega, cada una en su etiqueta.
+            Se marca el COLOR y no la tela: casi todas las telas tienen algún
+            color en la competencia y un 🏆 en cada tela no diría nada. #}
         {%- set cp = comp.get((t.tela, c.cod)) %}
-        {%- set _pts = (' ×' ~ cp.puntos) if cp and cp.puntos > 1 else '' %}
-        {%- set _hay_pri = (c.kg - c.seg_kg) > 0.05 %}
-        {%- if _hay_pri %}<em class="tag pri">PRI</em>{% endif %}
-        {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}
-        {%- if cp %}<em class="tag comp" title="En la competencia{{ ' (sólo la segunda)' if cp.solo_seg }}: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ ' SEG' if cp.solo_seg and _hay_pri }}{{ _pts }}</em>{% endif %}</span>
+        <span class="tg">
+        {%- if cp %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ (' ×' ~ cp.puntos) if cp.puntos > 1 }}</em>{% endif %}
+        {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
+        {%- if (c.kg - c.seg_kg) > 0.05 %}<em class="tag pri">PRI</em>{% endif %}
+        {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}</span>
         {#- Los kilos y, chiquito debajo, los rollos: así las etiquetas tienen
             lugar al lado del color también a 320 px (13/10/2026). #}
         <span class="kgr"><b class="kg kg-c">{{ c.kg|num_es(0) }}</b><span class="rol rol-c">{{ c.rollos }} r</span></span>

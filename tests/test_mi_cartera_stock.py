@@ -181,8 +181,8 @@ def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
     incentivo a vender ese en particular". Misma llave que Stock (tela +
     código de color). Segunda vuelta (13/10, noche): "mostrá PRI o SEG
     separado de la competencia y aparte si está en la comp" — la categoría y
-    el 🏆 van en etiquetas distintas; si de un color con primera entra sólo
-    la segunda, el 🏆 lo dice ("🏆 SEG")."""
+    el 🏆 van en etiquetas distintas. Tercera vuelta: el 🏆 va PRIMERO y sólo
+    dice que está en la competencia ("no competencia y segunda")."""
     _fuente(monkeypatch, [(FILAS, True)])
     from modules.analisis import queries as aq
     monkeypatch.setattr(aq, "items", lambda conn=None: [
@@ -195,7 +195,8 @@ def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
     import re
     neg = re.search(r'<span class="cc">NEG</span>.*?</div>', lista, re.S).group(0)
     assert '<em class="tag pri">PRI</em>' in neg and '<em class="tag dos">SEG</em>' in neg
-    assert ">🏆 SEG ×10</em>" in neg       # NEG: tiene primera, pero entra sólo la segunda
+    assert ">🏆 ×10</em>" in neg           # NEG: entra por la segunda; el 🏆 sólo dice que está
+    assert neg.index("🏆") < neg.index(">PRI<")   # la competencia va primero
     gos = re.search(r'<span class="cc">GOS</span>.*?</div>', lista, re.S).group(0)
     assert ">🏆 ×10</em>" in gos and "SEG" not in gos   # GOS: entero, sólo primera
     assert lista.count("🏆") == 2           # BLANCO vendido (0 kg) no se marca
