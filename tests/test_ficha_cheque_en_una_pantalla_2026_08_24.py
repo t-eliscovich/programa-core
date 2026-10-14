@@ -28,7 +28,7 @@ FICHA = (RAIZ / "modules/cheques/templates/cheques/detalle.html").read_text(
 
 def test_los_cuatro_datos_van_en_una_rejilla():
     """Rótulo y dato en columnas fijas: es lo que los alinea."""
-    assert "grid-template-columns: 132px minmax(0, 1fr);" in FICHA
+    assert "grid-template-columns: 110px minmax(0, 1fr);" in FICHA
     for rotulo in ("Lo entregó", "Observación", "Facturas", "Depósitos"):
         assert f">{rotulo}</dt>" in FICHA, f"falta el renglón {rotulo}"
 
@@ -70,3 +70,27 @@ def test_los_seis_cuadros_de_arriba_siguen_igual():
     for rotulo in ("Importe", "Cargado", "A depositar", "Depositado",
                    "Banco emisor", "Doc. banco"):
         assert rotulo in FICHA
+
+
+def test_rediseno_14_10_botones_tira_y_tabla():
+    """Dueña 14/10/2026: "esto horrible … todo por todos lados"."""
+    # Un solo estilo de botón; "Cambiar estado" es el único oscuro.
+    assert FICHA.count("chq-btn-pri") >= 1
+    assert "bg-amber-100 hover:bg-amber-200" not in FICHA
+    # Los datos van en UNA tira, no en seis cajas sueltas.
+    assert 'class="chq-tira' in FICHA
+    assert "grid-cols-2 md:grid-cols-6" not in FICHA
+    # El calendario del modo edición no queda colgado en modo lectura.
+    assert ".fecha-es:has(.ch-edit)" in FICHA
+    # Nada de partir el número de factura ni apilar Mover/Desaplicar.
+    assert "white-space:nowrap" in FICHA
+    assert FICHA.count('class="chq-acc"') >= 1
+
+
+def test_lapicito_en_vez_de_boton_editar():
+    """Dueña 14/10/2026: "en vez de editar un lapicito al lado de los campos"."""
+    assert ">\n          Editar\n        </button>" not in FICHA
+    for campo in ("no_cheque", "importe", "fechad", "no_banco", "doc_banco"):
+        assert f"lapiz('{campo}'" in FICHA, f"falta el lápiz de {campo}"
+    # El lápiz abre la edición con ESE campo seleccionado.
+    assert "closest('.chq-lapiz')" in FICHA and "classList.add('is-editing')" in FICHA

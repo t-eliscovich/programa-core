@@ -10,6 +10,12 @@
 {% endblock %}
 
 {% block content %}
+{# TMT 2026-10-14 (dueña: "en vez de editar un lapicito al lado de los
+   campos"). El botón "Editar" se fue: cada dato que se puede cambiar lleva su
+   ✎ al lado. Tocarlo abre la MISMA edición de siempre (Cancelar / Guardar
+   cambios, un solo form) con ese campo ya seleccionado. #}
+{% set puede_editar = ch.stat not in ('X', 'T', 'R', '3') and tiene_permiso('cheques.editar') %}
+{% macro lapiz(campo, que) %}{% if puede_editar %}<button type="button" class="chq-lapiz ch-readonly no-print" data-campo="{{ campo }}" title="Cambiar {{ que }}" aria-label="Cambiar {{ que }}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></button>{% endif %}{% endmacro %}
 {# TMT 2026-05-27 dueña: 'Cuando ponga editar un cheque me deje desde las
    lineas. No hace falta ir a una nueva pantalla. demasiado tramite.'
    La pantalla /cheques/<id>/editar fue eliminada. El botón Editar toggle-a
@@ -22,7 +28,67 @@
   #cheque-page:not(.is-editing) .ch-edit { display: none !important; }
   #cheque-page.is-editing .ch-actions-readonly { display: none !important; }
   #cheque-page:not(.is-editing) .ch-actions-editing { display: none !important; }
-  #cheque-page.is-editing .ch-card-edit { background: #fefce8; border-color: #fde047; }
+  #cheque-page.is-editing .ch-card-edit { background: #fefce8; }
+  /* TMT 2026-10-14 (dueña: "esto horrible … todo por todos lados"). Rediseño
+     de la ficha: botones de UN solo estilo y alto, los datos en UNA tira con
+     divisores (antes seis cajas sueltas, dos vacías), la tabla sin números de
+     factura partidos en dos renglones y Mover/Desaplicar en la misma línea.
+     Estilos propios porque static/tailwind.css es un build congelado. */
+  #cheque-page .chq-btn { display:inline-flex; align-items:center; gap:6px; height:32px;
+    padding:0 12px; border:1px solid #cbd5e1; border-radius:6px; background:#fff;
+    color:#334155; font-size:13px; font-weight:500; white-space:nowrap; cursor:pointer;
+    text-decoration:none; line-height:1; }
+  #cheque-page .chq-btn:hover { background:#f1f5f9; }
+  #cheque-page .chq-btn svg { width:14px; height:14px; }
+  #cheque-page .chq-btn-pri { background:#0f172a; border-color:#0f172a; color:#fff; }
+  #cheque-page .chq-btn-pri:hover { background:#1e293b; }
+  #cheque-page .chq-btn-ghost { border-color:transparent; background:transparent; color:#64748b; padding:0 8px; }
+  #cheque-page .chq-btn-ghost:hover { background:#f1f5f9; color:#0f172a; }
+  #cheque-page details > summary.chq-btn::-webkit-details-marker { display:none; }
+  #cheque-page .chq-tira { display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr));
+    border:1px solid #e2e8f0 !important; border-radius:8px; background:#fff; overflow:hidden; }
+  #cheque-page .chq-tira > div { padding:10px 14px; border-left:1px solid #e2e8f0 !important; min-width:0; }
+  #cheque-page .chq-tira > div:first-child { border-left:0 !important; }
+  #cheque-page .chq-rot { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#64748b; margin-bottom:3px; white-space:nowrap; }
+  #cheque-page .chq-val { font-size:14px; font-variant-numeric:tabular-nums; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  #cheque-page .chq-val-big { font-size:20px; font-weight:600; line-height:1.15; }
+  #cheque-page .chq-tabla { width:100%; font-size:13px; border-collapse:collapse; }
+  #cheque-page .chq-tabla th { font-size:11px; letter-spacing:.04em; text-transform:uppercase; color:#64748b;
+    font-weight:500; padding:8px 12px; white-space:nowrap; background:#f8fafc; border-bottom:1px solid #e2e8f0 !important; }
+  #cheque-page .chq-caja { border:1px solid #e2e8f0 !important; border-radius:8px; overflow:hidden; overflow-x:auto; background:#fff; }
+  #cheque-page .chq-tabla td { padding:7px 12px; white-space:nowrap; border-top:1px solid #eef2f6 !important;
+    font-variant-numeric:tabular-nums; vertical-align:middle; }
+  #cheque-page .chq-tabla tr:first-child td { border-top:0 !important; }
+  #cheque-page .chq-tabla .r { text-align:right; }
+  #cheque-page .chq-tabla .gris { color:#64748b; }
+  #cheque-page .chq-tabla a.fact { color:#0f172a; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; text-decoration:none; }
+  #cheque-page .chq-tabla a.fact:hover { color:#2563eb; text-decoration:underline; }
+  #cheque-page .chq-letra { display:inline-block; min-width:18px; text-align:center; padding:1px 5px; border-radius:4px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; font-weight:600; background:#f1f5f9; color:#475569; }
+  #cheque-page .chq-acc { display:inline-flex; align-items:center; gap:3px; font-size:12px; padding:2px 6px;
+    border-radius:4px; text-decoration:none; color:#475569; }
+  #cheque-page .chq-acc:hover { background:#f1f5f9; color:#0f172a; }
+  #cheque-page .chq-acc svg { width:12px; height:12px; }
+  #cheque-page .chq-h2 { display:flex; align-items:baseline; justify-content:space-between; gap:12px;
+    font-size:12px; letter-spacing:.04em; text-transform:uppercase; color:#64748b; font-weight:600; margin:0 0 6px; }
+  #cheque-page .chq-h2 span { text-transform:none; letter-spacing:0; font-weight:400; font-variant-numeric:tabular-nums; }
+  /* El cuadro de fecha que viste fechas-es.js deja su botón de calendario
+     colgado aunque el campo esté escondido (modo lectura). */
+  #cheque-page:not(.is-editing) .fecha-es:has(.ch-edit) { display:none !important; }
+  #cheque-page .chq-lapiz, #cheque-page .chq-lapiz-obs { display:inline-flex; align-items:center; justify-content:center; width:22px; height:22px;
+    margin-left:4px; border:0; border-radius:4px; background:transparent; color:#94a3b8; cursor:pointer; padding:0; flex-shrink:0; }
+  #cheque-page .chq-lapiz:hover, #cheque-page .chq-lapiz-obs:hover { background:#e0f2fe; color:#0284c7; }
+  #cheque-page .chq-lapiz svg, #cheque-page .chq-lapiz-obs svg { width:13px; height:13px; }
+  #cheque-page .chq-celda { display:flex; align-items:center; min-width:0; }
+  #cheque-page:not(.is-editing) .chq-solo-edit { display:none !important; }
+  .dark #cheque-page .chq-btn, .dark #cheque-page .chq-tira { background:#0f172a; border-color:#334155; color:#e2e8f0; }
+  .dark #cheque-page .chq-tira > div { border-color:#334155; }
+  .dark #cheque-page .chq-btn-pri { background:#f1f5f9; color:#0f172a; border-color:#f1f5f9; }
+  .dark #cheque-page .chq-tabla th { background:#1e293b; border-color:#334155 !important; }
+  .dark #cheque-page .chq-tabla td { border-color:#1e293b !important; }
+  .dark #cheque-page .chq-caja { border-color:#334155 !important; background:#0f172a; }
+  .dark #cheque-page .chq-tabla a.fact { color:#e2e8f0; }
+  .dark #cheque-page .chq-letra { background:#1e293b; color:#cbd5e1; }
 </style>
 <form id="ch-edit-form" method="POST"
       action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
@@ -31,11 +97,11 @@
   <input type="hidden" name="next" value="{{ _self }}">
 </form>
 <div class="max-w-5xl" id="cheque-page">
-  <div class="flex items-center justify-between mb-6">
+  <div class="flex items-start justify-between gap-4 mb-4" style="flex-wrap:wrap;">
     <div>
-      <h1 class="text-2xl font-semibold">
+      <h1 class="text-2xl font-semibold" style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;">
         Cheque
-        <span class="ch-readonly">{{ ch.no_cheque or ('#' ~ ch.id_cheque) }}</span>
+        <span class="ch-readonly">{{ ch.no_cheque or ('#' ~ ch.id_cheque) }}</span>{{ lapiz('no_cheque', 'el número') }}
         <input type="text" name="no_cheque" form="ch-edit-form" maxlength="10"
                value="{{ ch.no_cheque or '' }}"
                placeholder="#{{ ch.id_cheque }}"
@@ -81,9 +147,9 @@
           <span class="ml-2 text-sm px-2 py-0.5 rounded bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-300 font-mono">{{ ch.stat }}</span>
         {% endif %}
       </h1>
+      {% if ch.prov or ch.id_cheque_padre or hijos %}
       <p class="text-sm text-slate-500 mt-1">
-        Banco <strong>{{ ch.banco }}</strong>
-        {% if ch.prov %} · endosado a <span class="font-mono">{{ ch.prov }}</span>{% endif %}
+        {% if ch.prov %}Endosado a <span class="font-mono">{{ ch.prov }}</span>{% endif %}
         {% if ch.id_cheque_padre %} · reemplaza a <a href="{{ url_for('cheques.detalle', id_cheque=ch.id_cheque_padre) }}" class="hover:underline">#{{ ch.id_cheque_padre }}</a>{% endif %}
         {# Espejos de anticipo (cheques hijo, importe negativo). TMT 2026-05-14 (#28). #}
         {% if hijos %}
@@ -95,16 +161,16 @@
           {% endfor %}
         {% endif %}
       </p>
+      {% endif %}
     </div>
     {# UX 2026-04-30: las acciones de transición de estado se agrupan en
        UN sólo dropdown "Cambiar estado…" para reducir la carga cognitiva
        (antes eran 5-7 botones inline). Las acciones que NO son
        transiciones (Editar, Imprimir) quedan como botones planos. #}
-    <div class="no-print flex items-center gap-2 justify-end ch-actions-readonly">
+    <div class="no-print flex items-center gap-2 justify-end ch-actions-readonly" style="flex-wrap:wrap;">
       {# TMT 2026-05-18 — botón Volver canónico (Regla R2 pero también aplica
          a pantallas de detalle: la dueña quiere volver siempre con 1 click). #}
-      <a href="{{ volver_a(volver_url) }}"
-         class="text-sm px-3 py-1.5 rounded border border-slate-300 text-slate-700 hover:bg-slate-100">{{ volver_texto(volver_url, '← Volver a Cheques') }}</a>
+      <a href="{{ volver_a(volver_url) }}" class="chq-btn chq-btn-ghost">{{ volver_texto(volver_url, '← Volver a Cheques') }}</a>
       {# === CAMBIAR ESTADO === #}
       {# Calculamos qué transiciones son válidas según el stat actual. #}
       {% set puede_depositar    = (ch.stat == 'Z' and tiene_permiso('cheques.transicionar')) %}
@@ -129,8 +195,8 @@
          primaria al lado. #}
       {% if puede_postergar %}
         <a href="{{ url_for('cheques.postergar', id_cheque=ch.id_cheque) }}"
-           class="text-sm px-3 py-1.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-900 inline-flex items-center gap-1.5 font-medium border border-amber-200">
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3M12 21a9 9 0 100-18 9 9 0 000 18z"/></svg>
+           class="chq-btn">
+          <svg style="color:#d97706" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3M12 21a9 9 0 100-18 9 9 0 000 18z"/></svg>
           {% if ch.stat == 'P' %}Re-postergar{% else %}Postergar{% endif %}
         </a>
       {% endif %}
@@ -145,7 +211,7 @@
       {% if puede_reversar and ch.stat in ('Z', 'D', 'P', 'V') %}
         {# TMT 2026-07-11 (dueña): reverso in-page (modal), no otra página. #}
         <button type="button"
-           class="js-reverso text-sm px-2.5 py-1 rounded text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+           class="js-reverso chq-btn"
            data-reverso-preview="{{ url_for('cheques.reverso_preview', id_cheque=ch.id_cheque) }}"
            title="Reversión administrativa (no afecta al cliente).">
           ↺ Reversar
@@ -158,17 +224,19 @@
          pantalla de confirmación que muestra la plata que se compensa. #}
       {% if id_mov_protesto and tiene_permiso('cheques.transicionar') %}
         <a href="{{ url_for('cheques.deshacer_devuelto', id_mov_doble=id_mov_protesto, next=request.full_path) }}"
-           class="text-sm px-3 py-1.5 rounded border border-amber-300 text-amber-800 bg-amber-50 hover:bg-amber-100 dark:border-amber-700 dark:text-amber-200 dark:bg-amber-900/20"
+           class="chq-btn"
            title="El cheque vuelve al estado del que salió y se compensa la nota de débito del protesto">
           ↺ Deshacer el protesto
         </a>
       {% endif %}
 
+
+      <button onclick="window.print()" class="chq-btn">Imprimir</button>
       {% if hay_transiciones %}
       <details class="relative">
-        <summary class="list-none cursor-pointer text-sm px-3 py-1.5 rounded bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 hover:opacity-90 inline-flex items-center gap-1.5 font-medium">
+        <summary class="list-none chq-btn chq-btn-pri">
           Cambiar estado
-          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m6 9 6 6 6-6"/></svg>
         </summary>
         <div class="absolute right-0 mt-1 z-20 min-w-[260px] bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-md shadow-lg overflow-hidden">
           {# TMT 2026-07-11 (dueña): dropdown UNIFICADO con la lista — se arma
@@ -231,17 +299,6 @@
         </div>
       </details>
       {% endif %}
-
-      {# Editar campos blandos INLINE — toggle JS, sin redirect. TMT 2026-05-27 #}
-      {% if ch.stat not in ('X', 'T', 'R', '3') and tiene_permiso('cheques.editar') %}
-        <button type="button"
-                onclick="document.getElementById('cheque-page').classList.add('is-editing')"
-                class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">
-          Editar
-        </button>
-      {% endif %}
-
-      <button onclick="window.print()" class="text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800">Imprimir</button>
     </div>
     {# Acciones en modo edición: solo Cancelar / Guardar. Submit cruza al
        form externo via el atributo form="ch-edit-form" (HTML5). #}
@@ -271,24 +328,24 @@
   {% set fechaing_real = (ch.fechaout or ch.fechaing) if stat_u in ('B','A','1','2','3','R') else None %}
   {# TMT 2026-08-03: `dia_ingreso` (SQL_DIA_INGRESO) — ver lista.html. #}
   {% set fecha_cargado = ch.dia_ingreso or ch.fecha_recibido or (ch.fecha_crea.date() if ch.fecha_crea and ch.fecha_crea.__class__.__name__ == 'datetime' else ch.fecha_crea) or ch.fecha %}
-  <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-6 text-sm">
+  <div class="chq-tira mb-5">
     {# Importe — editable inline (queries.editar acepta importe desde 2026-05-27). #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
-      <div class="text-xs text-slate-500">Importe</div>
-      <div class="text-lg font-semibold ch-readonly">{{ ch.importe | money_es }}</div>
+    <div class="ch-card-edit">
+      <div class="chq-rot">Importe</div>
+      <div class="chq-celda ch-readonly"><div class="chq-val chq-val-big">{{ ch.importe | money_es }}</div>{{ lapiz('importe', 'el importe') }}</div>
       <input type="text" name="importe" form="ch-edit-form"
              value="{{ '%.2f' | format(ch.importe|float) }}"
              inputmode="decimal" placeholder="0.00"
              class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-base font-mono font-semibold">
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500" title="Día en que cargué el cheque al sistema">Cargado</div>
-      <div class="font-mono">{{ fecha_cargado | fecha_es if fecha_cargado else '—' }}</div>
+    <div>
+      <div class="chq-rot" title="Día en que cargué el cheque al sistema">Cargado</div>
+      <div class="chq-val">{{ fecha_cargado | fecha_es if fecha_cargado else '—' }}</div>
     </div>
     {# A depositar (fechad) — editable inline. Domingo se mueve al lunes en backend. #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
-      <div class="text-xs text-slate-500" title="Fecha planificada de depósito (postdate)">A depositar</div>
-      <div class="font-mono ch-readonly">{{ ch.fechad | fecha_es if ch.fechad else '—' }}</div>
+    <div class="ch-card-edit">
+      <div class="chq-rot" title="Fecha planificada de depósito (postdate)">A depositar</div>
+      <div class="chq-celda ch-readonly"><div class="chq-val" style="font-weight:600">{{ ch.fechad | fecha_es if ch.fechad else '—' }}</div>{{ lapiz('fechad', 'la fecha a depositar') }}</div>
       <input type="date" name="fechad" form="ch-edit-form"
              value="{{ ch.fechad.strftime('%Y-%m-%d') if ch.fechad else '' }}"
              class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-sm font-mono">
@@ -298,26 +355,22 @@
         </div>
       {% endif %}
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3">
-      <div class="text-xs text-slate-500" title="Día en que el cheque pasó por el banco (B/A) o intentó pasar y rebotó (1/2/3/R)">Depositado</div>
-      <div class="font-mono">
-        {% if fechaing_real %}
-          <span class="text-emerald-700 dark:text-emerald-400">{{ fechaing_real | fecha_es }}</span>
-        {% else %}
-          <span class="text-slate-300">—</span>
-        {% endif %}
-      </div>
+    {% if fechaing_real %}
+    <div>
+      <div class="chq-rot" title="Día en que el cheque pasó por el banco (B/A) o intentó pasar y rebotó (1/2/3/R)">Depositado</div>
+      <div class="chq-val" style="color:#047857">{{ fechaing_real | fecha_es }}</div>
     </div>
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
-      <div class="text-xs text-slate-500" title="Banco emisor — la entidad del cliente que firmó el cheque">Banco emisor</div>
+    {% endif %}
+    <div class="ch-card-edit">
+      <div class="chq-rot" title="Banco emisor — la entidad del cliente que firmó el cheque">Banco emisor</div>
       {# TMT 2026-06-11 dueña: '¿este qué código era?' — mostrar el código
          numérico junto al nombre (99 · EFECTIVO), igual que el dropdown.
          TMT 2026-06-11 dueña: 'dejame en cheques editar banco emisor' —
          select editable inline. El backend solo lo acepta si el cheque NO
          tiene movimientos de banco/caja linkeados (sino, anular y recargar). #}
-      <div class="font-medium text-slate-900 dark:text-slate-100 ch-readonly">
+      <div class="chq-celda ch-readonly"><div class="chq-val">
         {% if ch.no_banco %}<span class="font-mono">{{ ch.no_banco }}</span> · {% endif %}{{ ch.banco or ch.nombre_banco or '—' }}
-      </div>
+      </div>{{ lapiz('no_banco', 'el banco emisor') }}</div>
       <select name="no_banco" form="ch-edit-form"
               class="ch-edit w-full mt-0.5 rounded border border-amber-300 px-2 py-1 text-sm">
         {% for b in bancos %}
@@ -331,11 +384,9 @@
        de cheque!! doc banco no es igual a cheque'. Card separado para
        editar el N° de comprobante/depósito que da el banco (scintela.cheque.
        doc_banco varchar(40)). Se propaga a numreferencia al depositar. #}
-    <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded p-3 ch-card-edit">
-      <div class="text-xs text-slate-500" title="N° comprobante / depósito / transferencia que da el banco">Doc. banco</div>
-      <div class="font-mono ch-readonly">
-        {% if ch.doc_banco %}{{ ch.doc_banco }}{% else %}<span class="text-slate-300">—</span>{% endif %}
-      </div>
+    <div class="ch-card-edit{% if not ch.doc_banco and stat_u in ('Z', 'P', 'D') %} chq-solo-edit{% endif %}">
+      <div class="chq-rot" title="N° comprobante / depósito / transferencia que da el banco">Doc. banco</div>
+      <div class="chq-celda ch-readonly"><div class="chq-val" style="font-family:ui-monospace,Menlo,monospace">{% if ch.doc_banco %}{{ ch.doc_banco }}{% else %}<span style="color:#cbd5e1">—</span>{% endif %}</div>{{ lapiz('doc_banco', 'el N° de documento del banco') }}</div>
       <input type="text" name="doc_banco" form="ch-edit-form" maxlength="40"
              value="{{ ch.doc_banco or '' }}"
              placeholder="N° depósito/transf."
@@ -377,8 +428,8 @@
      izquierda, dato a la derecha— así que todo cae sobre la misma línea
      vertical en vez de quedar como frases sueltas. Las tablas aparecen sólo
      cuando tienen filas. #}
-  <dl class="mt-4 mb-4 grid gap-x-4 gap-y-2 text-sm items-baseline"
-      style="grid-template-columns: 132px minmax(0, 1fr);">
+  <dl class="mb-5 grid gap-x-4 gap-y-2 text-sm items-baseline"
+      style="grid-template-columns: 110px minmax(0, 1fr);">
 
     <dt class="text-xs uppercase tracking-wider text-slate-500">Lo entregó</dt>
     <dd class="m-0">
@@ -399,15 +450,15 @@
     {% if tiene_permiso('cheques.editar') %}
     <dt class="text-xs uppercase tracking-wider text-slate-500">Observación</dt>
     <dd class="m-0" data-testid="ch-nota">
-      <div class="ch-nota-vista flex items-baseline gap-2">
+      <div class="ch-nota-vista flex items-center gap-2">
         {% if ch.nota_usuario %}
           <span class="text-red-600 font-bold" title="Este cheque tiene una observación cargada — se marca con * rojo en la lista y se imprime en las hojas.">*</span>
           <span>{{ ch.nota_usuario }}</span>
         {% else %}
           <span class="text-slate-400">—</span>
         {% endif %}
-        <button type="button" class="ch-nota-abrir text-sm text-slate-400 hover:text-sky-600 hover:bg-sky-50 rounded px-1 py-0.5 leading-none no-print"
-                title="Escribir una observación">&#9998;</button>
+        <button type="button" class="ch-nota-abrir chq-lapiz-obs no-print"
+                title="Escribir una observación" aria-label="Escribir una observación"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4z"/></svg></button>
       </div>
       <form method="post" action="{{ url_for('cheques.actualizar', id_cheque=ch.id_cheque) }}"
             class="ch-nota-form hidden space-y-1" data-testid="ch-nota-form">
@@ -441,7 +492,7 @@
     </dd>
     {% endif %}
 
-    {% if not depositos %}
+    {% if not depositos and stat_u not in ('Z', 'P', 'D') %}
     <dt class="text-xs uppercase tracking-wider text-slate-500">Depósitos</dt>
     <dd class="m-0 text-slate-500">Sin depósitos registrados.</dd>
     {% endif %}
@@ -484,68 +535,60 @@
      TMT 2026-09-16 (dueña): las que soltó el totalizar van EN esta tabla, con
      estado "Totalizada" — son facturas que este cheque pagó. #}
   {% if aplicaciones or vinculos_viejos | default([]) %}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
-    Aplicado a facturas ({{ aplicaciones | length + (vinculos_viejos | default([])) | length }} · total aplicado {{ (total_aplicado + (total_totalizado | default(0))) | money_es }})
-  </h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden mb-4">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  {% set _n_apl = aplicaciones | length + (vinculos_viejos | default([])) | length %}
+  <h2 class="chq-h2">Aplicado a facturas
+    <span>{{ _n_apl }} factura{{ '' if _n_apl == 1 else 's' }} · {{ (total_aplicado + (total_totalizado | default(0))) | money_es }}</span></h2>
+  <div class="chq-caja mb-5">
+    <table class="chq-tabla">
+      <thead>
         <tr>
-          <th class="px-3 py-2 text-left font-medium">F. aplic.</th>
-          <th class="px-3 py-2 text-left font-medium">Factura</th>
-          <th class="px-3 py-2 text-right font-medium">Importe fact.</th>
-          <th class="px-3 py-2 text-right font-medium">Aplicado</th>
-          <th class="px-3 py-2 text-right font-medium">Abono fact.</th>
-          <th class="px-3 py-2 text-right font-medium">Saldo fact.</th>
-          <th class="px-3 py-2 text-left font-medium">Stat</th>
+          <th style="text-align:left">Fecha</th>
+          <th style="text-align:left">Factura</th>
+          <th class="r">Importe</th>
+          <th class="r">Aplicado</th>
+          <th class="r">Abono</th>
+          <th class="r">Saldo</th>
+          <th style="text-align:center">Stat</th>
           {# TMT 2026-05-21 (H-3): botón Desaplicar inline. Antes había que adivinar
              la URL /cheques/<id>/desaplicar/<id_factura>. La dueña lo pidió visible. #}
           {% if tiene_permiso('cheques.aplicar') %}
-          <th class="px-3 py-2 text-right font-medium no-print">Acción</th>
+          <th class="no-print" data-no-sort style="width:1%"></th>
           {% endif %}
         </tr>
       </thead>
       <tbody>
         {% for a in aplicaciones %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800/40">
-          <td class="px-3 py-2">{{ a.fechaing | fecha_es }}</td>
-          <td class="px-3 py-2 font-mono text-xs">
+        <tr>
+          <td class="gris">{{ a.fechaing | fecha_es }}</td>
+          <td>
             {% if a.id_fact %}
-              <a href="{{ url_for('facturas.detalle', id_factura=(a.numf or a.id_fact), doc=a.numf_completo or None, id=a.id_fact or None) }}" class="hover:text-blue-600">{{ a.numf_completo or a.numf }}</a>
+              <a class="fact" href="{{ url_for('facturas.detalle', id_factura=(a.numf or a.id_fact), doc=a.numf_completo or None, id=a.id_fact or None) }}">{{ a.numf_completo or a.numf }}</a>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.fact_importe | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono">{{ a.aplicado | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.abono_f | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono text-slate-500">{{ a.saldo_f | money_es }}</td>
-          <td class="px-3 py-2 font-mono text-xs text-slate-500">{{ a.stat_f }}</td>
+          <td class="r gris">{{ a.fact_importe | money_es }}</td>
+          <td class="r" style="font-weight:600">{{ a.aplicado | money_es }}</td>
+          <td class="r gris">{{ a.abono_f | money_es }}</td>
+          <td class="r gris">{{ a.saldo_f | money_es }}</td>
+          <td style="text-align:center">{% if a.stat_f %}<span class="chq-letra">{{ a.stat_f }}</span>{% endif %}</td>
           {% if tiene_permiso('cheques.aplicar') %}
-          <td class="px-3 py-2 text-right no-print">
+          <td class="r no-print">
             {# TMT 2026-09-30: un cheque devuelto al cliente ya no se mueve ni se
                desaplica — su deuda vive en la nota de débito; desaplicarlo
                reabriría las facturas y el cliente debería dos veces. #}
             {% if a.id_fact and (ch.stat or '') | upper != 'X' %}
             {# 🚨 TMT 2026-08-24 — "Mover" al lado de "Desaplicar", en la misma
-               fila. Quien está mirando la aplicación equivocada tiene ahí las
-               DOS salidas: sacarla, o mandarla a la factura que corresponde.
-               Hasta hoy sólo estaba la primera: la pantalla de aplicar un
-               cobro ya cargado se borró el 20/07 por huérfana, y el único
-               camino era recargarlo por Cobranza — que con DEP.PICH. acuña un
-               movimiento de banco nuevo (los $500 de más del 19/08). #}
+               fila: quien mira la aplicación equivocada tiene ahí las DOS
+               salidas, sacarla o mandarla a la factura que corresponde. #}
             <a href="{{ url_for('cheques.mover_aplicacion', id_cheque=ch.id_cheque, id_factura=a.id_fact) }}"
-               class="text-xs px-2 py-1 rounded border border-sky-300 text-sky-700 hover:bg-sky-50 inline-flex items-center gap-1 mr-1"
+               class="chq-acc"
                title="Pasar este cobro a otra factura del mismo cliente, sin tocar el banco">
-              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <path d="M5 12h14"/><polyline points="12 5 19 12 12 19"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><polyline points="12 5 19 12 12 19"/></svg>
               Mover
             </a>
             <a href="{{ url_for('cheques.confirmar_desaplicar', id_cheque=ch.id_cheque, id_factura=a.id_fact) }}"
-               class="text-xs px-2 py-1 rounded border border-amber-300 text-amber-700 hover:bg-amber-50 inline-flex items-center gap-1"
+               class="chq-acc" style="color:#b45309"
                title="Deshacer esta aplicación específica (deja el cheque en cartera para re-aplicar a otra factura)">
-              <svg class="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/>
-              </svg>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 102.13-9.36L1 10"/></svg>
               Desaplicar
             </a>
             {% endif %}
@@ -553,26 +596,23 @@
           {% endif %}
         </tr>
         {% endfor %}
+        {# TMT 2026-09-16 (dueña): las que soltó el totalizar van EN esta tabla —
+           son facturas que este cheque pagó. #}
         {% for v in vinculos_viejos | default([]) %}
-        <tr class="border-t border-slate-100 dark:border-slate-800 text-slate-500"
-            title="El totalizar del {{ v.fecha_totalizar | fecha_es }} repartió los abonos de nuevo y soltó este vínculo. La plata sigue contada en el abono de la factura.">
-          <td class="px-3 py-2">{{ v.fechaing | fecha_es }}</td>
-          <td class="px-3 py-2 font-mono text-xs">
+        <tr title="El totalizar del {{ v.fecha_totalizar | fecha_es }} repartió los abonos de nuevo y soltó este vínculo. La plata sigue contada en el abono de la factura.">
+          <td class="gris">{{ v.fechaing | fecha_es }}</td>
+          <td>
             {% if v.id_fact %}
-              <a href="{{ url_for('facturas.detalle', id_factura=(v.numf or v.id_fact), doc=v.numf_completo or None, id=v.id_fact or None) }}"
-                 class="text-blue-600 hover:underline">{{ v.numf_completo or v.numf or v.id_fact }}</a>
+              <a class="fact" href="{{ url_for('facturas.detalle', id_factura=(v.numf or v.id_fact), doc=v.numf_completo or None, id=v.id_fact or None) }}">{{ v.numf_completo or v.numf or v.id_fact }}</a>
             {% endif %}
           </td>
-          <td class="px-3 py-2 text-right text-mono">—</td>
-          <td class="px-3 py-2 text-right text-mono">{{ v.aplicado | money_es }}</td>
-          <td class="px-3 py-2 text-right text-mono">—</td>
-          <td class="px-3 py-2 text-right text-mono">—</td>
-          <td class="px-3 py-2 text-xs">
-            <span class="inline-block px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"
-                  title="Se totalizó el {{ v.fecha_totalizar | fecha_es }}">Totalizada</span>
-          </td>
+          <td class="r gris">—</td>
+          <td class="r" style="font-weight:600">{{ v.aplicado | money_es }}</td>
+          <td class="r gris">—</td>
+          <td class="r gris">—</td>
+          <td style="text-align:center"><span class="gris" style="font-size:12px" title="Se totalizó el {{ v.fecha_totalizar | fecha_es }}">Totalizada</span></td>
           {% if tiene_permiso('cheques.aplicar') %}
-          <td class="px-3 py-2 text-right no-print"></td>
+          <td class="no-print"></td>
           {% endif %}
         </tr>
         {% endfor %}
@@ -582,12 +622,10 @@
   {% endif %}
 
   {% if depositos %}
-  <h2 class="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-1">
-    Depósitos / movimientos bancarios ({{ depositos | length }})
-  </h2>
-  <div class="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded overflow-hidden">
-    <table class="w-full text-sm">
-      <thead class="bg-slate-50 dark:bg-slate-800/50 text-xs uppercase tracking-wider text-slate-500">
+  <h2 class="chq-h2">Depósitos / movimientos bancarios <span>{{ depositos | length }}</span></h2>
+  <div class="chq-caja">
+    <table class="chq-tabla">
+      <thead>
         <tr>
           <th class="px-3 py-2 text-left font-medium">Fecha</th>
           <th class="px-3 py-2 text-left font-medium">Banco</th>
@@ -614,6 +652,27 @@
   {% endif %}
 </div>
 
+{# Los lapicitos de los datos: abren la edición con ESE campo seleccionado. #}
+<script>
+  (function () {
+    var pagina = document.getElementById('cheque-page');
+    if (!pagina) return;
+    pagina.addEventListener('click', function (ev) {
+      var b = ev.target.closest('.chq-lapiz');
+      if (!b) return;
+      pagina.classList.add('is-editing');
+      var campo = pagina.ownerDocument.querySelector('[form="ch-edit-form"][name="' + b.dataset.campo + '"]');
+      if (!campo) return;
+      // La fecha la viste fechas-es.js: el que se ve es el cuadro de texto de al lado.
+      var caja = campo.closest('.fecha-es');
+      var visible = caja ? caja.querySelector('input[type="text"]') : campo;
+      setTimeout(function () {
+        visible.focus();
+        if (visible.select && visible.tagName === 'INPUT') visible.select();
+      }, 0);
+    });
+  })();
+</script>
 {# El lapicito de la observación: el cuadro de texto se abre al tocarlo. #}
 <script>
   (function () {
