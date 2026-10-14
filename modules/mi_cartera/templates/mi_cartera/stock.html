@@ -51,8 +51,9 @@
     <summary>
       <b class="tn">{{ t.tela }}</b>
       {%- set _fc = ficha_de.get(t.tela) if ficha_de else none %}
-      {%- if _fc %}<a class="st-ft" href="{% if _fc|length == 1 %}{{ url_for('mi_cartera.ficha', codigo=_fc[0]) }}{{ ('?vend=' ~ vend) if preview else '' }}{% else %}{{ url_for('mi_cartera.fichas_lista', tela=t.tela, vend=(vend if preview else none)) }}{% endif %}" title="Ficha técnica" aria-label="Ficha técnica de {{ t.tela }}">📄</a>{% endif %}
-      <span class="nc n-col">{{ t.colores|length }} color{{ '' if t.colores|length == 1 else 'es' }}</span>
+      {%- if _fc %}<a class="st-ft" href="{% if _fc|length == 1 %}{{ url_for('mi_cartera.ficha', codigo=_fc[0]) }}{{ ('?vend=' ~ vend) if preview else '' }}{% else %}{{ url_for('mi_cartera.fichas_lista', tela=t.tela, vend=(vend if preview else none)) }}{% endif %}" title="Ficha técnica" aria-label="Ficha técnica de {{ t.tela }}">FT</a>{% endif %}
+      {#- "N colores" se fue (Tamara 13/10: "borrá lo de 3 colores"): al
+          abrir la tela se ven. #}
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
     {% for c in t.colores %}
@@ -118,7 +119,10 @@
   .kg{flex:0 0 auto;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right;min-width:52px}
   .st-tela summary .kg{font-size:14.5px}
   .st-tela[open] summary .tn{color:var(--accent)}
-  .st-ft{flex:0 0 auto;font-size:13px;text-decoration:none;opacity:.75}
+  /* La ficha técnica de la tela: "FT" (Tamara 13/10), chiquito y tocable. */
+  .st-ft{flex:0 0 auto;font-size:10.5px;font-weight:700;letter-spacing:.02em;text-decoration:none;
+    color:var(--accent);border:1px solid var(--accent-soft);background:#fff;border-radius:6px;padding:2px 6px;
+    margin-left:auto}
   .st-col{display:flex;align-items:center;gap:6px;padding:5px 0 5px 10px;font-size:13px;
     border-left:2px solid var(--accent-soft)}
   .st-col:last-child{margin-bottom:8px}
@@ -202,7 +206,6 @@
       if (nCol) {
         vis++; kgTot += kg;
         t.querySelector('.kg-t').textContent = n0(kg);
-        t.querySelector('.n-col').textContent = nCol + (nCol === 1 ? ' color' : ' colores');
       }
       /* Se abre sola si la búsqueda la encontró por un COLOR (si la encontró
          por el nombre de la tela, mostrar 200 colores no ayuda); se cierra

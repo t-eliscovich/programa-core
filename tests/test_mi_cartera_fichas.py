@@ -255,7 +255,7 @@ def test_la_oficina_baja_la_hoja_de_una_dada_de_baja(duena, monkeypatch):
 def test_stock_linkea_por_telas_de_asinfo_y_elige_si_hay_dos(vendedor, monkeypatch):
     """Tamara 13/10: "fijate si podés linkear todas". La tela de Asinfo cruza
     con la ficha también por `telas_asinfo`; con dos fichas (tubular y
-    abierta) el 📄 abre la lista de esas dos."""
+    abierta) el FT abre la lista de esas dos."""
     abierta = {**FILA, "codigo": "FT-FL-102ABI", "nombre": "FLEECE 102 ABIERTO",
                "seccion": "abierto", "telas_asinfo": ["Fleece 96 Perchado"]}
     monkeypatch.setattr(fx, "db", _DB(filas=[FILA, abierta, ABI]))
