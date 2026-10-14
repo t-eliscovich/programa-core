@@ -24,6 +24,7 @@ FILA = {
              ["CARACTERÍSTICAS", "Peso", "g/m²", "288 ±5%"], ["CARACTERÍSTICAS", "Ancho", "cm", "102 ±1"],
              ["ENCOGIMIENTO", "Ancho", "%", "5 MAX"]],
     "lavado": json.dumps(["No dejar en remojo.", "No usar secadora.", "Algo raro."]),
+    "telas_asinfo": ["Fleece 96 Perchado"],
 }
 ABI = {**FILA, "codigo": "FT-JE-X", "nombre": "JERSEY X", "seccion": "abierto",
        "grupo": "Jersey", "activa": False}
@@ -72,7 +73,7 @@ def test_armar_agrupa_y_resume(monkeypatch):
     assert f["resumen_car"] == "288 g/m² · 102 cm"
     assert [x["simbolo"] for x in f["lavado"]] == ["remojo.png", "no_secadora.png", None]
     assert len(fx.lista(todas=True)) == 2
-    assert fx.por_tela() == {"fleece102": "FT-FL-102"}
+    assert fx.por_tela() == {"fleece102": ["FT-FL-102"], "fleece96perchado": ["FT-FL-102"]}
     assert fx.clave_tela("Fleece 102") == fx.clave_tela("FLEECE  102")
 
 
@@ -249,3 +250,30 @@ def test_la_oficina_baja_la_hoja_de_una_dada_de_baja(duena, monkeypatch):
     from modules._lib import pdf_motor
     monkeypatch.setattr(pdf_motor, "desde_html", lambda html, **k: b"%PDF")
     assert duena.get("/mi-cartera/fichas/FT-JE-X/pdf").status_code == 200
+
+
+def test_stock_linkea_por_telas_de_asinfo_y_elige_si_hay_dos(vendedor, monkeypatch):
+    """Tamara 13/10: "fijate si podés linkear todas". La tela de Asinfo cruza
+    con la ficha también por `telas_asinfo`; con dos fichas (tubular y
+    abierta) el 📄 abre la lista de esas dos."""
+    abierta = {**FILA, "codigo": "FT-FL-102ABI", "nombre": "FLEECE 102 ABIERTO",
+               "seccion": "abierto", "telas_asinfo": ["Fleece 96 Perchado"]}
+    monkeypatch.setattr(fx, "db", _DB(filas=[FILA, abierta, ABI]))
+    assert fx.por_tela()["fleece96perchado"] == ["FT-FL-102", "FT-FL-102ABI"]
+    html = vendedor.get("/mi-cartera/fichas?tela=Fleece%2096%20Perchado").data.decode()
+    assert "Fichas de <b>Fleece 96 Perchado</b>" in html
+    assert "FLEECE 102 ABIERTO" in html and "JERSEY X" not in html
+    html = vendedor.get("/mi-cartera/fichas?tela=Nada").data.decode()
+    assert "Fichas de" not in html and "FLEECE 102" in html
+
+
+def test_editar_guarda_las_telas_de_asinfo(duena):
+    r = duena.post("/admin/fichas-tecnicas/FT-FL-102",
+                   data=_form(telas_asinfo="Fleece 96 Perchado\n\n Fleece 96 Perchado \nOtra"))
+    assert r.status_code == 302
+    sql, params = duena.fake.ejecutado[-1]
+    assert "telas_asinfo = %s::text[]" in sql
+    assert ["Fleece 96 Perchado", "Otra"] in params
+    r = duena.post("/admin/fichas-tecnicas/nueva",
+                   data=_form(codigo="ft-x", nombre="", telas_asinfo="Una\nDos"))
+    assert r.status_code == 400 and "Una\nDos" in r.data.decode()

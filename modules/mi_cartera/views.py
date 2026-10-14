@@ -1089,8 +1089,8 @@ def stock():
     # La ficha técnica de cada tela, si hay una con el mismo nombre (13/10):
     # un 📄 chiquito al lado del nombre, para no ir a buscarla a otra pestaña.
     mapa = fichas.por_tela()
-    ficha_de = {t["tela"]: cod for t in telas
-                if (cod := mapa.get(fichas.clave_tela(t["tela"])))}
+    ficha_de = {t["tela"]: cods for t in telas
+                if (cods := mapa.get(fichas.clave_tela(t["tela"])))}
     return render_template(
         "mi_cartera/stock.html",
         seccion="stock",
@@ -1114,9 +1114,19 @@ def stock():
 def fichas_lista():
     vend = _vend_actual()
     filas = fichas.lista()
+    # ?tela= viene del 📄 de Stock cuando la tela tiene más de una ficha (la
+    # tubular y la abierta): se muestran sólo ésas, con un "Ver todas".
+    tela = (request.args.get("tela") or "").strip()
+    if tela and filas:
+        cods = fichas.por_tela().get(fichas.clave_tela(tela)) or []
+        de_la_tela = [f for f in filas if f["codigo"] in cods]
+        if de_la_tela:
+            filas = de_la_tela
+        else:
+            tela = ""
     return render_template(
         "mi_cartera/fichas.html", seccion="fichas", fichas=filas or [],
-        sin_base=filas is None,
+        sin_base=filas is None, tela=tela,
         n_tub=sum(1 for f in filas or [] if f["seccion"] == "tubular"),
         n_abi=sum(1 for f in filas or [] if f["seccion"] == "abierto"),
         **_ctx_base(vend))
@@ -1232,6 +1242,9 @@ def ficha_editar(codigo: str | None = None):
                             strict=False)],
                         "lavado": [{"texto": t} for t in
                                    (request.form.get("lavado") or "").splitlines() if t.strip()],
+                        "telas_asinfo": [t.strip() for t in
+                                         (request.form.get("telas_asinfo") or "").splitlines()
+                                         if t.strip()],
                         "activa": bool(request.form.get("activa"))}
             return render_template("mi_cartera/ficha_editar.html", f=borrador,
                                    nueva=nueva, fx=fichas), 400

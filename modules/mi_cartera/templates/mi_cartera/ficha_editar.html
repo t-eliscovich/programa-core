@@ -53,6 +53,10 @@
       <textarea name="lavado" rows="9" style="{{ inp }};font-size:13px;line-height:1.5">{% for l in f.lavado %}{{ l.texto }}
 {% endfor %}</textarea></label>
 
+    <label style="display:block"><b>Telas de Asinfo</b> <span style="font-size:12px;color:rgb(100 116 139)">— una por renglón, como se llaman en Stock (ej. «Jersey 3»). Es lo que pone el 📄 al lado de la tela en Stock; el nombre igual al de la ficha ya cuenta solo.</span><br>
+      <textarea name="telas_asinfo" rows="3" style="{{ inp }};font-size:13px;line-height:1.5">{% for t in (f.telas_asinfo or []) %}{{ t }}
+{% endfor %}</textarea></label>
+
     <label><input type="checkbox" name="activa" value="1" {{ 'checked' if f.activa }}> Activa (la ven los vendedores)</label>
 
     <div style="display:flex;gap:10px">

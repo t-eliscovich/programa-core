@@ -33,7 +33,7 @@
       {% for g_ in grupos %}<option value="{{ g_ }}">{{ g_ }}</option>{% endfor %}
     </select>
     <div class="st-cal" id="st-cal">
-      <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">1ra</a><a href="#" data-cal="seg">2da</a>
+      <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">PRI</a><a href="#" data-cal="seg">SEG</a>
     </div>
   </div>
 {% endblock %}
@@ -50,7 +50,8 @@
            data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
     <summary>
       <b class="tn">{{ t.tela }}</b>
-      {%- if ficha_de and ficha_de.get(t.tela) %}<a class="st-ft" href="{{ url_for('mi_cartera.ficha', codigo=ficha_de[t.tela]) }}{{ ('?vend=' ~ vend) if preview else '' }}" title="Ficha técnica" aria-label="Ficha técnica de {{ t.tela }}">📄</a>{% endif %}
+      {%- set _fc = ficha_de.get(t.tela) if ficha_de else none %}
+      {%- if _fc %}<a class="st-ft" href="{% if _fc|length == 1 %}{{ url_for('mi_cartera.ficha', codigo=_fc[0]) }}{{ ('?vend=' ~ vend) if preview else '' }}{% else %}{{ url_for('mi_cartera.fichas_lista', tela=t.tela, vend=(vend if preview else none)) }}{% endif %}" title="Ficha técnica" aria-label="Ficha técnica de {{ t.tela }}">📄</a>{% endif %}
       <span class="nc n-col">{{ t.colores|length }} color{{ '' if t.colores|length == 1 else 'es' }}</span>
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
@@ -64,19 +65,25 @@
            y se pueda buscar por ambos" — el buscador ya miraba los dos. #}
         <span class="cc">{{ c.cod }}</span>
         <span class="cn">{{ c.color }}</span>
+        <span class="tg">
         {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
-        {#- ⭐ La COMPETENCIA, chiquito (Tamara 13/10: "incentivo a vender ese
-            en particular"). Si entra sólo la segunda, el 🏆 va pegado a la
-            etiqueta "2da"; si entra entero, va su propia etiqueta con los
-            puntos de la tela (×4, ×10: cada kilo vale eso). Se marca el COLOR
-            y no la tela: 630 colores están en la competencia y casi todas las
-            telas tienen alguno — un 🏆 en cada tela no diría nada. #}
+        {#- ⭐ CATEGORÍA y COMPETENCIA, cada una en su etiqueta (Tamara 13/10,
+            segunda vuelta: "mostrá PRI o SEG separado de la competencia y
+            aparte si está en la comp"). Primero PRI y/o SEG —un color puede
+            tener kilos de las dos—, después el 🏆 con lo que vale el kilo
+            (×4, ×10). Si de ese color entra SÓLO la segunda y además hay
+            primera, el 🏆 lo dice ("🏆 SEG"): si no, la primera parecería
+            sumar. Se marca el COLOR y no la tela: casi todas las telas tienen
+            algún color en la competencia y un 🏆 en cada tela no diría nada. #}
         {%- set cp = comp.get((t.tela, c.cod)) %}
         {%- set _pts = (' ×' ~ cp.puntos) if cp and cp.puntos > 1 else '' %}
-        {%- if cp and not cp.solo_seg %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ _pts }}</em>{% endif %}
-        {%- if c.seg_kg > 0 %}<em class="tag dos{{ ' comp' if cp and cp.solo_seg }}"{% if cp and cp.solo_seg %} title="La segunda está en la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}"{% endif %}>2da{{ ' 🏆' ~ _pts if cp and cp.solo_seg }}</em>{% endif %}
-        <span class="rol rol-c">{{ c.rollos }} r</span>
-        <b class="kg kg-c">{{ c.kg|num_es(0) }}</b>
+        {%- set _hay_pri = (c.kg - c.seg_kg) > 0.05 %}
+        {%- if _hay_pri %}<em class="tag pri">PRI</em>{% endif %}
+        {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}
+        {%- if cp %}<em class="tag comp" title="En la competencia{{ ' (sólo la segunda)' if cp.solo_seg }}: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ ' SEG' if cp.solo_seg and _hay_pri }}{{ _pts }}</em>{% endif %}</span>
+        {#- Los kilos y, chiquito debajo, los rollos: así las etiquetas tienen
+            lugar al lado del color también a 320 px (13/10/2026). #}
+        <span class="kgr"><b class="kg kg-c">{{ c.kg|num_es(0) }}</b><span class="rol rol-c">{{ c.rollos }} r</span></span>
       </div>
     {% endfor %}
   </details>
@@ -113,18 +120,24 @@
   .st-tela summary .kg{font-size:14.5px}
   .st-tela[open] summary .tn{color:var(--accent)}
   .st-ft{flex:0 0 auto;font-size:13px;text-decoration:none;opacity:.75}
-  .st-col{display:flex;align-items:baseline;gap:6px;padding:5px 0 5px 10px;font-size:13px;
+  .st-col{display:flex;align-items:center;gap:6px;padding:5px 0 5px 10px;font-size:13px;
     border-left:2px solid var(--accent-soft)}
   .st-col:last-child{margin-bottom:8px}
   .st-col .cc{flex:0 0 auto;min-width:30px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
     font-size:11.5px;font-weight:700;color:var(--ink-2);white-space:nowrap}
-  .st-col .cn{flex:1 1 auto;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
-  .st-col .rol{flex:0 0 auto;font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+  .st-col .cn{flex:1 1 auto;min-width:30%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--ink)}
+  /* Las etiquetas (ABI · PRI/SEG · 🏆) van juntas y, si no entran al lado del
+     color, se acomodan en dos renglones DENTRO de su lugar: el nombre del
+     color nunca queda reducido a "N…" (medido a 320 px, 13/10/2026). */
+  .st-col .tg{flex:0 1 auto;min-width:0;display:flex;flex-wrap:wrap;justify-content:flex-end;gap:3px}
+  .st-col .kgr{flex:0 0 auto;display:flex;flex-direction:column;align-items:flex-end;line-height:1.15;min-width:44px}
+  .st-col .rol{font-size:10.5px;color:var(--ink-3);white-space:nowrap}
   .st-col .kg{font-weight:600;font-size:13px}
   .tag{flex:0 0 auto;font-style:normal;font-size:9.5px;font-weight:700;padding:1px 4px;
     border-radius:4px;background:#EEF1F6;color:var(--ink-2)}
-  .tag.comp,.tag.dos.comp{background:#EDE9FE;color:#5B21B6}
+  .tag.comp{background:#EDE9FE;color:#5B21B6}
   .tag.dos{background:var(--warn-soft);color:var(--warn)}
+  .tag.pri{background:#EEF1F6;color:#475569}
   [hidden]{display:none!important}
 </style>
 
@@ -200,7 +213,7 @@
       else if (!abrir && t._auto) { t.open = false; t._auto = false; }
     });
     /* Reordenar el DOM es lo caro: los colores sólo cambian de orden con
-       Todo/1ra/2da (buscar no los mueve entre sí), y las telas sólo si el
+       Todo/PRI/SEG (buscar no los mueve entre sí), y las telas sólo si el
        orden nuevo es distinto del que ya está. */
     if (cal !== calOrden) {
       telas.forEach(function (t) {
@@ -217,7 +230,7 @@
     sub.textContent = n0(kgTot) + ' kg · ' + n0(rolTot) + ' rollos' + (cal === 'seg' ? ' de segunda' : (cal === 'pri' ? ' de primera' : ''));
     lista.hidden = vis === 0;
     vacio.hidden = vis !== 0;
-    /* El cartel dice POR QUÉ no hay nada: con un grupo o "2da" puestos, la
+    /* El cartel dice POR QUÉ no hay nada: con un grupo o "SEG" puestos, la
        búsqueda vacía no es la causa y "No encontré nada con “”" confunde. */
     var q = input.value.trim(), donde = [];
     if (g) { donde.push('en ' + g); }

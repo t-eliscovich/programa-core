@@ -33,6 +33,11 @@
 {% if sin_base %}
   <div class="vacio">No pude leer las fichas. Probá de nuevo en un rato.</div>
 {% elif fichas %}
+{% if tela %}
+  {# Llegó desde el 📄 de Stock: la tela tiene más de una ficha. #}
+  <div class="ft-tela">Fichas de <b>{{ tela }}</b> ·
+    <a href="{{ url_for('mi_cartera.fichas_lista') }}{{ qp }}">Ver todas</a></div>
+{% endif %}
 <div class="card ft-lista" id="ft-lista">
   {% for f in fichas %}
     {% if loop.first or f.seccion != loop.previtem.seccion or f.grupo != loop.previtem.grupo %}
@@ -64,6 +69,8 @@
   .ft-sec a i{font-style:normal;font-weight:500;color:var(--ink-3);font-size:11.5px}
   .ft-sec a.on{background:var(--surface);color:var(--ink);box-shadow:0 1px 2px rgba(15,23,42,.10)}
   .ft-lista{padding:0 12px}
+  .ft-tela{font-size:13px;color:var(--ink-2);margin:0 2px 8px}
+  .ft-tela a{color:var(--accent);font-weight:600}
   .ft-g{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;
     color:var(--ink-3);padding:12px 0 4px;border-bottom:1px solid var(--line)}
   .ft-f{display:flex;align-items:center;gap:8px;padding:9px 0;border-bottom:1px solid var(--line);

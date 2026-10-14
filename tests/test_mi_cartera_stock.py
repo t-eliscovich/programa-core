@@ -179,7 +179,10 @@ def test_el_stock_se_busca_por_codigo_y_por_color():
 def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
     """Tamara 13/10: "chiquito… cuando algo es de la competencia, así tienen
     incentivo a vender ese en particular". Misma llave que Stock (tela +
-    código de color). Sólo la segunda → el 🏆 va en la etiqueta 2da."""
+    código de color). Segunda vuelta (13/10, noche): "mostrá PRI o SEG
+    separado de la competencia y aparte si está en la comp" — la categoría y
+    el 🏆 van en etiquetas distintas; si de un color con primera entra sólo
+    la segunda, el 🏆 lo dice ("🏆 SEG")."""
     _fuente(monkeypatch, [(FILAS, True)])
     from modules.analisis import queries as aq
     monkeypatch.setattr(aq, "items", lambda conn=None: [
@@ -189,9 +192,14 @@ def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
     monkeypatch.setattr(aq, "con_puntos", lambda fs: [dict(f, puntos=10) for f in fs])
     html = vendedor.get("/mi-cartera/stock").data.decode()
     lista = html[html.index('id="st-lista"'):]
-    assert "2da 🏆 ×10" in lista            # NEG: sólo la segunda
-    assert ">🏆 ×10</em>" in lista          # GOS: entero
+    import re
+    neg = re.search(r'<span class="cc">NEG</span>.*?</div>', lista, re.S).group(0)
+    assert '<em class="tag pri">PRI</em>' in neg and '<em class="tag dos">SEG</em>' in neg
+    assert ">🏆 SEG ×10</em>" in neg       # NEG: tiene primera, pero entra sólo la segunda
+    gos = re.search(r'<span class="cc">GOS</span>.*?</div>', lista, re.S).group(0)
+    assert ">🏆 ×10</em>" in gos and "SEG" not in gos   # GOS: entero, sólo primera
     assert lista.count("🏆") == 2           # BLANCO vendido (0 kg) no se marca
+    assert "2da" not in lista[:lista.index('id="st-vacio"')]  # una sola palabra: PRI / SEG
 
 
 def test_si_la_competencia_falla_el_stock_igual_se_ve(vendedor, monkeypatch):

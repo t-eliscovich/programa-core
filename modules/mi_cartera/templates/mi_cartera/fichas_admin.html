@@ -34,7 +34,8 @@
     <tbody>
     {% for f in fichas %}
       <tr id="f-{{ f.codigo }}" data-buscar="{{ f.buscar }}" style="border-top:1px solid rgb(241 245 249){{ ';opacity:.5' if not f.activa }}">
-        <td style="padding:6px 10px;font-weight:600">{{ f.nombre }}{% if not f.activa %} <span style="font-weight:400;color:rgb(185 28 28)">(dada de baja)</span>{% endif %}</td>
+        <td style="padding:6px 10px;font-weight:600">{{ f.nombre }}{% if not f.activa %} <span style="font-weight:400;color:rgb(185 28 28)">(dada de baja)</span>{% endif %}
+          {% if f.telas_asinfo %}<div style="font-weight:400;font-size:11.5px;color:rgb(100 116 139)">Asinfo: {{ f.telas_asinfo|join(' · ') }}</div>{% endif %}</td>
         <td style="padding:6px 10px;font-family:ui-monospace,monospace;font-size:12px">{{ f.codigo }}</td>
         <td style="padding:6px 10px">{{ f.seccion|capitalize }} · {{ f.grupo }}</td>
         <td style="padding:6px 10px">{{ f.resumen_comp }}</td>

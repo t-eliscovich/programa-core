@@ -134,13 +134,15 @@ def _armar(f: dict) -> dict:
         "resumen_car": " · ".join(car),
         **{k: f[k] for k in ("codigo", "nombre", "seccion", "grupo", "revision",
                              "emision", "orden", "activa")},
+        "telas_asinfo": list(f.get("telas_asinfo") or []),
         "actualizado_en": f.get("actualizado_en"),
         "actualizado_por": f.get("actualizado_por"),
         "spec": spec,
         "bloques": bloques,
         "lavado": [{"texto": t, "simbolo": simbolo(t),
                     "img": f"fichas/{simbolo(t)}" if simbolo(t) else None} for t in lav],
-        "buscar": sin_tildes(f"{f['nombre']} {f['codigo']} {f['grupo']}"),
+        "buscar": sin_tildes(f"{f['nombre']} {f['codigo']} {f['grupo']} "
+                             + " ".join(f.get("telas_asinfo") or [])),
     }
 
 
@@ -174,9 +176,18 @@ def una(codigo: str) -> dict | None:
     return _armar(f) if f else None
 
 
-def por_tela() -> dict[str, str]:
-    """{clave_tela(nombre): código} de las activas — para el link 📄 de Stock."""
-    return {clave_tela(f["nombre"]): f["codigo"] for f in (lista() or [])}
+def por_tela() -> dict[str, list[str]]:
+    """{clave_tela(tela de Asinfo): [códigos]} de las activas — para el 📄 de
+    Stock. Cruza por el NOMBRE de la ficha y por sus `telas_asinfo` (mig
+    0264): "Jersey 3" → FT-JE-3.00. Una tela puede tener dos fichas (tubular
+    y abierta); van en el orden del catálogo, tubular primero."""
+    out: dict[str, list[str]] = {}
+    for f in lista() or []:
+        for nombre in [f["nombre"], *f["telas_asinfo"]]:
+            cods = out.setdefault(clave_tela(nombre), [])
+            if f["codigo"] not in cods:
+                cods.append(f["codigo"])
+    return out
 
 
 # ── Edición (oficina) ────────────────────────────────────────────────────────
@@ -216,9 +227,15 @@ def leer_form(form) -> dict:
         raise ValueError("El primer renglón necesita su descripción (COMPOSICIÓN…).")
     lavado = [" ".join(t.split()) for t in (form.get("lavado") or "").splitlines()]
     lavado = [t for t in lavado if t]
+    telas = []
+    for t in (form.get("telas_asinfo") or "").splitlines():
+        t = " ".join(t.split())
+        if t and t not in telas:
+            telas.append(t)
     return {"nombre": nombre, "seccion": seccion, "grupo": grupo,
             "revision": revision, "emision": emision, "spec": spec,
-            "lavado": lavado, "activa": bool(form.get("activa"))}
+            "lavado": lavado, "activa": bool(form.get("activa")),
+            "telas_asinfo": telas}
 
 
 def guardar(codigo: str, datos: dict, *, por: str, nueva: bool = False) -> None:
@@ -228,7 +245,8 @@ def guardar(codigo: str, datos: dict, *, por: str, nueva: bool = False) -> None:
         raise ValueError("El código tiene que empezar con FT- (por ejemplo FT-FL-102).")
     params = (datos["nombre"], datos["seccion"], datos["grupo"], datos["revision"],
               datos["emision"], json.dumps(datos["spec"], ensure_ascii=False),
-              json.dumps(datos["lavado"], ensure_ascii=False), datos["activa"], por)
+              json.dumps(datos["lavado"], ensure_ascii=False), datos["activa"],
+              list(datos.get("telas_asinfo") or []), por)
     if nueva:
         if db.fetch_one("SELECT 1 AS x FROM scintela.ficha_tecnica WHERE codigo = %s",
                         (codigo,)):
@@ -237,8 +255,8 @@ def guardar(codigo: str, datos: dict, *, por: str, nueva: bool = False) -> None:
             """
             INSERT INTO scintela.ficha_tecnica
                 (nombre, seccion, grupo, revision, emision, spec, lavado, activa,
-                 actualizado_por, codigo, orden)
-            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s,
+                 telas_asinfo, actualizado_por, codigo, orden)
+            VALUES (%s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s::text[], %s, %s,
                     (SELECT COALESCE(MAX(orden), 0) + 10 FROM scintela.ficha_tecnica))
             """, (*params, codigo))
         return
@@ -247,7 +265,7 @@ def guardar(codigo: str, datos: dict, *, por: str, nueva: bool = False) -> None:
         UPDATE scintela.ficha_tecnica
            SET nombre = %s, seccion = %s, grupo = %s, revision = %s, emision = %s,
                spec = %s::jsonb, lavado = %s::jsonb, activa = %s,
-               actualizado_por = %s, actualizado_en = now()
+               telas_asinfo = %s::text[], actualizado_por = %s, actualizado_en = now()
          WHERE codigo = %s
         """, (*params, codigo))
     if not n:
