@@ -37,7 +37,7 @@
         title="Facturas y cheques, todo junto">{{ 'Todo' if ec_btn_corto else 'Imprimir todo' }}</button>
 <button type="button" onclick="ecImprimir('facturas')"
         class="{{ ec_btn_clase | default('text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800', true) }}"
-        title="Sólo la hoja de facturas, con el total de cheques por cobrar al pie">{{ 'Facturas' if ec_btn_corto else 'Imprimir facturas' }}</button>
+        title="Sólo la hoja de facturas, sin los cheques">{{ 'Facturas' if ec_btn_corto else 'Imprimir facturas' }}</button>
 <button type="button" onclick="ecImprimir('cheques')"
         class="{{ ec_btn_clase | default('text-sm px-3 py-1.5 rounded border border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800', true) }}"
         title="Sólo el listado de cheques por cobrar, sin los ya depositados (para mandarle al cliente)">{{ 'Cheques' if ec_btn_corto else 'Imprimir cheques' }}</button>
@@ -72,6 +72,11 @@
   @media print {
     body.ec-print-facturas .ec-bloque-cheques { display: none !important; }
     body.ec-print-cheques  .ec-bloque-facturas { display: none !important; }
+    /* TMT 2026-10-14 (dueña: "cuando pongo para imprimir facturas … borrar
+       las líneas cheques a depositar y total"). La hoja de facturas cierra en
+       TOTALES (saldo de facturas); el pie de cheques (a depositar /
+       protestados / TOTAL) queda sólo en "Imprimir todo". */
+    body.ec-print-facturas .ec-cierre { display: none !important; }
     /* Los ya cobrados (B/A) no van en el papel que se le manda al
        cliente — Alex, 2026-08-03. */
     body.ec-print-cheques  tr.ec-ch-cobrado { display: none !important; }

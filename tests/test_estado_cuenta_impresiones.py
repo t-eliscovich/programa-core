@@ -759,3 +759,11 @@ def test_no_se_dibujan_barras_de_scroll_en_el_papel():
     assert "::-webkit-scrollbar" in css, "falta la sintaxis de Chromium"
     for bloque in ("facturas", "cheques"):
         assert f"main .ec-bloque-{bloque}::-webkit-scrollbar" in css, bloque
+
+
+def test_imprimir_facturas_no_lleva_el_pie_de_cheques():
+    """Dueña 14/10/2026: al imprimir SÓLO facturas no van "Cheques a
+    depositar" ni el TOTAL (facturas + cheques); en "Todo" siguen."""
+    assert "body.ec-print-facturas .ec-cierre { display: none !important; }" in BOTONES
+    assert 'class="ec-cierre ' in IMPRESO
+    assert "body.ec-print-todo" not in BOTONES
