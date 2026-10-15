@@ -63,7 +63,7 @@
         <tr class="{{ 'canc' if f.estado == 'cancelado' }}">
           <td>{{ f.tela }}</td>
           <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
-          <td><b>{{ f.color }}</b> <span class="sub">{{ f.codigo }}</span></td>
+          <td><b>{{ f.color }}</b>{% if nombres_color.get(f.color) %} {{ nombres_color[f.color] }}{% endif %} <span class="sub">{{ f.codigo }}</span></td>
           <td class="n">{% if f.cantidad %}{{ f.cantidad|num_es(0) }} <span class="sub">{{ f.unidad }}</span>{% else %}—{% endif %}</td>
           <td class="n">{% if f.rib_kg %}{{ f.rib_kg|num_es(0) }} <span class="sub">kg</span>{% else %}—{% endif %}</td>
           <td class="peds">{% for p in f.pedidos %}{{ p.cliente }} {{ p.numero }}{% if p.cantidad %} ({{ p.cantidad|num_es(0) }}){% endif %}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>

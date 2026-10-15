@@ -92,6 +92,7 @@ def lista():
         ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     elif corte == "cliente":
         ctx["clientes"] = service.por_cliente(filas)
+        ctx["nombres_color"] = service.nombres_color()
         ctx["pedidos_por_color"] = service.pedidos_por_color()
         ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     elif corte == "pedido":
@@ -532,6 +533,7 @@ def mandados():
                        "terminado" if est else "cancelado")
         e["cancelable"] = any(f["estado"] == "pendiente" for f in e["filas"])
     return render_template("pedidos/mandados.html", envios=envios, disponible=ok,
+                           nombres_color=service.nombres_color(),
                            puede_cancelar=tiene_permiso("pedidos.enviar_memo"))
 
 

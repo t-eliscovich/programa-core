@@ -595,7 +595,7 @@
           <tr class="det" data-grupo="c-{{ gi }}" data-fila-hija>
             <td class="cod"><span class="npd">{{ d.numero }}</span> <span class="muted">{{ d.fecha_es }}</span></td>
             <td>{{ d.cantidad|num_es(0) }} <span class="muted">{{ d.u }}</span></td>
-            <td class="izq"><b>{{ d.tela }}</b> · {{ d.color }}{% if d.acabado %} <span class="muted">{{ d.acabado }}</span>{% endif %}
+            <td class="izq"><b>{{ d.tela }}</b> · {{ d.color }}{% if nombres_color.get(d.color) %} {{ nombres_color[d.color] }}{% endif %}{% if d.acabado %} <span class="muted">{{ d.acabado }}</span>{% endif %}
               <span style="margin-left:8px">{{ memo_chip(d.numero, d.codigo) }}</span></td>
           </tr>
           {% endfor %}
