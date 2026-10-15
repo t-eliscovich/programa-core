@@ -148,7 +148,7 @@
   .pd .btn.pri{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
   .pd .btn.pri:hover{background:var(--azul);border-color:var(--azul);color:#fff}
   .pd.ancha .ver{margin:14px 0 18px}
-  .pd .fams{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+  .pd .fams{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 12px}
   .pd .fam{display:flex;flex-direction:column;gap:0;min-width:110px;padding:6px 12px;border:2px solid var(--linea);border-radius:9px;background:#fff;text-decoration:none;color:var(--ink)}
   .pd .fam:hover{border-color:#94a3b8}
   .pd .fam .fn{font-size:15px;font-weight:700}
@@ -169,6 +169,7 @@
   .pd .kexp b{color:var(--ink)}
   .pd .barra{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px}
   .pd .barra .ver{margin:0}
+  .pd .barra .sp{flex:1}
   .pd .solo{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:#334155;text-decoration:none;padding:7px 12px;border:1px solid var(--linea);border-radius:8px;background:#fff}
   .pd .solo .tick{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid #94a3b8;border-radius:4px;font-size:13px;font-weight:800;color:#fff}
   .pd .solo.on{border-color:var(--ink);color:var(--ink);font-weight:600}
@@ -206,7 +207,7 @@
   .pd .btn-imp:hover{background:var(--azul);border-color:var(--azul)}
   .pd .btn-imp.sec{background:#fff;color:var(--ink)}
   .pd .btn-imp.sec:hover{background:#f1f5f9;color:var(--ink)}
-  .pd .hist{font-size:14px;color:var(--azul);text-decoration:none;margin-left:auto}.pd .hist:hover{text-decoration:underline}
+  .pd .hist{font-size:14px;color:var(--azul);text-decoration:none}.pd .hist:hover{text-decoration:underline}
   .pd .btn-editar{font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
   .pd .btn-editar:hover{background:#f1f5f9}
   .pd.editando .btn-editar{background:var(--ink);color:#fff}
@@ -279,13 +280,19 @@
       <h1>Pedidos pendientes</h1>
       {% if corte != 'tela' %}<p class="nota">Lo que se pidió y todavía no se despachó, contra bodega y producción. Fuente: Asinfo.</p>{% endif %}
     </div>
+    {% if corte == 'tela' %}
+    <div class="ver no-print" style="margin:0">
+      {% for c in cortes %}<a class="{{ 'on' if c == corte else '' }}" href="{{ url_for('pedidos.lista', corte=c) }}">{{ cortes_lbl[c] }}</a>{% endfor %}
+    </div>
+    {% else %}
     <div class="acciones no-print">
       <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
     {% if disponible and categorias %}
       <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
-      {% if corte != 'tela' %}<button type="button" class="btn" onclick="window.print()">Imprimir</button>{% endif %}
+      <button type="button" class="btn" onclick="window.print()">Imprimir</button>
     {% endif %}
     </div>
+    {% endif %}
   </div>
 
   {% if not disponible %}
@@ -298,12 +305,14 @@
     <div class="aviso">No hay pedidos pendientes de menos de {{ dias_pedido_max }} días.</div>
   {% else %}
 
+  {% if corte != 'tela' %}
   <div class="ver no-print">
     <span class="cap">Ver por</span>
     {% for c in cortes %}
       <a class="{{ 'on' if c == corte else '' }}" href="{{ url_for('pedidos.lista', corte=c) }}">{{ cortes_lbl[c] }}</a>
     {% endfor %}
   </div>
+  {% endif %}
 
   {# ═══════════ COLOR ═══════════ #}
   {% if corte == 'color' %}
@@ -390,43 +399,32 @@
       {% set k.inv = k.inv + f.inventario_d %}{% set k.prod = k.prod + f.produccion_d %}{% set k.colores = k.colores + 1 %}
     {% endfor %}{% endfor %}
     {% set u = 'unidades' if resumen.u == 'un' else 'rollos' %}
-    <div class="kpis no-print">
-      <div class="kpi"><div class="kl">Pedido</div><div class="kv">{{ k.ped|num_es(0) }}</div></div>
-      <div class="kpi"><div class="kl">Sin memo</div><div class="kv">{{ k.sin|num_es(0) }}</div></div>
-      <div class="kpi"><div class="kl">Stock</div><div class="kv">{{ k.inv|num_es(0) }}</div></div>
-      <div class="kpi"><div class="kl">En producción</div><div class="kv">{{ k.prod|num_es(0) }}</div></div>
-      <div class="kpi res" title="Lo pedido sin memo, menos el stock y lo que está en producción, color por color"><div class="kl">Falta</div><div class="kv">{{ hacer_total|num_es(0) }}</div></div>
-      <div class="kunit">{{ u }}</div>
-    </div>
     {% set mc = namespace(sin=0, con=0) %}
     {% for t in telas %}{% for f in t.filas %}{% for p in pedidos_por_color.get(f.clave, []) %}
       {% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
     {% endfor %}{% endfor %}{% endfor %}
+    {# Una sola fila de controles (Tamara 15/10: "menos todavía, demasiada
+       cosa"): filtro de memo y faltantes a la izquierda, acciones a la derecha. #}
     <div class="barra no-print">
-      {# Dueña 01/10: "filtrar sin memo". Filtra en el navegador. #}
       <div class="ver memof" role="group" aria-label="Filtrar por memo">
-        <span class="cap">Pedidos</span>
         <a href="#" class="on" data-memof="todos">Todos</a>
-        <a href="#" data-memof="sin">Sin memo <span class="cnt">{{ mc.sin }}</span></a>
-        <a href="#" data-memof="con">Con memo <span class="cnt">{{ mc.con }}</span></a>
+        <a href="#" data-memof="sin">Sin memo</a>
+        <a href="#" data-memof="con">Con memo</a>
       </div>
-      {# Imprimir, ABAJO, al lado de la tabla (Tamara 15/10: "el botón de
-         imprimir más abajo, está muy arriba"). #}
-      <button type="button" class="btn-imp" onclick="window.print()">🖨 Imprimir</button>
-      <a class="btn-imp sec" href="{{ url_for('pedidos.lista', corte='tela', cat=activa, todas=1) }}">🖨 Todas</a>
       <a class="solo{{ ' on' if solo_faltan }}" href="{{ url_for('pedidos.lista', corte='tela', cat=activa) if solo_faltan else url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">
-        <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Solo faltantes</a>
-      {# «Cargar Mandar a hacer» + Historial: maqueta aprobada en diseño el
-         15/10/2026; se prende cuando exista el envío a formulas_app. #}
+        <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Faltantes</a>
+      <span class="sp"></span>
+      <button type="button" class="btn-imp sec" onclick="window.print()">🖨 Imprimir</button>
+      <a class="btn-imp sec" href="{{ url_for('pedidos.lista', corte='tela', cat=activa, todas=1) }}" title="Imprimir todas las familias">🖨 Todas</a>
       {% if mandar_a_hacer_activo %}
+      <button type="button" class="btn-imp" id="editar-hacer">✎ Producir</button>
       <a class="hist" href="{{ url_for('pedidos.mandados') }}">Historial</a>
-      <button type="button" class="btn-editar" id="editar-hacer">✎ Cargar producción</button>
       {% endif %}
     </div>
     {% endif %}
     {% for t in telas %}
       <div class="telablk">
-      <h3><span>{{ t.tela }}</span>{% if t.hacer_d %}<span class="muted" style="color:#b91c1c">falta {{ t.hacer_d|num_es(0) }}</span>{% endif %}
+      <h3><span>{{ t.tela }}</span>{% if t.hacer_d %}<span class="muted" style="color:#b91c1c">falta {{ t.hacer_d|num_es(0) }} {{ t.u }}</span>{% endif %}
       </h3>
       <table class="tt">
         <colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:14%"></colgroup>
@@ -735,7 +733,7 @@
     }
     function modo(on) {
       pd.classList.toggle('editando', on); bar.hidden = !on;
-      bt.textContent = on ? '✎ Cargando…' : '✎ Cargar producción';
+      bt.textContent = on ? '✎ Cargando…' : '✎ Producir';
       if (on) { var p = ins()[0]; if (p) p.focus(); }
     }
     bt.addEventListener('click', function () { modo(!pd.classList.contains('editando')); });
