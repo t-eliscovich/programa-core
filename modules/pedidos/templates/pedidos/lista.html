@@ -236,7 +236,7 @@
     .pd.ancha{max-width:none}
     .pd .imp{display:block !important}
     .pd .imp-tela.grande,.pd .imp-tela.nueva{break-before:page;page-break-before:always}
-    .pd .imp-tela.chica{break-inside:avoid;page-break-inside:avoid;margin-bottom:16pt !important}
+    .pd .imp-tela.chica{break-inside:avoid;page-break-inside:avoid;margin-bottom:30pt !important}
     .pd .imp-tela:first-child{break-before:auto;page-break-before:auto}
     .pd .imp tr.imp-tit th{font-size:15pt !important;text-align:left !important;background:#fff !important;border:0 !important;padding:0 0 5pt !important}
     .pd .imp tbody tr{break-inside:avoid;page-break-inside:avoid}
@@ -482,16 +482,15 @@
        un renglón por color, ordenado tela → abierto A-Z → tubular A-Z, todas
        las casillas con su dato, y los pedidos en su propia columna. #}
     <div class="imp">
-    {% set prev = namespace(grande=false) %}
-    {% for t in telas %}
-    {# Telas chicas (Tamara 15/10: "Naty, Kiana, Microfibra… las podemos
-       juntar") van seguidas en la misma hoja sin partirse; las grandes
-       arrancan hoja nueva. #}
+    {# Orden de la hoja (Tamara 15/10: "fleece 102 que onda?"): primero las
+       telas grandes (más de 12 colores), cada una en su hoja; después TODAS
+       las chicas juntas, una abajo de la otra, sin partirse. Dentro de cada
+       grupo, alfabético. #}
+    {% set ns_imp = namespace(grandes=[], chicas=[]) %}
+    {% for t in telas %}{% if t.filas|length > 12 %}{% set ns_imp.grandes = ns_imp.grandes + [t] %}{% else %}{% set ns_imp.chicas = ns_imp.chicas + [t] %}{% endif %}{% endfor %}
+    {% for t in ns_imp.grandes + ns_imp.chicas %}
     {% set es_grande = t.filas|length > 12 %}
-    {# Una chica nunca comparte hoja con una grande (Tamara 15/10: "fleece
-       lycra ya lo veo mal"): si viene después de una grande, hoja nueva. #}
-    <section class="imp-tela {{ 'grande' if es_grande else ('chica nueva' if prev.grande else 'chica') }}">
-    {% set prev.grande = es_grande %}
+    <section class="imp-tela {{ 'grande' if es_grande else ('chica nueva' if loop.index0 == ns_imp.grandes|length else 'chica') }}">
       <table>
         <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
