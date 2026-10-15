@@ -155,14 +155,14 @@
   .pd .fam .fh{font-size:12px;font-weight:600;color:var(--rojo)}
   .pd .fam .fh.cero{color:var(--verde)}
   .pd .fam.on{border-color:var(--ink);background:var(--ink);color:#fff}
-  .pd .fam.on .fh{color:#fca5a5}.pd .fam.on .fh.cero{color:#86efac}
+  .pd .fam.on .fh{color:#fecaca}.pd .fam.on .fh.cero{color:#bbf7d0}
   .pd .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,170px));gap:8px;margin:0}
   .pd .kpi{border:1px solid var(--linea);border-radius:9px;padding:8px 12px;background:#fff}
   .pd .kpi .kl{font-size:11.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
   .pd .kpi .kv{font-size:24px;font-weight:800;color:var(--ink);line-height:1.15;font-variant-numeric:tabular-nums;margin-top:2px}
   .pd .kpi .ks{font-size:11.5px;color:var(--gris)}
-  .pd .kpi.res{background:var(--rojo);border-color:var(--rojo)}
-  .pd .kpi.res .kl,.pd .kpi.res .kv{color:#fff}.pd .kpi.res .ks{color:#fecaca}
+  .pd .kpi.res{border:2px solid var(--rojo)}
+  .pd .kpi.res .kv{color:var(--rojo)}
   .pd .kexp{font-size:13.5px;color:#475569;margin:8px 0 16px}
   .pd .kexp b{color:var(--ink)}
   .pd .barra{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px}
@@ -174,38 +174,34 @@
   @media (max-width:900px){.pd .kpis{grid-template-columns:repeat(2,1fr)}.pd .kpi.res{grid-column:span 2}}
   /* Tipo de tela GRANDE (Tamara 15/10/2026): la usan empleados con poco
      manejo de compu — tabla ancha, letra grande, títulos de columna que se
-     ven (fondo oscuro, fijos arriba al bajar), Abierto/Tubular con color. */
+     ven y quedan fijos arriba. Colores sobrios: gris y tinta; el rojo sólo
+     para el número que falta. */
   .pd.ancha{max-width:none}
-  .pd.ancha .telablk h3{font-size:20px;color:var(--azul);margin:22px 0 8px}
+  .pd.ancha .telablk h3{font-size:20px;color:var(--ink);margin:22px 0 8px}
   .pd.ancha .telablk h3 .muted{font-size:14px}
-  main .pd table.tt thead th{position:sticky;top:0;z-index:2;background:var(--ink) !important;color:#fff !important;font-size:13px !important;font-weight:700;letter-spacing:.03em;padding:10px 12px !important;text-transform:uppercase}
-  main .pd table.tt thead th .sort-icon{color:#94a3b8}
-  main .pd table.tt thead th.th-hacer{background:var(--rojo) !important}
+  main .pd table.tt thead th{position:sticky;top:0;z-index:2;background:#e2e8f0 !important;color:var(--ink) !important;font-size:13.5px !important;font-weight:800;padding:10px 12px !important;text-transform:none;letter-spacing:0;border-bottom:2px solid var(--ink) !important}
   main .pd table.tt tbody tr.crow>td{font-size:16px !important;padding-top:10px !important;padding-bottom:10px !important}
   .pd table.tt tr.crow .color{font-size:17px;font-weight:700}
   .pd table.tt tr.crow .prod{font-size:12.5px}
+  .pd table.tt .aca{display:none}
+  .pd table.tt td.viejo{color:var(--ink);font-weight:600}
   main .pd table.tt tbody tr.det>td{font-size:14px !important;padding-top:7px !important;padding-bottom:7px !important}
-  main .pd table.tt tbody tr.acarow>td{font-size:14px !important;font-weight:800;letter-spacing:.08em;padding:8px 12px !important;border-bottom-width:1px}
-  main .pd table.tt tbody tr.acarow.abi>td{background:#fef3c7;color:#92400e}
-  main .pd table.tt tbody tr.acarow.tub>td{background:#e0e7ff;color:#3730a3}
-  main .pd table.tt tbody td.hacer{background:#fef2f2;font-size:18px !important;font-weight:800}
-  main .pd table.tt tbody td.hacer.okc{background:#f0fdf4;font-size:15px !important;font-weight:600}
-  main .pd table.tt tbody tr.det>td.hacer{background:var(--fondo)}
+  main .pd table.tt tbody tr.acarow>td{font-size:13.5px !important;font-weight:800;letter-spacing:.06em;padding:8px 12px !important;background:#f8fafc;color:#475569;border-bottom-width:1px}
+  main .pd table.tt tbody td.hacer{text-align:right}
   .pd.ancha .mchip{font-size:12.5px}
   .pd.ancha td.masinfo a{font-size:13.5px}
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
-  .pd.ancha .tab{font-size:15px;padding:8px 14px}
-  .pd.ancha .cards .val{font-size:24px}
+  .pd .imp{display:none}
   /* Cargar «Mandar a hacer» (15/10/2026): la columna está vacía; con el
      botón se vuelve casilleros, abajo una barra con el total, y se revisa en
      una ventana antes de mandar a producción. */
   .pd .hist{font-size:14px;color:var(--azul);text-decoration:none;margin-left:auto}.pd .hist:hover{text-decoration:underline}
-  .pd .btn-editar{font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--rojo);background:#fff;color:var(--rojo);cursor:pointer}
-  .pd .btn-editar:hover{background:#fef2f2}
-  .pd.editando .btn-editar{background:var(--rojo);color:#fff}
-  .pd .inhacer{display:none;width:84px;font-size:17px;font-weight:700;text-align:right;padding:5px 8px;border:2px solid #fca5a5;border-radius:8px;background:#fff;color:var(--ink)}
-  .pd .inhacer:focus{outline:none;border-color:var(--rojo);box-shadow:0 0 0 3px #fee2e2}
+  .pd .btn-editar{font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
+  .pd .btn-editar:hover{background:#f1f5f9}
+  .pd.editando .btn-editar{background:var(--ink);color:#fff}
+  .pd .inhacer{display:none;width:84px;font-size:17px;font-weight:700;text-align:right;padding:5px 8px;border:2px solid #94a3b8;border-radius:8px;background:#fff;color:var(--ink)}
+  .pd .inhacer:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px #e2e8f0}
   .pd.editando .inhacer{display:inline-block}
   .pd .hbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--ink);color:#fff;border-radius:12px;box-shadow:0 -4px 16px rgba(15,23,42,.18)}
   .pd .hbar[hidden]{display:none}
@@ -230,30 +226,19 @@
   .pd td.sinm{color:var(--ink);font-weight:600}
   .pd .caja{display:none}
   @media print{
-    /* La hoja: una tablita tipo Excel, limpia (Tamara 15/10/2026). Sin
-       títulos de página, sin recuadros, sin casilleros: grilla fina gris. */
-    .pd .top,.pd .ver,.pd .cards,.pd .filtros,.pd .tabs,.pd .pie,.pd .fams,.pd .kpis,.pd .kexp,.pd .barra,.pd tr.masrow,.pd .chev,.pd .aca,.pd .inhacer,.pd .hbar,.pd .hmodal{display:none !important}
-    .pd{max-width:none}
-    .pd button.abrir{display:inline !important;width:auto !important;padding:0 !important;border:0 !important;font:inherit}
-    .pd tr.det{display:table-row}
-    .pd tr.det.fx,.pd .fx{display:none !important}
-    .pd .telablk{margin:0 0 8pt !important}
-    .pd.ancha .telablk h3{font-size:11pt !important;color:#000 !important;margin:6pt 0 2pt !important;break-after:avoid;page-break-after:avoid}
-    .pd .telablk h3 .muted{display:none}
-    .pd table.tt{border-collapse:collapse !important;border:0.6pt solid #888 !important;width:99% !important}
-    .pd table.tt .cli,.pd table.tt .cod{font-family:Arial,Helvetica,sans-serif !important;font-size:9pt !important}
-    main .pd table.tt th,main .pd table.tt td{border:0.6pt solid #888 !important;padding:1.5pt 4pt !important;font-size:9pt !important;font-weight:400 !important;color:#000 !important;background:#fff !important;font-family:Arial,Helvetica,sans-serif !important}
-    main .pd table.tt tbody tr.crow>td,main .pd table.tt tbody tr.det>td,main .pd table.tt tbody tr.acarow>td,main .pd table.tt tbody td.hacer,main .pd table.tt tbody td.hacer.okc{padding:1.5pt 4pt !important;font-size:9pt !important;background:#fff !important;line-height:1.25}
-    main .pd table.tt thead th,main .pd table.tt thead th.th-hacer{position:static;color:#000 !important;font-size:8.5pt !important;padding:2pt 4pt !important;font-weight:700 !important;text-transform:none;letter-spacing:0;background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-    main .pd table.tt tbody tr.crow>td{font-weight:700 !important}
-    main .pd table.tt tbody tr.det>td{font-weight:400 !important}
-    .pd table.tt tr.crow .color{font-size:9pt;font-weight:700}
-    .pd table.tt tr.crow .prod{font-size:8pt;color:#000 !important;font-weight:400}
-    main .pd table.tt tbody tr.acarow>td{font-weight:700 !important;font-size:8.5pt !important;text-transform:uppercase}
-    main .pd table.tt tbody tr.det>td.cod{padding-left:12pt !important}
-    .pd .mchip{border:0 !important;padding:0 !important;font-size:9pt;font-weight:400}
-    .pd .mchip b,.pd .u{display:none}
-    .pd .sort-icon{display:none !important}
+    /* En papel va SÓLO la tabla plana .imp (tipo Excel, grilla fina),
+       Tamara 15/10/2026: "una tablita de excel limpia". */
+    .pd.ancha > *:not(.imp){display:none !important}
+    .pd.ancha{max-width:none}
+    .pd table.imp{display:table !important;width:99% !important;border-collapse:collapse !important;table-layout:auto !important}
+    .pd table.imp th{text-transform:none !important;letter-spacing:0 !important}
+    .pd table.imp th,.pd table.imp td{border:0.6pt solid #888 !important;padding:1.5pt 4pt !important;font-size:8.5pt !important;font-family:Arial,Helvetica,sans-serif !important;color:#000 !important;background:#fff !important;text-align:left;vertical-align:top;line-height:1.25}
+    .pd table.imp thead th{font-weight:700 !important;background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;white-space:nowrap}
+    .pd table.imp thead{display:table-header-group}
+    .pd table.imp td.n,.pd table.imp th.n{text-align:right;white-space:nowrap}
+    .pd table.imp td.ps{font-size:7.5pt !important}
+    .pd table.imp tr.fx,.pd table.imp span.fx{display:none !important}
+    @page{size:A4 landscape;margin:8mm}
   }
 </style>
 {% endblock %}
@@ -261,6 +246,7 @@
 {% block content %}
 {# La celda de memo en el detalle de los cortes Color y Tipo de tela (dueña
    01/10): qué pedido ya se mandó a la fábrica y en qué anda ESA línea. #}
+{% macro dm(iso) -%}{{ iso[8:10] ~ '/' ~ iso[5:7] if iso and iso|length >= 10 else '' }}{%- endmacro %}
 {% macro memo_chip(numero, codigo) -%}
   {%- set m = memo_lineas.get(numero) -%}
   {%- if m -%}
@@ -417,11 +403,11 @@
       <div class="telablk">
       <h3><span>{{ t.tela }}</span>
         <span class="muted">{{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
-          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.hacer_d %} · <span style="color:#b91c1c">faltan {{ t.hacer_d|num_es(0) }}</span>{% endif %}</span>
+          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.hacer_d %} · <span>faltan {{ t.hacer_d|num_es(0) }}</span>{% endif %}</span>
       </h3>
       <table class="tt">
         <colgroup><col style="width:24%"><col style="width:10%"><col style="width:11%"><col style="width:11%"><col style="width:12%"><col style="width:16%"><col style="width:16%"></colgroup>
-        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="th-hacer">Mandar a hacer</th></tr></thead>
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th>Mandar a hacer</th></tr></thead>
         <tbody>
           {% set ac = namespace(prev=None) %}
           {% for f in t.filas %}
@@ -442,7 +428,7 @@
                   <span class="prod">{{ f.codigo }}</span>
                 </button>
               </td>
-              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ f.mas_viejo_es }}</td>
+              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
               <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
@@ -476,6 +462,32 @@
       </table>
       </div>
     {% endfor %}
+    {# La HOJA IMPRESA (Tamara 15/10/2026): una tabla plana tipo Excel —
+       un renglón por color, ordenado tela → abierto A-Z → tubular A-Z, todas
+       las casillas con su dato, y los pedidos en su propia columna. #}
+    <table class="imp">
+      <colgroup><col style="width:11%"><col style="width:7%"><col style="width:11%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:7%"><col style="width:8%"><col style="width:9%"><col></colgroup>
+      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th>Mandar a hacer</th><th>Pedidos</th></tr></thead>
+      <tbody>
+      {% for t in telas %}{% for f in t.filas %}
+        {% set peds = pedidos_por_color.get(f.clave, []) %}
+        {% set nm = namespace(sin=0, con=0) %}
+        {% for p in peds %}{% if memo_lineas.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
+        <tr data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
+          <td>{{ t.tela }}</td>
+          <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
+          <td><b>{{ f.color }}</b> {{ f.codigo }}</td>
+          <td class="n" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
+          <td class="n">{{ f.pedido_d|num_es(f.decimales) }}</td>
+          <td class="n">{{ f.inventario_d|num_es(f.decimales) if f.inventario_kg else '0' }}</td>
+          <td class="n">{{ f.produccion_d|num_es(f.decimales) if f.produccion_kg else '0' }}</td>
+          <td class="n"><b>{{ f.hacer_d|num_es(f.decimales) }}</b></td>
+          <td></td>
+          <td class="ps">{% for p in peds %}<span data-memo="{{ 1 if memo_lineas.get(p.numero) else 0 }}">{{ p.codigo_cliente or p.cliente }} {{ p.numero|replace('PDCL-', '') }} ({{ p.cantidad|num_es(f.decimales) }}){% if memo_lineas.get(p.numero) %} memo{% endif %}{% if not loop.last %}, {% endif %}</span>{% else %}—{% endfor %}</td>
+        </tr>
+      {% endfor %}{% endfor %}
+      </tbody>
+    </table>
     <div class="hbar no-print" id="hbar" hidden>
       <div class="hres"><b id="hn">0</b> colores · <b id="hr">0</b> <span id="hu">rollos</span> para mandar a hacer</div>
       <button type="button" class="btn" id="hcancel">Cancelar</button>
@@ -724,6 +736,13 @@
           });
         });
         blk.classList.toggle('fx', vivos === 0);
+      });
+      document.querySelectorAll('.pd table.imp tbody tr').forEach(function (r) {
+        var n = modo === 'sin' ? +r.dataset.sin : (modo === 'con' ? +r.dataset.con : 1);
+        r.classList.toggle('fx', n === 0);
+        r.querySelectorAll('span[data-memo]').forEach(function (sp) {
+          sp.classList.toggle('fx', (modo === 'sin' && sp.dataset.memo === '1') || (modo === 'con' && sp.dataset.memo === '0'));
+        });
       });
     }
     bar.addEventListener('click', function (e) {

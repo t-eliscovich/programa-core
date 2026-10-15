@@ -240,9 +240,10 @@ def test_con_la_fecha_iso_el_orden_es_el_del_calendario():
 
 # ── 5. ninguna celda de fecha puede quedarse sin su valor de orden ─────────
 
-#: "30 jul", "4 ago" — la forma en que la pantalla escribe una fecha.
+#: "30 jul", "4 ago" o "02/10" (Tipo de tela, 15/10/2026) — la forma en que
+#: la pantalla escribe una fecha.
 _FECHA_CORTA = re.compile(
-    r"^\d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)$")
+    r"^(\d{1,2} (ene|feb|mar|abr|may|jun|jul|ago|sep|oct|nov|dic)|\d{2}/\d{2})$")
 
 
 @pytest.mark.parametrize("corte", ["color", "tela"])
