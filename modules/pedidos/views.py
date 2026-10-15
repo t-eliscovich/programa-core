@@ -41,9 +41,10 @@ from . import service
 
 pedidos_bp = Blueprint("pedidos", __name__, template_folder="templates")
 
-#: Los cortes disponibles, EN EL ORDEN del Excel de la dueña. El primero es el
-#: default: la pantalla abre en Color.
-CORTES = ("color", "tela", "cliente", "pedido", "categoria")
+#: Los cortes disponibles. El primero es el default: desde el 15/10/2026 la
+#: pantalla abre en Tipo de tela (Tamara: "hacé que esta sea la primera
+#: pantalla en vez de color").
+CORTES = ("tela", "color", "cliente", "pedido", "categoria")
 CORTES_LBL = {
     "color": "Color",
     "tela": "Tipo de tela",

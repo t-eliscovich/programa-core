@@ -758,14 +758,15 @@ def test_el_link_dice_a_donde_lleva(app, fake_db):
 
 # ── cortes nuevos: color, cliente, categoría (2026-08-18) ────────────────────
 
-def test_la_pantalla_abre_por_defecto_en_el_corte_color(app, fake_db):
+def test_la_pantalla_abre_por_defecto_en_tipo_de_tela(app, fake_db):
+    """Tamara 15/10/2026: "hacé que esta sea la primera pantalla en vez de color"."""
     c = _login(app, fake_db)
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=(_FILAS_PANTALLA, True)):
         body = c.get("/pedidos").get_data(as_text=True)
     assert 'class="ver no-print"' in body               # el selector de cortes
-    assert 'class="ccode"' in body             # la fila-cabecera de un color
-    assert ">CAF<" in body or "CAF</span>" in body
+    assert 'class="kpis' in body                         # la pantalla de Tipo de tela
+    assert body.index(">Tipo de tela<") < body.index(">Color<")   # primera en el selector
 
 
 def test_por_color_agrupa_por_codigo_y_ordena_por_lo_que_mas_falta():
@@ -875,7 +876,7 @@ def test_el_desplegable_del_corte_color_muestra_cliente_y_fecha(app, fake_db):
         return (peds, True) if "ORDER BY pr.codigo, v.fecha" in sql else ([_fila()], True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=color").get_data(as_text=True)
     assert ">KAM<" in body
     assert "5 ago" in body               # la fecha del pedido
     assert "PDCL-29712" in body          # y el número
@@ -900,7 +901,7 @@ def test_el_corte_color_muestra_la_pastilla_de_acabado_tub_abi(app, fake_db):
         return ([_fila(aca_min="TUB", aca_max="TUB")], True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = c.get("/pedidos").get_data(as_text=True)
+        body = c.get("/pedidos?corte=color").get_data(as_text=True)
     assert 'class="aca tub"' in body       # la etiqueta TUB en la fila
     assert ">TUB<" in body
     assert "tubular" in body and "abierto" in body   # la leyenda
@@ -930,7 +931,7 @@ def test_el_corte_color_muestra_el_total_partido_en_la_pantalla(app, fake_db):
         return (filas, True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+        body = " ".join(c.get("/pedidos?corte=color").get_data(as_text=True).split())
     assert "2 <span class=\"u\">roll</span>" in body
     assert "3.450 <span class=\"u\">un</span>" in body
     assert 'id="fcolor"' in body           # el buscador de color
@@ -1006,7 +1007,7 @@ def test_en_el_corte_color_cada_numero_de_la_variante_lleva_su_unidad(app, fake_
         return (filas, True)
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
-        body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
+        body = " ".join(c.get("/pedidos?corte=color").get_data(as_text=True).split())
     # el pedido (19), el stock (10) y la producción (6) llevan "roll"
     assert body.count('<span class="u">roll</span>') >= 4
 
