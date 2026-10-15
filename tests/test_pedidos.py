@@ -696,7 +696,7 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
     fila = body[body.index('data-grupo="d-FE96CAF_X"'):]
     fila = fila[:fila.index("</tr>")]
     assert fila.count("<td") == 7                   # 3 columnas + memo (colspan 2) + N° pedido + Producir rollos + rib
-    assert 'colspan="2"' in fila
+    assert 'colspan="3"' in fila                     # memo bajo Con memo · Stock · En produc.
     assert "Sin memo" in fila                        # sin bridge a formulas
     # un solo renglón: va el CÓDIGO del cliente, no el nombre fiscal entero
     assert ">KAM<" in fila
@@ -1057,3 +1057,16 @@ def test_sin_detalle_de_pedidos_todo_cuenta_como_sin_memo():
     f = _renglon_en_rollos(ped_rollos=19.0)
     service.sin_memo_y_a_hacer([f], {}, {})
     assert f["sinmemo_d"] == f["pedido_d"]
+
+
+def test_con_memo_cuenta_lo_que_ya_tiene_memo():
+    """Tamara 15/10/2026: "poné los que ya tienen memo en pantalla y en la
+    impresión" — columna Con memo."""
+    f = service._fila(_fila(ped_rollos=19.0))
+    service.en_unidad([f], "alt")
+    peds = {f["clave"]: [{"numero": "P1", "cantidad": 10.0, "es_rollo": True, "es_unidad": False,
+                          "kg": 10 * service.KG_POR_ROLLO},
+                         {"numero": "P2", "cantidad": 9.0, "es_rollo": True, "es_unidad": False,
+                          "kg": 9 * service.KG_POR_ROLLO}]}
+    service.sin_memo_y_a_hacer([f], peds, {"P2"})
+    assert (f["conmemo_d"], f["sinmemo_d"]) == (9, 10)

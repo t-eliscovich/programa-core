@@ -575,8 +575,9 @@ def por_categoria(filas: list[dict]) -> list[dict]:
 
 
 #: Orden del acabado adentro de una tela en el corte Tipo de tela: primero
-#: abierto, después tubular, al final lo que no dice (Tamara 15/10/2026).
-_ORDEN_ACABADO = {"ABI": 0, "TUB": 1}
+#: TUBULAR, después abierto, al final lo que no dice (Tamara 15/10/2026, a
+#: la tarde: "primero tubular después abierto").
+_ORDEN_ACABADO = {"TUB": 0, "ABI": 1}
 
 
 def orden_tipo_de_tela(f: dict) -> tuple:
@@ -689,6 +690,9 @@ def sin_memo_y_a_hacer(filas: list[dict], pedidos_por_color: dict,
     """
     for f in filas:
         peds = pedidos_por_color.get(f.get("clave") or "", [])
+        # Lo que ya tiene memo (o se mandó a producción): columna "Con memo".
+        f["conmemo_d"] = round(sum(_pedido_en_unidad(p, f) for p in peds
+                                   if p["numero"] in con_memo))
         if peds:
             sin = sum(_pedido_en_unidad(p, f) for p in peds
                       if p["numero"] not in con_memo)

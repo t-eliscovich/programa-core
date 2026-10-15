@@ -196,6 +196,7 @@
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
   .pd .imp{display:none}
+  .pd table.tt td.cmemo{color:#475569}
   main .pd table.tt tfoot tr.tot>td.totl{text-align:left;padding-left:14px !important;font-family:inherit}
   main .pd table.tt tfoot tr.tot>td{font-weight:800;font-size:16px !important;background:#f1f5f9;border-top:2px solid var(--ink) !important;padding-top:10px !important;padding-bottom:10px !important}
   main .pd table.tt thead th.thp{text-align:right;line-height:1.15}
@@ -430,14 +431,14 @@
       <h3><span>{{ t.tela }}</span>
       </h3>
       <table class="tt">
-        <colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:14%"></colgroup>
-        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="thp">Producir<br>rollos</th><th class="thp">Producir<br>rib (kg)</th></tr></thead>
+        <colgroup><col style="width:20%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:13%"></colgroup>
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th class="thp">Con<br>memo</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="thp">Producir<br>rollos</th><th class="thp">Producir<br>rib (kg)</th></tr></thead>
         <tbody>
           {% set ac = namespace(prev=None) %}
           {% for f in t.filas %}
             {% if f.acabado != ac.prev %}
               {% set ac.prev = f.acabado %}
-              <tr class="acarow {{ 'abi' if f.acabado == 'ABI' else ('tub' if f.acabado == 'TUB' else '') }}"><td colspan="8">{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or 'Sin acabado')) }}</td></tr>
+              <tr class="acarow {{ 'abi' if f.acabado == 'ABI' else ('tub' if f.acabado == 'TUB' else '') }}"><td colspan="9">{{ f.acabado or 'Sin acabado' }}</td></tr>
             {% endif %}
             {% set peds = pedidos_por_color.get(f.clave, []) %}
             {% set nm = namespace(sin=0, con=0) %}
@@ -454,6 +455,7 @@
               </td>
               <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
               <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
+              <td class="cmemo">{% if f.conmemo_d %}{{ f.conmemo_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
                             <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
@@ -468,16 +470,16 @@
                 <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
                 <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
-                <td colspan="2" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
+                <td colspan="3" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
                 <td class="npd">{{ p.numero }}</td><td class="hacer"></td><td class="hacer"></td>
               </tr>
             {% endfor %}
             {% if not peds %}
-              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="8" class="muted">Este color no tiene pedidos cargados.</td></tr>
+              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="9" class="muted">Este color no tiene pedidos cargados.</td></tr>
             {% endif %}
             {% if f.n_ordenes %}
               <tr class="det masrow" data-grupo="d-{{ f.clave }}" data-fila-hija>
-                <td colspan="8" class="masinfo">
+                <td colspan="9" class="masinfo">
                   <a href="{{ url_for('pedidos.color', codigo=f.codigo, aca=f.acabado) }}">
                     {{ 'Ver la orden' if f.n_ordenes == 1 else 'Ver las ' ~ f.n_ordenes ~ ' órdenes' }} de tinturado de este color</a>
                 </td>
@@ -488,7 +490,7 @@
         <tfoot>
           <tr class="tot">
             <td class="totl">Total <span class="muted">({{ t.u }})</span></td><td></td>
-            <td>{{ t.tot_pedido|num_es(0) }}</td><td>{{ t.tot_stock|num_es(0) }}</td><td>{{ t.tot_prod|num_es(0) }}</td>
+            <td>{{ t.tot_pedido|num_es(0) }}</td><td class="cmemo">{{ t.tot_conmemo|num_es(0) if t.tot_conmemo else '—' }}</td><td>{{ t.tot_stock|num_es(0) }}</td><td>{{ t.tot_prod|num_es(0) }}</td>
             <td class="{{ 'falta' if t.hacer_d else 'okc' }}">{{ t.hacer_d|num_es(0) if t.hacer_d else 'ok' }}</td><td></td><td></td>
           </tr>
         </tfoot>
@@ -505,11 +507,11 @@
     {% set t = h.t %}
     <section class="imp-tela {{ h.clase }}">
       <table>
-        <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
+        <colgroup><col style="width:7%"><col style="width:17%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:10%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
            hoja, se repite arriba de cada hoja junto con las columnas. #}
-        <thead><tr class="imp-tit"><th colspan="9">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
-        <tr><th>Acabado</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
+        <thead><tr class="imp-tit"><th colspan="10">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
+        <tr><th>Acab.</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Con memo</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
         <tbody>
         {% for f in t.filas %}
           {% set peds = pedidos_por_color.get(f.clave, []) %}
@@ -517,10 +519,11 @@
           {% for p in peds %}{% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
           {% set md = mandados.get(f.clave) %}
           <tr data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
-            <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
+            <td>{{ f.acabado or '—' }}</td>
             <td><b>{{ f.color }}</b> <span class="cd">{{ f.codigo }}</span></td>
             <td class="n" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
             <td class="n">{{ f.pedido_d|num_es(f.decimales) }}</td>
+            <td class="n">{{ f.conmemo_d|num_es(f.decimales) if f.conmemo_d else '0' }}</td>
             <td class="n">{{ f.inventario_d|num_es(f.decimales) if f.inventario_kg else '0' }}</td>
             <td class="n">{{ f.produccion_d|num_es(f.decimales) if f.produccion_kg else '0' }}</td>
             <td class="n"><b>{{ f.hacer_d|num_es(f.decimales) }}</b></td>
@@ -530,7 +533,7 @@
         {% endfor %}
           <tr class="tot">
             <td colspan="2"><b>Total</b> <span class="cd">({{ t.u }})</span></td><td></td>
-            <td class="n"><b>{{ t.tot_pedido|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_stock|num_es(0) }}</b></td>
+            <td class="n"><b>{{ t.tot_pedido|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_conmemo|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_stock|num_es(0) }}</b></td>
             <td class="n"><b>{{ t.tot_prod|num_es(0) }}</b></td><td class="n"><b>{{ t.hacer_d|num_es(0) }}</b></td><td></td><td></td>
           </tr>
         </tbody>

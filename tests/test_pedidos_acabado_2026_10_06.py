@@ -297,10 +297,10 @@ def test_la_verdad_de_saldos_tambien_va_por_otro_camino():
     assert service.sql_valor_acabado("dfc") in asinfo_parado._sql_vendido("2026-08-25")
 
 
-def test_tipo_de_tela_va_primero_abierto_y_despues_tubular_cada_uno_alfabetico():
-    """Tamara 15/10/2026: "primero por tipo de tela, después abierto, después
-    tubular, y cada color por orden alfabético primero en abierto después en
-    tubular". Reemplaza el "ABI y TUB juntos" del 07/10 en este corte."""
+def test_tipo_de_tela_va_primero_tubular_y_despues_abierto_cada_uno_alfabetico():
+    """Tamara 15/10/2026: primero por tipo de tela, cada color por orden
+    alfabético; a la tarde dio vuelta el acabado: "primero tubular después
+    abierto". Reemplaza el "ABI y TUB juntos" del 07/10 en este corte."""
     filas = [service._fila(_renglon(codigo="FE96NEG", color="NEG", ped_kg=2000.0, inv_kg=0)),
              service._fila(_renglon(codigo="FE96MAR", color="MAR", ped_kg=500.0, inv_kg=0)),
              service._fila(_renglon(codigo="FE96NEG", color="NEG", aca_min="TUB",
@@ -310,4 +310,4 @@ def test_tipo_de_tela_va_primero_abierto_y_despues_tubular_cada_uno_alfabetico()
     service.repartir_produccion(filas)
     (t,) = service.por_tela(filas, "Fleece")
     assert [(f["codigo"], f["acabado"]) for f in t["filas"]] == [
-        ("FE96MAR", "ABI"), ("FE96NEG", "ABI"), ("FE96AZU", "TUB"), ("FE96NEG", "TUB")]
+        ("FE96AZU", "TUB"), ("FE96NEG", "TUB"), ("FE96MAR", "ABI"), ("FE96NEG", "ABI")]

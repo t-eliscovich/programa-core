@@ -144,6 +144,7 @@ def lista():
             # El renglón TOTAL de cada tabla (Tamara 15/10: "los totales como
             # parte de la tabla en vez de como buckets aparte").
             t["tot_pedido"] = sum(f["pedido_d"] for f in t["filas"])
+            t["tot_conmemo"] = sum(f.get("conmemo_d", 0) for f in t["filas"])
             t["tot_stock"] = sum(f["inventario_d"] for f in t["filas"])
             t["tot_prod"] = sum(f["produccion_d"] for f in t["filas"])
         # La hoja impresa: la familia elegida, o TODAS con ?todas=1 (Tamara
@@ -157,6 +158,7 @@ def lista():
                     t["u"] = next((f["u"] for f in t["filas"]), "roll")
                     t["hacer_d"] = sum(f["hacer_d"] for f in t["filas"])
                     t["tot_pedido"] = sum(f["pedido_d"] for f in t["filas"])
+                    t["tot_conmemo"] = sum(f.get("conmemo_d", 0) for f in t["filas"])
                     t["tot_stock"] = sum(f["inventario_d"] for f in t["filas"])
                     t["tot_prod"] = sum(f["produccion_d"] for f in t["filas"])
         else:
