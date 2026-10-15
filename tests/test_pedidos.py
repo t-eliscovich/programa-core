@@ -802,7 +802,9 @@ def test_por_cliente_suma_por_cliente_y_ordena_de_mayor_a_menor():
     assert out[1]["cliente"] == "ATR" and out[1]["pedido"] == 5.0
 
 
-def test_el_corte_cliente_avisa_que_mezcla_unidades(app, fake_db):
+def test_el_corte_cliente_se_abre_a_sus_pedidos_cada_uno_en_su_unidad(app, fake_db):
+    """Tamara 15/10/2026: "acá tengo que poder ver los pedidos de cada
+    cliente". El total mezcla unidades; el detalle va línea por línea."""
     c = _login(app, fake_db)
     rows = [{"codigo": "FE96CAF", "numero": "P1", "cliente": "Empresa A",
              "codigo_cliente": "AAM", "fecha": "2026-08-01", "cantidad": 10, "unidad": 51}]
@@ -812,8 +814,11 @@ def test_el_corte_cliente_avisa_que_mezcla_unidades(app, fake_db):
 
     with patch.object(service.metabase_client, "fetch_dataset_estado", side_effect=fake):
         body = c.get("/pedidos?corte=cliente").get_data(as_text=True)
-    assert "mezcla unidades" in body
     assert ">AAM<" in body
+    det = body[body.index('data-grupo="c-1"'):]
+    det = det[:det.index("</tr>")]
+    assert "P1" in det and "Fleece 96 Perchado" in det and "CAF" in det
+    assert "roll</span>" in det
 
 
 def test_el_corte_categoria_muestra_cada_familia_en_su_unidad(app, fake_db):

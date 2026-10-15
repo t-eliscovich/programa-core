@@ -1068,27 +1068,44 @@ def por_color(filas: list[dict]) -> list[dict]:
     return sorted(out, key=lambda g: (-g["falta_total"], g["codigo"]))
 
 
-def por_cliente() -> list[dict]:
+def por_cliente(filas: list[dict] | None = None) -> list[dict]:
     """Total pedido por CLIENTE (código), de todo lo pendiente, mayor primero.
 
     ⚠ El total MEZCLA unidades (rollos, kilos y unidades de cuellos/puños) tal
     como viene de Asinfo — igual que el Excel de la dueña. No se puede unificar
     en una sola cifra sin bajar a producto, que es lo que hace el corte Color.
+
+    Cada cliente trae `detalle`: sus líneas pendientes (pedido, fecha, tela,
+    color, acabado, cantidad en su unidad), para desplegarlo en la pantalla
+    (Tamara 15/10/2026: "acá tengo que poder ver los pedidos de cada
+    cliente"). `filas` (de `pendientes()`) da la tela y el color de cada
+    renglón; sin ellas el detalle sale con el código de producto.
     """
+    por_clave = {f["clave"]: f for f in (filas or [])}
     acc: dict[str, dict] = {}
-    for peds in pedidos_por_color().values():
+    for clave_r, peds in pedidos_por_color().items():
+        f = por_clave.get(clave_r) or {}
         for p in peds:
             clave = p["codigo_cliente"] or p["cliente"]
             if not clave:
                 continue
             g = acc.setdefault(clave, {
                 "cliente": clave, "nombre": p["cliente"],
-                "pedido": 0.0, "lineas": 0,
+                "pedido": 0.0, "lineas": 0, "detalle": [],
             })
             g["pedido"] += p["cantidad"]
             g["lineas"] += 1
+            g["detalle"].append({
+                "numero": p["numero"], "fecha": p["fecha"], "fecha_es": p["fecha_es"],
+                "tela": f.get("tela") or "", "color": f.get("color") or clave_r.split("_")[0],
+                "codigo": f.get("codigo") or clave_r.split("_")[0],
+                "acabado": p.get("acabado") or f.get("acabado") or "",
+                "cantidad": p["cantidad"],
+                "u": "roll" if p.get("es_rollo") else ("un" if p.get("es_unidad") else "kg"),
+            })
     for g in acc.values():
         g["pedido"] = round(g["pedido"], 1)
+        g["detalle"].sort(key=lambda d: (d["fecha"], d["numero"], d["tela"], d["color"]))
     return sorted(acc.values(), key=lambda g: (-g["pedido"], g["cliente"]))
 
 

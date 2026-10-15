@@ -91,7 +91,9 @@ def lista():
         ctx["pedidos_por_color"] = service.pedidos_por_color()
         ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     elif corte == "cliente":
-        ctx["clientes"] = service.por_cliente()
+        ctx["clientes"] = service.por_cliente(filas)
+        ctx["pedidos_por_color"] = service.pedidos_por_color()
+        ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     elif corte == "pedido":
         pedidos_lista, disp_ped = service.por_pedido()
         ctx["pedidos_lista"] = pedidos_lista

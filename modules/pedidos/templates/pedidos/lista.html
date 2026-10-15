@@ -572,19 +572,31 @@
 
   {# ═══════════ CLIENTE ═══════════ #}
   {% elif corte == 'cliente' %}
-    <div class="aviso">El total por cliente <b>mezcla unidades</b> (rollos, kilos y unidades de cuellos/puños)
-      tal como viene de Asinfo. Para el detalle en su unidad, mirá el corte por Color.</div>
+    {# Cada cliente se abre a sus pedidos (Tamara 15/10/2026). El total mezcla
+       unidades como el Excel; el detalle va cada línea en su unidad. #}
     <table>
-      <colgroup><col style="width:30%"><col style="width:25%"><col style="width:45%"></colgroup>
+      <colgroup><col style="width:34%"><col style="width:16%"><col style="width:50%"></colgroup>
       <thead><tr><th>Cliente</th><th>Pedido</th><th></th></tr></thead>
       <tbody>
         {% set mx = clientes[0].pedido if clientes else 1 %}
         {% for g in clientes %}
-          <tr>
-            <td><span class="cli" title="{{ g.nombre }}">{{ g.cliente }}</span></td>
+          <tr class="crow">
+            <td class="cod"><button type="button" class="abrir" aria-expanded="false" data-fila="c-{{ loop.index }}">
+              <span class="chev" aria-hidden="true"></span>
+              <span class="cli" title="{{ g.nombre }}">{{ g.cliente }}</span>
+              <span class="prod">{{ g.detalle|map(attribute='numero')|unique|list|length }} ped.</span></button></td>
             <td>{{ g.pedido|num_es(0) }}</td>
             <td><div class="bar"><i style="width:{{ (100 * g.pedido / mx)|round(0, 'ceil') if mx else 0 }}%"></i></div></td>
           </tr>
+          {% set gi = loop.index %}
+          {% for d in g.detalle %}
+          <tr class="det" data-grupo="c-{{ gi }}" data-fila-hija>
+            <td class="cod"><span class="npd">{{ d.numero }}</span> <span class="muted">{{ d.fecha_es }}</span></td>
+            <td>{{ d.cantidad|num_es(0) }} <span class="muted">{{ d.u }}</span></td>
+            <td class="izq"><b>{{ d.tela }}</b> · {{ d.color }}{% if d.acabado %} <span class="muted">{{ d.acabado }}</span>{% endif %}
+              <span style="margin-left:8px">{{ memo_chip(d.numero, d.codigo) }}</span></td>
+          </tr>
+          {% endfor %}
         {% endfor %}
       </tbody>
     </table>
