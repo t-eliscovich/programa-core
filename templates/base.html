@@ -1099,7 +1099,7 @@
         {{ nav_link('stock_asinfo.fabricacion_tc', 'Inventario', 'box',
                     tambien=('stock_asinfo.consumo_hilado', 'importaciones.lista',
                              'tejeduria_asinfo.tab', 'terminado_asinfo.tab',
-                             'inventario_rotativo.lista')) }}
+                             'stock_asinfo.por_tela', 'inventario_rotativo.lista')) }}
         {% if tiene_permiso('tintura.ver') %}{{ nav_link('comparativa_tintoreria.comparativa_tintoreria', 'Producción Tintorería', 'trend', tambien=('stock_asinfo.quimicos',)) }}{% endif %}
       </details>
       {% endif %}

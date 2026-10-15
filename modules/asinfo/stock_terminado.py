@@ -167,3 +167,24 @@ def por_tela(*, ahora=None) -> dict:
     with _lock:
         return {"telas": _ultimo["telas"] or [], "leido": _ultimo["leido"],
                 "viejo": _ultimo["telas"] is not None}
+
+
+def en_competencia() -> dict:
+    """{(tela, cod_color): {"puntos", "solo_seg"}} de lo que está en la COMPETENCIA.
+
+    Misma llave que el stock (tela = subgrupo + código de color de 3 letras),
+    para marcar con un 🏆 los colores que suman puntos (Tamara 13/10: "así
+    tienen incentivo a vender ese en particular"). Lo usan el Stock del portal
+    de vendedores y el de la oficina. Fail-soft: la marca es un adorno.
+    """
+    comp: dict = {}
+    try:
+        from modules.analisis import queries as aq
+        for f in aq.con_puntos(aq.items()):
+            if float(f.get("stock_kg") or 0) > 0:
+                comp[(f["subcategoria"], (f["color"] or "").upper())] = {
+                    "puntos": int(f.get("puntos") or 1),
+                    "solo_seg": f.get("motivo") == "segunda"}
+    except Exception:  # noqa: BLE001 — la marca es un adorno, no un freno
+        return {}
+    return comp

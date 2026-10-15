@@ -896,3 +896,29 @@ def consumo_hilado_export():
         headers={"Content-Disposition":
                  f'attachment; filename="consumo_hilado_{d["anio"]}.xlsx"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Stock por tela — el MISMO stock que ven los vendedores, en la oficina
+# ---------------------------------------------------------------------------
+# Tamara 15/10/2026: "puedes hacer que stock lo vea intela también?". Es la
+# pestaña Stock de /mi-cartera (13/10) puesta como pestaña de Inventario: mismo
+# dato (modules/asinfo/stock_terminado.py, bodega 53, sin descontar pedidos),
+# mismos filtros (el JS es un parcial compartido) y la marca 🏆 de la
+# competencia. Sin el FT: las fichas técnicas viven en el portal del vendedor.
+
+@stock_asinfo_bp.route("/por-tela")
+@requiere_login
+@requiere_permiso("stock.ver")
+def por_tela():
+    from modules.asinfo import stock_terminado
+    st = stock_terminado.por_tela()
+    telas = st["telas"]
+    return render_template(
+        "stock_asinfo/por_tela.html",
+        telas=telas, comp=stock_terminado.en_competencia(),
+        grupos=sorted({t["grupo"] for t in telas if t["grupo"]}),
+        total_kg=sum(t["kg"] for t in telas),
+        total_rollos=sum(t["rollos"] for t in telas),
+        leido=st["leido"], viejo=st["viejo"],
+    )

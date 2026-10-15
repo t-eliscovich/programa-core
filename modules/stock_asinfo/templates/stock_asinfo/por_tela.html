@@ -1,0 +1,138 @@
+{# Stock por tela — el producto terminado de la bodega 53, tela por tela.
+
+   Tamara 15/10/2026: "puedes hacer que stock lo vea intela también?". Es la
+   pestaña Stock del portal de vendedores (/mi-cartera/stock, 13/10) puesta en
+   la oficina como pestaña de Inventario. Mismo dato, mismos filtros (el JS es
+   mi_cartera/_stock_filtros.js, compartido: por eso los ids st-* y los data-*
+   son los mismos que allá) y la misma marca 🏆 de la competencia.
+
+   ⭐ Es lo que hay EN BODEGA, no lo disponible: Asinfo no reserva y lo pedido
+   no se puede restar (ver modules/asinfo/stock_terminado.py). #}
+{% extends "base.html" %}
+{% from "_ui.html" import nav_inventario with context %}
+{% block title %}Stock por tela{% endblock %}
+{% block breadcrumb %}
+  <span>Stock</span> / <strong>Stock por tela</strong>
+{% endblock %}
+
+{% block head_extra %}
+<style>
+  .spt { --ink:#0f172a; --ink-2:#475569; --ink-3:#94a3b8; --line:#e2e8f0;
+         --surface:#fff; --accent:#0284c7; --accent-soft:#bae6fd;
+         --warn:#b45309; --warn-soft:#fef3c7; --bad:#b91c1c; --bad-soft:#fef2f2;
+         max-width: 860px; font-variant-numeric: tabular-nums; }
+  .spt .cab { display:flex; align-items:flex-end; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .spt .cab .sub { font-size:12.5px; color:var(--ink-2); margin-top:2px; }
+  .st-hora { font-size:12px; font-weight:700; color:var(--ink-2); background:#f8fafc;
+             border:1px solid var(--line); border-radius:8px; padding:3px 8px; white-space:nowrap; }
+  .st-hora.viejo { color:var(--bad); background:var(--bad-soft); border-color:#F3C7C7; }
+  .st-barra { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
+  .st-barra input[type=search] { flex:1 1 260px; min-width:0; font:inherit; font-size:14px;
+             padding:7px 11px; border:1px solid var(--line); border-radius:8px; }
+  .st-barra select { flex:0 1 220px; min-width:0; font:inherit; font-size:14px; padding:7px 8px;
+             border:1px solid var(--line); border-radius:8px; background:#fff; }
+  .st-cal { display:flex; background:#EDEFF4; border-radius:8px; padding:2px; }
+  .st-cal a { font-size:13px; font-weight:600; color:var(--ink-2); padding:5px 12px; border-radius:6px; text-decoration:none; }
+  .st-cal a.on { background:#fff; color:var(--ink); box-shadow:0 1px 2px rgba(15,23,42,.10); }
+  .st-ley { font-size:11.5px; color:var(--ink-3); margin-bottom:10px; }
+  .st-aviso { font-size:13px; color:var(--bad); background:var(--bad-soft); border-radius:8px;
+              padding:7px 11px; margin-bottom:10px; }
+  .st-lista { background:#fff; border:1px solid var(--line); border-radius:10px; padding:0 14px; }
+  .st-tela { border-bottom:1px solid #f1f5f9; }
+  .st-tela:last-child { border-bottom:0; }
+  .st-tela summary { list-style:none; display:flex; align-items:baseline; gap:10px; padding:9px 0; cursor:pointer; }
+  .st-tela summary::-webkit-details-marker { display:none; }
+  .st-tela summary::before { content:'▸'; color:var(--ink-3); font-size:11px; width:10px; }
+  .st-tela[open] summary::before { content:'▾'; }
+  .st-tela .tn { flex:1 1 auto; min-width:0; font-size:14px; font-weight:600; color:var(--ink); }
+  .st-tela .gr { font-size:11.5px; color:var(--ink-3); font-weight:400; margin-left:6px; }
+  .st-tela[open] summary .tn { color:var(--accent); }
+  .kg { font-variant-numeric:tabular-nums; white-space:nowrap; text-align:right; min-width:64px; }
+  .st-tela summary .kg { font-size:14px; font-weight:700; }
+  .st-tela summary .kg::after, .st-col .kg::after { content:' kg'; font-size:11px; font-weight:400; color:var(--ink-3); }
+  .st-col { display:flex; align-items:center; gap:8px; padding:3px 0 3px 12px; margin-left:4px;
+            font-size:13px; border-left:2px solid var(--accent-soft); }
+  .st-col:last-child { margin-bottom:10px; }
+  .st-col .cc { flex:0 0 38px; font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700; color:var(--ink-2); }
+  .st-col .cn { flex:1 1 auto; min-width:0; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .st-col .tg { flex:0 0 auto; display:flex; gap:3px; }
+  .st-col .kgr { flex:0 0 150px; display:flex; justify-content:flex-end; gap:12px; align-items:baseline; }
+  .st-col .kg { font-weight:600; }
+  .st-col .rol { font-size:12px; color:var(--ink-3); min-width:44px; text-align:right; }
+  .tag { font-style:normal; font-size:10.5px; font-weight:700; padding:1px 5px; border-radius:4px;
+         background:#EEF1F6; color:var(--ink-2); }
+  .tag.comp { background:#EDE9FE; color:#5B21B6; }
+  .tag.dos { background:var(--warn-soft); color:var(--warn); }
+  .tag.pri { background:#EEF1F6; color:#475569; }
+  .spt .vacio { padding:24px; text-align:center; color:var(--ink-2); background:#fff;
+                border:1px solid var(--line); border-radius:10px; }
+  .spt [hidden] { display:none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+{{ nav_inventario('stock_asinfo.por_tela') }}
+<div class="page-shell page-shell--full spt">
+  <div class="cab">
+    <div>
+      <h1 class="text-xl font-semibold">Stock por tela</h1>
+      <div class="sub"><span id="st-sub">{{ total_kg|num_es(0) }} kg · {{ total_rollos|num_es(0) }} rollos</span>
+        · producto terminado en bodega, sin descontar pedidos · lo mismo que ven los vendedores</div>
+    </div>
+    {% if leido %}<div class="st-hora{{ ' viejo' if viejo }}" title="Hora de la lectura de Asinfo">{{ leido|hora_ec('%H:%M') }}</div>{% endif %}
+  </div>
+
+  <div class="st-barra">
+    <input type="search" id="st-q" placeholder="Buscar tela o color…" autocomplete="off" aria-label="Buscar tela o color">
+    <select id="st-grupo" aria-label="Grupo">
+      <option value="">Todos los grupos</option>
+      {% for g_ in grupos %}<option value="{{ g_ }}">{{ g_ }}</option>{% endfor %}
+    </select>
+    <div class="st-cal" id="st-cal">
+      <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">PRI</a><a href="#" data-cal="seg">SEG</a>
+    </div>
+  </div>
+  <div class="st-ley"><em class="tag comp">🏆</em> en la competencia de saldos (×N: lo que vale el kilo) ·
+    <em class="tag">ABI</em> tiene rollos abiertos</div>
+
+  {% if viejo %}
+    <div class="st-aviso">Asinfo no contestó: es el stock de las {{ leido|hora_ec('%H:%M') }}.</div>
+  {% endif %}
+
+  {% if telas %}
+  <div class="st-lista" id="st-lista">
+  {% for t in telas %}
+    <details class="st-tela" data-grupo="{{ t.grupo }}"
+             data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
+      <summary>
+        <span class="tn">{{ t.tela }}<span class="gr">{{ t.grupo }}</span></span>
+        <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
+      </summary>
+      {% for c in t.colores %}
+        <div class="st-col" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
+             data-kg="{{ '%.1f'|format(c.kg) }}" data-seg="{{ '%.1f'|format(c.seg_kg) }}"
+             data-rollos="{{ c.rollos }}" data-seg-rollos="{{ c.seg_rollos }}">
+          <span class="cc">{{ c.cod }}</span>
+          <span class="cn">{{ c.color }}</span>
+          {%- set cp = comp.get((t.tela, c.cod)) %}
+          <span class="tg">
+          {%- if cp %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ (' ×' ~ cp.puntos) if cp.puntos > 1 }}</em>{% endif %}
+          {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
+          {%- if (c.kg - c.seg_kg) > 0.05 %}<em class="tag pri">PRI</em>{% endif %}
+          {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}</span>
+          <span class="kgr"><b class="kg kg-c">{{ c.kg|num_es(0) }}</b><span class="rol rol-c">{{ c.rollos }} r</span></span>
+        </div>
+      {% endfor %}
+    </details>
+  {% endfor %}
+  </div>
+  <div class="vacio" id="st-vacio" hidden><span id="st-eco"></span></div>
+  {% else %}
+    <div class="vacio">No pude leer el stock de Asinfo. Probá de nuevo en un rato.</div>
+  {% endif %}
+</div>
+
+<script>
+{% include "mi_cartera/_stock_filtros.js" %}
+</script>
+{% endblock %}

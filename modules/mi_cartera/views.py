@@ -1072,20 +1072,8 @@ def stock():
     from modules.asinfo import stock_terminado
     st = stock_terminado.por_tela()
     telas = st["telas"]
-    # ⭐ Lo que está en la COMPETENCIA, marcado chiquito (Tamara 13/10: "así
-    # tienen incentivo a vender ese en particular"). Misma llave que Stock:
-    # tela (subgrupo) + código de color de 3 letras. Con los PUNTOS de la tela
-    # —lo que vale cada kilo— y si entra sólo la segunda. Fail-soft.
-    comp: dict = {}
-    try:
-        from modules.analisis import queries as aq
-        for f in aq.con_puntos(aq.items()):
-            if float(f.get("stock_kg") or 0) > 0:
-                comp[(f["subcategoria"], (f["color"] or "").upper())] = {
-                    "puntos": int(f.get("puntos") or 1),
-                    "solo_seg": f.get("motivo") == "segunda"}
-    except Exception:  # noqa: BLE001 — la marca es un adorno, no un freno
-        comp = {}
+    # ⭐ Lo que está en la COMPETENCIA, marcado chiquito (Tamara 13/10).
+    comp = stock_terminado.en_competencia()
     # La ficha técnica de cada tela, si hay una con el mismo nombre (13/10):
     # un 📄 chiquito al lado del nombre, para no ir a buscarla a otra pestaña.
     mapa = fichas.por_tela()

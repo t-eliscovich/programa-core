@@ -129,7 +129,8 @@ def test_si_asinfo_nunca_contesto_lo_dice(vendedor, monkeypatch):
 
 
 def test_el_stock_de_la_oficina_sigue_cerrado(vendedor):
-    for path in ("/stock", "/stock/asinfo-lote", "/stock/asinfo-lote?bodega=53"):
+    for path in ("/stock", "/stock/asinfo-lote", "/stock/asinfo-lote?bodega=53",
+                 "/stock/por-tela"):
         assert vendedor.get(path).status_code == 404, path
 
 
@@ -212,3 +213,53 @@ def test_si_la_competencia_falla_el_stock_igual_se_ve(vendedor, monkeypatch):
     monkeypatch.setattr(aq, "items", roto)
     r = vendedor.get("/mi-cartera/stock")
     assert r.status_code == 200 and "🏆" not in r.data.decode()[r.data.decode().index('id="st-lista"'):]
+
+
+# ---------------------------------------------------------------------------
+# La misma pantalla en la oficina: /stock/por-tela (Tamara 15/10/2026)
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def oficina(app, client, fake_db):
+    rid = fake_db.add_role("INT", ["stock.ver"])
+    pw = bcrypt.hashpw(b"Oficina2026", bcrypt.gensalt(rounds=4))
+    fake_db.add_user("intela", pw, rid)
+    r = client.post("/login", data={"username": "intela", "password": "Oficina2026"})
+    assert r.status_code in (302, 303)
+    return client
+
+
+def test_la_oficina_ve_el_mismo_stock(oficina, monkeypatch):
+    """"Puedes hacer que stock lo vea intela también?" — mismo dato, mismos
+    filtros (el JS compartido) y la marca de la competencia."""
+    _fuente(monkeypatch, [(FILAS, True)])
+    from modules.analisis import queries as aq
+    monkeypatch.setattr(aq, "items", lambda conn=None: [
+        {"subcategoria": "Fleece 102", "color": "GOS", "motivo": "parado", "stock_kg": 224}])
+    monkeypatch.setattr(aq, "con_puntos", lambda fs: [dict(f, puntos=10) for f in fs])
+    r = oficina.get("/stock/por-tela")
+    assert r.status_code == 200
+    html = r.data.decode()
+    assert "Fleece 102" in html and "GRIS OSCURO" in html and "Cruda" not in html
+    assert "sin descontar pedidos" in html
+    assert "2.357 kg" in html                 # 2.296,6 + 60, el total de arriba
+    assert ">🏆 ×10</em>" in html
+    assert "function aplicar()" in html       # los filtros del portal, compartidos
+    lista = html[html.index('id="st-lista"'):html.index('id="st-vacio"')]
+    assert "$" not in lista
+
+
+def test_la_pestania_esta_en_inventario(oficina, monkeypatch):
+    _fuente(monkeypatch, [(FILAS, True)])
+    html = oficina.get("/stock/por-tela").data.decode()
+    assert "Stock por tela</span>" in html    # la pestaña actual, prendida
+    assert 'href="/produccion-terminado-asinfo"' in html
+
+
+def test_sin_stock_ver_no_entra(app, client, fake_db):
+    rid = fake_db.add_role("Otro", ["facturas.ver"])
+    pw = bcrypt.hashpw(b"Otro2026xx", bcrypt.gensalt(rounds=4))
+    fake_db.add_user("otro", pw, rid)
+    client.post("/login", data={"username": "otro", "password": "Otro2026xx"})
+    assert client.get("/stock/por-tela").status_code == 404
