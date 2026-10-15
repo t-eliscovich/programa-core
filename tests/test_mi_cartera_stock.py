@@ -300,3 +300,15 @@ def vendedor_y_oficina_html(app, client, fake_db, monkeypatch):
     client.post("/login", data={"username": "pablo", "password": "Vendedor2026"})
     out.append(client.get("/mi-cartera/stock").data.decode())
     return out
+
+
+def test_el_puntaje_va_siempre_tambien_el_x1(oficina, monkeypatch):
+    """Tamara 15/10: "competencia falta el puntaje" — un color que vale 1
+    punto mostraba el 🏆 pelado."""
+    _fuente(monkeypatch, [(FILAS, True)])
+    from modules.analisis import queries as aq
+    monkeypatch.setattr(aq, "items", lambda conn=None: [
+        {"subcategoria": "Jersey 3", "color": "BLA", "motivo": "parado", "stock_kg": 60}])
+    monkeypatch.setattr(aq, "con_puntos", lambda fs: [dict(f, puntos=1) for f in fs])
+    html = oficina.get("/stock/por-tela").data.decode()
+    assert ">🏆 ×1</em>" in html
