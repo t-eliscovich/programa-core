@@ -235,7 +235,8 @@
     .pd.ancha > *:not(.imp){display:none !important}
     .pd.ancha{max-width:none}
     .pd .imp{display:block !important}
-    .pd .imp-tela{break-before:page;page-break-before:always}
+    .pd .imp-tela.grande{break-before:page;page-break-before:always}
+    .pd .imp-tela.chica{break-inside:avoid;page-break-inside:avoid;margin-bottom:16pt !important}
     .pd .imp-tela:first-child{break-before:auto;page-break-before:auto}
     .pd .imp tr.imp-tit th{font-size:15pt !important;text-align:left !important;background:#fff !important;border:0 !important;padding:0 0 5pt !important}
     .pd .imp tbody tr{break-inside:avoid;page-break-inside:avoid}
@@ -482,7 +483,10 @@
        las casillas con su dato, y los pedidos en su propia columna. #}
     <div class="imp">
     {% for t in telas %}
-    <section class="imp-tela">
+    {# Telas chicas (Tamara 15/10: "Naty, Kiana, Microfibra… las podemos
+       juntar") van seguidas en la misma hoja sin partirse; las grandes
+       arrancan hoja nueva. #}
+    <section class="imp-tela {{ 'chica' if t.filas|length <= 12 else 'grande' }}">
       <table>
         <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
