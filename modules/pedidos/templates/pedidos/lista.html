@@ -490,7 +490,7 @@
     {% for t in telas %}{% if t.filas|length > 12 %}{% set ns_imp.grandes = ns_imp.grandes + [t] %}{% else %}{% set ns_imp.chicas = ns_imp.chicas + [t] %}{% endif %}{% endfor %}
     {% for t in ns_imp.grandes + ns_imp.chicas %}
     {% set es_grande = t.filas|length > 12 %}
-    <section class="imp-tela {{ 'grande' if es_grande else ('chica nueva' if loop.index0 == ns_imp.grandes|length else 'chica') }}">
+    <section class="imp-tela {{ 'grande' if es_grande else ('chica nueva' if (ns_imp.grandes and loop.index0 == ns_imp.grandes|length) else 'chica') }}">
       <table>
         <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
