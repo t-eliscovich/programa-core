@@ -65,8 +65,9 @@ def nuevo_envio() -> str:
 def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
     """Inserta todos los renglones de un envío en UNA transacción.
 
-    Cada línea: {categoria, tela, acabado, color, codigo, cantidad, unidad,
-    pedidos: [{numero, cliente, cantidad}]}. Devuelve (ok, motivo, envio);
+    Cada línea: {categoria, tela, acabado, color, codigo, cantidad (rollos de
+    la tela), unidad, rib_kg (rib en kilos, Tamara 15/10: "Producir: Rollos |
+    Rib"), pedidos: [{numero, cliente, cantidad}]}. Devuelve (ok, motivo, envio);
     motivos: "enviado", "vacio", "sin_bridge".
     """
     if not lineas:
@@ -82,13 +83,14 @@ def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
                         """
                         INSERT INTO a_fabricar (envio, enviado_por, categoria, tela,
                                                 acabado, color, codigo, cantidad,
-                                                unidad, pedidos)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                                unidad, rib_kg, pedidos)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         """,
                         (envio, enviado_por or "", ln.get("categoria") or "",
                          ln.get("tela") or "", ln.get("acabado") or "",
                          ln.get("color") or "", ln.get("codigo") or "",
-                         ln["cantidad"], ln.get("unidad") or "roll",
+                         ln.get("cantidad") or 0, ln.get("unidad") or "roll",
+                         ln.get("rib_kg") or 0,
                          json.dumps(ln.get("pedidos") or [], default=str)),
                     )
             c.commit()
@@ -108,7 +110,7 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
             cur.execute(
                 """
                 SELECT id, envio, enviado_por, enviado_en, categoria, tela,
-                       acabado, color, codigo, cantidad, unidad, pedidos,
+                       acabado, color, codigo, cantidad, unidad, rib_kg, pedidos,
                        estado, en_proceso_por, en_proceso_en,
                        terminado_por, terminado_en
                   FROM a_fabricar
@@ -127,6 +129,7 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
                 except (TypeError, ValueError):
                     f["pedidos"] = []
             f["cantidad"] = float(f.get("cantidad") or 0)
+            f["rib_kg"] = float(f.get("rib_kg") or 0)
             f["fecha_fmt"] = _dm(f.get("enviado_en"))
             f["hora_fmt"] = _hm(f.get("enviado_en"))
             f["en_proceso_fmt"] = _dm(f.get("en_proceso_en"))

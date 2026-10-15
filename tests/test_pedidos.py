@@ -598,7 +598,11 @@ def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     tabla = body[body.index('class="pd'):]
     assert "en rollos" in tabla          # la unidad se dice UNA vez, en la tela
-    assert " kg" not in tabla.replace("kg cada uno", "").replace("en kilos", "")
+    # Excepción (Tamara 15/10/2026): el RIB a producir se carga en kilos.
+    tabla = tabla[:tabla.index("<script>")] if "<script>" in tabla else tabla
+    sin_rib = (tabla.replace("kg cada uno", "").replace("en kilos", "")
+               .replace("rib (kg)", "").replace("kg de rib", "").replace(" kg</span>", ""))
+    assert " kg" not in sin_rib
     assert "19" in tabla
 
 
@@ -691,7 +695,7 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
     assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
     fila = body[body.index('data-grupo="d-FE96CAF_X"'):]
     fila = fila[:fila.index("</tr>")]
-    assert fila.count("<td") == 6                   # 3 columnas + memo (colspan 2) + N° pedido + Mandar a hacer
+    assert fila.count("<td") == 7                   # 3 columnas + memo (colspan 2) + N° pedido + Producir rollos + rib
     assert 'colspan="2"' in fila
     assert "Sin memo" in fila                        # sin bridge a formulas
     # un solo renglón: va el CÓDIGO del cliente, no el nombre fiscal entero

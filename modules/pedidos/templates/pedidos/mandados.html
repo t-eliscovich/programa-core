@@ -40,19 +40,20 @@
   <div class="env">
     <div class="env-h">
       <b>{{ e.filas[0].hora_fmt }}</b>
-      <span class="m">{{ e.filas|length }} {{ 'color' if e.filas|length == 1 else 'colores' }} · {{ e.total|num_es(0) }} {{ e.filas[0].unidad }}{% if e.enviado_por %} · mandó {{ e.enviado_por }}{% endif %}</span>
+      <span class="m">{{ e.filas|length }} {{ 'color' if e.filas|length == 1 else 'colores' }} · {{ e.total|num_es(0) }} {{ e.filas[0].unidad }}{% if e.total_rib %} + {{ e.total_rib|num_es(0) }} kg rib{% endif %}{% if e.enviado_por %} · mandó {{ e.enviado_por }}{% endif %}</span>
       <span class="sp"></span>
       <span class="est {{ e.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}[e.estado] }}</span>
     </div>
     <table>
-      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th style="text-align:right">Mandado</th><th>Pedidos que cubre</th><th>En la fábrica</th></tr></thead>
+      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th style="text-align:right">Rollos</th><th style="text-align:right">Rib (kg)</th><th>Pedidos que cubre</th><th>En la fábrica</th></tr></thead>
       <tbody>
       {% for f in e.filas %}
         <tr>
           <td>{{ f.tela }}</td>
           <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
           <td><b>{{ f.color }}</b> <span class="sub">{{ f.codigo }}</span></td>
-          <td class="n">{{ f.cantidad|num_es(0) }} <span class="sub">{{ f.unidad }}</span></td>
+          <td class="n">{% if f.cantidad %}{{ f.cantidad|num_es(0) }} <span class="sub">{{ f.unidad }}</span>{% else %}—{% endif %}</td>
+          <td class="n">{% if f.rib_kg %}{{ f.rib_kg|num_es(0) }} <span class="sub">kg</span>{% else %}—{% endif %}</td>
           <td class="peds">{% for p in f.pedidos %}{{ p.cliente }} {{ p.numero }}{% if p.cantidad %} ({{ p.cantidad|num_es(0) }}){% endif %}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
           <td><span class="est {{ f.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}.get(f.estado, f.estado|upper) }}</span>
             {% if f.estado == 'terminado' and f.terminado_fmt %}<span class="sub">{{ f.terminado_fmt }}{% if f.terminado_por %} · {{ f.terminado_por }}{% endif %}</span>

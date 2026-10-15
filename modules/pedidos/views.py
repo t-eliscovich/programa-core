@@ -405,18 +405,22 @@ def mandar_a_hacer():
     cat = (request.form.get("cat") or "").strip()
     volver = url_for("pedidos.lista", corte="tela", cat=cat) if cat else url_for(
         "pedidos.lista", corte="tela")
-    pedidas: dict[str, float] = {}
-    for k, v in request.form.items():
-        if not k.startswith("c_"):
-            continue
+    def _num(v) -> float:
         try:
-            n = float(str(v).replace(",", "."))
+            return max(0.0, float(str(v or "0").replace(",", ".")))
         except ValueError:
-            continue
-        if n > 0:
-            pedidas[k[2:]] = n
+            return 0.0
+
+    # c_<clave> = rollos de la tela, r_<clave> = rib en kilos (Tamara 15/10).
+    pedidas: dict[str, tuple[float, float]] = {}
+    for k in request.form:
+        if k[:2] in ("c_", "r_"):
+            clave = k[2:]
+            rollos, rib = _num(request.form.get("c_" + clave)), _num(request.form.get("r_" + clave))
+            if rollos > 0 or rib > 0:
+                pedidas[clave] = (rollos, rib)
     if not pedidas:
-        flash("No cargaste ninguna cantidad para mandar a hacer.", "warning")
+        flash("No cargaste ninguna cantidad para producir.", "warning")
         return redirect(volver)
 
     filas, ok = service.pendientes()
@@ -432,7 +436,7 @@ def mandar_a_hacer():
     ya = set(memo_lineas) | set(formulas_fabricar.pedidos_enviados(af_filas))
 
     lineas, salteadas = [], []
-    for clave, cant in pedidas.items():
+    for clave, (cant, rib) in pedidas.items():
         f = por_clave.get(clave)
         if f is None:
             salteadas.append(clave.split("_")[0])
@@ -443,16 +447,22 @@ def mandar_a_hacer():
         lineas.append({
             "categoria": f["categoria"], "tela": f["tela"],
             "acabado": f.get("acabado") or "", "color": f["color"],
-            "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"],
+            "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"], "rib_kg": rib,
             "pedidos": peds,
         })
     usuario = g.user["username"] if getattr(g, "user", None) else ""
     ok, motivo, _envio = formulas_fabricar.mandar(lineas, usuario)
     if ok:
         total = sum(ln["cantidad"] for ln in lineas)
+        rib = sum(ln["rib_kg"] for ln in lineas)
+        partes = []
+        if total:
+            partes.append(f"{total:g} {'rollos' if lineas[0]['unidad'] == 'roll' else lineas[0]['unidad']}")
+        if rib:
+            partes.append(f"{rib:g} kg de rib")
         flash(f"Listo: {len(lineas)} {'color' if len(lineas) == 1 else 'colores'} · "
-              f"{total:g} {'rollos' if lineas[0]['unidad'] == 'roll' else lineas[0]['unidad']} "
-              "mandados a producción. A Jonathan le llega en «Fabricación».", "success")
+              + " + ".join(partes)
+              + " mandados a producción. A Jonathan le llega en «Fabricación».", "success")
     elif motivo == "vacio":
         flash("Ninguno de los colores cargados sigue pendiente — no se mandó nada.",
               "warning")
@@ -484,6 +494,7 @@ def mandados():
     for e in envios:
         e["filas"].sort(key=service.orden_tipo_de_tela)
         e["total"] = sum(f["cantidad"] for f in e["filas"])
+        e["total_rib"] = sum(f.get("rib_kg") or 0 for f in e["filas"])
         est = {f["estado"] for f in e["filas"]}
         e["estado"] = ("pendiente" if "pendiente" in est else
                        "en_proceso" if "en_proceso" in est else "terminado")

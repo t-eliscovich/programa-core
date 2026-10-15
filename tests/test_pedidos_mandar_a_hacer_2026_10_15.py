@@ -34,6 +34,7 @@ def _af(numero, estado="pendiente", codigo="FE96CAF", acabado="", cantidad=7):
             "enviado_en": datetime(2026, 10, 15, 16, 0, tzinfo=UTC),
             "categoria": "Fleece", "tela": "Fleece 96 Perchado", "acabado": acabado,
             "color": "CAF", "codigo": codigo, "cantidad": cantidad, "unidad": "roll",
+            "rib_kg": 0.0,
             "pedidos": [{"numero": numero, "cliente": "GIC", "cantidad": 4}],
             "estado": estado, "fecha_fmt": "15/10", "hora_fmt": "15/10 11:00",
             "en_proceso_fmt": "", "terminado_fmt": ""}
@@ -121,10 +122,12 @@ def test_el_servidor_arma_los_renglones_y_saca_los_pedidos_con_memo(app, fake_db
          patch.object(views.formulas_fabricar, "envios", return_value=([], True)), \
          patch.object(views.formulas_fabricar, "mandar", side_effect=fake_mandar):
         r = c.post("/pedidos/mandar-a-hacer",
-                   data={"cat": "Fleece", f"c_{clave}": "7", "c_NOEXISTE_X": "3"})
+                   data={"cat": "Fleece", f"c_{clave}": "7", f"r_{clave}": "30",
+                         "c_NOEXISTE_X": "3"})
     assert r.status_code == 302
     (ln,) = mandado["lineas"]
     assert (ln["codigo"], ln["cantidad"], ln["tela"]) == ("FE96CAF", 7.0, "Fleece 96 Perchado")
+    assert ln["rib_kg"] == 30.0
     assert [p["numero"] for p in ln["pedidos"]] == ["PDCL-1"]   # el del memo, afuera
     assert mandado["usuario"] == "test"
 
@@ -152,3 +155,31 @@ def test_el_historial_se_dibuja_y_sin_bridge_avisa(app, fake_db):
     with patch.object(views.formulas_fabricar, "envios", return_value=([], False)):
         body = c.get("/pedidos/mandados").get_data(as_text=True)
     assert "No pude hablar con formulas_app" in body
+
+
+def test_se_puede_mandar_solo_rib(app, fake_db):
+    """Producir: Rollos | Rib (kg) — un color puede llevar sólo rib."""
+    c = _login(app, fake_db)
+    mandado = {}
+    clave = service.clave_renglon("FE96CAF", "")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1")])), \
+         patch.object(views.formulas_memos, "estados", return_value={}), \
+         patch.object(views.formulas_fabricar, "envios", return_value=([], True)), \
+         patch.object(views.formulas_fabricar, "mandar",
+                      side_effect=lambda lineas, u: (mandado.setdefault("l", lineas), (True, "enviado", "x"))[1]):
+        c.post("/pedidos/mandar-a-hacer", data={"cat": "Fleece", f"r_{clave}": "25"})
+    (ln,) = mandado["l"]
+    assert (ln["cantidad"], ln["rib_kg"]) == (0.0, 25.0)
+
+
+def test_la_hoja_impresa_va_una_tela_por_pagina_sin_pedidos(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1")])):
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
+    hoja = body[body.index('<div class="imp">'):]
+    hoja = hoja[:hoja.index('<div class="hbar')]
+    assert 'class="imp-tela"' in hoja
+    assert "PDCL-1" not in hoja                     # sin la columna de pedidos
+    assert "Producir rollos" in hoja and "Producir rib (kg)" in hoja
