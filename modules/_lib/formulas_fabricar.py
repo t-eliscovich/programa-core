@@ -3,7 +3,7 @@
 La oficina carga, en /pedidos (Tipo de tela), cuántos rollos mandar a hacer
 de cada tela × color × acabado; revisa y aprieta «Mandar a producción». Eso
 inserta UN renglón por color en `a_fabricar`, todos con el mismo `envio`.
-Jonathan lo ve en la pestaña «A fabricar» de formulas_app y lo marca en
+Jonathan lo ve en la pestaña «Fabricación» de formulas_app y lo marca en
 proceso / hecho. Programa Core lee esos estados para:
 
   - el historial de lo mandado (/pedidos/mandados);

@@ -387,7 +387,7 @@ def cancelar_memo():
     return redirect(url_for("pedidos.lista", corte="pedido"))
 
 
-# ── Mandar a hacer → formulas_app «A fabricar» (Tamara 15/10/2026) ───────────
+# ── Mandar a hacer → formulas_app «Fabricación» (Tamara 15/10/2026) ───────────
 
 @pedidos_bp.route("/pedidos/mandar-a-hacer", methods=["POST"])
 @requiere_login
@@ -452,7 +452,7 @@ def mandar_a_hacer():
         total = sum(ln["cantidad"] for ln in lineas)
         flash(f"Listo: {len(lineas)} {'color' if len(lineas) == 1 else 'colores'} · "
               f"{total:g} {'rollos' if lineas[0]['unidad'] == 'roll' else lineas[0]['unidad']} "
-              "mandados a producción. A Jonathan le llega en «A fabricar».", "success")
+              "mandados a producción. A Jonathan le llega en «Fabricación».", "success")
     elif motivo == "vacio":
         flash("Ninguno de los colores cargados sigue pendiente — no se mandó nada.",
               "warning")

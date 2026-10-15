@@ -5,7 +5,7 @@
 <style>
   /* Historial de «Mandar a hacer» (Tamara 15/10/2026): cada envío con
      fecha y hora, quién lo mandó, y en qué está cada color en la fábrica
-     (lo marca Jonathan en formulas_app → «A fabricar»). */
+     (lo marca Jonathan en formulas_app → «Fabricación»). */
   .md{--ink:#0f172a;--gris:#64748b;--linea:#e2e8f0;max-width:1100px}
   .md h1{font-size:22px;font-weight:700;color:var(--ink);margin:0}
   .md .nota{color:var(--gris);font-size:13px;margin:4px 0 16px}
@@ -30,7 +30,7 @@
 <div class="md">
   <h1>Lo mandado a producción</h1>
   <p class="nota">Cada vez que se aprieta «Mandar a producción» en <a href="{{ url_for('pedidos.lista', corte='tela') }}">Pedidos → Tipo de tela</a>.
-    El estado lo marca Jonathan en formulas («A fabricar»). Últimos 120 días.</p>
+    El estado lo marca Jonathan en formulas («Fabricación»). Últimos 120 días.</p>
   {% if not disponible %}
     <div class="aviso">No pude hablar con formulas_app en este momento, así que no puedo mostrar lo mandado. Volvé a cargar en un rato.</div>
   {% elif not envios %}
