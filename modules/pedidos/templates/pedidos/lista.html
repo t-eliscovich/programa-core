@@ -395,8 +395,12 @@
       </div>
       <a class="solo{{ ' on' if solo_faltan }}" href="{{ url_for('pedidos.lista', corte='tela', cat=activa) if solo_faltan else url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">
         <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Sólo lo que falta</a>
-      <a class="hist" href="#" title="Cada envío a producción con fecha, quién lo mandó y qué colores">Historial de lo mandado</a>
+      {# «Cargar Mandar a hacer» + Historial: maqueta aprobada en diseño el
+         15/10/2026; se prende cuando exista el envío a formulas_app. #}
+      {% if mandar_a_hacer_activo %}
+      <a class="hist" href="#">Historial de lo mandado</a>
       <button type="button" class="btn-editar" id="editar-hacer">✎ Cargar «Mandar a hacer»</button>
+      {% endif %}
     </div>
     {% endif %}
     {% for t in telas %}
