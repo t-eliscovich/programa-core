@@ -196,6 +196,7 @@
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
   .pd .imp{display:none}
+  .pd table.tt .cnom{font-size:14px;font-weight:500;color:#334155}
   .pd .imp-una{margin-left:10px;font-size:13px;font-weight:600;color:var(--ink);line-height:1;padding:5px 8px;border:1px solid var(--linea);border-radius:7px;background:#fff;cursor:pointer;vertical-align:middle;opacity:.75}
   .pd .imp-una:hover{opacity:1;border-color:var(--ink)}
   .pd.ancha .telablk h3{display:flex;align-items:center}
@@ -458,6 +459,7 @@
                   <span class="chev" aria-hidden="true"></span>
                   {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado|replace('ABI', 'AB') }}</span>{% endif %}
                   <span class="color">{{ f.color }}</span>
+                  {% if nombres_color.get(f.color) %}<span class="cnom">{{ nombres_color[f.color] }}</span>{% endif %}
                   <span class="prod">{{ f.codigo }}</span>
                 </button>
               </td>
@@ -528,7 +530,7 @@
           {% set md = mandados.get(f.clave) %}
           <tr data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
             <td>{{ f.acabado or '—' }}</td>
-            <td><b>{{ f.color }}</b> <span class="cd">{{ f.codigo }}</span></td>
+            <td><b>{{ f.color }}</b>{% if nombres_color.get(f.color) %} {{ nombres_color[f.color] }}{% endif %} <span class="cd">{{ f.codigo }}</span></td>
             <td class="n" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
             <td class="n">{{ f.pedido_d|num_es(f.decimales) }}</td>
             <td class="n">{{ f.conmemo_d|num_es(f.decimales) if f.conmemo_d else '0' }}</td>

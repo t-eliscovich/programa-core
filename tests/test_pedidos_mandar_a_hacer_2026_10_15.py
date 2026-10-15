@@ -209,3 +209,14 @@ def test_lo_que_la_fabrica_ya_tomo_no_ofrece_cancelar(app, fake_db):
 def test_un_renglon_cancelado_ya_no_cubre_sus_pedidos():
     filas = [_af("P1", "cancelado")]
     assert formulas_fabricar.pedidos_enviados(filas) == {}
+
+
+def test_el_nombre_del_color_va_al_lado_del_codigo(app, fake_db):
+    """Tamara 15/10/2026: "poné también el nombre del color" — en pantalla
+    y en la hoja impresa."""
+    c = _login(app, fake_db)
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1")])), \
+         patch.object(views.service, "nombres_color", return_value={"CAF": "CAFE OSCURO"}):
+        body = c.get("/pedidos?corte=tela").get_data(as_text=True)
+    assert body.count("CAFE OSCURO") >= 2          # tabla de pantalla + hoja impresa

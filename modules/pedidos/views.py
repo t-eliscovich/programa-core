@@ -78,7 +78,7 @@ def lista():
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
         pedidos_por_color={}, pedidos_lista=[], etapas={}, memo_lineas={},
-        imp_hojas=[], imprimir_todas=False,
+        imp_hojas=[], imprimir_todas=False, nombres_color={},
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
     )
@@ -166,6 +166,9 @@ def lista():
         else:
             fams = [(activa, telas)]
         ctx["imp_hojas"] = service.hojas_impresion(fams)
+        # El NOMBRE del color al lado del código (Tamara 15/10/2026: "poné
+        # también el nombre del color", en pantalla y en la impresión).
+        ctx["nombres_color"] = service.nombres_color()
         ctx["imprimir_todas"] = todas
         ctx.update(
             activa=activa, telas=telas, solo_faltan=solo_faltan,
