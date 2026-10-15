@@ -523,7 +523,38 @@ def mandados():
         e["filas"].sort(key=service.orden_tipo_de_tela)
         e["total"] = sum(f["cantidad"] for f in e["filas"])
         e["total_rib"] = sum(f.get("rib_kg") or 0 for f in e["filas"])
-        est = {f["estado"] for f in e["filas"]}
+        est = {f["estado"] for f in e["filas"]} - {"cancelado"}
         e["estado"] = ("pendiente" if "pendiente" in est else
-                       "en_proceso" if "en_proceso" in est else "terminado")
-    return render_template("pedidos/mandados.html", envios=envios, disponible=ok)
+                       "en_proceso" if "en_proceso" in est else
+                       "terminado" if est else "cancelado")
+        e["cancelable"] = any(f["estado"] == "pendiente" for f in e["filas"])
+    return render_template("pedidos/mandados.html", envios=envios, disponible=ok,
+                           puede_cancelar=tiene_permiso("pedidos.enviar_memo"))
+
+
+@pedidos_bp.route("/pedidos/mandados/cancelar", methods=["POST"])
+@requiere_login
+@requiere_permiso("pedidos.enviar_memo")
+def cancelar_mandado():
+    """Cancela un envío entero (`envio`) o un renglón (`id`) que la fábrica
+    todavía no tomó. Lo que ya está en proceso o hecho no se toca."""
+    from flask import g
+
+    usuario = g.user["username"] if getattr(g, "user", None) else ""
+    envio = (request.form.get("envio") or "").strip()
+    try:
+        id_ = int(request.form.get("id") or "")
+    except ValueError:
+        id_ = None
+    if not envio and id_ is None:
+        flash("No encontré qué cancelar.", "warning")
+        return redirect(url_for("pedidos.mandados"))
+    n, motivo = formulas_fabricar.cancelar(usuario, envio=envio, id_=id_)
+    if n:
+        flash(f"Cancelado: {n} {'color' if n == 1 else 'colores'}. A la fábrica le aparece como cancelado.",
+              "success")
+    elif motivo == "no_pendiente":
+        flash("No se pudo cancelar: la fábrica ya lo tomó (está en proceso o hecho).", "warning")
+    else:
+        flash("No pude hablar con formulas_app — NO se canceló. Probá de nuevo en un rato.", "error")
+    return redirect(url_for("pedidos.mandados"))

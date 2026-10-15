@@ -100,6 +100,35 @@ def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
         return False, "sin_bridge", ""
 
 
+def cancelar(usuario: str, envio: str = "", id_: int | None = None) -> tuple[int, str]:
+    """Cancela un renglón (`id_`) o todos los de un `envio`, SÓLO los que
+    siguen PENDIENTES (Tamara 15/10/2026: "que se pueda cancelar un pedido
+    enviado"). Lo que la fábrica ya tomó no se toca. Devuelve
+    (cuántos cambió, motivo): "cancelado", "no_pendiente", "sin_bridge".
+    """
+    if not formulas_memos.disponible():
+        return 0, "sin_bridge"
+    try:
+        with formulas_memos._conn() as c:
+            with c.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE a_fabricar
+                       SET estado = 'cancelado', cancelado_por = %s, cancelado_en = NOW()
+                     WHERE estado = 'pendiente'
+                       AND ((%s <> '' AND envio = %s) OR id = %s)
+                 RETURNING id
+                    """,
+                    (usuario or "", envio or "", envio or "", id_ if id_ is not None else -1),
+                )
+                n = len(cur.fetchall())
+            c.commit()
+        return n, ("cancelado" if n else "no_pendiente")
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.warning("formulas_fabricar.cancelar falló: %s", e)
+        return 0, "sin_bridge"
+
+
 def envios(dias: int = 90) -> tuple[list[dict], bool]:
     """Los renglones mandados en los últimos `dias` días (más los que siguen
     vivos aunque sean viejos), más nuevo arriba. `(filas, ok)`."""
@@ -112,7 +141,7 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
                 SELECT id, envio, enviado_por, enviado_en, categoria, tela,
                        acabado, color, codigo, cantidad, unidad, rib_kg, pedidos,
                        estado, en_proceso_por, en_proceso_en,
-                       terminado_por, terminado_en
+                       terminado_por, terminado_en, cancelado_por, cancelado_en
                   FROM a_fabricar
                  WHERE estado IN ('pendiente', 'en_proceso')
                     OR enviado_en >= NOW() - (%s || ' days')::interval
@@ -134,6 +163,7 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
             f["hora_fmt"] = _hm(f.get("enviado_en"))
             f["en_proceso_fmt"] = _dm(f.get("en_proceso_en"))
             f["terminado_fmt"] = _dm(f.get("terminado_en"))
+            f["cancelado_fmt"] = _dm(f.get("cancelado_en"))
         return filas, True
     except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
         _log.warning("formulas_fabricar.envios falló: %s", e)

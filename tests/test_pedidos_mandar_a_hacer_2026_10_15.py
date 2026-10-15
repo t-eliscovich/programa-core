@@ -183,3 +183,29 @@ def test_la_hoja_impresa_va_una_tela_por_pagina_sin_pedidos(app, fake_db):
     assert 'class="imp-tela chica"' in hoja    # 1 color: va junto con otras chicas
     assert "PDCL-1" not in hoja                     # sin la columna de pedidos
     assert "Producir rollos" in hoja and "Producir rib (kg)" in hoja
+
+
+def test_se_cancela_lo_pendiente_desde_el_historial(app, fake_db):
+    """Tamara 15/10/2026: "que se pueda cancelar un pedido enviado"."""
+    c = _login(app, fake_db)
+    with patch.object(views.formulas_fabricar, "envios",
+                      return_value=([_af("PDCL-1", "pendiente")], True)):
+        body = c.get("/pedidos/mandados").get_data(as_text=True)
+    assert "Cancelar envío" in body
+    with patch.object(views.formulas_fabricar, "cancelar", return_value=(1, "cancelado")) as m:
+        r = c.post("/pedidos/mandados/cancelar", data={"envio": "AF-1"})
+    assert r.status_code == 302
+    m.assert_called_once_with("test", envio="AF-1", id_=None)
+
+
+def test_lo_que_la_fabrica_ya_tomo_no_ofrece_cancelar(app, fake_db):
+    c = _login(app, fake_db)
+    with patch.object(views.formulas_fabricar, "envios",
+                      return_value=([_af("PDCL-1", "en_proceso")], True)):
+        body = c.get("/pedidos/mandados").get_data(as_text=True)
+    assert 'class="btn-canc"' not in body
+
+
+def test_un_renglon_cancelado_ya_no_cubre_sus_pedidos():
+    filas = [_af("P1", "cancelado")]
+    assert formulas_fabricar.pedidos_enviados(filas) == {}

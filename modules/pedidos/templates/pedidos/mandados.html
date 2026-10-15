@@ -18,6 +18,11 @@
   .md .est.pendiente{background:#fef3c7;color:#92400e}
   .md .est.en_proceso{background:#dbeafe;color:#1e40af}
   .md .est.terminado{background:#dcfce7;color:#166534}
+  .md .est.cancelado{background:#f1f5f9;color:#64748b}
+  .md tr.canc td{color:#94a3b8;text-decoration:line-through}
+  .md .btn-canc{font-size:12.5px;font-weight:600;padding:4px 10px;border-radius:7px;border:1px solid #fca5a5;background:#fff;color:#b91c1c;cursor:pointer}
+  .md .btn-canc:hover{background:#fef2f2}
+  .md form{display:inline;margin:0}
   .md .sp{flex:1}
   main .md table tbody td{font-size:14px !important;padding:7px 12px !important;text-align:left}
   main .md table thead th{font-size:12.5px !important;background:#e2e8f0 !important;color:var(--ink) !important;padding:8px 12px !important;text-transform:none}
@@ -42,22 +47,36 @@
       <b>{{ e.filas[0].hora_fmt }}</b>
       <span class="m">{{ e.filas|length }} {{ 'color' if e.filas|length == 1 else 'colores' }} · {{ e.total|num_es(0) }} {{ e.filas[0].unidad }}{% if e.total_rib %} + {{ e.total_rib|num_es(0) }} kg rib{% endif %}{% if e.enviado_por %} · mandó {{ e.enviado_por }}{% endif %}</span>
       <span class="sp"></span>
-      <span class="est {{ e.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}[e.estado] }}</span>
+      <span class="est {{ e.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO', 'cancelado': 'CANCELADO'}[e.estado] }}</span>
+      {% if puede_cancelar and e.cancelable %}
+      <form method="post" action="{{ url_for('pedidos.cancelar_mandado') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="envio" value="{{ e.envio }}">
+        <button type="submit" class="btn-canc" title="Cancela lo que la fábrica todavía no tomó">Cancelar envío</button>
+      </form>
+      {% endif %}
     </div>
     <table>
-      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th style="text-align:right">Rollos</th><th style="text-align:right">Rib (kg)</th><th>Pedidos que cubre</th><th>En la fábrica</th></tr></thead>
+      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th style="text-align:right">Rollos</th><th style="text-align:right">Rib (kg)</th><th>Pedidos que cubre</th><th>En la fábrica</th><th></th></tr></thead>
       <tbody>
       {% for f in e.filas %}
-        <tr>
+        <tr class="{{ 'canc' if f.estado == 'cancelado' }}">
           <td>{{ f.tela }}</td>
           <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
           <td><b>{{ f.color }}</b> <span class="sub">{{ f.codigo }}</span></td>
           <td class="n">{% if f.cantidad %}{{ f.cantidad|num_es(0) }} <span class="sub">{{ f.unidad }}</span>{% else %}—{% endif %}</td>
           <td class="n">{% if f.rib_kg %}{{ f.rib_kg|num_es(0) }} <span class="sub">kg</span>{% else %}—{% endif %}</td>
           <td class="peds">{% for p in f.pedidos %}{{ p.cliente }} {{ p.numero }}{% if p.cantidad %} ({{ p.cantidad|num_es(0) }}){% endif %}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
-          <td><span class="est {{ f.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}.get(f.estado, f.estado|upper) }}</span>
+          <td><span class="est {{ f.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO', 'cancelado': 'CANCELADO'}.get(f.estado, f.estado|upper) }}</span>
             {% if f.estado == 'terminado' and f.terminado_fmt %}<span class="sub">{{ f.terminado_fmt }}{% if f.terminado_por %} · {{ f.terminado_por }}{% endif %}</span>
-            {% elif f.estado == 'en_proceso' and f.en_proceso_fmt %}<span class="sub">desde {{ f.en_proceso_fmt }}</span>{% endif %}</td>
+            {% elif f.estado == 'en_proceso' and f.en_proceso_fmt %}<span class="sub">desde {{ f.en_proceso_fmt }}</span>
+            {% elif f.estado == 'cancelado' and f.cancelado_fmt %}<span class="sub">{{ f.cancelado_fmt }}{% if f.cancelado_por %} · {{ f.cancelado_por }}{% endif %}</span>{% endif %}</td>
+          <td style="text-align:right">{% if puede_cancelar and f.estado == 'pendiente' %}
+            <form method="post" action="{{ url_for('pedidos.cancelar_mandado') }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="id" value="{{ f.id }}">
+              <button type="submit" class="btn-canc">Cancelar</button>
+            </form>{% endif %}</td>
         </tr>
       {% endfor %}
       </tbody>
