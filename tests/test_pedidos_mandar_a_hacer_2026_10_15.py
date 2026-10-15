@@ -180,6 +180,6 @@ def test_la_hoja_impresa_va_una_tela_por_pagina_sin_pedidos(app, fake_db):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     hoja = body[body.index('<div class="imp">'):]
     hoja = hoja[:hoja.index('<div class="hbar')]
-    assert 'class="imp-tela"' in hoja
+    assert 'class="imp-tela chica"' in hoja    # 1 color: va junto con otras chicas
     assert "PDCL-1" not in hoja                     # sin la columna de pedidos
     assert "Producir rollos" in hoja and "Producir rib (kg)" in hoja
