@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Lo mandado a producción{% endblock %}
+{% block breadcrumb %}<a href="{{ url_for('pedidos.lista', corte='tela') }}">Pedidos pendientes</a> / <strong>Lo mandado a producción</strong>{% endblock %}
+{% block head_extra %}
+<style>
+  /* Historial de «Mandar a hacer» (Tamara 15/10/2026): cada envío con
+     fecha y hora, quién lo mandó, y en qué está cada color en la fábrica
+     (lo marca Jonathan en formulas_app → «A fabricar»). */
+  .md{--ink:#0f172a;--gris:#64748b;--linea:#e2e8f0;max-width:1100px}
+  .md h1{font-size:22px;font-weight:700;color:var(--ink);margin:0}
+  .md .nota{color:var(--gris);font-size:13px;margin:4px 0 16px}
+  .md .aviso{background:#fffbeb;border:1px solid #fcd34d;color:#92400e;padding:10px 12px;border-radius:8px;font-size:13px;margin:12px 0}
+  .md .env{border:1px solid var(--linea);border-radius:10px;margin:0 0 14px;background:#fff}
+  .md .env-h{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid var(--linea)}
+  .md .env-h b{font-size:16px;color:var(--ink)}
+  .md .env-h .m{font-size:13px;color:var(--gris)}
+  .md .est{font-size:11px;font-weight:700;letter-spacing:.04em;padding:3px 9px;border-radius:99px;white-space:nowrap}
+  .md .est.pendiente{background:#fef3c7;color:#92400e}
+  .md .est.en_proceso{background:#dbeafe;color:#1e40af}
+  .md .est.terminado{background:#dcfce7;color:#166534}
+  .md .sp{flex:1}
+  main .md table tbody td{font-size:14px !important;padding:7px 12px !important;text-align:left}
+  main .md table thead th{font-size:12.5px !important;background:#e2e8f0 !important;color:var(--ink) !important;padding:8px 12px !important;text-transform:none}
+  main .md table td.n{text-align:right;font-weight:800;font-size:16px !important;white-space:nowrap}
+  .md .peds{font-size:12.5px;color:#475569}
+  .md .sub{font-size:12px;color:var(--gris)}
+</style>
+{% endblock %}
+{% block content %}
+<div class="md">
+  <h1>Lo mandado a producción</h1>
+  <p class="nota">Cada vez que se aprieta «Mandar a producción» en <a href="{{ url_for('pedidos.lista', corte='tela') }}">Pedidos → Tipo de tela</a>.
+    El estado lo marca Jonathan en formulas («A fabricar»). Últimos 120 días.</p>
+  {% if not disponible %}
+    <div class="aviso">No pude hablar con formulas_app en este momento, así que no puedo mostrar lo mandado. Volvé a cargar en un rato.</div>
+  {% elif not envios %}
+    <div class="aviso">Todavía no se mandó nada a producción desde Pedidos.</div>
+  {% endif %}
+  {% for e in envios %}
+  <div class="env">
+    <div class="env-h">
+      <b>{{ e.filas[0].hora_fmt }}</b>
+      <span class="m">{{ e.filas|length }} {{ 'color' if e.filas|length == 1 else 'colores' }} · {{ e.total|num_es(0) }} {{ e.filas[0].unidad }}{% if e.enviado_por %} · mandó {{ e.enviado_por }}{% endif %}</span>
+      <span class="sp"></span>
+      <span class="est {{ e.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}[e.estado] }}</span>
+    </div>
+    <table>
+      <thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th style="text-align:right">Mandado</th><th>Pedidos que cubre</th><th>En la fábrica</th></tr></thead>
+      <tbody>
+      {% for f in e.filas %}
+        <tr>
+          <td>{{ f.tela }}</td>
+          <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
+          <td><b>{{ f.color }}</b> <span class="sub">{{ f.codigo }}</span></td>
+          <td class="n">{{ f.cantidad|num_es(0) }} <span class="sub">{{ f.unidad }}</span></td>
+          <td class="peds">{% for p in f.pedidos %}{{ p.cliente }} {{ p.numero }}{% if p.cantidad %} ({{ p.cantidad|num_es(0) }}){% endif %}{% if not loop.last %}<br>{% endif %}{% else %}—{% endfor %}</td>
+          <td><span class="est {{ f.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO'}.get(f.estado, f.estado|upper) }}</span>
+            {% if f.estado == 'terminado' and f.terminado_fmt %}<span class="sub">{{ f.terminado_fmt }}{% if f.terminado_por %} · {{ f.terminado_por }}{% endif %}</span>
+            {% elif f.estado == 'en_proceso' and f.en_proceso_fmt %}<span class="sub">desde {{ f.en_proceso_fmt }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

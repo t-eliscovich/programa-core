@@ -193,6 +193,9 @@
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
   .pd .imp{display:none}
+  .pd .mand{display:block;font-size:12px;font-weight:600;color:#475569;white-space:nowrap}
+  .pd.editando .mand{margin-bottom:4px}
+  .pd .mchip.prod{color:#1e40af;background:#e0e7ff}
   /* Cargar «Mandar a hacer» (15/10/2026): la columna está vacía; con el
      botón se vuelve casilleros, abajo una barra con el total, y se revisa en
      una ventana antes de mandar a producción. */
@@ -249,7 +252,8 @@
 {% macro dm(iso) -%}{{ iso[8:10] ~ '/' ~ iso[5:7] if iso and iso|length >= 10 else '' }}{%- endmacro %}
 {% macro memo_chip(numero, codigo) -%}
   {%- set m = memo_lineas.get(numero) -%}
-  {%- if m -%}
+  {%- if not m and enviados.get(numero) -%}<span class="mchip prod"><b></b>Enviado a producción</span>
+  {%- elif m -%}
     {%- set e = m.lineas.get((codigo or '')|upper) or 'enviado' -%}
     {%- if e == 'terminado' -%}<span class="mchip done"><b></b>Terminado</span>
     {%- elif e == 'en_tintura' -%}<span class="mchip tinto"><b></b>En tintura</span>
@@ -383,7 +387,7 @@
     <p class="kexp no-print">Falta = lo pedido <b>sin memo</b>, menos lo que hay <b>en stock</b> y lo que está <b>en producción</b>, color por color.</p>
     {% set mc = namespace(sin=0, con=0) %}
     {% for t in telas %}{% for f in t.filas %}{% for p in pedidos_por_color.get(f.clave, []) %}
-      {% if memo_lineas.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
+      {% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
     {% endfor %}{% endfor %}{% endfor %}
     <div class="barra no-print">
       {# Dueña 01/10: "filtrar sin memo". Filtra en el navegador. #}
@@ -398,7 +402,7 @@
       {# «Cargar Mandar a hacer» + Historial: maqueta aprobada en diseño el
          15/10/2026; se prende cuando exista el envío a formulas_app. #}
       {% if mandar_a_hacer_activo %}
-      <a class="hist" href="#">Historial de lo mandado</a>
+      <a class="hist" href="{{ url_for('pedidos.mandados') }}">Historial de lo mandado</a>
       <button type="button" class="btn-editar" id="editar-hacer">✎ Cargar «Mandar a hacer»</button>
       {% endif %}
     </div>
@@ -421,7 +425,7 @@
             {% endif %}
             {% set peds = pedidos_por_color.get(f.clave, []) %}
             {% set nm = namespace(sin=0, con=0) %}
-            {% for p in peds %}{% if memo_lineas.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
+            {% for p in peds %}{% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
             <tr class="crow" data-g="d-{{ f.clave }}" data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
               <td class="cod">
                 
@@ -437,12 +441,13 @@
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
                             <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
-              <td class="hacer"><input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Mandar a hacer {{ f.color }} {{ f.acabado }}"
-                  data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}" data-falta="{{ f.hacer_d }}"
-                  data-peds="{% for p in peds if not memo_lineas.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
+              {% set md = mandados.get(f.clave) %}
+              <td class="hacer">{% if md %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Mandar a hacer {{ f.color }} {{ f.acabado }}"
+                  data-clave="{{ f.clave }}" data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}" data-falta="{{ f.hacer_d }}"
+                  data-peds="{% for p in peds if not memo_lineas.get(p.numero) and not enviados.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
             </tr>
             {% for p in peds %}
-              <tr class="det" data-grupo="d-{{ f.clave }}" data-memo="{{ 1 if memo_lineas.get(p.numero) else 0 }}" data-fila-hija>
+              <tr class="det" data-grupo="d-{{ f.clave }}" data-memo="{{ 1 if (memo_lineas.get(p.numero) or enviados.get(p.numero)) else 0 }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
                 <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
@@ -476,7 +481,7 @@
       {% for t in telas %}{% for f in t.filas %}
         {% set peds = pedidos_por_color.get(f.clave, []) %}
         {% set nm = namespace(sin=0, con=0) %}
-        {% for p in peds %}{% if memo_lineas.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
+        {% for p in peds %}{% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
         <tr data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
           <td>{{ t.tela }}</td>
           <td>{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or '—')) }}</td>
@@ -486,8 +491,8 @@
           <td class="n">{{ f.inventario_d|num_es(f.decimales) if f.inventario_kg else '0' }}</td>
           <td class="n">{{ f.produccion_d|num_es(f.decimales) if f.produccion_kg else '0' }}</td>
           <td class="n"><b>{{ f.hacer_d|num_es(f.decimales) }}</b></td>
-          <td></td>
-          <td class="ps">{% for p in peds %}<span data-memo="{{ 1 if memo_lineas.get(p.numero) else 0 }}">{{ p.codigo_cliente or p.cliente }} {{ p.numero|replace('PDCL-', '') }} ({{ p.cantidad|num_es(f.decimales) }}){% if memo_lineas.get(p.numero) %} memo{% endif %}{% if not loop.last %}, {% endif %}</span>{% else %}—{% endfor %}</td>
+          <td>{% set md = mandados.get(f.clave) %}{% if md %}mandado {{ md.fecha_fmt }}: {{ md.cantidad|num_es(0) }}{% endif %}</td>
+          <td class="ps">{% for p in peds %}<span data-memo="{{ 1 if (memo_lineas.get(p.numero) or enviados.get(p.numero)) else 0 }}">{{ p.codigo_cliente or p.cliente }} {{ p.numero|replace('PDCL-', '') }} ({{ p.cantidad|num_es(f.decimales) }}){% if memo_lineas.get(p.numero) %} memo{% elif enviados.get(p.numero) %} en prod.{% endif %}{% if not loop.last %}, {% endif %}</span>{% else %}—{% endfor %}</td>
         </tr>
       {% endfor %}{% endfor %}
       </tbody>
@@ -502,8 +507,13 @@
         <h2 id="hmt">Mandar a producción</h2>
         <p class="nota">Revisá la lista. Al mandarla, le llega a la fábrica y los pedidos sin memo de cada color quedan como <b>enviados a producción</b>.</p>
         <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Mandar a hacer</th><th>Pedidos que cubre</th></tr></thead><tbody id="hbody"></tbody></table>
-        <div class="hacc"><button type="button" class="btn" id="hvolver">Volver a editar</button>
-          <button type="button" class="btn pri" id="henviar">Mandar a producción</button></div>
+        <form method="post" action="{{ url_for('pedidos.mandar_a_hacer') }}" id="hform" class="hacc">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="cat" value="{{ activa }}">
+          <span id="hcampos"></span>
+          <button type="button" class="btn" id="hvolver">Volver a editar</button>
+          <button type="submit" class="btn pri" id="henviar">Mandar a producción</button>
+        </form>
       </div>
     </div>
     {% if cubiertas %}<p class="nota no-print">Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.</p>{% endif %}
@@ -715,9 +725,17 @@
     });
     document.getElementById('hvolver').addEventListener('click', function () { md.hidden = true; });
     md.addEventListener('click', function (e) { if (e.target === md) md.hidden = true; });
-    document.getElementById('henviar').addEventListener('click', function () {
-      // Maqueta: el envío a formulas_app se conecta en el paso 2.
-      md.hidden = true;
+    document.getElementById('hform').addEventListener('submit', function () {
+      // El navegador sólo manda CUÁNTO de cada renglón; el resto (tela,
+      // color, pedidos que cubre) lo arma el servidor con Asinfo de ahora.
+      var box = document.getElementById('hcampos'); box.innerHTML = '';
+      llenos().forEach(function (i) {
+        var h = document.createElement('input');
+        h.type = 'hidden'; h.name = 'c_' + i.dataset.clave; h.value = +i.value;
+        box.appendChild(h);
+      });
+      document.getElementById('henviar').disabled = true;
+      document.getElementById('henviar').textContent = 'Mandando…';
     });
   })();
   // Filtro de memo del corte Tipo de tela (dueña 01/10).

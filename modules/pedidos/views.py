@@ -34,8 +34,8 @@ from flask import (
     url_for,
 )
 
-from auth import requiere_login, requiere_permiso
-from modules._lib import formulas_memos
+from auth import requiere_login, requiere_permiso, tiene_permiso
+from modules._lib import formulas_fabricar, formulas_memos
 
 from . import service
 
@@ -78,6 +78,7 @@ def lista():
         clientes=[], solo_faltan=False, cubiertas=[],
         pedidos_por_color={}, pedidos_lista=[], etapas={}, memo_lineas={},
         hacer_cat={}, hacer_total=0, hacer_colores=0,
+        enviados={}, mandados={}, mandar_a_hacer_activo=False,
     )
 
     if not disponible or not categorias:
@@ -115,10 +116,15 @@ def lista():
         solo_faltan = request.args.get("falta") == "1"
         pedidos_por_color = service.pedidos_por_color()
         memo_lineas = _memo_de_lineas(pedidos_por_color)
+        # Lo ya mandado a producción desde esta pantalla (formulas_app, tabla
+        # a_fabricar): sus pedidos no son memo pero tampoco "faltan".
+        af_filas, _ = formulas_fabricar.envios()
+        enviados = formulas_fabricar.pedidos_enviados(af_filas)
+        cubiertos = set(memo_lineas) | set(enviados)
         # Falta (sin memo) y Mandar a hacer (Tamara 15/10/2026), para TODAS
-        # las familias: las pestañas muestran lo que hay que mandar a hacer.
+        # las familias: las pestañas muestran lo que falta.
         service.en_unidad(filas, "alt")
-        service.sin_memo_y_a_hacer(filas, pedidos_por_color, memo_lineas)
+        service.sin_memo_y_a_hacer(filas, pedidos_por_color, cubiertos)
         hacer_cat: dict[str, int] = {}
         for f in filas:
             hacer_cat[f["categoria"]] = hacer_cat.get(f["categoria"], 0) + f["hacer_d"]
@@ -139,6 +145,10 @@ def lista():
             resumen=next((c for c in categorias if c["categoria"] == activa), None),
             pedidos_por_color=pedidos_por_color, memo_lineas=memo_lineas,
             hacer_cat=hacer_cat,
+            enviados=enviados,
+            mandados=formulas_fabricar.vivos_por_clave(af_filas, service.clave_renglon),
+            mandar_a_hacer_activo=(formulas_fabricar.disponible()
+                                   and tiene_permiso("pedidos.enviar_memo")),
             hacer_total=sum(t["hacer_d"] for t in telas),
             hacer_colores=sum(1 for t in telas for f in t["filas"] if f["hacer_d"] > 0),
         )
@@ -375,3 +385,106 @@ def cancelar_memo():
         flash("No pude hablar con formulas_app — el memo NO se canceló. "
               "Probá de nuevo en un rato.", "error")
     return redirect(url_for("pedidos.lista", corte="pedido"))
+
+
+# ── Mandar a hacer → formulas_app «A fabricar» (Tamara 15/10/2026) ───────────
+
+@pedidos_bp.route("/pedidos/mandar-a-hacer", methods=["POST"])
+@requiere_login
+@requiere_permiso("pedidos.enviar_memo")
+def mandar_a_hacer():
+    """Recibe `c_<clave del renglón>` = rollos y lo manda a formulas_app.
+
+    El navegador sólo dice CUÁNTO de qué renglón: tela, color, acabado y los
+    pedidos que cubre se arman acá de nuevo, con los pendientes de Asinfo de
+    este momento — así nadie puede mandar un renglón que no existe ni colgarle
+    pedidos ajenos. Un renglón que ya no está pendiente se saltea y se avisa.
+    """
+    from flask import g
+
+    cat = (request.form.get("cat") or "").strip()
+    volver = url_for("pedidos.lista", corte="tela", cat=cat) if cat else url_for(
+        "pedidos.lista", corte="tela")
+    pedidas: dict[str, float] = {}
+    for k, v in request.form.items():
+        if not k.startswith("c_"):
+            continue
+        try:
+            n = float(str(v).replace(",", "."))
+        except ValueError:
+            continue
+        if n > 0:
+            pedidas[k[2:]] = n
+    if not pedidas:
+        flash("No cargaste ninguna cantidad para mandar a hacer.", "warning")
+        return redirect(volver)
+
+    filas, ok = service.pendientes()
+    if not ok:
+        flash("No pude consultar Asinfo — no se mandó nada. Probá de nuevo en un rato.",
+              "error")
+        return redirect(volver)
+    service.en_unidad(filas, "alt")
+    por_clave = {f["clave"]: f for f in filas}
+    pedidos_por_color = service.pedidos_por_color()
+    memo_lineas = _memo_de_lineas(pedidos_por_color)
+    af_filas, _ = formulas_fabricar.envios()
+    ya = set(memo_lineas) | set(formulas_fabricar.pedidos_enviados(af_filas))
+
+    lineas, salteadas = [], []
+    for clave, cant in pedidas.items():
+        f = por_clave.get(clave)
+        if f is None:
+            salteadas.append(clave.split("_")[0])
+            continue
+        peds = [{"numero": p["numero"], "cliente": p["codigo_cliente"] or p["cliente"],
+                 "cantidad": p["cantidad"]}
+                for p in pedidos_por_color.get(clave, []) if p["numero"] not in ya]
+        lineas.append({
+            "categoria": f["categoria"], "tela": f["tela"],
+            "acabado": f.get("acabado") or "", "color": f["color"],
+            "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"],
+            "pedidos": peds,
+        })
+    usuario = g.user["username"] if getattr(g, "user", None) else ""
+    ok, motivo, _envio = formulas_fabricar.mandar(lineas, usuario)
+    if ok:
+        total = sum(ln["cantidad"] for ln in lineas)
+        flash(f"Listo: {len(lineas)} {'color' if len(lineas) == 1 else 'colores'} · "
+              f"{total:g} {'rollos' if lineas[0]['unidad'] == 'roll' else lineas[0]['unidad']} "
+              "mandados a producción. A Jonathan le llega en «A fabricar».", "success")
+    elif motivo == "vacio":
+        flash("Ninguno de los colores cargados sigue pendiente — no se mandó nada.",
+              "warning")
+    else:
+        flash("No pude hablar con formulas_app — NO se mandó nada. Probá de nuevo en un rato.",
+              "error")
+    if salteadas:
+        flash("Ya no estaban pendientes, no se mandaron: " + ", ".join(salteadas) + ".",
+              "warning")
+    return redirect(volver)
+
+
+@pedidos_bp.route("/pedidos/mandados")
+@requiere_login
+@requiere_permiso("facturas.ver")
+def mandados():
+    """Historial de lo mandado a producción: cada envío con fecha, quién lo
+    mandó, sus colores y en qué está cada uno en la fábrica."""
+    filas, ok = formulas_fabricar.envios(dias=120)
+    envios, por = [], {}
+    for f in filas:
+        e = por.get(f["envio"])
+        if e is None:
+            e = {"envio": f["envio"], "enviado_en": f["enviado_en"],
+                 "enviado_por": f["enviado_por"], "filas": []}
+            por[f["envio"]] = e
+            envios.append(e)
+        e["filas"].append(f)
+    for e in envios:
+        e["filas"].sort(key=service.orden_tipo_de_tela)
+        e["total"] = sum(f["cantidad"] for f in e["filas"])
+        est = {f["estado"] for f in e["filas"]}
+        e["estado"] = ("pendiente" if "pendiente" in est else
+                       "en_proceso" if "en_proceso" in est else "terminado")
+    return render_template("pedidos/mandados.html", envios=envios, disponible=ok)
