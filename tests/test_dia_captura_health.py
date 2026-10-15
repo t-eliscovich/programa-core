@@ -14,7 +14,7 @@ Este chequeo es el pedido del 2026-08-10 (*"y también algo que avise si no
 está guardando"*) para ese otro lado.
 """
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 from unittest.mock import patch
 
 import pytest
@@ -32,17 +32,27 @@ def _app_ctx(app):
         yield
 
 
-def _run(*, ahora, hechas=(), env=None):
-    """Corre el chequeo con el reloj de Ecuador y la base puestos a mano."""
+def _run(*, ahora, hechas=(), ayer=("manana", "cierre"), env=None):
+    """Corre el chequeo con el reloj de Ecuador y la base puestos a mano.
+
+    `ayer` por defecto tiene las dos anclas: casi todos los casos miran HOY, y
+    un ayer incompleto metería su propia alerta en cada uno. Los tests del
+    punto ciego lo pasan a propósito.
+    """
     envs = {"DIA_EXPLICACION": "1"}
     envs.update(env or {})
-    filas = [{"momento": m, "creado_en": f"{ahora.date()} {h}"} for m, h in hechas]
+    hoy_d = ahora.date()
+    ayer_d = hoy_d - timedelta(days=1)
+    filas = [{"fecha_ec": hoy_d, "momento": m, "creado_en": f"{hoy_d} {h}"}
+             for m, h in hechas]
+    filas += [{"fecha_ec": ayer_d, "momento": m, "creado_en": f"{ayer_d} 19:01"}
+              for m in ayer]
     vista = hv.dia_captura_health
     while hasattr(vista, "__wrapped__"):
         vista = vista.__wrapped__
     with patch.dict(os.environ, envs, clear=False), \
          patch.object(_dia, "ahora_ec", lambda: ahora), \
-         patch.object(_dia, "hoy_ec", lambda: ahora.date()), \
+         patch.object(_dia, "hoy_ec", lambda: hoy_d), \
          patch.object(hv.db, "fetch_all", lambda *a, **k: filas):
         return vista().get_json()
 
@@ -139,3 +149,47 @@ def test_entra_al_health_all(_app_ctx):
     assert "dia_captura_health()" in src
     assert '"dia_captura": data23' in src
     assert 'and data23["ok"]' in src
+
+
+def test_el_punto_ciego_del_dia_perdido(_app_ctx):
+    """🚨 La regresión del 03/09 sobre el chequeo mismo.
+
+    `dia.correr_si_toca` sólo clava un ancla si la hora de HOY ya pasó
+    (`h >= 19` para el cierre). Si la app está caída de 19:00 a medianoche, el
+    cierre de ese día ya no se puede clavar NUNCA y la nota de ese día no sale.
+
+    La primera versión de este chequeo miraba sólo hoy: a la mañana siguiente
+    veía la captura de las 07:00 y daba VERDE sobre un día roto. Ese agujero es
+    PERMANENTE, y era el único que el chequeo no podía ver.
+    """
+    d = _run(ahora=datetime(2026, 9, 3, 8, 0),
+             hechas=[("manana", "07:01")],
+             ayer=("manana",))            # al 02/09 le falta el cierre
+    assert d["ok"] is False
+    assert _cats(d) == {"dia_captura_faltante_ayer"}
+    assert d["alerts"][0]["severity"] == "medium"
+    assert d["stats"]["ayer"] == {"fecha_ec": "2026-09-02",
+                                  "hechas": ["manana"],
+                                  "faltan": ["cierre"]}
+    msg = d["alerts"][0]["msg"]
+    assert "la nota del cierre no salió" in msg
+    assert "NO se rellena solo" in msg
+
+
+def test_ayer_completo_no_dice_nada(_app_ctx):
+    d = _run(ahora=datetime(2026, 9, 3, 8, 0), hechas=[("manana", "07:01")])
+    assert d["ok"] is True
+    assert d["stats"]["ayer"]["faltan"] == []
+
+
+def test_si_ayer_falta_todo_lo_dice_en_plural(_app_ctx):
+    d = _run(ahora=datetime(2026, 9, 3, 8, 0),
+             hechas=[("manana", "07:01")], ayer=())
+    assert _cats(d) == {"dia_captura_faltante_ayer"}
+    assert "faltan las capturas cierre y manana" in d["alerts"][0]["msg"]
+
+
+def test_lo_de_hoy_y_lo_de_ayer_se_avisan_juntos(_app_ctx):
+    """No son excluyentes: puede faltar el ancla de hoy Y la de ayer."""
+    d = _run(ahora=datetime(2026, 9, 3, 10, 5), hechas=[], ayer=("manana",))
+    assert _cats(d) == {"dia_captura_faltante", "dia_captura_faltante_ayer"}
