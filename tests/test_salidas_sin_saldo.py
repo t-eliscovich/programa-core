@@ -164,14 +164,14 @@ def test_cuadre_falla_sin_levantar():
         assert sss.cuadre()["ok"] is False
 
 
-def test_bodega_descuadrada_alerta_y_avisa_cada_mil_kg():
+def test_bodega_descuadrada_alerta_y_avisa_cada_50_kg():
     avisos = []
     with patch("modules._lib.metabase_client.fetch_dataset_estado",
                side_effect=_fake([], [], cuadre=DESCUADRE)), \
          patch("modules.avisos.queries.avisar", side_effect=lambda **k: avisos.append(k) or True):
         h = sss.health(10)
     assert [a["category"] for a in h["alerts"]] == ["bodega_descuadrada"]
-    assert [a["clave"] for a in avisos] == ["stock-de-mas:51:51", "stock-de-mas:52:7"]
+    assert [a["clave"] for a in avisos] == ["stock-de-mas:51:1034", "stock-de-mas:52:146"]
     assert "tela cruda tiene 7,308 kg de más" in avisos[1]["titulo"]
     assert len(h["stats"]["cuadre"]) == 3
 
@@ -267,7 +267,7 @@ def test_avisa_cuando_arregla_un_ingreso(monkeypatch):
 
 def test_avisa_cuando_baja_el_stock_de_mas(monkeypatch):
     fake = _con_avisos(monkeypatch, [
-        {"id_aviso": 5, "clave": "stock-de-mas:51:51"},
+        {"id_aviso": 5, "clave": "stock-de-mas:51:700"},
         {"id_aviso": 6, "clave": "stock-de-mas:52:7"},
         {"id_aviso": 7, "clave": "stock-de-mas:53:3"},
         {"id_aviso": 8, "clave": "stock-de-mas:99:1"},
@@ -280,7 +280,7 @@ def test_avisa_cuando_baja_el_stock_de_mas(monkeypatch):
         {"id": 53, "bodega": "Terminado", "de_mas_nuevo": 3500, "descuadrada": True},
     ]}
     hechas = sss.avisar_arreglos({"ok": False}, {"ok": False}, cua)
-    assert hechas == ["stock-de-mas:51:51", "stock-de-mas:52:7"]
+    assert hechas == ["stock-de-mas:51:700", "stock-de-mas:52:7"]
     assert "bajó a 30,500 kg de más" in fake.resueltos[0][1]
     assert "ya no tiene kilos de más" in fake.resueltos[1][1]
     assert fake.archivados == [10], "los avisos viejos del cuadre se archivan sin festejar"
@@ -314,3 +314,17 @@ def test_la_consulta_de_salidas_viejas_limpia_los_numeros():
 def test_falla_solo_si_el_saldo_sigue_positivo():
     q = sss._sql(10)
     assert "s.saldo > 0.5" in q
+
+
+def test_tela_cruda_que_sube_90_kg_vuelve_a_sonar():
+    """15/10/2026: 362 → 452 kg de más en tela cruda sin aviso nuevo."""
+    claves = []
+    for kg in (362.61, 452.77):
+        cua = [{"bodega": 52, "saldo": 1, "movimientos": 1, "diferencia": kg,
+                "stock_de_mas": kg}]
+        with patch("modules._lib.metabase_client.fetch_dataset_estado",
+                   side_effect=_fake([], [], cuadre=cua)), \
+             patch("modules.avisos.queries.avisar",
+                   side_effect=lambda **k: claves.append(k["clave"]) or True):
+            sss.health(10)
+    assert claves == ["stock-de-mas:52:7", "stock-de-mas:52:9"]

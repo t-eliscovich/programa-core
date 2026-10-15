@@ -242,6 +242,10 @@ def detectar_ingresos(dias: int = 30) -> dict:
 #: saldo 0: salidas contadas de más en los movimientos, no stock.
 CUADRE_BASE_KG = {51: 0.0, 52: 0.0, 53: 30.0}
 CUADRE_MARGEN_KG = 100.0
+#: Tamara 2026-10-15: la tela cruda pasó de 272 a 452 kg de más (+90 en un
+#: día) y la campanita no dijo nada, porque el aviso se repetía cada 1.000 kg.
+#: Ahora vuelve a avisar cada vez que la bodega crece 50 kg más.
+CUADRE_PASO_KG = 50
 
 _SQL_CUADRE = """
 WITH s AS (
@@ -543,7 +547,7 @@ def avisar_arreglos(res: dict, ing: dict, cua: dict) -> list[str]:
                     b = por_id.get(int(b_id))
                     if b is None:
                         continue
-                    hoy = int(b["de_mas_nuevo"] // 1000) if b["descuadrada"] else -1
+                    hoy = int(b["de_mas_nuevo"] // CUADRE_PASO_KG) if b["descuadrada"] else -1
                     if hoy < int(paso):
                         if b["descuadrada"]:
                             tit = (f"Asinfo corrigió parte: la bodega de "
@@ -667,9 +671,9 @@ def health(dias: int = 10, avisar: bool = True, dias_ingresos: int = 30) -> dict
                     clave=f"ingreso-doble:{i['ingreso']}",
                 )
             for b in descuadradas:
-                # Un aviso nuevo cada 1.000 kg que se agranda: si sigue
+                # Un aviso nuevo cada CUADRE_PASO_KG que se agranda: si sigue
                 # creciendo, la campanita lo vuelve a decir.
-                paso = int(b["de_mas_nuevo"] // 1000)
+                paso = int(b["de_mas_nuevo"] // CUADRE_PASO_KG)
                 avisos.avisar(
                     fuente="stock", nivel="alerta",
                     titulo=(f"Asinfo: la bodega de {b['bodega'].lower()} tiene "
