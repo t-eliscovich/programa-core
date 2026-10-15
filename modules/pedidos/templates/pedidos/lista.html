@@ -237,15 +237,16 @@
     .pd .imp{display:block !important}
     .pd .imp-tela{break-before:page;page-break-before:always}
     .pd .imp-tela:first-child{break-before:auto;page-break-before:auto}
-    .pd .imp h4{font-size:18pt !important;font-weight:700;margin:0 0 6pt !important;color:#000 !important;font-family:Arial,Helvetica,sans-serif}
-    .pd .imp table{width:99% !important;border-collapse:collapse !important;table-layout:fixed}
-    .pd .imp th,.pd .imp td{border:0.8pt solid #666 !important;padding:6pt 6pt !important;font-size:14pt !important;font-family:Arial,Helvetica,sans-serif !important;color:#000 !important;background:#fff !important;text-align:left;vertical-align:middle;line-height:1.25}
-    .pd .imp thead th{font-size:10.5pt !important;text-transform:none !important;letter-spacing:0 !important;white-space:normal !important;line-height:1.15 !important;font-weight:700 !important;background:#e5e5e5 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    .pd .imp tr.imp-tit th{font-size:15pt !important;text-align:left !important;background:#fff !important;border:0 !important;padding:0 0 5pt !important}
+    .pd .imp tbody tr{break-inside:avoid;page-break-inside:avoid}
+    .pd .imp table{width:97% !important;border:0 !important;border-collapse:collapse !important;table-layout:fixed}
+    .pd .imp th,.pd .imp td{border:0.8pt solid #666 !important;padding:4pt 5pt !important;font-size:12pt !important;font-family:Arial,Helvetica,sans-serif !important;color:#000 !important;background:#fff !important;text-align:left;vertical-align:middle;line-height:1.25}
+    .pd .imp thead th{font-size:9.5pt !important;text-transform:none !important;letter-spacing:0 !important;white-space:normal !important;line-height:1.15 !important;font-weight:700 !important;background:#e5e5e5 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .pd .imp thead{display:table-header-group}
     .pd .imp td.n,.pd .imp th.n{text-align:right}
     .pd .imp .cd{font-size:9pt;color:#444 !important}
     .pd .imp tr.fx{display:none !important}
-    @page{size:A4 landscape;margin:8mm}
+    @page{size:A4 portrait;margin:10mm 8mm}
   }
 </style>
 {% endblock %}
@@ -482,10 +483,12 @@
     <div class="imp">
     {% for t in telas %}
     <section class="imp-tela">
-      <h4>{{ t.tela }}</h4>
       <table>
-        <colgroup><col style="width:13%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:11%"><col style="width:11%"></colgroup>
-        <thead><tr><th>Acabado</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
+        <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
+        {# El título de la tela va DENTRO del thead: si la tela no entra en una
+           hoja, se repite arriba de cada hoja junto con las columnas. #}
+        <thead><tr class="imp-tit"><th colspan="9">{{ t.tela }}</th></tr>
+        <tr><th>Acabado</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
         <tbody>
         {% for f in t.filas %}
           {% set peds = pedidos_por_color.get(f.clave, []) %}
