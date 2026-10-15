@@ -197,7 +197,11 @@ def mensaje(sug: dict) -> str:
     segunda, y SIN el signo de pregunta de apertura (Tamara 02/10: *"nunca
     este ¿"*): por WhatsApp nadie lo escribe y delata que es automático."""
     pila = nombre_de_pila(sug.get("nombre"))
-    colores = _enumerar([c["color"] for c in sug["colores"]])
+    # El NOMBRE del color, no el código (Tamara 15/10/2026: "poner colores no
+    # codigos" — "MOS, VIJ y GCL" no le dice nada al cliente). Sin nombre
+    # cargado, queda el código antes que un hueco.
+    colores = _enumerar([(c.get("nombre") or "").strip().lower() or c["color"]
+                         for c in sug["colores"]])
     return (f"Hola{' ' + pila if pila else ''}, cómo está? Le cuento que "
             f"tenemos {sug['tela']} en {colores}, lista para entregar. "
             f"Le separo?")

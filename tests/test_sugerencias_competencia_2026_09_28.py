@@ -109,11 +109,13 @@ def test_nombre_de_pila(nombre, pila):
 def test_el_mensaje_habla_de_usted_y_no_dice_segunda():
     sug = {"nombre": "ANDRADE ZAMBRANO IDA ISABEL", "tela": "Microfibra 1.2",
            "whatsapp": "593999999999",
-           "colores": [{"color": "COR"}, {"color": "BLA", "segunda": True},
+           "colores": [{"color": "COR", "nombre": "CORAL"},
+                       {"color": "BLA", "nombre": "Blanco", "segunda": True},
                        {"color": "CIE"}]}
     m = s.mensaje(sug)
+    # El nombre del color, no el código (15/10); sin nombre, el código.
     assert m == ("Hola Ida, cómo está? Le cuento que tenemos Microfibra 1.2 en "
-                 "COR, BLA y CIE, lista para entregar. Le separo?")
+                 "coral, blanco y CIE, lista para entregar. Le separo?")
     assert "¿" not in m   # Tamara 02/10: "nunca este ¿"
     assert "segunda" not in m.lower() and "seg" not in m.lower()
     link = s.link_whatsapp(sug)
