@@ -1469,8 +1469,13 @@ def etapas_por_pedido(pedidos: list[dict],
     todas = sorted(set().union(*ofts_por_pedido.values())) if ofts_por_pedido else []
     if todas:
         in_list = ", ".join(f"'{o}'" for o in todas)
-        rows, ok = metabase_client.fetch_dataset_estado(
-            ASINFO_DB, _SQL_ETAPA_OFTS.format(in_list=in_list))
+        # Cacheado como las otras consultas a Asinfo (15/10/2026): sin esto
+        # Tipo de tela, Color y Pedido tardaban 3–8 s en CADA visita — esta
+        # consulta corría siempre, con o sin cache del resto.
+        import hashlib
+        clave = "etapa_ofts:" + hashlib.sha1(in_list.encode()).hexdigest()
+        rows, ok = _cacheado(clave, lambda: metabase_client.fetch_dataset_estado(
+            ASINFO_DB, _SQL_ETAPA_OFTS.format(in_list=in_list)))
         if ok:
             for r in rows:
                 n = str(r.get("parent_numero") or "").strip().upper()

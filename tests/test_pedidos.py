@@ -489,8 +489,8 @@ def test_una_familia_con_un_solo_color_no_dice_1_colores(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
         body = " ".join(c.get("/pedidos?corte=tela").get_data(as_text=True).split())
-    assert "1 color ·" in body      # el encabezado de la tela
-    assert "en 1 color" in body     # la tarjeta del faltante
+    # Tamara 15/10/2026: "super wordy todo" — ya no se cuentan colores en
+    # la pantalla; queda la red de que nunca diga "1 colores".
     assert "1 colores" not in body
 
 
@@ -504,7 +504,7 @@ def test_la_pantalla_arranca_mostrando_TODOS_con_su_ok(app, fake_db):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" in body
     assert ">ok<" in body.replace("\n", "").replace(" ", "")
-    assert "Sólo lo que falta" in body
+    assert "Solo faltantes" in body
 
 
 def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
@@ -515,7 +515,7 @@ def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
                       return_value=(filas, True)):
         body = c.get("/pedidos?corte=tela&falta=1").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" not in body
-    assert "✓</span>Sólo lo que falta" in body   # el tilde dice que está filtrado
+    assert "✓</span>Solo faltantes" in body   # el tilde dice que está filtrado
 
 
 def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_db):
@@ -597,7 +597,7 @@ def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
                       return_value=([_fila()], True)):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     tabla = body[body.index('class="pd'):]
-    assert "en rollos" in tabla          # la unidad se dice UNA vez, en la tela
+    assert 'class="kunit">rollos<' in tabla   # la unidad se dice UNA vez, al lado de los números
     # Excepción (Tamara 15/10/2026): el RIB a producir se carga en kilos.
     tabla = tabla[:tabla.index("<script>")] if "<script>" in tabla else tabla
     sin_rib = (tabla.replace("kg cada uno", "").replace("en kilos", "")

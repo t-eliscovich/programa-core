@@ -156,7 +156,9 @@
   .pd .fam .fh.cero{color:var(--verde)}
   .pd .fam.on{border-color:var(--ink);background:var(--ink);color:#fff}
   .pd .fam.on .fh{color:#fecaca}.pd .fam.on .fh.cero{color:#bbf7d0}
-  .pd .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,170px));gap:8px;margin:0}
+  .pd .kpis{display:flex;flex-wrap:wrap;align-items:flex-end;gap:8px;margin:0 0 14px}
+  .pd .kpi{min-width:120px}
+  .pd .kunit{font-size:13px;color:var(--gris);padding:0 0 10px 2px}
   .pd .kpi{border:1px solid var(--linea);border-radius:9px;padding:8px 12px;background:#fff}
   .pd .kpi .kl{font-size:11.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
   .pd .kpi .kv{font-size:24px;font-weight:800;color:var(--ink);line-height:1.15;font-variant-numeric:tabular-nums;margin-top:2px}
@@ -275,7 +277,7 @@
   <div class="top">
     <div>
       <h1>Pedidos pendientes</h1>
-      <p class="nota">{% if corte == 'tela' %}Qué tela hay que mandar a hacer para cubrir lo que pidieron los clientes.{% else %}Lo que se pidió y todavía no se despachó, contra bodega y producción.{% endif %} Fuente: Asinfo.</p>
+      {% if corte != 'tela' %}<p class="nota">Lo que se pidió y todavía no se despachó, contra bodega y producción. Fuente: Asinfo.</p>{% endif %}
     </div>
     <div class="acciones no-print">
       <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
@@ -377,7 +379,7 @@
         <a class="fam{% if c.categoria == activa %} on{% endif %}" href="{{ url_for('pedidos.lista', corte='tela', cat=c.categoria) }}">
           <span class="fn">{{ c.categoria }}</span>
           {% set h = hacer_cat.get(c.categoria, 0) %}
-          <span class="fh{{ ' cero' if not h }}">{% if h %}faltan {{ h|num_es(0) }} {{ c.u }}{% else %}todo cubierto{% endif %}</span>
+          <span class="fh{{ ' cero' if not h }}">{% if h %}{{ h|num_es(0) }}{% else %}✓{% endif %}</span>
         </a>
       {% endfor %}
     </div>
@@ -389,13 +391,13 @@
     {% endfor %}{% endfor %}
     {% set u = 'unidades' if resumen.u == 'un' else 'rollos' %}
     <div class="kpis no-print">
-      <div class="kpi"><div class="kl">Pedido</div><div class="kv">{{ k.ped|num_es(0) }}</div><div class="ks">{{ u }} · {{ k.colores }} {{ 'color' if k.colores == 1 else 'colores' }}</div></div>
-      <div class="kpi"><div class="kl">Sin memo</div><div class="kv">{{ k.sin|num_es(0) }}</div><div class="ks">{{ u }} que la fábrica todavía no tiene</div></div>
-      <div class="kpi"><div class="kl">En stock</div><div class="kv">{{ k.inv|num_es(0) }}</div><div class="ks">{{ u }} en bodega</div></div>
-      <div class="kpi"><div class="kl">En producción</div><div class="kv">{{ k.prod|num_es(0) }}</div><div class="ks">{{ u }} tiñéndose</div></div>
-      <div class="kpi res"><div class="kl">Falta (sin memo)</div><div class="kv">{{ hacer_total|num_es(0) }}</div><div class="ks">{{ u }} en {{ hacer_colores }} {{ 'color' if hacer_colores == 1 else 'colores' }}</div></div>
+      <div class="kpi"><div class="kl">Pedido</div><div class="kv">{{ k.ped|num_es(0) }}</div></div>
+      <div class="kpi"><div class="kl">Sin memo</div><div class="kv">{{ k.sin|num_es(0) }}</div></div>
+      <div class="kpi"><div class="kl">Stock</div><div class="kv">{{ k.inv|num_es(0) }}</div></div>
+      <div class="kpi"><div class="kl">En producción</div><div class="kv">{{ k.prod|num_es(0) }}</div></div>
+      <div class="kpi res" title="Lo pedido sin memo, menos el stock y lo que está en producción, color por color"><div class="kl">Falta</div><div class="kv">{{ hacer_total|num_es(0) }}</div></div>
+      <div class="kunit">{{ u }}</div>
     </div>
-    <p class="kexp no-print">Falta = lo pedido <b>sin memo</b>, menos lo que hay <b>en stock</b> y lo que está <b>en producción</b>, color por color.</p>
     {% set mc = namespace(sin=0, con=0) %}
     {% for t in telas %}{% for f in t.filas %}{% for p in pedidos_por_color.get(f.clave, []) %}
       {% if memo_lineas.get(p.numero) or enviados.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
@@ -410,23 +412,21 @@
       </div>
       {# Imprimir, ABAJO, al lado de la tabla (Tamara 15/10: "el botón de
          imprimir más abajo, está muy arriba"). #}
-      <button type="button" class="btn-imp" onclick="window.print()">🖨 Imprimir {{ activa }}</button>
-      <a class="btn-imp sec" href="{{ url_for('pedidos.lista', corte='tela', cat=activa, todas=1) }}">🖨 Imprimir todas</a>
+      <button type="button" class="btn-imp" onclick="window.print()">🖨 Imprimir</button>
+      <a class="btn-imp sec" href="{{ url_for('pedidos.lista', corte='tela', cat=activa, todas=1) }}">🖨 Todas</a>
       <a class="solo{{ ' on' if solo_faltan }}" href="{{ url_for('pedidos.lista', corte='tela', cat=activa) if solo_faltan else url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">
-        <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Sólo lo que falta</a>
+        <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Solo faltantes</a>
       {# «Cargar Mandar a hacer» + Historial: maqueta aprobada en diseño el
          15/10/2026; se prende cuando exista el envío a formulas_app. #}
       {% if mandar_a_hacer_activo %}
-      <a class="hist" href="{{ url_for('pedidos.mandados') }}">Historial de lo mandado</a>
+      <a class="hist" href="{{ url_for('pedidos.mandados') }}">Historial</a>
       <button type="button" class="btn-editar" id="editar-hacer">✎ Cargar producción</button>
       {% endif %}
     </div>
     {% endif %}
     {% for t in telas %}
       <div class="telablk">
-      <h3><span>{{ t.tela }}</span>
-        <span class="muted">{{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
-          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.hacer_d %} · <span>faltan {{ t.hacer_d|num_es(0) }}</span>{% endif %}</span>
+      <h3><span>{{ t.tela }}</span>{% if t.hacer_d %}<span class="muted" style="color:#b91c1c">falta {{ t.hacer_d|num_es(0) }}</span>{% endif %}
       </h3>
       <table class="tt">
         <colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:14%"></colgroup>
@@ -702,7 +702,7 @@
     </table>
   {% endif %}
 
-  <p class="pie">
+  <p class="pie{{ ' no-print' if corte == 'tela' }}"{% if corte == 'tela' %} hidden{% endif %}>
     Rollos enteros ({{ kg_por_rollo|num_es(1) }} kg cada uno); cuellos y puños en unidades.
     No entran los pedidos de más de {{ dias_pedido_max }} días ni las órdenes lanzadas hace más de {{ dias_produccion_viva }}.
   </p>
