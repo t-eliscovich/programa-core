@@ -78,6 +78,7 @@ def lista():
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
         pedidos_por_color={}, pedidos_lista=[], etapas={}, memo_lineas={},
+        imp_hojas=[], imprimir_todas=False,
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
     )
@@ -140,6 +141,16 @@ def lista():
             t["u"] = next((f["u"] for f in t["filas"]), "roll")
             t["sinmemo_d"] = sum(f["sinmemo_d"] for f in t["filas"])
             t["hacer_d"] = sum(f["hacer_d"] for f in t["filas"])
+        # La hoja impresa: la familia elegida, o TODAS con ?todas=1 (Tamara
+        # 15/10: "quiero imprimir todas juntas"), cada familia arrancando hoja.
+        todas = request.args.get("todas") == "1"
+        if todas:
+            fams = [(c["categoria"], service.por_tela(filas, c["categoria"]))
+                    for c in categorias]
+        else:
+            fams = [(activa, telas)]
+        ctx["imp_hojas"] = service.hojas_impresion(fams)
+        ctx["imprimir_todas"] = todas
         ctx.update(
             activa=activa, telas=telas, solo_faltan=solo_faltan,
             cubiertas=cubiertas,

@@ -200,6 +200,10 @@
   /* Cargar «Mandar a hacer» (15/10/2026): la columna está vacía; con el
      botón se vuelve casilleros, abajo una barra con el total, y se revisa en
      una ventana antes de mandar a producción. */
+  .pd .btn-imp{display:inline-flex;align-items:center;gap:6px;font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--ink);background:var(--ink);color:#fff;cursor:pointer;text-decoration:none;line-height:1.2}
+  .pd .btn-imp:hover{background:var(--azul);border-color:var(--azul)}
+  .pd .btn-imp.sec{background:#fff;color:var(--ink)}
+  .pd .btn-imp.sec:hover{background:#f1f5f9;color:var(--ink)}
   .pd .hist{font-size:14px;color:var(--azul);text-decoration:none;margin-left:auto}.pd .hist:hover{text-decoration:underline}
   .pd .btn-editar{font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--ink);background:#fff;color:var(--ink);cursor:pointer}
   .pd .btn-editar:hover{background:#f1f5f9}
@@ -246,6 +250,7 @@
     .pd .imp thead{display:table-header-group}
     .pd .imp td.n,.pd .imp th.n{text-align:right}
     .pd .imp .cd{font-size:9pt;color:#444 !important}
+    .pd .imp .fam-imp{font-weight:400}
     .pd .imp tr.fx{display:none !important}
     @page{size:A4 portrait;margin:10mm 8mm}
   }
@@ -276,7 +281,7 @@
       <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
     {% if disponible and categorias %}
       <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
-      <button type="button" class="btn{{ ' pri' if corte == 'tela' }}" onclick="window.print()">{{ 'Imprimir lista' if corte == 'tela' else 'Imprimir' }}</button>
+      {% if corte != 'tela' %}<button type="button" class="btn" onclick="window.print()">Imprimir</button>{% endif %}
     {% endif %}
     </div>
   </div>
@@ -403,6 +408,10 @@
         <a href="#" data-memof="sin">Sin memo <span class="cnt">{{ mc.sin }}</span></a>
         <a href="#" data-memof="con">Con memo <span class="cnt">{{ mc.con }}</span></a>
       </div>
+      {# Imprimir, ABAJO, al lado de la tabla (Tamara 15/10: "el botón de
+         imprimir más abajo, está muy arriba"). #}
+      <button type="button" class="btn-imp" onclick="window.print()">🖨 Imprimir {{ activa }}</button>
+      <a class="btn-imp sec" href="{{ url_for('pedidos.lista', corte='tela', cat=activa, todas=1) }}">🖨 Imprimir todas</a>
       <a class="solo{{ ' on' if solo_faltan }}" href="{{ url_for('pedidos.lista', corte='tela', cat=activa) if solo_faltan else url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">
         <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Sólo lo que falta</a>
       {# «Cargar Mandar a hacer» + Historial: maqueta aprobada en diseño el
@@ -482,20 +491,16 @@
        un renglón por color, ordenado tela → abierto A-Z → tubular A-Z, todas
        las casillas con su dato, y los pedidos en su propia columna. #}
     <div class="imp">
-    {# Orden de la hoja (Tamara 15/10: "fleece 102 que onda?"): primero las
-       telas grandes (más de 12 colores), cada una en su hoja; después TODAS
-       las chicas juntas, una abajo de la otra, sin partirse. Dentro de cada
-       grupo, alfabético. #}
-    {% set ns_imp = namespace(grandes=[], chicas=[]) %}
-    {% for t in telas %}{% if t.filas|length > 12 %}{% set ns_imp.grandes = ns_imp.grandes + [t] %}{% else %}{% set ns_imp.chicas = ns_imp.chicas + [t] %}{% endif %}{% endfor %}
-    {% for t in ns_imp.grandes + ns_imp.chicas %}
-    {% set es_grande = t.filas|length > 12 %}
-    <section class="imp-tela {{ 'grande' if es_grande else ('chica nueva' if (ns_imp.grandes and loop.index0 == ns_imp.grandes|length) else 'chica') }}">
+    {# Orden de la hoja: service.hojas_impresion (grandes una por hoja,
+       después las chicas juntas; cada familia arranca hoja). #}
+    {% for h in imp_hojas %}
+    {% set t = h.t %}
+    <section class="imp-tela {{ h.clase }}">
       <table>
         <colgroup><col style="width:11%"><col style="width:17%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:11%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
            hoja, se repite arriba de cada hoja junto con las columnas. #}
-        <thead><tr class="imp-tit"><th colspan="9">{{ t.tela }}</th></tr>
+        <thead><tr class="imp-tit"><th colspan="9">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
         <tr><th>Acabado</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
         <tbody>
         {% for f in t.filas %}
@@ -705,6 +710,10 @@
 </div>
 
 <script>
+  {% if imprimir_todas %}
+  // ?todas=1: la página se abre para imprimir todas las familias juntas.
+  window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });
+  {% endif %}
   // Cargar «Mandar a hacer» → revisar → mandar a producción (15/10/2026).
   (function () {
     var pd = document.querySelector('.pd'), bt = document.getElementById('editar-hacer');

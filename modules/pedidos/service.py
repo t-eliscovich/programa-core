@@ -631,6 +631,32 @@ def por_tela(filas: list[dict], categoria: str,
     return sorted(acc.values(), key=lambda b: b["tela"].upper())
 
 
+#: Una tela con más colores que esto va sola en su hoja impresa; las demás
+#: ("chicas": Naty, Kiana, Microfibra…) van juntas (Tamara 15/10/2026).
+TELA_CHICA_MAX = 12
+
+
+def hojas_impresion(familias: list[tuple[str, list[dict]]]) -> list[dict]:
+    """El orden de la hoja impresa del corte Tipo de tela.
+
+    Por familia: primero las telas grandes, cada una en hoja nueva; después
+    las chicas juntas, sin partirse, y la primera de ellas también arranca
+    hoja (una chica nunca queda pegada abajo de una grande ni de otra
+    familia). Devuelve `[{"t": tela, "familia": ..., "clase": ...}]`, con
+    clase "grande" | "chica nueva" | "chica" (la usa el CSS de impresión).
+    """
+    out: list[dict] = []
+    for familia, telas in familias:
+        grandes = [t for t in telas if len(t["filas"]) > TELA_CHICA_MAX]
+        chicas = [t for t in telas if len(t["filas"]) <= TELA_CHICA_MAX]
+        for t in grandes:
+            out.append({"t": t, "familia": familia, "clase": "grande"})
+        for i, t in enumerate(chicas):
+            clase = "chica nueva" if (i == 0 and out) else "chica"
+            out.append({"t": t, "familia": familia, "clase": clase})
+    return out
+
+
 def _pedido_en_unidad(p: dict, f: dict) -> float:
     """La cantidad de UN pedido en la unidad en que se muestra su renglón
     (rollos o unidades; kilos si el cuello no tiene factor)."""
