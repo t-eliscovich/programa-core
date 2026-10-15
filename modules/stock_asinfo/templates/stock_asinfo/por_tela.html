@@ -10,6 +10,7 @@
    no se puede restar (ver modules/asinfo/stock_terminado.py). #}
 {% extends "base.html" %}
 {% from "_ui.html" import nav_inventario with context %}
+{% import "mi_cartera/_stock_lineas.html" as sl %}
 {% block title %}Stock por tela{% endblock %}
 {% block breadcrumb %}
   <span>Stock</span> / <strong>Stock por tela</strong>
@@ -27,9 +28,9 @@
              border:1px solid var(--line); border-radius:8px; padding:3px 8px; white-space:nowrap; }
   .st-hora.viejo { color:var(--bad); background:var(--bad-soft); border-color:#F3C7C7; }
   .st-barra { display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin-bottom:8px; }
-  .st-barra input[type=search] { flex:1 1 260px; min-width:0; font:inherit; font-size:14px;
+  .st-barra input[type=search] { flex:1 1 200px; min-width:0; font:inherit; font-size:14px;
              padding:7px 11px; border:1px solid var(--line); border-radius:8px; }
-  .st-barra select { flex:0 1 220px; min-width:0; font:inherit; font-size:14px; padding:7px 8px;
+  .st-barra select { flex:0 1 190px; min-width:0; font:inherit; font-size:14px; padding:7px 8px;
              border:1px solid var(--line); border-radius:8px; background:#fff; }
   .st-cal { display:flex; background:#EDEFF4; border-radius:8px; padding:2px; }
   .st-cal a { font-size:13px; font-weight:600; color:var(--ink-2); padding:5px 12px; border-radius:6px; text-decoration:none; }
@@ -55,7 +56,7 @@
   .st-col:last-child { margin-bottom:10px; }
   .st-col .cc { flex:0 0 38px; font-family:ui-monospace,Menlo,monospace; font-size:12px; font-weight:700; color:var(--ink-2); }
   .st-col .cn { flex:1 1 auto; min-width:0; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-  .st-col .tg { flex:0 0 auto; display:flex; gap:3px; }
+  .st-col .tg { flex:0 0 auto; display:flex; gap:3px; justify-content:flex-end; min-width:120px; }
   .st-col .kgr { flex:0 0 150px; display:flex; justify-content:flex-end; gap:12px; align-items:baseline; }
   .st-col .kg { font-weight:600; }
   .st-col .rol { font-size:12px; color:var(--ink-3); min-width:44px; text-align:right; }
@@ -64,6 +65,7 @@
   .tag.comp { background:#EDE9FE; color:#5B21B6; }
   .tag.dos { background:var(--warn-soft); color:var(--warn); }
   .tag.pri { background:#EEF1F6; color:#475569; }
+  .tag.aca { background:#fff; color:#475569; border:1px solid var(--line); }
   .spt .vacio { padding:24px; text-align:center; color:var(--ink-2); background:#fff;
                 border:1px solid var(--line); border-radius:10px; }
   .spt [hidden] { display:none !important; }
@@ -84,16 +86,20 @@
 
   <div class="st-barra">
     <input type="search" id="st-q" placeholder="Buscar tela o color…" autocomplete="off" aria-label="Buscar tela o color">
-    <select id="st-grupo" aria-label="Grupo">
-      <option value="">Todos los grupos</option>
+    <select id="st-cat" aria-label="Categoría">
+      <option value="">Categoría</option>
       {% for g_ in grupos %}<option value="{{ g_ }}">{{ g_ }}</option>{% endfor %}
+    </select>
+    <select id="st-tela" aria-label="Subcategoría">
+      <option value="">Subcategoría</option>
+      {% for t_ in telas|sort(attribute='tela') %}<option value="{{ t_.tela }}" data-cat="{{ t_.grupo }}">{{ t_.tela }}</option>{% endfor %}
     </select>
     <div class="st-cal" id="st-cal">
       <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">PRI</a><a href="#" data-cal="seg">SEG</a>
     </div>
   </div>
   <div class="st-ley"><em class="tag comp">🏆</em> en la competencia de saldos (×N: lo que vale el kilo) ·
-    <em class="tag">ABI</em> tiene rollos abiertos</div>
+    cada color va abierto por calidad (PRI / SEG) y acabado (TUB / ABI)</div>
 
   {% if viejo %}
     <div class="st-aviso">Asinfo no contestó: es el stock de las {{ leido|hora_ec('%H:%M') }}.</div>
@@ -102,27 +108,13 @@
   {% if telas %}
   <div class="st-lista" id="st-lista">
   {% for t in telas %}
-    <details class="st-tela" data-grupo="{{ t.grupo }}"
+    <details class="st-tela" data-grupo="{{ t.grupo }}" data-tela="{{ t.tela }}"
              data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
       <summary>
         <span class="tn">{{ t.tela }}<span class="gr">{{ t.grupo }}</span></span>
         <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
       </summary>
-      {% for c in t.colores %}
-        <div class="st-col" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
-             data-kg="{{ '%.1f'|format(c.kg) }}" data-seg="{{ '%.1f'|format(c.seg_kg) }}"
-             data-rollos="{{ c.rollos }}" data-seg-rollos="{{ c.seg_rollos }}">
-          <span class="cc">{{ c.cod }}</span>
-          <span class="cn">{{ c.color }}</span>
-          {%- set cp = comp.get((t.tela, c.cod)) %}
-          <span class="tg">
-          {%- if cp %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ (' ×' ~ cp.puntos) if cp.puntos > 1 }}</em>{% endif %}
-          {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
-          {%- if (c.kg - c.seg_kg) > 0.05 %}<em class="tag pri">PRI</em>{% endif %}
-          {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}</span>
-          <span class="kgr"><b class="kg kg-c">{{ c.kg|num_es(0) }}</b><span class="rol rol-c">{{ c.rollos }} r</span></span>
-        </div>
-      {% endfor %}
+      {% for c in t.colores %}{{ sl.lineas(t, c, comp) }}{% endfor %}
     </details>
   {% endfor %}
   </div>

@@ -111,7 +111,7 @@ def _armar(filas: list[dict]) -> list[dict]:
         c = t["colores"].setdefault(cod, {
             "cod": cod, "color": nombre_color or cod, "_kg_nombre": {},
             "kg": 0.0, "rollos": 0, "seg_kg": 0.0, "seg_rollos": 0,
-            "tub_kg": 0.0, "abi_kg": 0.0})
+            "tub_kg": 0.0, "abi_kg": 0.0, "lineas": {}})
         # Algunos rollos del mismo código traen OTRO nombre de color en el
         # lote — a veces un error de carga de Asinfo (13/10: un rollo de 6 kg
         # del producto BLA, BLANCO, con color "NEGRO" en el lote). Manda el
@@ -132,12 +132,25 @@ def _armar(filas: list[dict]) -> list[dict]:
             c["abi_kg"] += kg
         elif acab == "TUB":
             c["tub_kg"] += kg
+        # ⭐ Una LÍNEA por calidad × acabado (Tamara 15/10/2026: "separá por
+        # pri y seg y abi y tub como en la competencia. no es lo mismo"). El
+        # total del color no dice cuánto hay de cada una, y ofrecer 200 kg
+        # "de las dos" es prometer algo que puede no estar.
+        cal = "SEG" if seg else "PRI"
+        aca = acab if acab in ("TUB", "ABI") else ""
+        ln = c["lineas"].setdefault((cal, aca), {
+            "cal": cal, "aca": aca, "kg": 0.0, "rollos": 0})
+        ln["kg"] += kg
+        ln["rollos"] += rollos
     out = []
     for t in telas.values():
         for c in t["colores"].values():
             kn = c.pop("_kg_nombre")
             if kn:
                 c["color"] = max(kn.items(), key=lambda x: (x[1], x[0]))[0]
+            # PRI antes que SEG; dentro de cada calidad, la de más kilos.
+            c["lineas"] = sorted(c["lineas"].values(),
+                                 key=lambda ln: (ln["cal"] != "PRI", -ln["kg"]))
         t["colores"] = sorted(t["colores"].values(), key=lambda c: -c["kg"])
         out.append(t)
     out.sort(key=lambda t: -t["kg"])

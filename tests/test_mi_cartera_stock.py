@@ -172,7 +172,7 @@ def test_el_nombre_del_color_es_el_de_la_mayoria_de_los_kilos():
 
 def test_el_stock_se_busca_por_codigo_y_por_color():
     from pathlib import Path
-    html = Path("modules/mi_cartera/templates/mi_cartera/stock.html").read_text()
+    html = Path("modules/mi_cartera/templates/mi_cartera/_stock_lineas.html").read_text()
     assert "data-buscar=\"{{ (c.color ~ ' ' ~ c.cod)|lower }}\"" in html
     assert '<span class="cc">{{ c.cod }}</span>' in html
 
@@ -194,10 +194,15 @@ def test_lo_de_la_competencia_va_marcado(vendedor, monkeypatch):
     html = vendedor.get("/mi-cartera/stock").data.decode()
     lista = html[html.index('id="st-lista"'):]
     import re
-    neg = re.search(r'<span class="cc">NEG</span>.*?</div>', lista, re.S).group(0)
-    assert '<em class="tag pri">PRI</em>' in neg and '<em class="tag dos">SEG</em>' in neg
-    assert ">🏆 ×10</em>" in neg           # NEG: entra por la segunda; el 🏆 sólo dice que está
-    assert neg.index("🏆") < neg.index(">PRI<")   # la competencia va primero
+    # ⭐ 15/10: cada color va abierto en una línea por calidad × acabado.
+    negs = re.findall(r'<span class="cc">NEG</span>.*?</div>', lista, re.S)
+    assert len(negs) == 2
+    pri, seg = negs
+    assert '<em class="tag pri">PRI</em>' in pri and "SEG" not in pri
+    assert '<em class="tag dos">SEG</em>' in seg and ">PRI<" not in seg
+    assert "🏆" not in pri                 # NEG entra sólo por la segunda
+    assert ">🏆 ×10</em>" in seg
+    assert seg.index("🏆") < seg.index(">SEG<")   # la competencia va primero
     gos = re.search(r'<span class="cc">GOS</span>.*?</div>', lista, re.S).group(0)
     assert ">🏆 ×10</em>" in gos and "SEG" not in gos   # GOS: entero, sólo primera
     assert lista.count("🏆") == 2           # BLANCO vendido (0 kg) no se marca
@@ -263,3 +268,35 @@ def test_sin_stock_ver_no_entra(app, client, fake_db):
     fake_db.add_user("otro", pw, rid)
     client.post("/login", data={"username": "otro", "password": "Otro2026xx"})
     assert client.get("/stock/por-tela").status_code == 404
+
+
+def test_cada_color_va_abierto_por_calidad_y_acabado():
+    """Tamara 15/10/2026: "separá por pri y seg y abi y tub como en la
+    competencia. no es lo mismo"."""
+    filas = FILAS + [
+        {"grupo": "Fleece", "tela": "Fleece 102", "cod_color": "NEG", "color": "NEGRO",
+         "calidad": "PRI", "acabado": "ABI", "rollos": 4, "kg": 80.0}]
+    neg = st._armar(filas)[0]["colores"][0]
+    assert [(ln["cal"], ln["aca"], ln["kg"], ln["rollos"]) for ln in neg["lineas"]] == [
+        ("PRI", "TUB", 2000.0, 90), ("PRI", "ABI", 80.0, 4), ("SEG", "TUB", 72.5, 5)]
+    assert sum(ln["kg"] for ln in neg["lineas"]) == neg["kg"]
+
+
+def test_filtro_por_categoria_y_subcategoria(oficina, vendedor_y_oficina_html):
+    for html in vendedor_y_oficina_html:
+        assert 'id="st-cat"' in html and 'id="st-tela"' in html
+        assert '<option value="Fleece 102" data-cat="Fleece">' in html
+        assert 'data-tela="Jersey 3"' in html
+        assert 'id="st-grupo"' not in html
+
+
+@pytest.fixture
+def vendedor_y_oficina_html(app, client, fake_db, monkeypatch):
+    _fuente(monkeypatch, [(FILAS, True)])
+    out = [client.get("/stock/por-tela").data.decode()]
+    client.get("/logout")
+    rid = fake_db.add_role("Vendedor", ["micartera.ver"])
+    fake_db.add_user("pablo", bcrypt.hashpw(b"Vendedor2026", bcrypt.gensalt(rounds=4)), rid, vend="PPR")
+    client.post("/login", data={"username": "pablo", "password": "Vendedor2026"})
+    out.append(client.get("/mi-cartera/stock").data.decode())
+    return out

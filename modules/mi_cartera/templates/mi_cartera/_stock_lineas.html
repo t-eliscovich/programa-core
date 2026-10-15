@@ -1,0 +1,30 @@
+{# Las LÍNEAS de un color en el Stock por tela: una por calidad × acabado.
+
+   ⭐ Tamara 15/10/2026: "separá por pri y seg y abi y tub como en la
+   competencia. no es lo mismo". El total del color no dice cuánto hay de
+   cada una; cada línea lleva sus kilos y sus rollos.
+
+   Un solo macro para el portal de vendedores (/mi-cartera/stock) y la oficina
+   (/stock/por-tela): dos copias del mismo renglón se despegan a la primera
+   corrección. Los data-* son los que lee _stock_filtros.js (data-seg = los
+   kilos si la línea es SEG, 0 si es PRI).
+
+   El 🏆 va en la línea que suma puntos: si el color entra a la competencia
+   sólo por la segunda, sólo en la línea SEG. #}
+{% macro lineas(t, c, comp) -%}
+{%- set cp = comp.get((t.tela, c.cod)) if comp else none %}
+{%- for ln in c.lineas %}
+  {%- set es_seg = ln.cal == 'SEG' %}
+  <div class="st-col" data-col="{{ c.cod }}" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
+       data-kg="{{ '%.1f'|format(ln.kg) }}" data-seg="{{ '%.1f'|format(ln.kg if es_seg else 0) }}"
+       data-rollos="{{ ln.rollos }}" data-seg-rollos="{{ ln.rollos if es_seg else 0 }}">
+    <span class="cc">{{ c.cod }}</span>
+    <span class="cn">{{ c.color }}</span>
+    <span class="tg">
+    {%- if cp and (es_seg or not cp.solo_seg) %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ (' ×' ~ cp.puntos) if cp.puntos > 1 }}</em>{% endif %}
+    {%- if ln.aca %}<em class="tag aca">{{ ln.aca }}</em>{% endif %}
+    {%- if es_seg %}<em class="tag dos">SEG</em>{% else %}<em class="tag pri">PRI</em>{% endif %}</span>
+    <span class="kgr"><b class="kg kg-c">{{ ln.kg|num_es(0) }}</b><span class="rol rol-c">{{ ln.rollos }} r</span></span>
+  </div>
+{%- endfor %}
+{%- endmacro %}

@@ -12,6 +12,7 @@
    buscador filtra MIENTRAS SE TIPEA (tela, color o código de color) y abre
    las telas donde encontró un color. Sin plata: ni precio ni costo. #}
 {% extends "mi_cartera/base.html" %}
+{% import "mi_cartera/_stock_lineas.html" as sl %}
 {% set seccion = 'stock' %}
 {% block title %}Stock{% endblock %}
 
@@ -28,9 +29,13 @@
            autocomplete="off" enterkeyhint="search" aria-label="Buscar tela o color">
   </form>
   <div class="st-filtros">
-    <select id="st-grupo" aria-label="Grupo">
-      <option value="">Todos los grupos</option>
+    <select id="st-cat" aria-label="Categoría">
+      <option value="">Categoría</option>
       {% for g_ in grupos %}<option value="{{ g_ }}">{{ g_ }}</option>{% endfor %}
+    </select>
+    <select id="st-tela" aria-label="Subcategoría">
+      <option value="">Subcategoría</option>
+      {% for t_ in telas|sort(attribute='tela') %}<option value="{{ t_.tela }}" data-cat="{{ t_.grupo }}">{{ t_.tela }}</option>{% endfor %}
     </select>
     <div class="st-cal" id="st-cal">
       <a href="#" data-cal="todo" class="on">Todo</a><a href="#" data-cal="pri">PRI</a><a href="#" data-cal="seg">SEG</a>
@@ -50,7 +55,7 @@
 {% if telas %}
 <div class="card st-lista" id="st-lista">
 {% for t in telas %}
-  <details class="st-tela" data-grupo="{{ t.grupo }}"
+  <details class="st-tela" data-grupo="{{ t.grupo }}" data-tela="{{ t.tela }}"
            data-buscar="{{ (t.tela ~ ' ' ~ t.grupo)|lower }}">
     <summary>
       <b class="tn">{{ t.tela }}</b>
@@ -60,36 +65,7 @@
           abrir la tela se ven. #}
       <b class="kg kg-t">{{ t.kg|num_es(0) }}</b>
     </summary>
-    {% for c in t.colores %}
-      <div class="st-col" data-buscar="{{ (c.color ~ ' ' ~ c.cod)|lower }}"
-           data-kg="{{ '%.1f'|format(c.kg) }}" data-seg="{{ '%.1f'|format(c.seg_kg) }}"
-           data-rollos="{{ c.rollos }}" data-seg-rollos="{{ c.seg_rollos }}">
-        {# El código del color va ADELANTE y como hermano (nunca adentro del
-           span con ellipsis: si el nombre no entra, se corta el nombre y el
-           código queda). Tamara 13/10: "que el color también tenga su código
-           y se pueda buscar por ambos" — el buscador ya miraba los dos. #}
-        <span class="cc">{{ c.cod }}</span>
-        <span class="cn">{{ c.color }}</span>
-        {#- ⭐ Las etiquetas, en este orden (Tamara 13/10, tercera vuelta:
-            "competencia ponelo primero así queda prolijo"):
-              🏆 ×N   si el color está en la competencia (lo que vale el kilo);
-                      sólo dice que está — no si es por la segunda ("sólo hace
-                      falta que diga competencia, no competencia y segunda").
-              ABI     si tiene rollos abiertos.
-              PRI/SEG lo que hay en bodega, cada una en su etiqueta.
-            Se marca el COLOR y no la tela: casi todas las telas tienen algún
-            color en la competencia y un 🏆 en cada tela no diría nada. #}
-        {%- set cp = comp.get((t.tela, c.cod)) %}
-        <span class="tg">
-        {%- if cp %}<em class="tag comp" title="En la competencia: cada kilo vale {{ cp.puntos }} punto{{ '' if cp.puntos == 1 else 's' }}">🏆{{ (' ×' ~ cp.puntos) if cp.puntos > 1 }}</em>{% endif %}
-        {%- if c.abi_kg > 0 %}<em class="tag">ABI</em>{% endif %}
-        {%- if (c.kg - c.seg_kg) > 0.05 %}<em class="tag pri">PRI</em>{% endif %}
-        {%- if c.seg_kg > 0 %}<em class="tag dos">SEG</em>{% endif %}</span>
-        {#- Los kilos y, chiquito debajo, los rollos: así las etiquetas tienen
-            lugar al lado del color también a 320 px (13/10/2026). #}
-        <span class="kgr"><b class="kg kg-c">{{ c.kg|num_es(0) }}</b><span class="rol rol-c">{{ c.rollos }} r</span></span>
-      </div>
-    {% endfor %}
+    {% for c in t.colores %}{{ sl.lineas(t, c, comp) }}{% endfor %}
   </details>
 {% endfor %}
 </div>
@@ -104,11 +80,11 @@
   .st-hora.viejo{color:var(--bad);background:var(--bad-soft);border-color:#F3C7C7}
   .appbar .search{margin:8px 0 0}
   .appbar .search input{padding:8px 12px;font-size:15px;width:100%;min-width:0;box-sizing:border-box}
-  .st-filtros{display:flex;gap:8px;margin-top:8px}
+  .st-filtros{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
   .st-ley{margin-top:7px;font-size:11px;line-height:1.5;color:var(--ink-3)}
   .st-ley .st-ft{margin-left:0;padding:0 5px;font-size:9.5px}
   .st-ley .tag{font-size:9px;padding:0 3px}
-  .st-filtros select{flex:1 1 0;min-width:0;font:inherit;font-size:15px;padding:6px 8px;
+  .st-filtros select{flex:1 1 120px;min-width:0;font:inherit;font-size:15px;padding:6px 8px;
     border:1px solid var(--line);border-radius:9px;background:var(--surface);color:var(--ink)}
   .st-cal{flex:0 0 auto;display:flex;background:#EDEFF4;border-radius:9px;padding:2px}
   .st-cal a{font-size:13px;font-weight:600;color:var(--ink-2);padding:5px 10px;border-radius:7px;white-space:nowrap}
@@ -153,6 +129,7 @@
   .tag.comp{background:#EDE9FE;color:#5B21B6}
   .tag.dos{background:var(--warn-soft);color:var(--warn)}
   .tag.pri{background:#EEF1F6;color:#475569}
+  .tag.aca{background:#fff;color:#475569;box-shadow:inset 0 0 0 1px var(--line)}
   [hidden]{display:none!important}
 </style>
 

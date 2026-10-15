@@ -1,7 +1,12 @@
 /* Los filtros del Stock por tela — los usan el portal de vendedores
    (/mi-cartera/stock) y la oficina (/stock/por-tela, 15/10/2026). Mismos ids
-   y data-* en las dos pantallas: st-q, st-grupo, st-cal, st-lista, st-sub,
-   st-vacio, st-eco. */
+   y data-* en las dos pantallas: st-q, st-cat, st-tela, st-cal, st-lista,
+   st-sub, st-vacio, st-eco.
+
+   ⭐ Cada .st-col es UNA LÍNEA: color × calidad × acabado (15/10/2026, "como
+   en la competencia"). data-col agrupa las líneas del mismo color para que
+   ordenar por kilos no las separe. Filtro por CATEGORÍA y después por
+   SUBCATEGORÍA (la tela): la segunda lista sólo ofrece las de la primera. */
 /* Los filtros corren en el navegador: las ~3.700 filas ya están en la página.
 
    El buscador es por PALABRAS y sin tildes (13/10/2026, "que sea fácil"):
@@ -13,7 +18,9 @@
   var input = document.getElementById('st-q');
   var lista = document.getElementById('st-lista');
   if (!input || !lista) { return; }
-  var grupoSel = document.getElementById('st-grupo');
+  var catSel = document.getElementById('st-cat');
+  var telaSel = document.getElementById('st-tela');
+  var telaOpts = Array.prototype.slice.call(telaSel.options).slice(1);
   var sub = document.getElementById('st-sub');
   var vacio = document.getElementById('st-vacio');
   var eco = document.getElementById('st-eco');
@@ -27,6 +34,7 @@
   telas.forEach(function (t) {
     t._txt = norm(t.getAttribute('data-buscar'));
     t._cols = Array.prototype.slice.call(t.querySelectorAll('.st-col'));
+    t._cols.forEach(function (c, i) { c._i = i; });
     t._cols.forEach(function (c) { c._txt = t._txt + ' ' + norm(c.getAttribute('data-buscar')); });
     /* Si la abre o cierra la persona, ya no es "de la búsqueda": no se la
        cierra sola. (El evento toggle no sirve: llega tarde, también cuando
@@ -36,10 +44,11 @@
 
   function aplicar() {
     var pals = norm(input.value).split(/\s+/).filter(Boolean);
-    var g = grupoSel.value;
+    var g = catSel.value, tl = telaSel.value;
     var vis = 0, kgTot = 0, rolTot = 0;
     telas.forEach(function (t) {
-      var okGrupo = !g || t.getAttribute('data-grupo') === g;
+      var okGrupo = (!g || t.getAttribute('data-grupo') === g) &&
+                    (!tl || t.getAttribute('data-tela') === tl);
       var porTela = todas(pals, t._txt);
       var kg = 0, nCol = 0;
       t._cols.forEach(function (c) {
@@ -76,8 +85,14 @@
        orden nuevo es distinto del que ya está. */
     if (cal !== calOrden) {
       telas.forEach(function (t) {
-        t._cols.slice().sort(function (a, b) { return b._kc - a._kc; })
-          .forEach(function (c) { t.appendChild(c); });
+        /* Por los kilos del COLOR (sus líneas suman), y adentro del color
+           el orden del servidor: PRI antes que SEG. */
+        var porCol = {};
+        t._cols.forEach(function (c) { var k = c.getAttribute('data-col'); porCol[k] = (porCol[k] || 0) + c._kc; });
+        t._cols.slice().sort(function (a, b) {
+          var ka = a.getAttribute('data-col'), kb = b.getAttribute('data-col');
+          return (porCol[kb] - porCol[ka]) || (ka < kb ? -1 : ka > kb ? 1 : a._i - b._i);
+        }).forEach(function (c) { t.appendChild(c); });
       });
       calOrden = cal;
     }
@@ -92,7 +107,7 @@
     /* El cartel dice POR QUÉ no hay nada: con un grupo o "SEG" puestos, la
        búsqueda vacía no es la causa y "No encontré nada con “”" confunde. */
     var q = input.value.trim(), donde = [];
-    if (g) { donde.push('en ' + g); }
+    if (tl) { donde.push('en ' + tl); } else if (g) { donde.push('en ' + g); }
     if (cal !== 'todo') { donde.push('de ' + (cal === 'seg' ? 'segunda' : 'primera')); }
     eco.textContent = (q ? 'No encontré “' + q + '”' : 'No hay stock') + (donde.length ? ' ' + donde.join(' ') : '') + '.';
   }
@@ -100,7 +115,18 @@
      3.700 renglones por cada letra se siente. */
   var espera;
   input.addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(aplicar, 120); });
-  grupoSel.addEventListener('change', aplicar);
+  catSel.addEventListener('change', function () {
+    /* Se rearma la lista en vez de esconder opciones: Safari del iPhone no
+       respeta `hidden` en un <option>. */
+    var g = catSel.value, antes = telaSel.value, sigue = false;
+    telaOpts.forEach(function (o) { if (o.parentNode) { telaSel.removeChild(o); } });
+    telaOpts.forEach(function (o) {
+      if (!g || o.getAttribute('data-cat') === g) { telaSel.appendChild(o); if (o.value === antes) { sigue = true; } }
+    });
+    telaSel.value = sigue ? antes : '';
+    aplicar();
+  });
+  telaSel.addEventListener('change', aplicar);
   document.querySelectorAll('#st-cal a').forEach(function (a) {
     a.addEventListener('click', function (ev) {
       ev.preventDefault();
