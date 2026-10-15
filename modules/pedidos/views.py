@@ -77,6 +77,7 @@ def lista():
         colores=[], telas=[], activa="", resumen=None,
         clientes=[], solo_faltan=False, cubiertas=[],
         pedidos_por_color={}, pedidos_lista=[], etapas={}, memo_lineas={},
+        hacer_cat={}, hacer_total=0, hacer_colores=0,
     )
 
     if not disponible or not categorias:
@@ -112,20 +113,35 @@ def lista():
         nombres = [c["categoria"] for c in categorias]
         activa = pedida if pedida in nombres else (nombres[0] if nombres else "")
         solo_faltan = request.args.get("falta") == "1"
-        telas = service.por_tela(filas, activa, solo_faltan=solo_faltan) if activa else []
+        pedidos_por_color = service.pedidos_por_color()
+        memo_lineas = _memo_de_lineas(pedidos_por_color)
+        # Falta (sin memo) y Mandar a hacer (Tamara 15/10/2026), para TODAS
+        # las familias: las pestañas muestran lo que hay que mandar a hacer.
+        service.en_unidad(filas, "alt")
+        service.sin_memo_y_a_hacer(filas, pedidos_por_color, memo_lineas)
+        hacer_cat: dict[str, int] = {}
+        for f in filas:
+            hacer_cat[f["categoria"]] = hacer_cat.get(f["categoria"], 0) + f["hacer_d"]
+        telas = service.por_tela(filas, activa) if activa else []
+        cubiertas = []
+        if solo_faltan:
+            for t in telas:
+                t["filas"] = [f for f in t["filas"] if f["hacer_d"] > 0]
+            cubiertas = [t["tela"] for t in telas if not t["filas"]]
+            telas = [t for t in telas if t["filas"]]
         for t in telas:
-            service.en_unidad(t["filas"], "alt")
-            t["faltan_d"], t["dec"], t["u"] = service.total_en_unidad(
-                t["faltan_kg"], "alt",
-                any(f["en_unidades"] for f in t["filas"]),
-                next((f["un_por_kg"] for f in t["filas"] if f["un_por_kg"]), 0.0))
+            t["u"] = next((f["u"] for f in t["filas"]), "roll")
+            t["sinmemo_d"] = sum(f["sinmemo_d"] for f in t["filas"])
+            t["hacer_d"] = sum(f["hacer_d"] for f in t["filas"])
         ctx.update(
             activa=activa, telas=telas, solo_faltan=solo_faltan,
-            cubiertas=service.telas_sin_faltante(filas, activa) if solo_faltan else [],
+            cubiertas=cubiertas,
             resumen=next((c for c in categorias if c["categoria"] == activa), None),
-            pedidos_por_color=service.pedidos_por_color(),
+            pedidos_por_color=pedidos_por_color, memo_lineas=memo_lineas,
+            hacer_cat=hacer_cat,
+            hacer_total=sum(t["hacer_d"] for t in telas),
+            hacer_colores=sum(1 for t in telas for f in t["filas"] if f["hacer_d"] > 0),
         )
-        ctx["memo_lineas"] = _memo_de_lineas(ctx["pedidos_por_color"])
     # corte == "categoria" usa `categorias`, ya calculado.
 
     return render_template("pedidos/lista.html", **ctx)

@@ -574,13 +574,31 @@ def por_categoria(filas: list[dict]) -> list[dict]:
     return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
 
 
+#: Orden del acabado adentro de una tela en el corte Tipo de tela: primero
+#: abierto, después tubular, al final lo que no dice (Tamara 15/10/2026).
+_ORDEN_ACABADO = {"ABI": 0, "TUB": 1}
+
+
+def orden_tipo_de_tela(f: dict) -> tuple:
+    """Clave de orden de un renglón en el corte Tipo de tela.
+
+    Tamara 15/10/2026: *"ordenado primero por tipo de tela, después abierto,
+    después tubular, y cada color por orden alfabético primero en abierto
+    después en tubular"*. Es una lista para chequear a mano contra el papel,
+    así que manda el ALFABETO, no el faltante (reemplaza el orden por faltante
+    y el "ABI y TUB juntos" del 07/10 en ESTE corte).
+    """
+    return (_ORDEN_ACABADO.get(f.get("acabado") or "", 2),
+            (f.get("color") or "").upper(), f.get("codigo") or "")
+
+
 def por_tela(filas: list[dict], categoria: str,
              solo_faltan: bool = False) -> list[dict]:
     """Las filas de una familia, agrupadas por tela.
 
-    Adentro de cada tela, los colores van ordenados por faltante descendente:
-    lo que falta arriba. Es el orden que pidió la dueña para /informes/traza —
-    la pantalla ordena por lo que MOVIÓ, no alfabéticamente.
+    Las telas van en orden alfabético y, adentro de cada una, primero los
+    colores en abierto (A→Z) y después los de tubular (A→Z) — ver
+    `orden_tipo_de_tela`.
 
     ⚠ `solo_faltan` va APAGADO por defecto y así tiene que quedarse. Probamos
     encenderlo —de 649 colores pedidos sólo 232 necesitan tela, y los otros 417
@@ -607,10 +625,54 @@ def por_tela(filas: list[dict], categoria: str,
         if f["faltan_kg"] > 0:
             b["faltan_kg"] += f["faltan_kg"]
     for b in acc.values():
-        b["filas"] = juntar_acabados(b["filas"])
+        b["filas"] = sorted(b["filas"], key=orden_tipo_de_tela)
         for k in ("pedido_kg", "pedido_rollos", "pedido_un", "faltan_kg"):
             b[k] = round(b[k], 1)
-    return sorted(acc.values(), key=lambda b: -b["faltan_kg"])
+    return sorted(acc.values(), key=lambda b: b["tela"].upper())
+
+
+def _pedido_en_unidad(p: dict, f: dict) -> float:
+    """La cantidad de UN pedido en la unidad en que se muestra su renglón
+    (rollos o unidades; kilos si el cuello no tiene factor)."""
+    k = _factor(f, "alt")
+    if k is not None and f["en_unidades"] and p.get("es_unidad"):
+        return p["cantidad"]
+    if k is not None and not f["en_unidades"] and p.get("es_rollo"):
+        return p["cantidad"]
+    if p.get("kg") is not None:
+        kg = p["kg"]
+    elif p.get("es_unidad") and f.get("un_por_kg"):
+        kg = p["cantidad"] / f["un_por_kg"]
+    else:
+        return 0.0
+    return kg * (k or 1.0)
+
+
+def sin_memo_y_a_hacer(filas: list[dict], pedidos_por_color: dict,
+                       con_memo) -> None:
+    """Agrega a cada renglón (ya pasado por `en_unidad`) las dos columnas
+    del corte Tipo de tela (Tamara 15/10/2026):
+
+      `sinmemo_d` — Falta (sin memo): lo pedido que TODAVÍA no tiene memo
+                    en la fábrica (los pedidos con memo ya están andando).
+      `hacer_d`   — Mandar a hacer: Falta (sin memo) − Stock − En
+                    producción, nunca negativo.
+
+    Sin el detalle de pedidos (Asinfo no contestó) se toma todo lo pedido
+    como sin memo — igual que la celda, que en ese caso dice "Sin memo".
+    """
+    for f in filas:
+        peds = pedidos_por_color.get(f.get("clave") or "", [])
+        if peds:
+            sin = sum(_pedido_en_unidad(p, f) for p in peds
+                      if p["numero"] not in con_memo)
+            sin = round(sin)
+            if sin == 0 and any(p["numero"] not in con_memo for p in peds):
+                sin = 1  # medio rollo pedido no se muestra como 0
+        else:
+            sin = f["pedido_d"]
+        f["sinmemo_d"] = sin
+        f["hacer_d"] = max(0, sin - f["inventario_d"] - f["produccion_d"])
 
 
 # El detalle usa el CÓDIGO de producto y no el id interno porque es lo que la

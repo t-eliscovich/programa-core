@@ -159,21 +159,30 @@ def test_las_familias_se_ordenan_por_lo_que_falta():
     assert [c["categoria"] for c in service.por_categoria(filas)] == ["Jersey", "Rib"]
 
 
-def test_adentro_de_la_tela_lo_que_falta_va_arriba():
-    filas = [service._fila(_fila(codigo="A", ped_kg=100, inv_kg=0)),
-             service._fila(_fila(codigo="B", ped_kg=900, inv_kg=0))]
+def test_adentro_de_la_tela_los_colores_van_en_orden_alfabetico():
+    """Tamara 15/10/2026: lista para chequear a mano → A→Z, no por faltante."""
+    filas = [service._fila(_fila(codigo="FE96NEG", color="NEG", ped_kg=100, inv_kg=0)),
+             service._fila(_fila(codigo="FE96AZU", color="AZU", ped_kg=900, inv_kg=0)),
+             service._fila(_fila(codigo="FE96BLA", color="BLA", ped_kg=10, inv_kg=0))]
     (tela,) = service.por_tela(filas, "Fleece")
-    assert [f["codigo"] for f in tela["filas"]] == ["B", "A"]
+    assert [f["color"] for f in tela["filas"]] == ["AZU", "BLA", "NEG"]
+
+
+def test_las_telas_van_en_orden_alfabetico():
+    filas = [service._fila(_fila(tela="Fleece 96 Perchado", ped_kg=10, inv_kg=0)),
+             service._fila(_fila(tela="Fleece 102", codigo="X", ped_kg=900, inv_kg=0))]
+    assert [t["tela"] for t in service.por_tela(filas, "Fleece")] == [
+        "Fleece 102", "Fleece 96 Perchado"]
 
 
 def test_por_defecto_los_colores_cubiertos_TAMBIEN_se_listan():
     """⚠ Esconder los "ok" se probó el 17/08 y la dueña lo revirtió el mismo
     día: "tenés que mostrar todos los pedidos, no escondas los ok". La pantalla
     es el estado de TODO lo pedido, no una lista de tareas."""
-    filas = [service._fila(_fila(codigo="FALTA", ped_kg=900, inv_kg=0)),
-             service._fila(_fila(codigo="CUBIERTO", ped_kg=10, inv_kg=900))]
+    filas = [service._fila(_fila(codigo="FALTA", color="ZZZ", ped_kg=900, inv_kg=0)),
+             service._fila(_fila(codigo="CUBIERTO", color="AAA", ped_kg=10, inv_kg=900))]
     (tela,) = service.por_tela(filas, "Fleece")
-    assert [f["codigo"] for f in tela["filas"]] == ["FALTA", "CUBIERTO"]
+    assert [f["codigo"] for f in tela["filas"]] == ["CUBIERTO", "FALTA"]
 
 
 def test_filtrar_es_una_accion_explicita_del_usuario():
@@ -495,7 +504,7 @@ def test_la_pantalla_arranca_mostrando_TODOS_con_su_ok(app, fake_db):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" in body
     assert ">ok<" in body.replace("\n", "").replace(" ", "")
-    assert "Ver sólo lo que falta" in body
+    assert "Sólo lo que falta" in body
 
 
 def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
@@ -506,7 +515,7 @@ def test_con_falta_1_el_usuario_puede_filtrar(app, fake_db):
                       return_value=(filas, True)):
         body = c.get("/pedidos?corte=tela&falta=1").get_data(as_text=True)
     assert "FE96CAF" in body and "FE96NEG" not in body
-    assert "Ver todos los pedidos" in body
+    assert "✓</span>Sólo lo que falta" in body   # el tilde dice que está filtrado
 
 
 def test_bodega_y_tinturandose_son_dos_columnas_con_el_nombre_entero(app, fake_db):
@@ -587,7 +596,7 @@ def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       return_value=([_fila()], True)):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
-    tabla = body[body.index('class="pd"'):]
+    tabla = body[body.index('class="pd'):]
     assert "en rollos" in tabla          # la unidad se dice UNA vez, en la tela
     assert " kg" not in tabla.replace("kg cada uno", "").replace("en kilos", "")
     assert "19" in tabla
@@ -682,7 +691,7 @@ def test_el_desplegable_usa_las_columnas_de_la_tabla_de_arriba(app, fake_db):
     assert "<table class=\"sub\"" not in body        # nada de tablas anidadas
     fila = body[body.index('data-grupo="d-FE96CAF_X"'):]
     fila = fila[:fila.index("</tr>")]
-    assert fila.count("<td") == 5                   # 3 columnas + memo (colspan 2) + N° pedido
+    assert fila.count("<td") == 6                   # 3 columnas + memo (colspan 2) + N° pedido + Mandar a hacer
     assert 'colspan="2"' in fila
     assert "Sin memo" in fila                        # sin bridge a formulas
     # un solo renglón: va el CÓDIGO del cliente, no el nombre fiscal entero
@@ -996,3 +1005,50 @@ def test_en_el_corte_color_cada_numero_de_la_variante_lleva_su_unidad(app, fake_
         body = " ".join(c.get("/pedidos").get_data(as_text=True).split())
     # el pedido (19), el stock (10) y la producción (6) llevan "roll"
     assert body.count('<span class="u">roll</span>') >= 4
+
+
+# ── Falta (sin memo) y Mandar a hacer (Tamara 15/10/2026) ───────────────────
+
+def _ped(numero, cantidad, unidad=service.UNIDAD_ROLLO):
+    return {"numero": numero, "cantidad": cantidad, "unidad": unidad,
+            "es_rollo": unidad == service.UNIDAD_ROLLO,
+            "es_unidad": unidad == service.UNIDAD_UN,
+            "kg": cantidad * service.KG_POR_ROLLO if unidad == service.UNIDAD_ROLLO
+            else (cantidad if unidad == service.UNIDAD_KG else None)}
+
+
+def _renglon_en_rollos(**kw):
+    f = service._fila(_fila(**kw))
+    service.en_unidad([f], "alt")
+    return f
+
+
+def test_falta_sin_memo_cuenta_solo_los_pedidos_sin_memo():
+    f = _renglon_en_rollos(ped_rollos=19.0, inv_kg=0.0)
+    peds = {f["clave"]: [_ped("P1", 10), _ped("P2", 9)]}
+    service.sin_memo_y_a_hacer([f], peds, {"P2": {}})
+    assert f["sinmemo_d"] == 10
+    assert f["hacer_d"] == 10
+
+
+def test_mandar_a_hacer_descuenta_stock_y_produccion_y_nunca_es_negativo():
+    kg = service.KG_POR_ROLLO
+    f = _renglon_en_rollos(ped_rollos=10.0, ped_kg=10 * kg, inv_kg=3 * kg, prod_kg=2 * kg)
+    peds = {f["clave"]: [_ped("P1", 10)]}
+    service.sin_memo_y_a_hacer([f], peds, {})
+    assert (f["sinmemo_d"], f["hacer_d"]) == (10, 5)
+    service.sin_memo_y_a_hacer([f], peds, {"P1": {}})
+    assert (f["sinmemo_d"], f["hacer_d"]) == (0, 0)
+
+
+def test_un_pedido_en_kilos_se_pasa_a_rollos():
+    kg = service.KG_POR_ROLLO
+    f = _renglon_en_rollos()
+    service.sin_memo_y_a_hacer([f], {f["clave"]: [_ped("P1", 4 * kg, service.UNIDAD_KG)]}, {})
+    assert f["sinmemo_d"] == 4
+
+
+def test_sin_detalle_de_pedidos_todo_cuenta_como_sin_memo():
+    f = _renglon_en_rollos(ped_rollos=19.0)
+    service.sin_memo_y_a_hacer([f], {}, {})
+    assert f["sinmemo_d"] == f["pedido_d"]

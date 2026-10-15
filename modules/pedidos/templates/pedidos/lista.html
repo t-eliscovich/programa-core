@@ -144,6 +144,117 @@
   .pd .vend{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;font-weight:700;color:var(--ink)}
   .pd .vendname{font-size:11.5px;color:var(--gris)}
   .pd .kgs{font-weight:600;color:var(--ink)}
+  /* Arriba del corte Tipo de tela (15/10/2026) */
+  .pd .btn.pri{background:var(--ink);border-color:var(--ink);color:#fff;font-weight:600}
+  .pd .btn.pri:hover{background:var(--azul);border-color:var(--azul);color:#fff}
+  .pd.ancha .ver{margin:14px 0 18px}
+  .pd .fams{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 12px}
+  .pd .fam{display:flex;flex-direction:column;gap:0;min-width:110px;padding:6px 12px;border:2px solid var(--linea);border-radius:9px;background:#fff;text-decoration:none;color:var(--ink)}
+  .pd .fam:hover{border-color:#94a3b8}
+  .pd .fam .fn{font-size:15px;font-weight:700}
+  .pd .fam .fh{font-size:12px;font-weight:600;color:var(--rojo)}
+  .pd .fam .fh.cero{color:var(--verde)}
+  .pd .fam.on{border-color:var(--ink);background:var(--ink);color:#fff}
+  .pd .fam.on .fh{color:#fca5a5}.pd .fam.on .fh.cero{color:#86efac}
+  .pd .kpis{display:grid;grid-template-columns:repeat(5,minmax(0,170px));gap:8px;margin:0}
+  .pd .kpi{border:1px solid var(--linea);border-radius:9px;padding:8px 12px;background:#fff}
+  .pd .kpi .kl{font-size:11.5px;font-weight:700;color:#475569;text-transform:uppercase;letter-spacing:.05em}
+  .pd .kpi .kv{font-size:24px;font-weight:800;color:var(--ink);line-height:1.15;font-variant-numeric:tabular-nums;margin-top:2px}
+  .pd .kpi .ks{font-size:11.5px;color:var(--gris)}
+  .pd .kpi.res{background:var(--rojo);border-color:var(--rojo)}
+  .pd .kpi.res .kl,.pd .kpi.res .kv{color:#fff}.pd .kpi.res .ks{color:#fecaca}
+  .pd .kexp{font-size:13.5px;color:#475569;margin:8px 0 16px}
+  .pd .kexp b{color:var(--ink)}
+  .pd .barra{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:0 0 6px}
+  .pd .barra .ver{margin:0}
+  .pd .solo{display:inline-flex;align-items:center;gap:8px;font-size:15px;color:#334155;text-decoration:none;padding:7px 12px;border:1px solid var(--linea);border-radius:8px;background:#fff}
+  .pd .solo .tick{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border:2px solid #94a3b8;border-radius:4px;font-size:13px;font-weight:800;color:#fff}
+  .pd .solo.on{border-color:var(--ink);color:var(--ink);font-weight:600}
+  .pd .solo.on .tick{background:var(--ink);border-color:var(--ink)}
+  @media (max-width:900px){.pd .kpis{grid-template-columns:repeat(2,1fr)}.pd .kpi.res{grid-column:span 2}}
+  /* Tipo de tela GRANDE (Tamara 15/10/2026): la usan empleados con poco
+     manejo de compu — tabla ancha, letra grande, títulos de columna que se
+     ven (fondo oscuro, fijos arriba al bajar), Abierto/Tubular con color. */
+  .pd.ancha{max-width:none}
+  .pd.ancha .telablk h3{font-size:20px;color:var(--azul);margin:22px 0 8px}
+  .pd.ancha .telablk h3 .muted{font-size:14px}
+  main .pd table.tt thead th{position:sticky;top:0;z-index:2;background:var(--ink) !important;color:#fff !important;font-size:13px !important;font-weight:700;letter-spacing:.03em;padding:10px 12px !important;text-transform:uppercase}
+  main .pd table.tt thead th .sort-icon{color:#94a3b8}
+  main .pd table.tt thead th.th-hacer{background:var(--rojo) !important}
+  main .pd table.tt tbody tr.crow>td{font-size:16px !important;padding-top:10px !important;padding-bottom:10px !important}
+  .pd table.tt tr.crow .color{font-size:17px;font-weight:700}
+  .pd table.tt tr.crow .prod{font-size:12.5px}
+  main .pd table.tt tbody tr.det>td{font-size:14px !important;padding-top:7px !important;padding-bottom:7px !important}
+  main .pd table.tt tbody tr.acarow>td{font-size:14px !important;font-weight:800;letter-spacing:.08em;padding:8px 12px !important;border-bottom-width:1px}
+  main .pd table.tt tbody tr.acarow.abi>td{background:#fef3c7;color:#92400e}
+  main .pd table.tt tbody tr.acarow.tub>td{background:#e0e7ff;color:#3730a3}
+  main .pd table.tt tbody td.hacer{background:#fef2f2;font-size:18px !important;font-weight:800}
+  main .pd table.tt tbody td.hacer.okc{background:#f0fdf4;font-size:15px !important;font-weight:600}
+  main .pd table.tt tbody tr.det>td.hacer{background:var(--fondo)}
+  .pd.ancha .mchip{font-size:12.5px}
+  .pd.ancha td.masinfo a{font-size:13.5px}
+  .pd.ancha tr.det .npd{font-size:13px}
+  .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
+  .pd.ancha .tab{font-size:15px;padding:8px 14px}
+  .pd.ancha .cards .val{font-size:24px}
+  /* Cargar «Mandar a hacer» (15/10/2026): la columna está vacía; con el
+     botón se vuelve casilleros, abajo una barra con el total, y se revisa en
+     una ventana antes de mandar a producción. */
+  .pd .hist{font-size:14px;color:var(--azul);text-decoration:none;margin-left:auto}.pd .hist:hover{text-decoration:underline}
+  .pd .btn-editar{font-size:15px;font-weight:700;padding:8px 14px;border-radius:8px;border:2px solid var(--rojo);background:#fff;color:var(--rojo);cursor:pointer}
+  .pd .btn-editar:hover{background:#fef2f2}
+  .pd.editando .btn-editar{background:var(--rojo);color:#fff}
+  .pd .inhacer{display:none;width:84px;font-size:17px;font-weight:700;text-align:right;padding:5px 8px;border:2px solid #fca5a5;border-radius:8px;background:#fff;color:var(--ink)}
+  .pd .inhacer:focus{outline:none;border-color:var(--rojo);box-shadow:0 0 0 3px #fee2e2}
+  .pd.editando .inhacer{display:inline-block}
+  .pd .hbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--ink);color:#fff;border-radius:12px;box-shadow:0 -4px 16px rgba(15,23,42,.18)}
+  .pd .hbar[hidden]{display:none}
+  .pd .hbar .hres{font-size:16px;margin-right:auto}.pd .hbar b{font-size:20px}
+  .pd .hbar .btn{font-size:15px;padding:9px 16px}
+  .pd .hbar .btn.pri{background:var(--rojo);border-color:var(--rojo)}
+  .pd .hbar .btn.pri[disabled]{opacity:.45;cursor:not-allowed}
+  .pd .hmodal{position:fixed;inset:0;z-index:60;background:rgba(15,23,42,.5);display:flex;align-items:center;justify-content:center;padding:16px}
+  .pd .hmodal[hidden]{display:none}
+  .pd .hcaja{background:#fff;border-radius:14px;max-width:820px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px}
+  .pd .hcaja h2{font-size:22px;font-weight:800;margin:0 0 4px;color:var(--ink)}
+  main .pd table.hlist thead th{background:var(--ink) !important;color:#fff !important;font-size:12.5px !important;padding:8px 10px !important}
+  main .pd table.hlist tbody td{font-size:15px !important;padding:8px 10px !important;text-align:left}
+  main .pd table.hlist tbody td.n{text-align:right;font-weight:800;color:var(--rojo);font-size:17px !important}
+  main .pd table.hlist tbody td.ps{font-size:12.5px !important;color:#475569}
+  .pd .hacc{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
+  .pd .hacc .btn{font-size:15px;padding:9px 16px}.pd .hacc .btn.pri{background:var(--rojo);border-color:var(--rojo)}
+  /* Corte Tipo de tela (Tamara 15/10/2026): separador Abierto / Tubular,
+     y la hoja impresa es una LISTA PARA CHEQUEAR A MANO — sin títulos ni
+     tarjetas, todo desplegado, con un casillero por renglón. */
+  main .pd table tbody tr.acarow>td{text-align:left;font-size:10.5px !important;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--gris);background:#fff;padding-top:8px !important;padding-bottom:2px !important;border-bottom-width:0}
+  .pd td.sinm{color:var(--ink);font-weight:600}
+  .pd .caja{display:none}
+  @media print{
+    /* La hoja: una tablita tipo Excel, limpia (Tamara 15/10/2026). Sin
+       títulos de página, sin recuadros, sin casilleros: grilla fina gris. */
+    .pd .top,.pd .ver,.pd .cards,.pd .filtros,.pd .tabs,.pd .pie,.pd .fams,.pd .kpis,.pd .kexp,.pd .barra,.pd tr.masrow,.pd .chev,.pd .aca,.pd .inhacer,.pd .hbar,.pd .hmodal{display:none !important}
+    .pd{max-width:none}
+    .pd button.abrir{display:inline !important;width:auto !important;padding:0 !important;border:0 !important;font:inherit}
+    .pd tr.det{display:table-row}
+    .pd tr.det.fx,.pd .fx{display:none !important}
+    .pd .telablk{margin:0 0 8pt !important}
+    .pd.ancha .telablk h3{font-size:11pt !important;color:#000 !important;margin:6pt 0 2pt !important;break-after:avoid;page-break-after:avoid}
+    .pd .telablk h3 .muted{display:none}
+    .pd table.tt{border-collapse:collapse !important;border:0.6pt solid #888 !important;width:99% !important}
+    .pd table.tt .cli,.pd table.tt .cod{font-family:Arial,Helvetica,sans-serif !important;font-size:9pt !important}
+    main .pd table.tt th,main .pd table.tt td{border:0.6pt solid #888 !important;padding:1.5pt 4pt !important;font-size:9pt !important;font-weight:400 !important;color:#000 !important;background:#fff !important;font-family:Arial,Helvetica,sans-serif !important}
+    main .pd table.tt tbody tr.crow>td,main .pd table.tt tbody tr.det>td,main .pd table.tt tbody tr.acarow>td,main .pd table.tt tbody td.hacer,main .pd table.tt tbody td.hacer.okc{padding:1.5pt 4pt !important;font-size:9pt !important;background:#fff !important;line-height:1.25}
+    main .pd table.tt thead th,main .pd table.tt thead th.th-hacer{position:static;color:#000 !important;font-size:8.5pt !important;padding:2pt 4pt !important;font-weight:700 !important;text-transform:none;letter-spacing:0;background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+    main .pd table.tt tbody tr.crow>td{font-weight:700 !important}
+    main .pd table.tt tbody tr.det>td{font-weight:400 !important}
+    .pd table.tt tr.crow .color{font-size:9pt;font-weight:700}
+    .pd table.tt tr.crow .prod{font-size:8pt;color:#000 !important;font-weight:400}
+    main .pd table.tt tbody tr.acarow>td{font-weight:700 !important;font-size:8.5pt !important;text-transform:uppercase}
+    main .pd table.tt tbody tr.det>td.cod{padding-left:12pt !important}
+    .pd .mchip{border:0 !important;padding:0 !important;font-size:9pt;font-weight:400}
+    .pd .mchip b,.pd .u{display:none}
+    .pd .sort-icon{display:none !important}
+  }
 </style>
 {% endblock %}
 
@@ -159,17 +270,17 @@
     {%- else -%}<span class="mchip env"><b></b>Memo enviado</span>{%- endif -%}
   {%- else -%}<span class="mchip sin">Sin memo</span>{%- endif -%}
 {%- endmacro %}
-<div class="pd">
+<div class="pd{% if corte == 'tela' %} ancha{% endif %}">
   <div class="top">
     <div>
       <h1>Pedidos pendientes</h1>
-      <p class="nota">Lo que se pidió y todavía no se despachó, contra bodega y producción. Fuente: Asinfo.</p>
+      <p class="nota">{% if corte == 'tela' %}Qué tela hay que mandar a hacer para cubrir lo que pidieron los clientes.{% else %}Lo que se pidió y todavía no se despachó, contra bodega y producción.{% endif %} Fuente: Asinfo.</p>
     </div>
     <div class="acciones no-print">
       <a class="btn" href="{{ url_for('pedidos.ordenes') }}">Órdenes de tintura</a>
     {% if disponible and categorias %}
       <a class="btn" href="{{ url_for('pedidos.excel') }}">Descargar Excel</a>
-      <button type="button" class="btn" onclick="window.print()">Imprimir</button>
+      <button type="button" class="btn{{ ' pri' if corte == 'tela' }}" onclick="window.print()">{{ 'Imprimir lista' if corte == 'tela' else 'Imprimir' }}</button>
     {% endif %}
     </div>
   </div>
@@ -257,57 +368,73 @@
 
   {# ═══════════ TIPO DE TELA ═══════════ #}
   {% elif corte == 'tela' %}
-    {% if resumen %}
-    <div class="cards">
-      <div class="card"><div class="lbl">Colores pedidos</div><div class="val">{{ resumen.colores }}</div><div class="sub">de {{ resumen.categoria }}</div></div>
-      <div class="card"><div class="lbl">Pedido</div><div class="val">{{ resumen.pedido_d|num_es(0) }} {{ resumen.u }}</div></div>
-      <div class="card rojo"><div class="lbl">Faltan</div><div class="val">{{ resumen.faltan_d|num_es(0) }} {{ resumen.u }}</div>
-        <div class="sub">en {{ resumen.colores_faltan }} {{ 'color' if resumen.colores_faltan == 1 else 'colores' }}</div></div>
+    {# Arriba (Tamara 15/10/2026: "no entiendo ni qué es"): 1) la familia,
+       en pestañas grandes; 2) una tira de números que se lee de izquierda a
+       derecha hasta el resultado, Mandar a hacer; 3) los filtros. #}
+    <div class="fams no-print" role="tablist" aria-label="Familia de tela">
+      {% for c in categorias %}
+        <a class="fam{% if c.categoria == activa %} on{% endif %}" href="{{ url_for('pedidos.lista', corte='tela', cat=c.categoria) }}">
+          <span class="fn">{{ c.categoria }}</span>
+          {% set h = hacer_cat.get(c.categoria, 0) %}
+          <span class="fh{{ ' cero' if not h }}">{% if h %}faltan {{ h|num_es(0) }} {{ c.u }}{% else %}todo cubierto{% endif %}</span>
+        </a>
+      {% endfor %}
     </div>
+    {% if resumen %}
+    {% set k = namespace(ped=0, sin=0, inv=0, prod=0, colores=0) %}
+    {% for t in telas %}{% for f in t.filas %}
+      {% set k.ped = k.ped + f.pedido_d %}{% set k.sin = k.sin + f.sinmemo_d %}
+      {% set k.inv = k.inv + f.inventario_d %}{% set k.prod = k.prod + f.produccion_d %}{% set k.colores = k.colores + 1 %}
+    {% endfor %}{% endfor %}
+    {% set u = 'unidades' if resumen.u == 'un' else 'rollos' %}
+    <div class="kpis no-print">
+      <div class="kpi"><div class="kl">Pedido</div><div class="kv">{{ k.ped|num_es(0) }}</div><div class="ks">{{ u }} · {{ k.colores }} {{ 'color' if k.colores == 1 else 'colores' }}</div></div>
+      <div class="kpi"><div class="kl">Sin memo</div><div class="kv">{{ k.sin|num_es(0) }}</div><div class="ks">{{ u }} que la fábrica todavía no tiene</div></div>
+      <div class="kpi"><div class="kl">En stock</div><div class="kv">{{ k.inv|num_es(0) }}</div><div class="ks">{{ u }} en bodega</div></div>
+      <div class="kpi"><div class="kl">En producción</div><div class="kv">{{ k.prod|num_es(0) }}</div><div class="ks">{{ u }} tiñéndose</div></div>
+      <div class="kpi res"><div class="kl">Falta (sin memo)</div><div class="kv">{{ hacer_total|num_es(0) }}</div><div class="ks">{{ u }} en {{ hacer_colores }} {{ 'color' if hacer_colores == 1 else 'colores' }}</div></div>
+    </div>
+    <p class="kexp no-print">Falta = lo pedido <b>sin memo</b>, menos lo que hay <b>en stock</b> y lo que está <b>en producción</b>, color por color.</p>
     {% set mc = namespace(sin=0, con=0) %}
     {% for t in telas %}{% for f in t.filas %}{% for p in pedidos_por_color.get(f.clave, []) %}
       {% if memo_lineas.get(p.numero) %}{% set mc.con = mc.con + 1 %}{% else %}{% set mc.sin = mc.sin + 1 %}{% endif %}
     {% endfor %}{% endfor %}{% endfor %}
-    <div class="filtros">
-      <p class="nota" style="margin:0">
-        {% if solo_faltan %}Mostrando sólo los colores que necesitan tela.
-          <a href="{{ url_for('pedidos.lista', corte='tela', cat=activa) }}">Ver todos los pedidos</a>
-        {% else %}<a href="{{ url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">Ver sólo lo que falta</a>{% endif %}
-      </p>
-      {# Dueña 01/10: "filtrar sin memo — los que ya tienen memo no quieren
-         pedir". Filtra en el navegador: esconde los pedidos con memo y los
-         colores que se quedan sin ninguno. #}
-      <div class="ver memof no-print" role="group" aria-label="Filtrar por memo">
-        <span class="cap">Memo</span>
+    <div class="barra no-print">
+      {# Dueña 01/10: "filtrar sin memo". Filtra en el navegador. #}
+      <div class="ver memof" role="group" aria-label="Filtrar por memo">
+        <span class="cap">Pedidos</span>
         <a href="#" class="on" data-memof="todos">Todos</a>
         <a href="#" data-memof="sin">Sin memo <span class="cnt">{{ mc.sin }}</span></a>
         <a href="#" data-memof="con">Con memo <span class="cnt">{{ mc.con }}</span></a>
       </div>
+      <a class="solo{{ ' on' if solo_faltan }}" href="{{ url_for('pedidos.lista', corte='tela', cat=activa) if solo_faltan else url_for('pedidos.lista', corte='tela', cat=activa, falta=1) }}">
+        <span class="tick" aria-hidden="true">{{ '✓' if solo_faltan }}</span>Sólo lo que falta</a>
+      <a class="hist" href="#" title="Cada envío a producción con fecha, quién lo mandó y qué colores">Historial de lo mandado</a>
+      <button type="button" class="btn-editar" id="editar-hacer">✎ Cargar «Mandar a hacer»</button>
     </div>
     {% endif %}
-    <div class="tabs">
-      {% for c in categorias %}
-        <a class="tab{% if c.categoria == activa %} on{% endif %}" href="{{ url_for('pedidos.lista', corte='tela', cat=c.categoria) }}">
-          <b>{{ c.categoria }}</b>{% if c.faltan_kg > 0 %}<span class="n"> {{ c.faltan_d|num_es(0) }} {{ c.u }}</span>{% endif %}
-        </a>
-      {% endfor %}
-    </div>
     {% for t in telas %}
       <div class="telablk">
       <h3><span>{{ t.tela }}</span>
         <span class="muted">{{ t.filas|length }} {{ 'color' if t.filas|length == 1 else 'colores' }} ·
-          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.faltan_kg %} · <span style="color:#b91c1c">faltan {{ t.faltan_d|num_es(t.dec) }}</span>{% endif %}</span>
+          en {{ 'unidades' if t.u == 'un' else 'rollos' }}{% if t.hacer_d %} · <span style="color:#b91c1c">faltan {{ t.hacer_d|num_es(0) }}</span>{% endif %}</span>
       </h3>
-      <table>
-        <colgroup><col style="width:22%"><col style="width:12%"><col style="width:15%"><col style="width:17%"><col style="width:17.33%"><col style="width:16.67%"></colgroup>
-        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta</th></tr></thead>
+      <table class="tt">
+        <colgroup><col style="width:24%"><col style="width:10%"><col style="width:11%"><col style="width:11%"><col style="width:12%"><col style="width:16%"><col style="width:16%"></colgroup>
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="th-hacer">Mandar a hacer</th></tr></thead>
         <tbody>
+          {% set ac = namespace(prev=None) %}
           {% for f in t.filas %}
+            {% if f.acabado != ac.prev %}
+              {% set ac.prev = f.acabado %}
+              <tr class="acarow {{ 'abi' if f.acabado == 'ABI' else ('tub' if f.acabado == 'TUB' else '') }}"><td colspan="7">{{ 'Abierto' if f.acabado == 'ABI' else ('Tubular' if f.acabado == 'TUB' else (f.acabado or 'Sin acabado')) }}</td></tr>
+            {% endif %}
             {% set peds = pedidos_por_color.get(f.clave, []) %}
             {% set nm = namespace(sin=0, con=0) %}
             {% for p in peds %}{% if memo_lineas.get(p.numero) %}{% set nm.con = nm.con + 1 %}{% else %}{% set nm.sin = nm.sin + 1 %}{% endif %}{% endfor %}
             <tr class="crow" data-g="d-{{ f.clave }}" data-sin="{{ nm.sin if peds else 1 }}" data-con="{{ nm.con }}">
               <td class="cod">
+                
                 <button type="button" class="abrir" aria-expanded="false" data-fila="d-{{ f.clave }}">
                   <span class="chev" aria-hidden="true"></span>
                   {% if f.acabado %}<span class="aca {{ 'tub' if f.acabado == 'TUB' else ('abi' if f.acabado == 'ABI' else 'otro') }}">{{ f.acabado|replace('ABI', 'AB') }}</span>{% endif %}
@@ -319,7 +446,10 @@
               <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
-              <td class="{{ 'falta' if f.faltan_kg > 0 else 'okc' }}">{% if f.faltan_kg > 0 %}{{ f.faltan_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
+                            <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
+              <td class="hacer"><input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Mandar a hacer {{ f.color }} {{ f.acabado }}"
+                  data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}" data-falta="{{ f.hacer_d }}"
+                  data-peds="{% for p in peds if not memo_lineas.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
             </tr>
             {% for p in peds %}
               <tr class="det" data-grupo="d-{{ f.clave }}" data-memo="{{ 1 if memo_lineas.get(p.numero) else 0 }}" data-fila-hija>
@@ -327,17 +457,17 @@
                 <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
                 <td colspan="2" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
-                <td class="npd">{{ p.numero }}</td>
+                <td class="npd">{{ p.numero }}</td><td class="hacer"></td>
               </tr>
             {% endfor %}
             {% if not peds %}
-              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="6" class="muted">Este color no tiene pedidos cargados.</td></tr>
+              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="7" class="muted">Este color no tiene pedidos cargados.</td></tr>
             {% endif %}
             {% if f.n_ordenes %}
-              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija>
-                <td colspan="6" class="masinfo">
+              <tr class="det masrow" data-grupo="d-{{ f.clave }}" data-fila-hija>
+                <td colspan="7" class="masinfo">
                   <a href="{{ url_for('pedidos.color', codigo=f.codigo, aca=f.acabado) }}">
-                    Ver las {{ f.n_ordenes }} {{ 'orden' if f.n_ordenes == 1 else 'órdenes' }} de tinturado de este color</a>
+                    {{ 'Ver la orden' if f.n_ordenes == 1 else 'Ver las ' ~ f.n_ordenes ~ ' órdenes' }} de tinturado de este color</a>
                 </td>
               </tr>
             {% endif %}
@@ -346,7 +476,21 @@
       </table>
       </div>
     {% endfor %}
-    {% if cubiertas %}<p class="nota">Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.</p>{% endif %}
+    <div class="hbar no-print" id="hbar" hidden>
+      <div class="hres"><b id="hn">0</b> colores · <b id="hr">0</b> <span id="hu">rollos</span> para mandar a hacer</div>
+      <button type="button" class="btn" id="hcancel">Cancelar</button>
+      <button type="button" class="btn pri" id="hrev" disabled>Revisar y mandar →</button>
+    </div>
+    <div class="hmodal no-print" id="hmodal" hidden role="dialog" aria-modal="true" aria-labelledby="hmt">
+      <div class="hcaja">
+        <h2 id="hmt">Mandar a producción</h2>
+        <p class="nota">Revisá la lista. Al mandarla, le llega a la fábrica y los pedidos sin memo de cada color quedan como <b>enviados a producción</b>.</p>
+        <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Mandar a hacer</th><th>Pedidos que cubre</th></tr></thead><tbody id="hbody"></tbody></table>
+        <div class="hacc"><button type="button" class="btn" id="hvolver">Volver a editar</button>
+          <button type="button" class="btn pri" id="henviar">Mandar a producción</button></div>
+      </div>
+    </div>
+    {% if cubiertas %}<p class="nota no-print">Cubiertas, sin nada que hacer: {{ cubiertas|join(', ') }}.</p>{% endif %}
 
   {# ═══════════ CLIENTE ═══════════ #}
   {% elif corte == 'cliente' %}
@@ -512,6 +656,54 @@
 </div>
 
 <script>
+  // Cargar «Mandar a hacer» → revisar → mandar a producción (15/10/2026).
+  (function () {
+    var pd = document.querySelector('.pd'), bt = document.getElementById('editar-hacer');
+    if (!pd || !bt) return;
+    var bar = document.getElementById('hbar'), md = document.getElementById('hmodal');
+    var ins = function () { return Array.prototype.slice.call(document.querySelectorAll('.pd .inhacer')); };
+    var llenos = function () { return ins().filter(function (i) { return +i.value > 0; }); };
+    function contar() {
+      var l = llenos(), r = 0; l.forEach(function (i) { r += +i.value; });
+      document.getElementById('hn').textContent = l.length;
+      document.getElementById('hr').textContent = r;
+      document.getElementById('hrev').disabled = !l.length;
+    }
+    function modo(on) {
+      pd.classList.toggle('editando', on); bar.hidden = !on;
+      bt.textContent = on ? '✎ Cargando…' : '✎ Cargar «Mandar a hacer»';
+      if (on) { var p = ins()[0]; if (p) p.focus(); }
+    }
+    bt.addEventListener('click', function () { modo(!pd.classList.contains('editando')); });
+    document.getElementById('hcancel').addEventListener('click', function () {
+      ins().forEach(function (i) { i.value = ''; }); contar(); modo(false);
+    });
+    pd.addEventListener('input', function (e) { if (e.target.classList.contains('inhacer')) contar(); });
+    pd.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' && e.target.classList.contains('inhacer')) {
+        e.preventDefault(); var a = ins(), k = a.indexOf(e.target); if (a[k + 1]) a[k + 1].focus();
+      }
+    });
+    function esc(t) { var d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+    document.getElementById('hrev').addEventListener('click', function () {
+      var tb = document.getElementById('hbody'); tb.innerHTML = '';
+      llenos().forEach(function (i) {
+        var d = i.dataset, ps = (d.peds || '').split('|').filter(Boolean);
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td>' + esc(d.tela) + '</td><td>' + (d.aca === 'TUB' ? 'Tubular' : (d.aca === 'ABI' ? 'Abierto' : esc(d.aca))) +
+          '</td><td><b>' + esc(d.color) + '</b> <span class="muted">' + esc(d.cod) + '</span></td><td class="n">' + (+i.value) + ' ' + esc(d.u) +
+          '</td><td class="ps">' + (ps.length ? ps.map(esc).join('<br>') : '—') + '</td>';
+        tb.appendChild(tr);
+      });
+      md.hidden = false;
+    });
+    document.getElementById('hvolver').addEventListener('click', function () { md.hidden = true; });
+    md.addEventListener('click', function (e) { if (e.target === md) md.hidden = true; });
+    document.getElementById('henviar').addEventListener('click', function () {
+      // Maqueta: el envío a formulas_app se conecta en el paso 2.
+      md.hidden = true;
+    });
+  })();
   // Filtro de memo del corte Tipo de tela (dueña 01/10).
   (function () {
     var bar = document.querySelector('.pd .memof');
