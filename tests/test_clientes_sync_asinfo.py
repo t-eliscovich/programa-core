@@ -51,7 +51,7 @@ def _armar(monkeypatch, asinfo_rows, pc_rows, contesto=True):
     def fake_execute(sql, params=None, conn=None):
         if "UPDATE scintela.cliente" in sql:
             capturado["updates"].append((sql, params))
-            return len(params or []) // 9  # aprox: filas del VALUES
+            return len(params or []) // 10  # aprox: filas del VALUES
         return 1
 
     monkeypatch.setattr(db, "execute", fake_execute)
@@ -104,7 +104,7 @@ def test_pisa_nombre_y_ruc_y_rellena_telefono_vacio(monkeypatch):
     # una sola fila cambia: AAA con nombre, ruc y teléfono (sin lista de
     # descuentos en Asinfo, el descuento viaja en None y COALESCE lo ignora)
     assert params[0] == "sync-asinfo"
-    assert list(params[1:]) == ["AAA", "PEREZ JUAN", "1712345678001",
+    assert list(params[1:10]) == ["AAA", "PEREZ JUAN", "1712345678001",
                                 "0984042960", None, None, None, None, None]
     assert r["altas"] == [] and r["conflictos"] == []
 
@@ -221,7 +221,7 @@ def test_el_sync_rellena_el_descuento_vacio(monkeypatch):
     assert "descuento = COALESCE(v.descuento::numeric, c.descuento)" in sql
     # el descuento viaja como TEXTO: si TODAS las filas fueran NULL, Postgres
     # no podría inferir el tipo de la columna del VALUES
-    assert list(params[1:]) == ["AAA", None, None, None, "9.0", None, None, None, None]
+    assert list(params[1:10]) == ["AAA", None, None, None, "9.0", None, None, None, None]
     assert r["descuentos_puestos"] == 1
     assert r["descuentos_pisados"] == 0          # estaba vacío, no se pisó nada
     assert r["desc_cambiado"] == [
@@ -236,7 +236,7 @@ def test_el_sync_rellena_el_descuento_en_cero(monkeypatch):
            "ruc": "", "telefono": "022345678", "descuento": 0}]
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, "12.0",
+    assert list(cap["updates"][0][1][1:10]) == ["AAA", None, None, None, "12.0",
                                               None, None, None, None]
     assert r["descuentos_puestos"] == 1
     assert r["descuentos_pisados"] == 0     # cero cuenta como vacío, no como pisado
@@ -250,7 +250,7 @@ def test_asinfo_pisa_el_descuento_cargado_y_guarda_el_anterior(monkeypatch):
            "ruc": "", "telefono": "022345678", "descuento": 12}]
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
-    assert list(cap["updates"][0][1][1:]) == ["CAL", None, None, None, "14.0",
+    assert list(cap["updates"][0][1][1:10]) == ["CAL", None, None, None, "14.0",
                                               None, None, None, None]
     assert r["descuentos_pisados"] == 1
     # el valor ANTERIOR queda registrado: es la forma de volver atrás
@@ -347,7 +347,7 @@ def test_el_sync_pisa_el_vendedor_y_guarda_el_anterior(monkeypatch):
            "telefono": "022345678", "vend": "PPR", "direccion1": ""}]
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
+    assert list(cap["updates"][0][1][1:10]) == ["AAA", None, None, None, None,
                                               "BED", None, None, None]
     # el valor ANTERIOR queda registrado: es la forma de volver atrás
     assert r["vend_cambiado"] == [
@@ -385,7 +385,7 @@ def test_vend_rellena_el_vacio_sin_campanita(monkeypatch):
            "telefono": "1", "vend": None, "direccion1": ""}]
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
+    assert list(cap["updates"][0][1][1:10]) == ["AAA", None, None, None, None,
                                               "RMY", None, None, None]
     assert r["vend_cambiado"] == [
         {"cod": "AAA", "nombre": "PEREZ JUAN", "antes": None, "ahora": "RMY"}
@@ -442,7 +442,7 @@ def test_el_sync_pisa_la_direccion_y_el_vacio_de_asinfo_no_borra(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert len(cap["updates"]) == 1
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
+    assert list(cap["updates"][0][1][1:10]) == ["AAA", None, None, None, None,
                                               None, "BARRIO LA JOSEFINA LOTE 217", None, None]
     assert r["direcciones_cambiadas"] == 1
     assert r["dir_cambiado"] == [
@@ -500,7 +500,7 @@ def test_el_sync_pisa_provincia_y_canton_y_el_vacio_no_borra(monkeypatch):
     cap = _armar(monkeypatch, asinfo, pc)
     r = sa.sincronizar()
     assert len(cap["updates"]) == 1
-    assert list(cap["updates"][0][1][1:]) == ["AAA", None, None, None, None,
+    assert list(cap["updates"][0][1][1:10]) == ["AAA", None, None, None, None,
                                               None, None, "PICHINCHA", "QUITO"]
     assert r["geo_cambiadas"] == 2
     assert r["geo_cambiado"] == [
@@ -650,3 +650,53 @@ def test_lista_rara_avisa_mal_cargado(monkeypatch):
     puestos.clear()
     sa._avisar_vendedores([], [{"cod": "FLK", "agente": "PEPE"}])
     assert puestos[0]["titulo"] == "Vendedor mal cargado en Asinfo: FLK (PEPE)"
+
+
+# ─── dirección COMPLETA: TMT 2026-10-15 (Tamara, ficha de LEP) ─────────────
+# "las direcciones están mal, están incompletas — fijate de traer todo".
+# Asinfo la guarda en 5 casilleros de `ubicacion`; el sync traía sólo el 1.
+
+def test_armar_direccion_junta_los_cinco_casilleros():
+    assert sa.armar_direccion({"dir1": "AV DE LA PRENSA ", "dir2": "N69-221",
+                               "dir3": "EXEQUIEL MARQUES", "dir4": "", "dir5": " "}) == (
+        "AV DE LA PRENSA N69-221 y EXEQUIEL MARQUES", "")
+    assert sa.armar_direccion({"dir1": "OE1C", "dir2": "S21-14", "dir3": "HERMANO MIGUEL ",
+                               "dir4": "BRR SAN JOSE DE LA SALLE ", "dir5": "LA MARISCAL"}) == (
+        "OE1C S21-14 y HERMANO MIGUEL", "BRR SAN JOSE DE LA SALLE · LA MARISCAL")
+
+
+def test_armar_direccion_saltea_el_canton_y_los_vacios():
+    assert sa.armar_direccion({"dir1": "JUAN RAMON JIMENEZ", "dir2": "", "dir3": "FRANCISCO VELEZ",
+                               "dir4": "", "dir5": "CUENCA", "canton": "CUENCA"}) == (
+        "JUAN RAMON JIMENEZ y FRANCISCO VELEZ", "")
+    assert sa.armar_direccion({"dir1": "", "dir3": "PAMPLONA", "dir4": "SAN JUAN"}) == (
+        "PAMPLONA", "SAN JUAN")
+    assert sa.armar_direccion({}) == ("", "")
+
+
+def test_el_caso_lep_trae_la_calle_y_borra_el_resto_del_dbase(monkeypatch):
+    asinfo = [{"cod": "LEP", "ruc": "", "nombre": "PILATAXI CONDOR LUIS ENRIQUE",
+               "tel1": "", "tel2": "", "dir1": "BRR LA LIBERTAD", "dir2": "",
+               "dir3": "AV JUAN FELIZ PROAÑO E IRLANDA", "dir4": "", "dir5": " ",
+               "canton": "RIOBAMBA"}]
+    pc = [{"id_cliente": 1, "cod": "LEP", "nombre": "PILATAXI CONDOR LUIS ENRIQUE",
+           "ruc": "", "telefono": "1", "vend": None, "direccion1": "BRR LA LIBERTAD",
+           "direccion2": "PROAñO E IRLANDA HEC", "canton": "RIOBAMBA"}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    r = sa.sincronizar()
+    fila = list(cap["updates"][0][1][1:])
+    assert fila[6] == "BRR LA LIBERTAD y AV JUAN FELIZ PROAÑO E IRLANDA"
+    assert fila[9] == ""          # '' = borrar el 2º renglón truncado del dBase
+    assert "NULLIF(v.direccion2, '')" in cap["updates"][0][0]
+    assert r["dir_cambiado"][0]["antes"] == "BRR LA LIBERTAD / PROAñO E IRLANDA HEC"
+
+
+def test_asinfo_sin_direccion_no_toca_el_segundo_renglon(monkeypatch):
+    asinfo = [{"cod": "AAA", "ruc": "", "nombre": "X", "tel1": "", "tel2": "",
+               "dir1": "", "dir4": "BARRIO"}]
+    pc = [{"id_cliente": 1, "cod": "AAA", "nombre": "X", "ruc": "", "telefono": "1",
+           "vend": None, "direccion1": "CALLE 1", "direccion2": "QUEDA"}]
+    cap = _armar(monkeypatch, asinfo, pc)
+    sa.sincronizar()
+    # d4 sin d1/d3 igual arma renglón 1 vacío → no se toca nada
+    assert cap["updates"] == []

@@ -20,8 +20,10 @@ Decisiones de la dueña (05/08/2026), medidas contra la base en vivo:
   · La dirección SÍ está en Asinfo — la medición del 05/08 ("0 de 3.635")
     miró `direccion_empresa.descripcion`, que está vacía; el texto real vive
     en `ubicacion.direccion1` vía `direccion_empresa.id_ubicacion` (medido
-    27/08: 3.641 de 3.649 la tienen). Se pisa `direccion1`; si Asinfo no
-    tiene, la ficha queda como está.
+    27/08: 3.641 de 3.649 la tienen). Desde el 15/10 se traen los CINCO
+    casilleros (`armar_direccion`): calle + número + "y" cruce en
+    `direccion1`, barrio/referencia en `direccion2`. Si Asinfo no tiene,
+    la ficha queda como está.
   · PROVINCIA y CANTÓN (agregados el mismo 27/08, segunda pasada): salen de
     `direccion_empresa.id_ciudad` → `ciudad` (el cantón) → `provincia`. Lo
     de PC venía del dBase truncado a ~10 letras y con typos — tanto que el
@@ -94,6 +96,10 @@ SELECT UPPER(LTRIM(RTRIM(COALESCE(e.nombre_comercial, '')))) AS cod,
        LTRIM(RTRIM(COALESCE(ld.nombre, '')))                 AS lista_desc,
        LTRIM(RTRIM(COALESCE(u.codigo, '')))                  AS agente,
        LTRIM(RTRIM(COALESCE(ub.direccion1, '')))             AS dir1,
+       LTRIM(RTRIM(COALESCE(ub.direccion2, '')))             AS dir2,
+       LTRIM(RTRIM(COALESCE(ub.direccion3, '')))             AS dir3,
+       LTRIM(RTRIM(COALESCE(ub.direccion4, '')))             AS dir4,
+       LTRIM(RTRIM(COALESCE(ub.direccion5, '')))             AS dir5,
        LTRIM(RTRIM(COALESCE(pr.nombre, '')))                 AS provincia,
        LTRIM(RTRIM(COALESCE(ci.nombre, '')))                 AS canton
   FROM empresa e
@@ -239,6 +245,39 @@ def _norm_dir(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).upper()
 
 
+def _limpio(s) -> str:
+    return re.sub(r"\s+", " ", str(s or "").strip())
+
+
+def armar_direccion(f: dict) -> tuple[str, str]:
+    """La dirección COMPLETA de Asinfo en los dos renglones de PC.
+
+    TMT 2026-10-15 (Tamara, ficha de LEP): *"las direcciones están mal,
+    están incompletas — fijate de traer todo"*. Asinfo la guarda en CINCO
+    casilleros de `ubicacion` y el sync sólo traía `direccion1`; LEP decía
+    "BRR LA LIBERTAD" y la calle ("AV JUAN FELIZ PROAÑO E IRLANDA") estaba
+    en `direccion3`. Medido sobre 3.691 clientes activos: d1 3.687, d2 412,
+    d3 698, d4 308, d5 190. El uso es el de la dirección ecuatoriana:
+    d1 = calle principal, d2 = número (N69-221, SN, MZ2164), d3 = calle
+    que cruza, d4 = barrio/referencia, d5 = sector/ciudad.
+
+    Renglón 1 = "d1 d2 y d3"; renglón 2 = "d4 · d5". Se saltean los
+    vacíos, los repetidos y un d4/d5 que sea sólo el cantón (ya se ve en
+    Ciudad).
+    """
+    d1, d2, d3, d4, d5 = (_limpio(f.get(k)) for k in ("dir1", "dir2", "dir3", "dir4", "dir5"))
+    calle = " ".join(x for x in (d1, d2) if x)
+    if d3 and _norm_dir(d3) not in _norm_dir(calle):
+        calle = f"{calle} y {d3}" if calle else d3
+    ya = {_norm_dir(calle), _norm_dir(f.get("canton")), _norm_dir(f.get("provincia")), ""}
+    extra: list[str] = []
+    for x in (d4, d5):
+        if _norm_dir(x) not in ya and _norm_dir(x) not in _norm_dir(calle):
+            extra.append(x)
+            ya.add(_norm_dir(x))
+    return calle[:200], " · ".join(extra)[:200]
+
+
 def _norm_nombre(s: str | None) -> str:
     return re.sub(r"\s+", " ", (s or "").strip()).upper()
 
@@ -304,7 +343,8 @@ def _sincronizar(usuario: str) -> dict:
             "lista_desc": str(f.get("lista_desc") or "").strip()[:60],
             "desc": descuento_de_lista(f.get("lista_desc")),
             "agente": str(f.get("agente") or "").strip()[:30],
-            "dir": str(f.get("dir1") or "").strip()[:200],
+            "dir": armar_direccion(f)[0],
+            "dir2": armar_direccion(f)[1],
             "provincia": str(f.get("provincia") or "").strip()[:50],
             "canton": str(f.get("canton") or "").strip()[:50],
         }
@@ -316,7 +356,7 @@ def _sincronizar(usuario: str) -> dict:
     # ── Lado PC ─────────────────────────────────────────────────────────
     pc_rows = db.fetch_all(
         "SELECT id_cliente, UPPER(TRIM(codigo_cli)) AS cod, nombre, ruc, "
-        "       telefono, descuento, vend, direccion1, provincia, canton "
+        "       telefono, descuento, vend, direccion1, direccion2, provincia, canton "
         "FROM scintela.cliente"
     ) or []
     pc_por_cod = {r["cod"]: r for r in pc_rows if r.get("cod")}
@@ -372,11 +412,19 @@ def _sincronizar(usuario: str) -> dict:
         dir_nueva = a["dir"] if (
             a["dir"] and _norm_dir(a["dir"]) != _norm_dir(p.get("direccion1"))
         ) else None
-        if dir_nueva is not None:
+        # El 2º renglón sólo se toca si Asinfo TIENE dirección; ahí manda
+        # entero — incluso vacío ("" = borrar el resto truncado del dBase,
+        # que repetía a medias lo que ahora trae el renglón 1).
+        dir2_nueva = a["dir2"] if (
+            a["dir"] and _norm_dir(a["dir2"]) != _norm_dir(p.get("direccion2"))
+        ) else None
+        if dir_nueva is not None or dir2_nueva is not None:
+            antes = " / ".join(x for x in ((p.get("direccion1") or "").strip(),
+                                           (p.get("direccion2") or "").strip()) if x)
             dir_cambiado.append({
                 "cod": cod,
-                "antes": ((p.get("direccion1") or "").strip() or None),
-                "ahora": dir_nueva,
+                "antes": antes or None,
+                "ahora": " / ".join(x for x in (a["dir"], a["dir2"]) if x),
             })
         # Provincia y cantón: mismas reglas que la dirección (27/08, segunda
         # pasada del día). Lo de PC venía del dBase truncado a ~10 letras.
@@ -395,9 +443,11 @@ def _sincronizar(usuario: str) -> dict:
                 })
         if (nombre_nuevo or ruc_nuevo or tel_nuevo or desc_nuevo is not None
                 or vend_nuevo is not None or dir_nueva is not None
+                or dir2_nueva is not None
                 or prov_nueva is not None or canton_nuevo is not None):
             cambios.append((cod, nombre_nuevo, ruc_nuevo, tel_nuevo, desc_nuevo,
-                            vend_nuevo, dir_nueva, prov_nueva, canton_nuevo))
+                            vend_nuevo, dir_nueva, prov_nueva, canton_nuevo,
+                            dir2_nueva))
 
     actualizados = _aplicar_cambios(cambios, usuario) if cambios else 0
 
@@ -457,7 +507,7 @@ def _sincronizar(usuario: str) -> dict:
 def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
     """UN solo UPDATE con VALUES — un viaje por fila a RDS ya tiró un 502
     en el cron de mails (TMT 2026-08-03); acá el primer pase toca ~3.400."""
-    marcadores = ",".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(cambios))
+    marcadores = ",".join(["(%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"] * len(cambios))
     planos = [
         (str(v) if (i == 4 and v is not None) else v)
         for fila in cambios for i, v in enumerate(fila)
@@ -473,11 +523,14 @@ def _aplicar_cambios(cambios: list[tuple], usuario: str) -> int:
                direccion1 = COALESCE(v.direccion1, c.direccion1),
                provincia = COALESCE(v.provincia, c.provincia),
                canton   = COALESCE(v.canton, c.canton),
+               -- NULL = no tocar; '' = Asinfo tiene dirección sin 2º renglón
+               direccion2 = CASE WHEN v.direccion2 IS NULL THEN c.direccion2
+                                 ELSE NULLIF(v.direccion2, '') END,
                fecha_modifica   = CURRENT_TIMESTAMP,
                usuario_modifica = %s
           FROM (VALUES {marcadores})
                AS v(cod, nombre, ruc, telefono, descuento, vend, direccion1,
-                    provincia, canton)
+                    provincia, canton, direccion2)
          WHERE UPPER(TRIM(c.codigo_cli)) = v.cod
         """,
         tuple([usuario[:60], *planos]),
@@ -495,6 +548,7 @@ def _alta(a: dict, usuario: str) -> bool:
             codigo_cli=a["cod"], nombre=a["nombre"], ruc=a["ruc"] or None,
             telefono=a["tel"] or None, descuento=a.get("desc"),
             vend=vend_alta or None, direccion1=a.get("dir") or None,
+            direccion2=a.get("dir2") or None,
             provincia=a.get("provincia") or None,
             canton=a.get("canton") or None,
             usuario=usuario[:50],
