@@ -196,6 +196,9 @@
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
   .pd .imp{display:none}
+  .pd .imp-una{margin-left:10px;font-size:13px;font-weight:600;color:var(--ink);line-height:1;padding:5px 8px;border:1px solid var(--linea);border-radius:7px;background:#fff;cursor:pointer;vertical-align:middle;opacity:.75}
+  .pd .imp-una:hover{opacity:1;border-color:var(--ink)}
+  .pd.ancha .telablk h3{display:flex;align-items:center}
   .pd table.tt td.cmemo{color:#475569}
   main .pd table.tt tfoot tr.tot>td.totl{text-align:left;padding-left:14px !important;font-family:inherit}
   main .pd table.tt tfoot tr.tot>td{font-weight:800;font-size:16px !important;background:#f1f5f9;border-top:2px solid var(--ink) !important;padding-top:10px !important;padding-bottom:10px !important}
@@ -258,6 +261,8 @@
     .pd .imp .cd{font-size:9pt;color:#444 !important}
     .pd .imp .fam-imp{font-weight:400}
     .pd .imp tr.fx{display:none !important}
+    .pd .imp.una .imp-tela:not(.sel){display:none !important}
+    .pd .imp.una .imp-tela.sel{break-before:auto !important;page-break-before:auto !important}
     .pd .imp tr.tot td{background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;border-top:1.4pt solid #000 !important}
     @page{size:A4 portrait;margin:10mm 8mm}
   }
@@ -429,6 +434,9 @@
     {% for t in telas %}
       <div class="telablk">
       <h3><span>{{ t.tela }}</span>
+        {# Imprimir SOLO esta tela (Tamara 15/10: "poder elegir imprimir sólo
+           Fleece 102 y no todos los Fleece"). #}
+        <button type="button" class="imp-una no-print" data-tela="{{ t.tela }}" title="Imprimir sólo {{ t.tela }}">🖨 Solo esta</button>
       </h3>
       <table class="tt">
         <colgroup><col style="width:20%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:13%"></colgroup>
@@ -505,7 +513,7 @@
        después las chicas juntas; cada familia arranca hoja). #}
     {% for h in imp_hojas %}
     {% set t = h.t %}
-    <section class="imp-tela {{ h.clase }}">
+    <section class="imp-tela {{ h.clase }}" data-tela="{{ t.tela }}">
       <table>
         <colgroup><col style="width:7%"><col style="width:17%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:8%"><col style="width:9%"><col style="width:10%"><col style="width:12%"><col style="width:12%"></colgroup>
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
@@ -730,6 +738,23 @@
   // ?todas=1: la página se abre para imprimir todas las familias juntas.
   window.addEventListener('load', function () { setTimeout(function () { window.print(); }, 300); });
   {% endif %}
+  // 🖨 al lado de cada tela: imprime sólo esa (y vuelve todo como estaba).
+  (function () {
+    var imp = document.querySelector('.pd .imp');
+    if (!imp) return;
+    document.querySelectorAll('.pd .imp-una').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var tela = b.dataset.tela;
+        imp.classList.add('una');
+        imp.querySelectorAll('.imp-tela').forEach(function (s) { s.classList.toggle('sel', s.dataset.tela === tela); });
+        window.print();
+      });
+    });
+    window.addEventListener('afterprint', function () {
+      imp.classList.remove('una');
+      imp.querySelectorAll('.imp-tela.sel').forEach(function (s) { s.classList.remove('sel'); });
+    });
+  })();
   // Cargar «Mandar a hacer» → revisar → mandar a producción (15/10/2026).
   (function () {
     var pd = document.querySelector('.pd'), bt = document.getElementById('editar-hacer');
