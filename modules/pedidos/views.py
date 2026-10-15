@@ -141,12 +141,24 @@ def lista():
             t["u"] = next((f["u"] for f in t["filas"]), "roll")
             t["sinmemo_d"] = sum(f["sinmemo_d"] for f in t["filas"])
             t["hacer_d"] = sum(f["hacer_d"] for f in t["filas"])
+            # El renglón TOTAL de cada tabla (Tamara 15/10: "los totales como
+            # parte de la tabla en vez de como buckets aparte").
+            t["tot_pedido"] = sum(f["pedido_d"] for f in t["filas"])
+            t["tot_stock"] = sum(f["inventario_d"] for f in t["filas"])
+            t["tot_prod"] = sum(f["produccion_d"] for f in t["filas"])
         # La hoja impresa: la familia elegida, o TODAS con ?todas=1 (Tamara
         # 15/10: "quiero imprimir todas juntas"), cada familia arrancando hoja.
         todas = request.args.get("todas") == "1"
         if todas:
             fams = [(c["categoria"], service.por_tela(filas, c["categoria"]))
                     for c in categorias]
+            for _, ts in fams:
+                for t in ts:
+                    t["u"] = next((f["u"] for f in t["filas"]), "roll")
+                    t["hacer_d"] = sum(f["hacer_d"] for f in t["filas"])
+                    t["tot_pedido"] = sum(f["pedido_d"] for f in t["filas"])
+                    t["tot_stock"] = sum(f["inventario_d"] for f in t["filas"])
+                    t["tot_prod"] = sum(f["produccion_d"] for f in t["filas"])
         else:
             fams = [(activa, telas)]
         ctx["imp_hojas"] = service.hojas_impresion(fams)

@@ -196,6 +196,8 @@
   .pd.ancha tr.det .npd{font-size:13px}
   .pd.ancha .ver.memof a{font-size:15px;padding:7px 14px}
   .pd .imp{display:none}
+  main .pd table.tt tfoot tr.tot>td.totl{text-align:left;padding-left:14px !important;font-family:inherit}
+  main .pd table.tt tfoot tr.tot>td{font-weight:800;font-size:16px !important;background:#f1f5f9;border-top:2px solid var(--ink) !important;padding-top:10px !important;padding-bottom:10px !important}
   main .pd table.tt thead th.thp{text-align:right;line-height:1.15}
   .pd .mand{display:block;font-size:12px;font-weight:600;color:#475569;white-space:nowrap}
   .pd.editando .mand{margin-bottom:4px}
@@ -255,6 +257,7 @@
     .pd .imp .cd{font-size:9pt;color:#444 !important}
     .pd .imp .fam-imp{font-weight:400}
     .pd .imp tr.fx{display:none !important}
+    .pd .imp tr.tot td{background:#eee !important;-webkit-print-color-adjust:exact;print-color-adjust:exact;border-top:1.4pt solid #000 !important}
     @page{size:A4 portrait;margin:10mm 8mm}
   }
 </style>
@@ -424,7 +427,7 @@
     {% endif %}
     {% for t in telas %}
       <div class="telablk">
-      <h3><span>{{ t.tela }}</span>{% if t.hacer_d %}<span class="muted" style="color:#b91c1c">falta {{ t.hacer_d|num_es(0) }} {{ t.u }}</span>{% endif %}
+      <h3><span>{{ t.tela }}</span>
       </h3>
       <table class="tt">
         <colgroup><col style="width:22%"><col style="width:9%"><col style="width:9%"><col style="width:9%"><col style="width:10%"><col style="width:13%"><col style="width:14%"><col style="width:14%"></colgroup>
@@ -482,6 +485,13 @@
             {% endif %}
           {% endfor %}
         </tbody>
+        <tfoot>
+          <tr class="tot">
+            <td class="totl">Total <span class="muted">({{ t.u }})</span></td><td></td>
+            <td>{{ t.tot_pedido|num_es(0) }}</td><td>{{ t.tot_stock|num_es(0) }}</td><td>{{ t.tot_prod|num_es(0) }}</td>
+            <td class="{{ 'falta' if t.hacer_d else 'okc' }}">{{ t.hacer_d|num_es(0) if t.hacer_d else 'ok' }}</td><td></td><td></td>
+          </tr>
+        </tfoot>
       </table>
       </div>
     {% endfor %}
@@ -518,6 +528,11 @@
             <td class="n">{% if md and md.rib_kg %}<span class="cd">mandado {{ md.fecha_fmt }}:</span> {{ md.rib_kg|num_es(0) }}{% endif %}</td>
           </tr>
         {% endfor %}
+          <tr class="tot">
+            <td colspan="2"><b>Total</b> <span class="cd">({{ t.u }})</span></td><td></td>
+            <td class="n"><b>{{ t.tot_pedido|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_stock|num_es(0) }}</b></td>
+            <td class="n"><b>{{ t.tot_prod|num_es(0) }}</b></td><td class="n"><b>{{ t.hacer_d|num_es(0) }}</b></td><td></td><td></td>
+          </tr>
         </tbody>
       </table>
     </section>
