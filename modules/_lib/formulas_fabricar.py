@@ -75,29 +75,38 @@ def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
     if not formulas_memos.disponible():
         return False, "sin_bridge", ""
     envio = nuevo_envio()
-    try:
-        with formulas_memos._conn() as c:
-            with c.cursor() as cur:
-                for ln in lineas:
-                    cur.execute(
-                        """
-                        INSERT INTO a_fabricar (envio, enviado_por, categoria, tela,
-                                                acabado, color, codigo, cantidad,
-                                                unidad, rib_kg, pedidos)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                        """,
-                        (envio, enviado_por or "", ln.get("categoria") or "",
-                         ln.get("tela") or "", ln.get("acabado") or "",
-                         ln.get("color") or "", ln.get("codigo") or "",
-                         ln.get("cantidad") or 0, ln.get("unidad") or "roll",
-                         ln.get("rib_kg") or 0,
-                         json.dumps(ln.get("pedidos") or [], default=str)),
-                    )
-            c.commit()
-        return True, "enviado", envio
-    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
-        _log.warning("formulas_fabricar.mandar falló: %s", e)
-        return False, "sin_bridge", ""
+    # color_nombre (15/10/2026): Fabricación muestra "0412 VERDE PINO". Si
+    # formulas todavía no tiene la columna, se manda sin ella — el envío no
+    # se pierde por un nombre.
+    for con_nombre in (True, False):
+        try:
+            _insertar(envio, enviado_por, lineas, con_nombre)
+            return True, "enviado", envio
+        except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+            if con_nombre and "color_nombre" in str(e):
+                continue
+            _log.warning("formulas_fabricar.mandar falló: %s", e)
+            return False, "sin_bridge", ""
+    return False, "sin_bridge", ""
+
+
+def _insertar(envio: str, enviado_por: str, lineas: list[dict], con_nombre: bool) -> None:
+    cols = ("envio, enviado_por, categoria, tela, acabado, color, codigo, cantidad, "
+            "unidad, rib_kg, pedidos" + (", color_nombre" if con_nombre else ""))
+    marcas = ", ".join(["%s"] * (12 if con_nombre else 11))
+    with formulas_memos._conn() as c:
+        with c.cursor() as cur:
+            for ln in lineas:
+                vals = (envio, enviado_por or "", ln.get("categoria") or "",
+                        ln.get("tela") or "", ln.get("acabado") or "",
+                        ln.get("color") or "", ln.get("codigo") or "",
+                        ln.get("cantidad") or 0, ln.get("unidad") or "roll",
+                        ln.get("rib_kg") or 0,
+                        json.dumps(ln.get("pedidos") or [], default=str))
+                if con_nombre:
+                    vals += (ln.get("color_nombre") or "",)
+                cur.execute(f"INSERT INTO a_fabricar ({cols}) VALUES ({marcas})", vals)
+        c.commit()
 
 
 def cancelar(usuario: str, envio: str = "", id_: int | None = None) -> tuple[int, str]:

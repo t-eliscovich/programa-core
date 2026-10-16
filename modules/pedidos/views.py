@@ -467,6 +467,7 @@ def mandar_a_hacer():
     af_filas, _ = formulas_fabricar.envios()
     ya = set(memo_lineas) | set(formulas_fabricar.pedidos_enviados(af_filas))
 
+    nombres = service.nombres_color()
     lineas, salteadas = [], []
     for clave, (cant, rib) in pedidas.items():
         f = por_clave.get(clave)
@@ -479,6 +480,7 @@ def mandar_a_hacer():
         lineas.append({
             "categoria": f["categoria"], "tela": f["tela"],
             "acabado": f.get("acabado") or "", "color": f["color"],
+            "color_nombre": nombres.get(f["color"], ""),
             "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"], "rib_kg": rib,
             "pedidos": peds,
         })
