@@ -689,7 +689,7 @@
       <div class="hcaja">
         <h2 id="hmt">Mandar a producción</h2>
         <p class="nota">Revisá la lista. Al mandarla, le llega a la fábrica y los pedidos sin memo de cada color quedan como <b>enviados a producción</b>.</p>
-        <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Rollos</th><th>Rib (kg)</th>{% if con_cuellos %}<th>Cuellos</th><th>Puños</th>{% endif %}<th>Pedidos que cubre</th></tr></thead><tbody id="hbody"></tbody></table>
+        <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Rollos</th><th>Rib (kg)</th>{% if con_cuellos %}<th>Cuellos</th><th>Puños</th>{% endif %}</tr></thead><tbody id="hbody"></tbody></table>
         <form method="post" action="{{ url_for('pedidos.mandar_a_hacer') }}" id="hform" class="hacc">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="cat" value="{{ activa }}">
@@ -1047,13 +1047,12 @@
     document.getElementById('hrev').addEventListener('click', function () {
       var tb = document.getElementById('hbody'); tb.innerHTML = '';
       llenos().forEach(function (i) {
-        var d = i.dataset, ps = (d.peds || '').split('|').filter(Boolean);
+        var d = i.dataset;
         var tr = document.createElement('tr');
         tr.innerHTML = '<td>' + esc(d.tela) + '</td><td>' + (d.aca === 'TUB' ? 'Tubular' : (d.aca === 'ABI' ? 'Abierto' : esc(d.aca))) +
           '</td><td><b>' + esc(d.color) + '</b></td><td class="n">' + ((+i.value) ? (+i.value) + ' ' + esc(d.u) : '—') +
           '</td><td class="n">' + (rib(i) ? rib(i) + ' kg' : '—') + '</td>' +
-          ({{ 'true' if con_cuellos else 'false' }} ? '<td class="n">' + (ex(i, 'u') || '—') + '</td><td class="n">' + (ex(i, 'p') || '—') + '</td>' : '') +
-          '<td class="ps">' + (ps.length ? ps.map(esc).join('<br>') : '—') + '</td>';
+          ({{ 'true' if con_cuellos else 'false' }} ? '<td class="n">' + (ex(i, 'u') || '—') + '</td><td class="n">' + (ex(i, 'p') || '—') + '</td>' : '');
         tb.appendChild(tr);
       });
       md.hidden = false;
