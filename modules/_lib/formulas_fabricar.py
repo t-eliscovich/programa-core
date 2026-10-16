@@ -91,7 +91,7 @@ def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
 
 #: Columnas opcionales de a_fabricar: color_nombre (15/10/2026) y lo que
 #: sugería el gris de Producir al mandar (16/10/2026), para aprender.
-_EXTRAS = ("color_nombre", "sugerido", "sugerido_venta")
+_EXTRAS = ("color_nombre", "sugerido", "sugerido_venta", "cuellos", "punos")
 
 
 def _insertar(envio: str, enviado_por: str, lineas: list[dict], extras: tuple) -> None:
@@ -178,11 +178,10 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
         with formulas_memos._conn() as c, c.cursor() as cur:
             cur.execute(
                 """
-                SELECT id, envio, enviado_por, enviado_en, categoria, tela,
-                       acabado, color, codigo, cantidad, unidad, rib_kg, pedidos,
-                       estado, en_proceso_por, en_proceso_en,
-                       terminado_por, terminado_en, cancelado_por, cancelado_en
-                  FROM a_fabricar
+                -- a.*: las columnas que se van sumando (color_nombre, cuellos,
+                -- punos…) llegan solas y una que falte no rompe el historial.
+                SELECT a.*
+                  FROM a_fabricar a
                  WHERE estado IN ('pendiente', 'en_proceso')
                     OR enviado_en >= NOW() - (%s || ' days')::interval
                  ORDER BY enviado_en DESC, id
@@ -199,6 +198,8 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
                     f["pedidos"] = []
             f["cantidad"] = float(f.get("cantidad") or 0)
             f["rib_kg"] = float(f.get("rib_kg") or 0)
+            f["cuellos"] = float(f.get("cuellos") or 0)
+            f["punos"] = float(f.get("punos") or 0)
             f["fecha_fmt"] = _dm(f.get("enviado_en"))
             f["hora_fmt"] = _hm(f.get("enviado_en"))
             f["en_proceso_fmt"] = _dm(f.get("en_proceso_en"))

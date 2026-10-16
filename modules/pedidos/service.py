@@ -706,6 +706,12 @@ def sin_memo_y_a_hacer(filas: list[dict], pedidos_por_color: dict,
 
 
 
+
+def lleva_cuellos(categoria: str) -> bool:
+    """Pique se manda a producir con sus cuellos y puños (Tamara 16/10/2026:
+    "todo pique con dos columnas más: cuellos y puños")."""
+    return str(categoria or "").strip().lower().startswith("pique")
+
 #: Lo mínimo que se manda a tinturar de un color (Tamara 16/10/2026: "menos de
 #: 6 no podemos"). TUB y ABI del mismo color se tinturan juntos, así que el
 #: mínimo es de la TELA + COLOR, sumando los dos acabados.

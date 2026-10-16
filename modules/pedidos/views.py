@@ -82,7 +82,8 @@ def lista():
         imp_hojas=[], imprimir_todas=False, nombres_color={},
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
-        minimo_rollos=service.MINIMO_ROLLOS, borrador={},
+        minimo_rollos=service.MINIMO_ROLLOS, borrador={}, con_cuellos=False,
+        lleva_cuellos=lambda c: service.lleva_cuellos(c),
     )
 
     if not disponible or not categorias:
@@ -187,6 +188,7 @@ def lista():
             enviados=enviados,
             mandados=formulas_fabricar.vivos_por_clave(af_filas, service.clave_renglon),
             mandar_a_hacer_activo=producir,
+            con_cuellos=service.lleva_cuellos(activa),
             borrador=_borrador_del_usuario() if producir else {},
             minimo_rollos=service.MINIMO_ROLLOS,
             hacer_total=sum(t["hacer_d"] for t in telas),
@@ -496,14 +498,15 @@ def mandar_a_hacer():
         except ValueError:
             return 0.0
 
-    # c_<clave> = rollos de la tela, r_<clave> = rib en kilos (Tamara 15/10).
-    pedidas: dict[str, tuple[float, float]] = {}
+    # c_<clave> = rollos de la tela, r_<clave> = rib en kilos (Tamara 15/10);
+    # u_<clave> = cuellos y p_<clave> = puños, en unidades (Pique, 16/10).
+    pedidas: dict[str, tuple[float, float, float, float]] = {}
     for k in request.form:
-        if k[:2] in ("c_", "r_"):
+        if k[:2] in ("c_", "r_", "u_", "p_"):
             clave = k[2:]
-            rollos, rib = _num(request.form.get("c_" + clave)), _num(request.form.get("r_" + clave))
-            if rollos > 0 or rib > 0:
-                pedidas[clave] = (rollos, rib)
+            v = tuple(_num(request.form.get(x + clave)) for x in ("c_", "r_", "u_", "p_"))
+            if any(x > 0 for x in v):
+                pedidas[clave] = v
     if not pedidas:
         flash("No cargaste ninguna cantidad para producir.", "warning")
         return redirect(volver)
@@ -527,7 +530,7 @@ def mandar_a_hacer():
 
     nombres = service.nombres_color()
     lineas, salteadas = [], []
-    for clave, (cant, rib) in pedidas.items():
+    for clave, (cant, rib, cue, pun) in pedidas.items():
         f = por_clave.get(clave)
         if f is None:
             salteadas.append(clave.split("_")[0])
@@ -541,6 +544,7 @@ def mandar_a_hacer():
             "acabado": f.get("acabado") or "", "color": f["color"],
             "color_nombre": nombres.get(f["color"], ""),
             "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"], "rib_kg": rib,
+            "cuellos": cue, "punos": pun,
             "sugerido": f.get("sugerido_d", 0), "sugerido_venta": f.get("reponer_d", 0),
             "pedidos": peds,
         })
@@ -556,6 +560,10 @@ def mandar_a_hacer():
             partes.append(f"{total:g} {'rollos' if lineas[0]['unidad'] == 'roll' else lineas[0]['unidad']}")
         if rib:
             partes.append(f"{rib:g} kg de rib")
+        for campo, nombre in (("cuellos", "cuellos"), ("punos", "puños")):
+            n = sum(ln.get(campo) or 0 for ln in lineas)
+            if n:
+                partes.append(f"{n:g} {nombre}")
         flash(f"Listo: {len(lineas)} {'color' if len(lineas) == 1 else 'colores'} · "
               + " + ".join(partes)
               + " mandados a producción. A Jonathan le llega en «Fabricación».", "success")

@@ -386,7 +386,8 @@ def test_al_mandar_se_guarda_lo_que_sugeria():
         ok, motivo, _ = formulas_fabricar.mandar([_ln()], "tamara")
     assert ok and motivo == "enviado"
     sql, vals = cur.hechos[0]
-    assert "sugerido, sugerido_venta" in sql and vals[-3:] == ("GRIS", 17, 6)
+    assert "sugerido, sugerido_venta, cuellos, punos" in sql
+    assert vals[-5:] == ("GRIS", 17, 6, 0, 0)
 
 
 def test_si_formulas_no_tiene_las_columnas_nuevas_manda_igual():

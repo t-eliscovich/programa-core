@@ -297,7 +297,8 @@
   .pd .hbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--ink);color:#fff;border-radius:12px;box-shadow:0 -4px 16px rgba(15,23,42,.18)}
   .pd .hbar[hidden]{display:none}
   .pd .hbar .hres{font-size:16px;margin-right:auto}
-  .pd .hbar .hguard{font-size:13px;color:#cbd5e1}.pd .hbar b{font-size:20px}
+  .pd .hbar .hguard{font-size:13px;color:#cbd5e1;white-space:nowrap}
+  .pd .hbar .btn{white-space:nowrap}.pd .hbar b{font-size:20px}
   .pd .hbar .btn{font-size:15px;padding:9px 16px}
   .pd .hbar .btn.pri{background:var(--rojo);border-color:var(--rojo)}
   .pd .hbar .btn.pri[disabled]{opacity:.45;cursor:not-allowed}
@@ -531,15 +532,21 @@
            una de más abajo"): abre la carga y pone el cursor en esta tela. #}
         {% if mandar_a_hacer_activo %}<button type="button" class="prod-una no-print" title="Cargar lo que hay que producir de {{ t.tela }}">✎ Producir</button>{% endif %}
       </h3>
-      <table class="tt">
+      {# Pique lleva dos columnas más: cuellos y puños (Tamara 16/10/2026). #}
+      {% set ncol = 11 if con_cuellos else 9 %}
+      <table class="tt{{ ' cyp' if con_cuellos }}">
+        {% if con_cuellos %}
+        <colgroup><col style="width:17%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:9%"><col style="width:10%"><col style="width:10%"><col style="width:9.5%"><col style="width:9.5%"></colgroup>
+        {% else %}
         <colgroup><col style="width:20%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:13%"></colgroup>
-        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th class="thp">Con<br>memo</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="thp">Producir<br>rollos</th><th class="thp">Producir<br>rib (kg)</th></tr></thead>
+        {% endif %}
+        <thead><tr><th>Color</th><th>Desde</th><th>Pedido</th><th class="thp">Con<br>memo</th><th>Stock</th><th>En produc.</th><th>Falta (sin memo)</th><th class="thp">Producir<br>rollos</th><th class="thp">Producir<br>rib (kg)</th>{% if con_cuellos %}<th class="thp">Producir<br>cuellos</th><th class="thp">Producir<br>puños</th>{% endif %}</tr></thead>
         <tbody>
           {% set ac = namespace(prev=None) %}
           {% for f in t.filas %}
             {% if f.acabado != ac.prev %}
               {% set ac.prev = f.acabado %}
-              <tr class="acarow {{ 'abi' if f.acabado == 'ABI' else ('tub' if f.acabado == 'TUB' else '') }}"><td colspan="9">{{ f.acabado or 'Sin acabado' }}</td></tr>
+              <tr class="acarow {{ 'abi' if f.acabado == 'ABI' else ('tub' if f.acabado == 'TUB' else '') }}"><td colspan="{{ ncol }}">{{ f.acabado or 'Sin acabado' }}</td></tr>
             {% endif %}
             {% set peds = pedidos_por_color.get(f.clave, []) %}
             {% set nm = namespace(sin=0, con=0) %}
@@ -561,11 +568,15 @@
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
                             <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
-              {% set md = mandados.get(f.clave) %}{% set bz = borrador.get(f.clave) or (0, 0) %}
+              {% set md = mandados.get(f.clave) %}{% set bz = borrador.get(f.clave) or (0, 0, 0, 0) %}
               <td class="hacer">{% if md and md.cantidad %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rollos {{ f.color }} {{ f.acabado }}"{% if bz[0] %} value="{{ '%g'|format(bz[0]) }}"{% endif %}{% if f.sugerido_d and not (md and md.cantidad) %} placeholder="{{ f.sugerido_d }}" title="{{ f.sinmemo_d }} pedidos sin memo{% if f.reponer_d %} + {{ f.reponer_d }} venta de 2 semanas{% endif %}{% if f.inventario_d + f.produccion_d %} − {{ f.inventario_d + f.produccion_d }} stock y en producción{% endif %}{% if f.sugerido_d > f.sinmemo_d + f.reponer_d - f.inventario_d - f.produccion_d %} · mínimo {{ minimo_rollos }} por color (TUB + ABI){% endif %}"{% endif %}
                   data-clave="{{ f.clave }}" data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}"
                   data-peds="{% for p in peds if not memo_lineas.get(p.numero) and not enviados.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
               <td class="hacer">{% if md and md.rib_kg %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.rib_kg|num_es(0) }}</span>{% endif %}<input class="inhacer inrib" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rib en kilos {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"{% if bz[1] %} value="{{ '%g'|format(bz[1]) }}"{% endif %}></td>
+              {% if con_cuellos %}
+              <td class="hacer">{% if md and md.cuellos %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.cuellos|num_es(0) }}</span>{% endif %}<input class="inhacer inextra" data-k="u" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir cuellos {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"{% if bz[2] %} value="{{ '%g'|format(bz[2]) }}"{% endif %}></td>
+              <td class="hacer">{% if md and md.punos %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.punos|num_es(0) }}</span>{% endif %}<input class="inhacer inextra" data-k="p" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir puños {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"{% if bz[3] %} value="{{ '%g'|format(bz[3]) }}"{% endif %}></td>
+              {% endif %}
             </tr>
             {% for p in peds %}
               <tr class="det" data-grupo="d-{{ f.clave }}" data-memo="{{ 1 if (memo_lineas.get(p.numero) or enviados.get(p.numero)) else 0 }}" data-fila-hija>
@@ -573,15 +584,15 @@
                 <td class="fecha" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
                 <td colspan="3" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
-                <td class="npd">{{ p.numero }}</td><td class="hacer"></td><td class="hacer"></td>
+                <td class="npd">{{ p.numero }}</td><td class="hacer"></td><td class="hacer"></td>{% if con_cuellos %}<td class="hacer"></td><td class="hacer"></td>{% endif %}
               </tr>
             {% endfor %}
             {% if not peds %}
-              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="9" class="muted">Este color no tiene pedidos cargados.</td></tr>
+              <tr class="det" data-grupo="d-{{ f.clave }}" data-fila-hija><td colspan="{{ ncol }}" class="muted">Este color no tiene pedidos cargados.</td></tr>
             {% endif %}
             {% if f.n_ordenes %}
               <tr class="det masrow" data-grupo="d-{{ f.clave }}" data-fila-hija>
-                <td colspan="9" class="masinfo">
+                <td colspan="{{ ncol }}" class="masinfo">
                   <a href="{{ url_for('pedidos.color', codigo=f.codigo, aca=f.acabado) }}">
                     {{ 'Ver la orden' if f.n_ordenes == 1 else 'Ver las ' ~ f.n_ordenes ~ ' órdenes' }} de tinturado de este color</a>
                 </td>
@@ -593,7 +604,7 @@
           <tr class="tot">
             <td class="totl">Total <span class="muted">({{ t.u }})</span></td><td></td>
             <td>{{ t.tot_pedido|num_es(0) }}</td><td class="cmemo">{{ t.tot_conmemo|num_es(0) if t.tot_conmemo else '—' }}</td><td>{{ t.tot_stock|num_es(0) }}</td><td>{{ t.tot_prod|num_es(0) }}</td>
-            <td class="{{ 'falta' if t.hacer_d else 'okc' }}">{{ t.hacer_d|num_es(0) if t.hacer_d else 'ok' }}</td><td></td><td></td>
+            <td class="{{ 'falta' if t.hacer_d else 'okc' }}">{{ t.hacer_d|num_es(0) if t.hacer_d else 'ok' }}</td><td></td><td></td>{% if con_cuellos %}<td></td><td></td>{% endif %}
           </tr>
         </tfoot>
       </table>
@@ -607,13 +618,18 @@
        después las chicas juntas; cada familia arranca hoja). #}
     {% for h in imp_hojas %}
     {% set t = h.t %}
+    {% set cyp = lleva_cuellos(h.familia) %}
     <section class="imp-tela {{ h.clase }}" data-tela="{{ t.tela }}">
       <table>
+        {% if cyp %}
+        <colgroup><col style="width:6%"><col style="width:21%"><col style="width:7%"><col style="width:7%"><col style="width:7%"><col style="width:6%"><col style="width:6%"><col style="width:6%"><col style="width:8.5%"><col style="width:8.5%"><col style="width:8.5%"><col style="width:8.5%"></colgroup>
+        {% else %}
         <colgroup><col style="width:6%"><col style="width:27%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:7%"><col style="width:8%"><col style="width:8%"><col style="width:10%"><col style="width:10%"></colgroup>
+        {% endif %}
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
            hoja, se repite arriba de cada hoja junto con las columnas. #}
-        <thead><tr class="imp-tit"><th colspan="10">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
-        <tr><th>Acab.</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">C/memo</th><th class="n">Stock</th><th class="n">Prod.</th><th class="n">Falta</th><th class="n">Rollos</th><th class="n">Rib kg</th></tr></thead>
+        <thead><tr class="imp-tit"><th colspan="{{ 12 if cyp else 10 }}">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
+        <tr><th>Acab.</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">C/memo</th><th class="n">Stock</th><th class="n">Prod.</th><th class="n">Falta</th><th class="n">Rollos</th><th class="n">Rib kg</th>{% if cyp %}<th class="n">Cuellos</th><th class="n">Puños</th>{% endif %}</tr></thead>
         <tbody>
         {% for f in t.filas %}
           {% set peds = pedidos_por_color.get(f.clave, []) %}
@@ -631,12 +647,16 @@
             <td class="n"><b>{{ f.hacer_d|num_es(f.decimales) }}</b></td>
             <td class="n">{% if md and md.cantidad %}{{ md.cantidad|num_es(0) }} <span class="cd">mand. {{ md.fecha_fmt }}</span>{% endif %}</td>
             <td class="n">{% if md and md.rib_kg %}{{ md.rib_kg|num_es(0) }} <span class="cd">mand. {{ md.fecha_fmt }}</span>{% endif %}</td>
+            {% if cyp %}
+            <td class="n">{% if md and md.cuellos %}{{ md.cuellos|num_es(0) }} <span class="cd">mand. {{ md.fecha_fmt }}</span>{% endif %}</td>
+            <td class="n">{% if md and md.punos %}{{ md.punos|num_es(0) }} <span class="cd">mand. {{ md.fecha_fmt }}</span>{% endif %}</td>
+            {% endif %}
           </tr>
         {% endfor %}
           <tr class="tot">
             <td colspan="2"><b>Total</b> <span class="cd">({{ t.u }})</span></td><td></td>
             <td class="n"><b>{{ t.tot_pedido|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_conmemo|num_es(0) }}</b></td><td class="n"><b>{{ t.tot_stock|num_es(0) }}</b></td>
-            <td class="n"><b>{{ t.tot_prod|num_es(0) }}</b></td><td class="n"><b>{{ t.hacer_d|num_es(0) }}</b></td><td></td><td></td>
+            <td class="n"><b>{{ t.tot_prod|num_es(0) }}</b></td><td class="n"><b>{{ t.hacer_d|num_es(0) }}</b></td><td></td><td></td>{% if cyp %}<td></td><td></td>{% endif %}
           </tr>
         </tbody>
       </table>
@@ -644,7 +664,7 @@
     {% endfor %}
     </div>
     <div class="hbar no-print" id="hbar" hidden>
-      <div class="hres"><b id="hn">0</b> colores · <b id="hr">0</b> rollos · <b id="hk">0</b> kg de rib para producir</div>
+      <div class="hres"><b id="hn">0</b> colores · <b id="hr">0</b> rollos · <b id="hk">0</b> kg de rib{% if con_cuellos %} · <b id="hu">0</b> cuellos · <b id="hp">0</b> puños{% else %} para producir{% endif %}</div>
       <span class="hguard" id="hguard"></span>
       <button type="button" class="btn" id="hcancel">Cancelar</button>
       <button type="button" class="btn" id="hsave" title="Queda guardado hasta que lo mandes, aunque cierres la pantalla">💾 Guardar</button>
@@ -654,7 +674,7 @@
       <div class="hcaja">
         <h2 id="hmt">Mandar a producción</h2>
         <p class="nota">Revisá la lista. Al mandarla, le llega a la fábrica y los pedidos sin memo de cada color quedan como <b>enviados a producción</b>.</p>
-        <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Rollos</th><th>Rib (kg)</th><th>Pedidos que cubre</th></tr></thead><tbody id="hbody"></tbody></table>
+        <table class="hlist"><thead><tr><th>Tela</th><th>Acabado</th><th>Color</th><th>Rollos</th><th>Rib (kg)</th>{% if con_cuellos %}<th>Cuellos</th><th>Puños</th>{% endif %}<th>Pedidos que cubre</th></tr></thead><tbody id="hbody"></tbody></table>
         <form method="post" action="{{ url_for('pedidos.mandar_a_hacer') }}" id="hform" class="hacc">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="cat" value="{{ activa }}">
@@ -871,21 +891,25 @@
     var ins = function () { return Array.prototype.slice.call(document.querySelectorAll('.pd .inhacer')); };
     // Un renglón por color: sus rollos (.inhacer sin .inrib) y su rib en kg.
     var rib = function (i) { var r = i.closest('tr').querySelector('.inrib'); return r ? +r.value || 0 : 0; };
+    // Cuellos (u) y puños (p) de Pique, en la misma fila (16/10/2026).
+    var ex = function (i, k) { var r = i.closest('tr').querySelector('.inextra[data-k="' + k + '"]'); return r ? +r.value || 0 : 0; };
+    var esPrincipal = function (i) { return !i.classList.contains('inrib') && !i.classList.contains('inextra'); };
     var llenos = function () {
-      return ins().filter(function (i) { return !i.classList.contains('inrib') && ((+i.value > 0) || rib(i) > 0); });
+      return ins().filter(function (i) { return esPrincipal(i) && ((+i.value > 0) || rib(i) > 0 || ex(i, 'u') > 0 || ex(i, 'p') > 0); });
     };
     function contar() {
-      var l = llenos(), r = 0, k = 0;
-      l.forEach(function (i) { r += +i.value || 0; k += rib(i); });
+      var l = llenos(), r = 0, k = 0, cu = 0, pu = 0;
+      l.forEach(function (i) { r += +i.value || 0; k += rib(i); cu += ex(i, 'u'); pu += ex(i, 'p'); });
       document.getElementById('hn').textContent = l.length;
       document.getElementById('hr').textContent = r;
       document.getElementById('hk').textContent = k;
+      if (document.getElementById('hu')) { document.getElementById('hu').textContent = cu; document.getElementById('hp').textContent = pu; }
       document.getElementById('hrev').disabled = !l.length;
       // Menos de {{ minimo_rollos }} rollos de un color (TUB + ABI se tinturan
       // juntos): ámbar, sin texto y sin frenar (Tamara 16/10/2026).
       var g = {};
       ins().forEach(function (i) {
-        if (i.classList.contains('inrib')) return;
+        if (!esPrincipal(i)) return;
         var c = i.dataset.tela + '|' + i.dataset.color;
         (g[c] = g[c] || []).push(i);
       });
@@ -918,9 +942,10 @@
     function guardar(vacio, luego) {
       var claves = [], valores = {};
       ins().forEach(function (i) {
-        if (i.classList.contains('inrib')) return;
+        if (!esPrincipal(i)) return;
         var c = i.dataset.clave; claves.push(c);
-        if (!vacio && ((+i.value || 0) > 0 || rib(i) > 0)) valores[c] = [+i.value || 0, rib(i)];
+        var v = [+i.value || 0, rib(i), ex(i, 'u'), ex(i, 'p')];
+        if (!vacio && v.some(function (x) { return x > 0; })) valores[c] = v;
       });
       var fd = new FormData();
       fd.append('csrf_token', '{{ csrf_token() }}');
@@ -963,8 +988,10 @@
         var d = i.dataset, ps = (d.peds || '').split('|').filter(Boolean);
         var tr = document.createElement('tr');
         tr.innerHTML = '<td>' + esc(d.tela) + '</td><td>' + (d.aca === 'TUB' ? 'Tubular' : (d.aca === 'ABI' ? 'Abierto' : esc(d.aca))) +
-          '</td><td><b>' + esc(d.color) + '</b> <span class="muted">' + esc(d.cod) + '</span></td><td class="n">' + ((+i.value) ? (+i.value) + ' ' + esc(d.u) : '—') +
-          '</td><td class="n">' + (rib(i) ? rib(i) + ' kg' : '—') + '</td><td class="ps">' + (ps.length ? ps.map(esc).join('<br>') : '—') + '</td>';
+          '</td><td><b>' + esc(d.color) + '</b></td><td class="n">' + ((+i.value) ? (+i.value) + ' ' + esc(d.u) : '—') +
+          '</td><td class="n">' + (rib(i) ? rib(i) + ' kg' : '—') + '</td>' +
+          ({{ 'true' if con_cuellos else 'false' }} ? '<td class="n">' + (ex(i, 'u') || '—') + '</td><td class="n">' + (ex(i, 'p') || '—') + '</td>' : '') +
+          '<td class="ps">' + (ps.length ? ps.map(esc).join('<br>') : '—') + '</td>';
         tb.appendChild(tr);
       });
       md.hidden = false;
@@ -982,6 +1009,12 @@
         var r = document.createElement('input');
         r.type = 'hidden'; r.name = 'r_' + i.dataset.clave; r.value = rib(i);
         box.appendChild(r);
+        ['u', 'p'].forEach(function (k) {
+          if (!ex(i, k)) return;
+          var x = document.createElement('input');
+          x.type = 'hidden'; x.name = k + '_' + i.dataset.clave; x.value = ex(i, k);
+          box.appendChild(x);
+        });
       });
       document.getElementById('henviar').disabled = true;
       document.getElementById('henviar').textContent = 'Mandando…';

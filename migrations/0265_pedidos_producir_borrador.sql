@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS scintela.pedidos_producir_borrador (
     clave       TEXT        NOT NULL,
     rollos      NUMERIC     NOT NULL DEFAULT 0,
     rib_kg      NUMERIC     NOT NULL DEFAULT 0,
+    -- Pique lleva además cuellos y puños (unidades), Tamara 16/10/2026.
+    cuellos     NUMERIC     NOT NULL DEFAULT 0,
+    punos       NUMERIC     NOT NULL DEFAULT 0,
     actualizado TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (usuario, clave)
 );
