@@ -705,6 +705,48 @@ def sin_memo_y_a_hacer(filas: list[dict], pedidos_por_color: dict,
         f["hacer_d"] = max(0, sin - f["inventario_d"] - f["produccion_d"])
 
 
+
+#: Lo mínimo que se manda a tinturar de un color (Tamara 16/10/2026: "menos de
+#: 6 no podemos"). TUB y ABI del mismo color se tinturan juntos, así que el
+#: mínimo es de la TELA + COLOR, sumando los dos acabados.
+MINIMO_ROLLOS = 6
+
+
+def sugerido_producir(filas: list[dict], punto_kg: dict | None) -> None:
+    """El número gris de "Producir rollos" (Tamara 16/10/2026). Sólo sugiere:
+    no se completa ni se manda si nadie lo escribe.
+
+        sugerido = Falta (sin memo) + reposición − Stock − En producción
+
+    `reposición` es la venta de dos semanas de los productos que ROTAN (el
+    punto de reposición de Inventario rotativo, en kilos, por código +
+    acabado): si sale siempre, producir sólo lo pedido deja el color en cero.
+    Lo que vende a saltos no suma nada. Después, por tela + color: si los dos
+    acabados juntos dan entre 1 y 5, se sube a 6 en el acabado que más pide.
+    Deja `reponer_d`, `sugerido_d` y `sug_base_d` (lo que viene de pedidos).
+    """
+    punto_kg = punto_kg or {}
+    for f in filas:
+        cod, aca = f.get("codigo") or "", f.get("acabado") or ""
+        if aca:
+            pk = punto_kg.get((cod, aca), 0.0)
+        else:  # pedido sin acabado: la venta del producto en los dos
+            pk = sum(v for (c, _a), v in punto_kg.items() if c == cod)
+        k = _factor(f, "alt") or 0.0
+        f["reponer_d"] = round(pk * k) if pk > 0 else 0
+        f["sug_base_d"] = f.get("hacer_d", 0)
+        f["sugerido_d"] = max(0, f.get("sinmemo_d", 0) + f["reponer_d"]
+                              - f.get("inventario_d", 0) - f.get("produccion_d", 0))
+    grupos: dict = {}
+    for f in filas:
+        if not f.get("en_unidades"):
+            grupos.setdefault((f.get("tela"), f.get("color")), []).append(f)
+    for fs in grupos.values():
+        total = sum(f["sugerido_d"] for f in fs)
+        if 0 < total < MINIMO_ROLLOS:
+            max(fs, key=lambda f: f["sugerido_d"])["sugerido_d"] += MINIMO_ROLLOS - total
+
+
 # El detalle usa el CÓDIGO de producto y no el id interno porque es lo que la
 # dueña lee y lo que va en la URL. Se sanitiza a [A-Z0-9-] antes de interpolar:
 # `fetch_dataset` no toma parámetros posicionales en el resto del código y no

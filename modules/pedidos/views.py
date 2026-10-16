@@ -81,6 +81,7 @@ def lista():
         imp_hojas=[], imprimir_todas=False, nombres_color={},
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
+        minimo_rollos=service.MINIMO_ROLLOS,
     )
 
     if not disponible or not categorias:
@@ -134,6 +135,11 @@ def lista():
         for f in filas:
             hacer_cat[f["categoria"]] = hacer_cat.get(f["categoria"], 0) + f["hacer_d"]
         telas = service.por_tela(filas, activa) if activa else []
+        producir = (formulas_fabricar.disponible()
+                    and tiene_permiso("pedidos.enviar_memo"))
+        if producir:
+            service.sugerido_producir([f for t in telas for f in t["filas"]],
+                                      _punto_reposicion())
         cubiertas = []
         if solo_faltan:
             for t in telas:
@@ -179,8 +185,8 @@ def lista():
             hacer_cat=hacer_cat,
             enviados=enviados,
             mandados=formulas_fabricar.vivos_por_clave(af_filas, service.clave_renglon),
-            mandar_a_hacer_activo=(formulas_fabricar.disponible()
-                                   and tiene_permiso("pedidos.enviar_memo")),
+            mandar_a_hacer_activo=producir,
+            minimo_rollos=service.MINIMO_ROLLOS,
             hacer_total=sum(t["hacer_d"] for t in telas),
             hacer_colores=sum(1 for t in telas for f in t["filas"] if f["hacer_d"] > 0),
         )
@@ -188,6 +194,21 @@ def lista():
 
     return render_template("pedidos/lista.html", **ctx)
 
+
+
+def _punto_reposicion() -> dict:
+    """{(código, acabado): kilos de venta de dos semanas} de los productos que
+    rotan (Inventario rotativo, cacheado 10 min). Sin Asinfo, {}: el sugerido
+    queda en lo pedido y la pantalla sigue."""
+    from modules.inventario_rotativo import service as rot
+    filas, ok = rot.rotativo()
+    if not ok:
+        return {}
+    out: dict = {}
+    for r in filas:
+        clave = (r.get("codigo") or "", r.get("acabado") or "")
+        out[clave] = out.get(clave, 0.0) + float(r.get("punto_kg") or 0)
+    return out
 
 def _memo_de_lineas(pedidos_por_color: dict) -> dict[str, dict]:
     """Qué pedidos de los cortes Color / Tipo de tela ya tienen memo, y en

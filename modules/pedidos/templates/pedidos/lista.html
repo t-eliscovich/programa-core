@@ -221,6 +221,11 @@
   .pd .inhacer{display:none;width:78px;font-size:17px;font-weight:700;text-align:right;padding:5px 8px;border:2px solid #94a3b8;border-radius:8px;background:#fff;color:var(--ink)}
   .pd .inhacer:focus{outline:none;border-color:var(--ink);box-shadow:0 0 0 3px #e2e8f0}
   .pd.editando .inhacer{display:inline-block}
+  /* Sugerido (Tamara 16/10): Falta − Stock − En producción, en gris clarito.
+     Sólo se ve: no se completa ni se manda si no lo escribís. */
+  .pd .inhacer::placeholder{color:#cbd5e1;font-weight:600;opacity:1}
+  /* Menos del mínimo por color (TUB + ABI juntos): avisa en ámbar, no frena. */
+  .pd .inhacer.pocos{border-color:#f59e0b;background:#fffbeb}
   .pd .hbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--ink);color:#fff;border-radius:12px;box-shadow:0 -4px 16px rgba(15,23,42,.18)}
   .pd .hbar[hidden]{display:none}
   .pd .hbar .hres{font-size:16px;margin-right:auto}.pd .hbar b{font-size:20px}
@@ -470,7 +475,7 @@
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
                             <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
               {% set md = mandados.get(f.clave) %}
-              <td class="hacer">{% if md and md.cantidad %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rollos {{ f.color }} {{ f.acabado }}"
+              <td class="hacer">{% if md and md.cantidad %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rollos {{ f.color }} {{ f.acabado }}"{% if f.sugerido_d and not (md and md.cantidad) %} placeholder="{{ f.sugerido_d }}" title="Sugerido: {{ f.sug_base_d }} por pedidos{% if f.reponer_d %} + {{ f.reponer_d }} por venta de 2 semanas{% endif %}{% if f.sugerido_d > f.sug_base_d + f.reponer_d %} · mínimo {{ minimo_rollos }} por color (TUB + ABI){% endif %}"{% endif %}
                   data-clave="{{ f.clave }}" data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}"
                   data-peds="{% for p in peds if not memo_lineas.get(p.numero) and not enviados.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
               <td class="hacer">{% if md and md.rib_kg %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.rib_kg|num_es(0) }}</span>{% endif %}<input class="inhacer inrib" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rib en kilos {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"></td>
@@ -787,6 +792,18 @@
       document.getElementById('hr').textContent = r;
       document.getElementById('hk').textContent = k;
       document.getElementById('hrev').disabled = !l.length;
+      // Menos de {{ minimo_rollos }} rollos de un color (TUB + ABI se tinturan
+      // juntos): ámbar, sin texto y sin frenar (Tamara 16/10/2026).
+      var g = {};
+      ins().forEach(function (i) {
+        if (i.classList.contains('inrib')) return;
+        var c = i.dataset.tela + '|' + i.dataset.color;
+        (g[c] = g[c] || []).push(i);
+      });
+      Object.keys(g).forEach(function (c) {
+        var t = g[c].reduce(function (s, i) { return s + (+i.value || 0); }, 0);
+        g[c].forEach(function (i) { i.classList.toggle('pocos', t > 0 && t < {{ minimo_rollos }} && +i.value > 0); });
+      });
     }
     function modo(on) {
       pd.classList.toggle('editando', on); bar.hidden = !on;

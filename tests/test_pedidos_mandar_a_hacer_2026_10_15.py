@@ -305,3 +305,50 @@ def test_un_pedido_sin_nada_pendiente_no_se_manda(app, fake_db):
         c.post("/pedidos/mandar-a-hacer", data={"cat": "Fleece", f"c_{clave}": "2"})
     (ln,) = mandado["lineas"]
     assert [p["numero"] for p in ln["pedidos"]] == ["PDCL-1"]
+
+
+# ── 16/10/2026: el sugerido gris de Producir ───────────────────────────────
+
+def _fs(aca, sin, inv=0, prod=0, color="GRI", codigo="FL102GRI"):
+    return {"tela": "Fleece 102", "color": color, "codigo": codigo, "acabado": aca,
+            "en_unidades": False, "un_por_kg": None, "sinmemo_d": sin,
+            "inventario_d": inv, "produccion_d": prod,
+            "hacer_d": max(0, sin - inv - prod)}
+
+
+def test_lo_que_rota_suma_dos_semanas_de_venta():
+    f = _fs("ABI", 14, prod=3)
+    service.sugerido_producir([f], {("FL102GRI", "ABI"): 6 * service.KG_POR_ROLLO})
+    assert (f["sug_base_d"], f["reponer_d"], f["sugerido_d"]) == (11, 6, 17)
+
+
+def test_lo_que_no_rota_sugiere_solo_lo_pedido_y_nunca_negativo():
+    a, b = _fs("ABI", 9, inv=2), _fs("TUB", 2, inv=9)
+    service.sugerido_producir([a, b], None)
+    assert (a["sugerido_d"], b["sugerido_d"]) == (7, 0)
+
+
+def test_menos_de_seis_por_color_sube_a_seis_sumando_tub_y_abi():
+    tub, abi = _fs("TUB", 3), _fs("ABI", 1)
+    otro = _fs("ABI", 2, color="ROJ", codigo="FL102ROJ")
+    service.sugerido_producir([tub, abi, otro], {})
+    assert (tub["sugerido_d"], abi["sugerido_d"]) == (5, 1)   # 3+1 → 6, al que más pide
+    assert otro["sugerido_d"] == 6
+
+
+def test_un_pedido_sin_acabado_usa_la_venta_de_los_dos():
+    f = _fs("", 0)
+    service.sugerido_producir([f], {("FL102GRI", "ABI"): 2 * service.KG_POR_ROLLO,
+                                    ("FL102GRI", "TUB"): 5 * service.KG_POR_ROLLO,
+                                    ("OTRO", "ABI"): 999.0})
+    assert f["reponer_d"] == 7 and f["sugerido_d"] == 7
+
+
+def test_la_reposicion_sale_de_inventario_rotativo():
+    from modules.inventario_rotativo import service as rot
+    with patch.object(rot, "rotativo", return_value=(
+            [{"codigo": "A", "acabado": "TUB", "punto_kg": 10.0},
+             {"codigo": "A", "acabado": "TUB", "punto_kg": 5.0}], True)):
+        assert views._punto_reposicion() == {("A", "TUB"): 15.0}
+    with patch.object(rot, "rotativo", return_value=([], False)):
+        assert views._punto_reposicion() == {}
