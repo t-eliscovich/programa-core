@@ -487,6 +487,11 @@ def mandar_a_hacer():
     memo_lineas = _memo_de_lineas(pedidos_por_color)
     af_filas, _ = formulas_fabricar.envios()
     ya = set(memo_lineas) | set(formulas_fabricar.pedidos_enviados(af_filas))
+    # Lo que sugería el gris en este momento, para comparar después contra
+    # lo mandado (Tamara 16/10/2026: "se guarda lo sugerido vs lo mandado").
+    # Se recalcula acá con Asinfo de ahora: no se le cree al navegador.
+    service.sin_memo_y_a_hacer(filas, pedidos_por_color, ya)
+    service.sugerido_producir(filas, _punto_reposicion())
 
     nombres = service.nombres_color()
     lineas, salteadas = [], []
@@ -504,6 +509,7 @@ def mandar_a_hacer():
             "acabado": f.get("acabado") or "", "color": f["color"],
             "color_nombre": nombres.get(f["color"], ""),
             "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"], "rib_kg": rib,
+            "sugerido": f.get("sugerido_d", 0), "sugerido_venta": f.get("reponer_d", 0),
             "pedidos": peds,
         })
     usuario = g.user["username"] if getattr(g, "user", None) else ""

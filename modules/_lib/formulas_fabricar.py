@@ -75,25 +75,29 @@ def mandar(lineas: list[dict], enviado_por: str) -> tuple[bool, str, str]:
     if not formulas_memos.disponible():
         return False, "sin_bridge", ""
     envio = nuevo_envio()
-    # color_nombre (15/10/2026): Fabricación muestra "0412 VERDE PINO". Si
-    # formulas todavía no tiene la columna, se manda sin ella — el envío no
-    # se pierde por un nombre.
-    for con_nombre in (True, False):
+    # Las columnas nuevas (color_nombre 15/10, sugerido 16/10) van si formulas
+    # ya las tiene; si no, se manda sin ellas — el envío no se pierde por eso.
+    for extras in (_EXTRAS, ()):
         try:
-            _insertar(envio, enviado_por, lineas, con_nombre)
+            _insertar(envio, enviado_por, lineas, extras)
             return True, "enviado", envio
         except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
-            if con_nombre and "color_nombre" in str(e):
+            if extras and any(c in str(e) for c in _EXTRAS):
                 continue
             _log.warning("formulas_fabricar.mandar falló: %s", e)
             return False, "sin_bridge", ""
     return False, "sin_bridge", ""
 
 
-def _insertar(envio: str, enviado_por: str, lineas: list[dict], con_nombre: bool) -> None:
+#: Columnas opcionales de a_fabricar: color_nombre (15/10/2026) y lo que
+#: sugería el gris de Producir al mandar (16/10/2026), para aprender.
+_EXTRAS = ("color_nombre", "sugerido", "sugerido_venta")
+
+
+def _insertar(envio: str, enviado_por: str, lineas: list[dict], extras: tuple) -> None:
     cols = ("envio, enviado_por, categoria, tela, acabado, color, codigo, cantidad, "
-            "unidad, rib_kg, pedidos" + (", color_nombre" if con_nombre else ""))
-    marcas = ", ".join(["%s"] * (12 if con_nombre else 11))
+            "unidad, rib_kg, pedidos" + "".join(", " + c for c in extras))
+    marcas = ", ".join(["%s"] * (11 + len(extras)))
     with formulas_memos._conn() as c:
         with c.cursor() as cur:
             for ln in lineas:
@@ -103,8 +107,8 @@ def _insertar(envio: str, enviado_por: str, lineas: list[dict], con_nombre: bool
                         ln.get("cantidad") or 0, ln.get("unidad") or "roll",
                         ln.get("rib_kg") or 0,
                         json.dumps(ln.get("pedidos") or [], default=str))
-                if con_nombre:
-                    vals += (ln.get("color_nombre") or "",)
+                vals += tuple((ln.get(c) or "") if c == "color_nombre" else (ln.get(c) or 0)
+                              for c in extras)
                 cur.execute(f"INSERT INTO a_fabricar ({cols}) VALUES ({marcas})", vals)
         c.commit()
 

@@ -352,3 +352,67 @@ def test_la_reposicion_sale_de_inventario_rotativo():
         assert views._punto_reposicion() == {("A", "TUB"): 15.0}
     with patch.object(rot, "rotativo", return_value=([], False)):
         assert views._punto_reposicion() == {}
+
+
+# ── 16/10/2026: se guarda lo sugerido junto con lo mandado ─────────────────
+
+class _CurIns(_Cur):
+    def __init__(self, faltan=()):
+        super().__init__()
+        self.faltan, self.hechos = faltan, []
+
+    def execute(self, sql, params=None):
+        for c in self.faltan:
+            if c in sql:
+                raise RuntimeError(f'column "{c}" of relation "a_fabricar" does not exist')
+        self.hechos.append((sql, params))
+
+
+class _ConnIns(_Conn):
+    def commit(self):
+        pass
+
+
+def _ln():
+    return {"categoria": "Fleece", "tela": "Fleece 102", "acabado": "ABI", "color": "GRI",
+            "color_nombre": "GRIS", "codigo": "FL102GRI", "cantidad": 17, "unidad": "roll",
+            "rib_kg": 0, "pedidos": [], "sugerido": 17, "sugerido_venta": 6}
+
+
+def test_al_mandar_se_guarda_lo_que_sugeria():
+    cur = _CurIns()
+    with patch.object(formulas_fabricar.formulas_memos, "disponible", return_value=True), \
+         patch.object(formulas_fabricar.formulas_memos, "_conn", return_value=_ConnIns(cur)):
+        ok, motivo, _ = formulas_fabricar.mandar([_ln()], "tamara")
+    assert ok and motivo == "enviado"
+    sql, vals = cur.hechos[0]
+    assert "sugerido, sugerido_venta" in sql and vals[-3:] == ("GRIS", 17, 6)
+
+
+def test_si_formulas_no_tiene_las_columnas_nuevas_manda_igual():
+    cur = _CurIns(faltan=("sugerido",))
+    with patch.object(formulas_fabricar.formulas_memos, "disponible", return_value=True), \
+         patch.object(formulas_fabricar.formulas_memos, "_conn", return_value=_ConnIns(cur)):
+        ok, _, _ = formulas_fabricar.mandar([_ln()], "tamara")
+    assert ok and "sugerido" not in cur.hechos[0][0] and len(cur.hechos[0][1]) == 11
+
+
+def test_el_servidor_calcula_el_sugerido_que_se_guarda(app, fake_db):
+    c = _login(app, fake_db)
+    mandado = {}
+
+    def fake_mandar(lineas, usuario):
+        mandado["lineas"] = lineas
+        return True, "enviado", "AF-x"
+
+    clave = service.clave_renglon("FE96CAF", "")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1", cantidad=2)])), \
+         patch.object(views.formulas_memos, "estados", return_value={}), \
+         patch.object(views.service, "por_pedido", return_value=([], False)), \
+         patch.object(views.formulas_fabricar, "envios", return_value=([], True)), \
+         patch.object(views, "_punto_reposicion", return_value={}), \
+         patch.object(views.formulas_fabricar, "mandar", side_effect=fake_mandar):
+        c.post("/pedidos/mandar-a-hacer", data={"cat": "Fleece", f"c_{clave}": "9"})
+    (ln,) = mandado["lineas"]
+    assert ln["cantidad"] == 9.0 and ln["sugerido"] == 6 and ln["sugerido_venta"] == 0

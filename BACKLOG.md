@@ -11,7 +11,7 @@ Formato: `[tamaño] qué · por qué · dónde` (XS <1h · S 1-3h · M 3-8h · L
 
 ## Pedidos · Producir
 
-### [S] Afinar el sugerido gris con el historial · cuando haya unas semanas de envíos (a_fabricar), comparar lo sugerido contra lo que se mandó y lo que se vendió después, y ajustar el colchón (hoy dos semanas de venta P90 si rota) y el mínimo de 6 por color · Tamara 16/10/2026: "una vez que haya historial podemos ir aprendiendo" · `service.sugerido_producir`; guardar el sugerido al mandar para poder comparar
+### [S] Afinar el sugerido gris con el historial · cuando haya unas semanas de envíos (a_fabricar), comparar lo sugerido contra lo que se mandó y lo que se vendió después, y ajustar el colchón (hoy dos semanas de venta P90 si rota) y el mínimo de 6 por color · Tamara 16/10/2026: "una vez que haya historial podemos ir aprendiendo" · `service.sugerido_producir`; el sugerido ya se guarda al mandar (a_fabricar.sugerido / sugerido_venta, desde el 16/10/2026)
 
 ## Compras locales de hilo
 
