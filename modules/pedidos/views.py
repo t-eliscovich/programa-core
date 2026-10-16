@@ -142,6 +142,7 @@ def lista():
         if producir:
             service.sugerido_producir([f for t in telas for f in t["filas"]],
                                       _punto_reposicion())
+            _colores_agregados(telas, _borrador_del_usuario())
         cubiertas = []
         if solo_faltan:
             for t in telas:
@@ -448,6 +449,49 @@ def cancelar_memo():
 
 
 
+
+def _prefijo(f: dict) -> str:
+    """El código de producto sin el color: PEAZN → PE, PINACT → PIN."""
+    cod, col = f.get("codigo") or "", f.get("color") or ""
+    return cod[:-len(col)] if col and cod.endswith(col) else ""
+
+
+def _renglon_nuevo(clave: str, tela: str, filas: list[dict], nombres: dict) -> dict | None:
+    """Un renglón para un color agregado con «+»: la tela, la familia y la
+    unidad salen de otro color de la MISMA tela; el código, de su prefijo.
+    El color tiene que existir en el catálogo de colores."""
+    base = next((f for f in filas if f.get("tela") == tela and _prefijo(f)), None)
+    if not base:
+        return None
+    pref = _prefijo(base)
+    if not clave.startswith(pref) or "_" not in clave:
+        return None
+    color, aca = clave[len(pref):].rsplit("_", 1)
+    if color not in nombres or aca not in ("TUB", "ABI"):
+        return None
+    return {"categoria": base["categoria"], "tela": tela, "acabado": aca, "color": color,
+            "codigo": pref + color, "u": base["u"], "agregado": True}
+
+
+def _colores_agregados(telas: list[dict], borrador_u: dict) -> None:
+    """Cada tela sabe su prefijo (para el «+») y trae de vuelta los colores
+    agregados que quedaron en el borrador: `t["agregados"]`."""
+    en_pantalla = {f["clave"] for t in telas for f in t["filas"]}
+    for t in telas:
+        pref = next((_prefijo(f) for f in t["filas"] if _prefijo(f)), "")
+        t["prefijo"] = pref
+        t["agregados"] = []
+        if not pref:
+            continue
+        for clave, vals in sorted(borrador_u.items()):
+            resto = clave[len(pref):] if clave.startswith(pref) else ""
+            if clave in en_pantalla or "_" not in resto:
+                continue
+            color, aca = resto.rsplit("_", 1)
+            if len(color) == 3 and aca in ("TUB", "ABI"):
+                t["agregados"].append({"clave": clave, "color": color, "acabado": aca,
+                                       "vals": vals})
+
 def _borrador_del_usuario() -> dict:
     from flask import g
     u = getattr(g, "user", None)
@@ -529,9 +573,25 @@ def mandar_a_hacer():
     service.sugerido_producir(filas, _punto_reposicion())
 
     nombres = service.nombres_color()
+    # «+ Agregar color» (Tamara 16/10/2026): colores de la tela que NO están
+    # en los pedidos. Llegan con n_<clave> = la tela; se arman desde un
+    # renglón de esa tela y se mandan sólo si el producto existe en Asinfo.
+    nuevos = {}
+    for clave in pedidas:
+        if clave not in por_clave and request.form.get("n_" + clave):
+            f = _renglon_nuevo(clave, request.form.get("n_" + clave), filas, nombres)
+            if f:
+                nuevos[clave] = f
+    if nuevos:
+        existen = service.productos_existentes(f["codigo"] for f in nuevos.values())
+        if existen is None:
+            flash("No pude confirmar en Asinfo los colores agregados con + — no se mandaron.",
+                  "warning")
+            existen = set()
+        nuevos = {c: f for c, f in nuevos.items() if f["codigo"] in existen}
     lineas, salteadas = [], []
     for clave, (cant, rib, cue, pun) in pedidas.items():
-        f = por_clave.get(clave)
+        f = por_clave.get(clave) or nuevos.get(clave)
         if f is None:
             salteadas.append(clave.split("_")[0])
             continue
@@ -546,6 +606,7 @@ def mandar_a_hacer():
             "codigo": f["codigo"], "cantidad": cant, "unidad": f["u"], "rib_kg": rib,
             "cuellos": cue, "punos": pun,
             "sugerido": f.get("sugerido_d", 0), "sugerido_venta": f.get("reponer_d", 0),
+            "agregado": bool(f.get("agregado")),
             "pedidos": peds,
         })
     usuario = g.user["username"] if getattr(g, "user", None) else ""

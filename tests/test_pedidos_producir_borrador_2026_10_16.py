@@ -127,3 +127,80 @@ def test_se_mandan_cuellos_y_punos(app, fake_db):
     (ln,) = mandado["lineas"]
     assert (ln["cantidad"], ln["cuellos"], ln["punos"]) == (0.0, 120.0, 80.0)
     assert "120 cuellos" in r.get_data(as_text=True)
+
+
+# ── «+ Agregar color»: colores de la tela que no están en los pedidos ─────
+
+def test_el_prefijo_y_el_renglon_nuevo_salen_de_otro_color_de_la_tela():
+    base = {"tela": "Pique Especial", "categoria": "Pique", "codigo": "PEAZN", "color": "AZN", "u": "roll"}
+    assert views._prefijo(base) == "PE" and views._prefijo({"codigo": "X", "color": "AZN"}) == ""
+    nombres = {"CAR": "CARDENILLO"}
+    f = views._renglon_nuevo("PECAR_TUB", "Pique Especial", [base], nombres)
+    assert (f["codigo"], f["color"], f["acabado"], f["categoria"], f["agregado"]) == \
+        ("PECAR", "CAR", "TUB", "Pique", True)
+    assert views._renglon_nuevo("PEZZZ_TUB", "Pique Especial", [base], nombres) is None
+    assert views._renglon_nuevo("PECAR_XX", "Pique Especial", [base], nombres) is None
+    assert views._renglon_nuevo("QQCAR_TUB", "Pique Especial", [base], nombres) is None
+    assert views._renglon_nuevo("PECAR_TUB", "Otra", [base], nombres) is None
+
+
+def test_los_agregados_guardados_vuelven_a_su_tela():
+    telas = [{"tela": "Pique Especial", "filas": [{"clave": "PEAZN_TUB", "codigo": "PEAZN", "color": "AZN"}]}]
+    views._colores_agregados(telas, {"PECAR_TUB": (8, 0, 400, 300), "PEAZN_TUB": (1, 0, 0, 0),
+                                     "FL102GRI_ABI": (6, 0, 0, 0), "PEMALO": (1, 0, 0, 0)})
+    assert telas[0]["prefijo"] == "PE"
+    assert telas[0]["agregados"] == [{"clave": "PECAR_TUB", "color": "CAR", "acabado": "TUB",
+                                      "vals": (8, 0, 400, 300)}]
+    sin = [{"tela": "X", "filas": [{"clave": "A", "codigo": "", "color": "A"}]}]
+    views._colores_agregados(sin, {})
+    assert sin[0]["agregados"] == [] and sin[0]["prefijo"] == ""
+
+
+def test_productos_existentes_pregunta_a_asinfo():
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      return_value=([{"codigo": "PECAR"}], True)) as m:
+        assert service.productos_existentes(["pecar", "PE'X"]) == {"PECAR"}
+    assert "'PECAR'" in m.call_args[0][1] and "'" + "PEX" + "'" in m.call_args[0][1]
+    assert service.productos_existentes([]) == set()
+    with patch.object(service.metabase_client, "fetch_dataset_estado", return_value=([], False)):
+        assert service.productos_existentes(["PECAR"]) is None
+
+
+def test_un_color_agregado_se_manda_si_existe(app, fake_db):
+    c = _login(app, fake_db)
+    mandado = {}
+
+    def fake_mandar(lineas, usuario):
+        mandado["lineas"] = lineas
+        return True, "enviado", "AF-x"
+
+    comunes = dict(
+        estados=patch.object(views.formulas_memos, "estados", return_value={}),
+        por_pedido=patch.object(views.service, "por_pedido", return_value=([], False)),
+        envios=patch.object(views.formulas_fabricar, "envios", return_value=([], True)),
+        punto=patch.object(views, "_punto_reposicion", return_value={}),
+        borrar=patch.object(views.borrador, "borrar"),
+        nombres=patch.object(views.service, "nombres_color", return_value={"CAR": "CARDENILLO", "CAF": "CAFE"}),
+        mandar=patch.object(views.formulas_fabricar, "mandar", side_effect=fake_mandar),
+    )
+    datos = {"cat": "Fleece", "c_FE96CAR_TUB": "8", "u_FE96CAR_TUB": "400",
+             "n_FE96CAR_TUB": "Fleece 96 Perchado", "c_FE96ZZZ_TUB": "3", "n_FE96ZZZ_TUB": "Fleece 96 Perchado"}
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1")])), \
+         patch.object(views.service, "productos_existentes", return_value={"FE96CAR"}), \
+         comunes["estados"], comunes["por_pedido"], comunes["envios"], comunes["punto"], \
+         comunes["borrar"], comunes["nombres"], comunes["mandar"]:
+        r = c.post("/pedidos/mandar-a-hacer", data=datos, follow_redirects=True)
+    (ln,) = mandado["lineas"]
+    assert (ln["codigo"], ln["color"], ln["acabado"], ln["cantidad"], ln["cuellos"], ln["pedidos"]) == \
+        ("FE96CAR", "CAR", "TUB", 8.0, 400.0, [])
+    assert "FE96ZZZ" in r.get_data(as_text=True)   # no existe: se avisa que no se mandó
+
+    mandado.clear()
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1")])), \
+         patch.object(views.service, "productos_existentes", return_value=None), \
+         comunes["estados"], comunes["por_pedido"], comunes["envios"], comunes["punto"], \
+         comunes["borrar"], comunes["nombres"], comunes["mandar"]:
+        r = c.post("/pedidos/mandar-a-hacer", data=datos, follow_redirects=True)
+    assert "No pude confirmar en Asinfo" in r.get_data(as_text=True)

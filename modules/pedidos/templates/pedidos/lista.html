@@ -298,7 +298,15 @@
   .pd .hbar[hidden]{display:none}
   .pd .hbar .hres{font-size:16px;margin-right:auto}
   .pd .hbar .hguard{font-size:13px;color:#cbd5e1;white-space:nowrap}
-  .pd .hbar .btn{white-space:nowrap}.pd .hbar b{font-size:20px}
+  .pd .hbar .btn{white-space:nowrap}
+  .pd .agregar-color{display:none;margin:8px 0 0;font-size:13px;font-weight:600;padding:6px 12px;border:1px dashed #94a3b8;border-radius:8px;background:#fff;color:var(--ink);cursor:pointer}
+  .pd.editando .agregar-color{display:inline-block}
+  .pd .agregar-color:hover{border-style:solid;border-color:var(--ink)}
+  .pd tr.nuevo>td{background:#fffdf5 !important}
+  .pd tr.nuevo .nvcol{width:64px;font-size:14px;font-weight:700;text-transform:uppercase;padding:3px 6px;border:1.5px solid #cbd5e1;border-radius:7px}
+  .pd tr.nuevo .nvaca{font-size:13px;padding:3px 4px;border:1.5px solid #cbd5e1;border-radius:7px;margin-left:4px}
+  .pd tr.nuevo .nvnom{font-size:12px;color:#64748b;margin-left:6px}
+  .pd tr.nuevo .nvx{border:0;background:none;color:#94a3b8;cursor:pointer;font-size:14px;margin-left:4px}.pd .hbar b{font-size:20px}
   .pd .hbar .btn{font-size:15px;padding:9px 16px}
   .pd .hbar .btn.pri{background:var(--rojo);border-color:var(--rojo)}
   .pd .hbar .btn.pri[disabled]{opacity:.45;cursor:not-allowed}
@@ -608,8 +616,15 @@
           </tr>
         </tfoot>
       </table>
+      {# «+ Agregar color» (Tamara 16/10/2026): mandar a producir un color
+         de esta tela que no está en los pedidos. Sólo con la carga abierta. #}
+      {% if mandar_a_hacer_activo and t.prefijo %}
+      <button type="button" class="agregar-color no-print" data-pref="{{ t.prefijo }}" data-tela="{{ t.tela }}" data-u="{{ t.u }}">+ Agregar color</button>
+      <script type="application/json" class="agr-data">{{ t.agregados|tojson }}</script>
+      {% endif %}
       </div>
     {% endfor %}
+    {% if mandar_a_hacer_activo %}<datalist id="dl-colores">{% for c, n in nombres_color|dictsort %}<option value="{{ c }}">{{ n }}</option>{% endfor %}</datalist>{% endif %}
     {# La HOJA IMPRESA (Tamara 15/10/2026): una tabla plana tipo Excel —
        un renglón por color, ordenado tela → abierto A-Z → tubular A-Z, todas
        las casillas con su dato, y los pedidos en su propia columna. #}
@@ -893,7 +908,7 @@
     var rib = function (i) { var r = i.closest('tr').querySelector('.inrib'); return r ? +r.value || 0 : 0; };
     // Cuellos (u) y puños (p) de Pique, en la misma fila (16/10/2026).
     var ex = function (i, k) { var r = i.closest('tr').querySelector('.inextra[data-k="' + k + '"]'); return r ? +r.value || 0 : 0; };
-    var esPrincipal = function (i) { return !i.classList.contains('inrib') && !i.classList.contains('inextra'); };
+    var esPrincipal = function (i) { return !i.classList.contains('inrib') && !i.classList.contains('inextra') && !!i.dataset.clave; };
     var llenos = function () {
       return ins().filter(function (i) { return esPrincipal(i) && ((+i.value > 0) || rib(i) > 0 || ex(i, 'u') > 0 || ex(i, 'p') > 0); });
     };
@@ -970,6 +985,53 @@
       ins().forEach(function (i) { i.value = ''; }); contar(); modo(false);
       if (guardado) guardar(true);
     });
+    // «+ Agregar color»: un renglón con código de color y acabado; las
+    // casillas toman la clave (prefijo de la tela + color + acabado) cuando
+    // el color existe en el catálogo.
+    var nombres = {};
+    document.querySelectorAll('#dl-colores option').forEach(function (o) { nombres[o.value] = o.textContent; });
+    function filaNueva(bt, d) {
+      var blk = bt.closest('.telablk'), tabla = blk.querySelector('table.tt');
+      var cyp = tabla.classList.contains('cyp');
+      var tr = document.createElement('tr');
+      tr.className = 'crow nuevo';
+      var cas = function (cls, k) {
+        return '<td class="hacer"><input class="inhacer ' + cls + '"' + (k ? ' data-k="' + k + '"' : '') +
+          ' type="number" min="0" step="1" inputmode="numeric"></td>';
+      };
+      tr.innerHTML = '<td class="cod"><input class="nvcol" list="dl-colores" maxlength="3" placeholder="Color">' +
+        '<select class="nvaca"><option>TUB</option><option>ABI</option></select>' +
+        '<button type="button" class="nvx" title="Sacar">✕</button></td>' +
+        '<td colspan="6" class="muted" style="font-size:12px;text-align:left"><span class="nvnom"></span> agregado, sin pedidos</td>' +
+        cas('') + cas('inrib') + (cyp ? cas('inextra', 'u') + cas('inextra', 'p') : '');
+      tabla.querySelector('tbody').appendChild(tr);
+      var col = tr.querySelector('.nvcol'), aca = tr.querySelector('.nvaca');
+      function clave() {
+        var c = (col.value || '').toUpperCase().trim(), ok = !!nombres[c];
+        tr.querySelector('.nvnom').textContent = ok ? nombres[c] + ' ·' : (c ? 'Ese color no existe ·' : '');
+        tr.querySelectorAll('.inhacer').forEach(function (i) {
+          if (ok) {
+            i.dataset.clave = bt.dataset.pref + c + '_' + aca.value;
+            i.dataset.tela = bt.dataset.tela; i.dataset.color = c; i.dataset.aca = aca.value;
+            i.dataset.u = bt.dataset.u; i.dataset.cod = bt.dataset.pref + c; i.dataset.peds = ''; i.dataset.nuevo = '1';
+          } else { delete i.dataset.clave; }
+        });
+        contar();
+      }
+      col.addEventListener('input', clave); aca.addEventListener('change', clave);
+      tr.querySelector('.nvx').addEventListener('click', function () { tr.remove(); contar(); });
+      if (d) {
+        col.value = d.color; aca.value = d.acabado; clave();
+        var v = d.vals || [], cs = tr.querySelectorAll('.inhacer');
+        [0, 1, 2, 3].forEach(function (k) { if (cs[k] && v[k]) cs[k].value = v[k]; });
+      } else { col.focus(); }
+      return tr;
+    }
+    document.querySelectorAll('.pd .agregar-color').forEach(function (bt) {
+      bt.addEventListener('click', function () { filaNueva(bt); });
+      var dat = bt.parentNode.querySelector('.agr-data');
+      try { JSON.parse(dat ? dat.textContent : '[]').forEach(function (d) { filaNueva(bt, d); }); } catch (e) { /* sin agregados */ }
+    });
     // Lo guardado vuelve a la pantalla con la carga abierta.
     if (guardado && ins().some(function (i) { return +i.value > 0; })) {
       modo(true); contar();
@@ -1009,6 +1071,11 @@
         var r = document.createElement('input');
         r.type = 'hidden'; r.name = 'r_' + i.dataset.clave; r.value = rib(i);
         box.appendChild(r);
+        if (i.dataset.nuevo) {
+          var n = document.createElement('input');
+          n.type = 'hidden'; n.name = 'n_' + i.dataset.clave; n.value = i.dataset.tela;
+          box.appendChild(n);
+        }
         ['u', 'p'].forEach(function (k) {
           if (!ex(i, k)) return;
           var x = document.createElement('input');

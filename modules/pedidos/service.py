@@ -42,6 +42,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time as _time
 from datetime import date
 
@@ -706,6 +707,22 @@ def sin_memo_y_a_hacer(filas: list[dict], pedidos_por_color: dict,
 
 
 
+
+
+def productos_existentes(codigos) -> set[str] | None:
+    """De estos códigos de producto, cuáles existen en Asinfo. Para el «+
+    Agregar color» de Producir (Tamara 16/10/2026): un color que no está en
+    los pedidos se manda sólo si el producto existe de verdad. `None` si
+    Asinfo no contestó (el que llama decide; acá no se inventa nada)."""
+    limpios = sorted({re.sub(r"[^A-Z0-9-]", "", str(c).upper()) for c in codigos} - {""})
+    if not limpios:
+        return set()
+    lista = ", ".join(f"'{c}'" for c in limpios)
+    filas, ok = metabase_client.fetch_dataset_estado(
+        ASINFO_DB, f"SELECT codigo FROM producto WHERE codigo IN ({lista})")
+    if not ok:
+        return None
+    return {str(r.get("codigo") or "").strip().upper() for r in (filas or [])}
 
 def lleva_cuellos(categoria: str) -> bool:
     """Pique se manda a producir con sus cuellos y puños (Tamara 16/10/2026:
