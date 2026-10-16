@@ -231,6 +231,31 @@
      lugar no alcanza, la letra y los márgenes bajan de a escalones. Se mide
      contra el ancho REAL de la pantalla de pedidos (container query), no
      contra la ventana: con el menú lateral abierto hay menos lugar. */
+  /* Tabla de la pantalla más liviana (Tamara 16/10: "demasiado grande,
+     más elegante y menos cosota"): encabezado claro, líneas finas, filas
+     bajas. La hoja impresa tiene su propio estilo y no cambia con esto. */
+  @media screen{
+    .pd.ancha .telablk h3{font-size:17px;margin:20px 0 6px;gap:8px}
+    main .pd table.tt{border:1px solid #e2e8f0 !important;border-radius:10px;border-collapse:separate !important;border-spacing:0;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.04)}
+    main .pd table.tt thead th{background:#f8fafc !important;color:#64748b !important;font-size:12px !important;font-weight:600 !important;padding:7px 10px !important;border-bottom:1px solid #e2e8f0 !important;line-height:1.2}
+    main .pd table.tt tbody td{border-bottom:1px solid #f1f5f9 !important;border-left:0 !important;border-right:0 !important}
+    main .pd table.tt tbody tr.crow>td{font-size:14px !important;padding:6px 10px !important;font-weight:500}
+    main .pd table.tt tbody tr.crow:hover>td{background:#f8fafc}
+    .pd table.tt tr.crow .color{font-size:14px;font-weight:700}
+    .pd table.tt .cnom{font-size:12.5px;color:#64748b}
+    main .pd table.tt tbody tr.acarow>td{font-size:11px !important;font-weight:700;letter-spacing:.08em;padding:4px 10px !important;background:#fafbfc !important;color:#94a3b8;border-bottom:1px solid #f1f5f9 !important}
+    main .pd table.tt tbody tr.det>td{font-size:12.5px !important;color:#475569;background:#fcfdfe}
+    main .pd table.tt tfoot tr.tot>td{font-size:13.5px !important;font-weight:700;background:#f8fafc !important;border-top:1px solid #cbd5e1 !important;padding:7px 10px !important}
+    main .pd table.tt td.falta{font-weight:700}
+    .pd .inhacer{border-width:1.5px;border-color:#cbd5e1;border-radius:7px}
+    .pd .inhacer:focus{border-color:var(--ink)}
+    .pd.ancha .telablk h3{justify-content:flex-start}
+    .pd.ancha .telablk h3 .imp-una{margin-left:auto}
+    main .pd table.tt tfoot tr.tot>td{border-bottom:0 !important}
+    main .pd table.tt tbody tr:last-child>td{border-bottom:0 !important}
+    .pd .prod-una{margin-left:6px;font-size:13px;font-weight:600;line-height:1;padding:5px 9px;border:1px solid var(--ink);border-radius:7px;background:#fff;color:var(--ink);cursor:pointer}
+    .pd .prod-una:hover{background:var(--ink);color:#fff}
+  }
   .pd{container-type:inline-size}
   main .pd table{width:100%;max-width:100%}
   main .pd table thead th{white-space:normal !important}
@@ -316,7 +341,7 @@
        vez de partir la fila en dos. */
     .pd .imp th,.pd .imp td{font-size:10pt !important;padding:2.5pt 4pt !important;line-height:1.2 !important}
     .pd .imp tbody td{white-space:nowrap !important;overflow:hidden;text-overflow:ellipsis}
-    .pd .imp thead th{font-size:8pt !important;white-space:normal !important}
+    .pd .imp thead th{font-size:8.5pt !important;white-space:nowrap !important;overflow:hidden;text-overflow:clip}
     .pd .imp tr.imp-tit th{font-size:13pt !important}
     .pd .imp .cd{font-size:7.5pt}
     .pd .imp td.n,.pd .imp th.n{text-align:right}
@@ -499,6 +524,9 @@
         {# Imprimir SOLO esta tela (Tamara 15/10: "poder elegir imprimir sólo
            Fleece 102 y no todos los Fleece"). #}
         <button type="button" class="imp-una no-print" data-tela="{{ t.tela }}" title="Imprimir sólo {{ t.tela }}">🖨 Solo esta</button>
+        {# Producir arriba de CADA tabla (Tamara 16/10: "quizás estoy haciendo
+           una de más abajo"): abre la carga y pone el cursor en esta tela. #}
+        {% if mandar_a_hacer_activo %}<button type="button" class="prod-una no-print" title="Cargar lo que hay que producir de {{ t.tela }}">✎ Producir</button>{% endif %}
       </h3>
       <table class="tt">
         <colgroup><col style="width:20%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:8%"><col style="width:9%"><col style="width:13%"><col style="width:13%"><col style="width:13%"></colgroup>
@@ -582,7 +610,7 @@
         {# El título de la tela va DENTRO del thead: si la tela no entra en una
            hoja, se repite arriba de cada hoja junto con las columnas. #}
         <thead><tr class="imp-tit"><th colspan="10">{% if imprimir_todas %}<span class="fam-imp">{{ h.familia }} · </span>{% endif %}{{ t.tela }}</th></tr>
-        <tr><th>Acab.</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">Con memo</th><th class="n">Stock</th><th class="n">En produc.</th><th class="n">Falta (sin memo)</th><th class="n">Producir rollos</th><th class="n">Producir rib (kg)</th></tr></thead>
+        <tr><th>Acab.</th><th>Color</th><th class="n">Desde</th><th class="n">Pedido</th><th class="n">C/memo</th><th class="n">Stock</th><th class="n">Prod.</th><th class="n">Falta</th><th class="n">Rollos</th><th class="n">Rib kg</th></tr></thead>
         <tbody>
         {% for f in t.filas %}
           {% set peds = pedidos_por_color.get(f.clave, []) %}
@@ -861,11 +889,23 @@
         g[c].forEach(function (i) { i.classList.toggle('pocos', t > 0 && t < {{ minimo_rollos }} && +i.value > 0); });
       });
     }
-    function modo(on) {
+    function modo(on, desde) {
       pd.classList.toggle('editando', on); bar.hidden = !on;
       bt.textContent = on ? '✎ Cargando…' : '✎ Producir';
-      if (on) { var p = ins()[0]; if (p) p.focus(); }
+      document.querySelectorAll('.pd .prod-una').forEach(function (b) { b.textContent = on ? '✎ Cargando…' : '✎ Producir'; });
+      if (on) {
+        var p = (desde && desde.querySelector('.inhacer')) || ins()[0];
+        if (p) p.focus({preventScroll: !!desde});
+      }
     }
+    document.querySelectorAll('.pd .prod-una').forEach(function (b) {
+      b.addEventListener('click', function () {
+        var blk = b.closest('.telablk');
+        if (pd.classList.contains('editando')) {
+          var p = blk && blk.querySelector('.inhacer'); if (p) p.focus({preventScroll: true});
+        } else { modo(true, blk); }
+      });
+    });
     bt.addEventListener('click', function () { modo(!pd.classList.contains('editando')); });
     document.getElementById('hcancel').addEventListener('click', function () {
       ins().forEach(function (i) { i.value = ''; }); contar(); modo(false);

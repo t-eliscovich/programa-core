@@ -601,7 +601,7 @@ def test_no_queda_un_solo_kilo_en_la_pantalla(app, fake_db):
     # Excepción (Tamara 15/10/2026): el RIB a producir se carga en kilos.
     tabla = tabla[:tabla.index("<script>")] if "<script>" in tabla else tabla
     sin_rib = (tabla.replace("kg cada uno", "").replace("en kilos", "")
-               .replace("rib (kg)", "").replace("kg de rib", "").replace(" kg</span>", ""))
+               .replace("rib (kg)", "").replace("kg de rib", "").replace(" kg</span>", "").replace("Rib kg", ""))
     assert " kg" not in sin_rib
     assert "19" in tabla
 

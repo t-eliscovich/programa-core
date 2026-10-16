@@ -182,7 +182,7 @@ def test_la_hoja_impresa_va_una_tela_por_pagina_sin_pedidos(app, fake_db):
     hoja = hoja[:hoja.index('<div class="hbar')]
     assert 'class="imp-tela chica"' in hoja    # 1 color: va junto con otras chicas
     assert "PDCL-1" not in hoja                     # sin la columna de pedidos
-    assert "Producir rollos" in hoja and "Producir rib (kg)" in hoja
+    assert ">Rollos<" in hoja and ">Rib kg<" in hoja
 
 
 def test_se_cancela_lo_pendiente_desde_el_historial(app, fake_db):
