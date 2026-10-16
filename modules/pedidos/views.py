@@ -83,6 +83,7 @@ def lista():
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
         minimo_rollos=service.MINIMO_ROLLOS, borrador={}, con_cuellos=False,
+        borrador_quien=("", ""),
         lleva_cuellos=lambda c: service.lleva_cuellos(c),
     )
 
@@ -142,7 +143,7 @@ def lista():
         if producir:
             service.sugerido_producir([f for t in telas for f in t["filas"]],
                                       _punto_reposicion())
-            _colores_agregados(telas, _borrador_del_usuario())
+            _colores_agregados(telas, borrador.leer())
         cubiertas = []
         if solo_faltan:
             for t in telas:
@@ -190,7 +191,8 @@ def lista():
             mandados=formulas_fabricar.vivos_por_clave(af_filas, service.clave_renglon),
             mandar_a_hacer_activo=producir,
             con_cuellos=service.lleva_cuellos(activa),
-            borrador=_borrador_del_usuario() if producir else {},
+            borrador=borrador.leer() if producir else {},
+            borrador_quien=borrador.quien() if producir else ("", ""),
             minimo_rollos=service.MINIMO_ROLLOS,
             hacer_total=sum(t["hacer_d"] for t in telas),
             hacer_colores=sum(1 for t in telas for f in t["filas"] if f["hacer_d"] > 0),
@@ -492,11 +494,6 @@ def _colores_agregados(telas: list[dict], borrador_u: dict) -> None:
                 t["agregados"].append({"clave": clave, "color": color, "acabado": aca,
                                        "vals": vals})
 
-def _borrador_del_usuario() -> dict:
-    from flask import g
-    u = getattr(g, "user", None)
-    return borrador.leer(u["username"]) if u else {}
-
 @pedidos_bp.route("/pedidos/producir/borrador", methods=["POST"])
 @requiere_login
 @requiere_permiso("pedidos.enviar_memo")
@@ -613,7 +610,7 @@ def mandar_a_hacer():
     ok, motivo, _envio = formulas_fabricar.mandar(lineas, usuario)
     if ok:
         # Lo mandado sale del borrador; lo que quedó sin mandar sigue guardado.
-        borrador.borrar(usuario, [c for c in pedidas if c in por_clave])
+        borrador.borrar([c for c in pedidas if c in por_clave or c in nuevos])
         total = sum(ln["cantidad"] for ln in lineas)
         rib = sum(ln["rib_kg"] for ln in lineas)
         partes = []

@@ -3,8 +3,9 @@
 "Cuando hice la mitad y quiero seguir más tarde, un botón de guardar y que
 se mantenga hasta que mande." Vive en el servidor (tabla
 `scintela.pedidos_producir_borrador`, migración 0265) y no en el navegador:
-así sigue estando aunque se abra desde otra compu. Es POR USUARIO: lo que
-carga Andrés no le aparece a Tamara.
+así sigue estando aunque se abra desde otra compu. Es DE LA OFICINA, uno
+solo para todos (Tamara 16/10: "Irene no ve lo que guardé"): lo que guarda
+una lo sigue la otra. `usuario` queda como quién guardó cada color.
 
 Fail-soft: si la tabla no está o la base no contesta, el borrador queda vacío
 y la pantalla anda igual — sólo no se guarda.
@@ -25,15 +26,14 @@ def _num(v) -> float:
         return 0.0
 
 
-def leer(usuario: str) -> dict[str, tuple]:
-    """{clave: (rollos, rib_kg, cuellos, puños)} de lo guardado por este usuario."""
-    if not usuario:
-        return {}
+def leer() -> dict[str, tuple]:
+    """{clave: (rollos, rib_kg, cuellos, puños)} de lo guardado por la oficina
+    (si dos guardaron el mismo color, vale lo último)."""
     try:
         filas = db.fetch_all(
-            "SELECT clave, rollos, rib_kg, cuellos, punos "
+            "SELECT DISTINCT ON (clave) clave, rollos, rib_kg, cuellos, punos "
             "FROM scintela.pedidos_producir_borrador "
-            "WHERE usuario = %s", (usuario,))
+            "ORDER BY clave, actualizado DESC")
     except Exception as e:  # noqa: BLE001
         _log.warning("borrador de Producir: no se pudo leer (%s)", e)
         return {}
@@ -42,10 +42,23 @@ def leer(usuario: str) -> dict[str, tuple]:
             for r in (filas or [])}
 
 
+def quien() -> tuple[str, str]:
+    """(usuario, 'dd/mm hh:mm') del último que guardó — para la barra."""
+    try:
+        r = db.fetch_one(
+            "SELECT usuario, to_char(actualizado AT TIME ZONE 'America/Guayaquil', "
+            "'DD/MM HH24:MI') AS cuando FROM scintela.pedidos_producir_borrador "
+            "ORDER BY actualizado DESC LIMIT 1")
+    except Exception:  # noqa: BLE001
+        return "", ""
+    return ((r or {}).get("usuario") or "", (r or {}).get("cuando") or "")
+
+
 def guardar(usuario: str, claves: list[str], valores: dict) -> int:
     """Reemplaza lo guardado de las `claves` de la pantalla por `valores`
-    ({clave: [rollos, rib, cuellos, puños]}). Lo de otras familias no se toca. Devuelve
-    cuántos colores quedaron guardados de esta pantalla."""
+    ({clave: [rollos, rib, cuellos, puños]}), sea quien sea que lo había
+    guardado. Lo de otras familias no se toca. Devuelve cuántos colores
+    quedaron guardados de esta pantalla."""
     if not usuario or not claves:
         return 0
     filas = []
@@ -55,8 +68,7 @@ def guardar(usuario: str, claves: list[str], valores: dict) -> int:
             filas.append((usuario, clave, *v))
     with db.tx() as conn:
         db.execute("DELETE FROM scintela.pedidos_producir_borrador "
-                   "WHERE usuario = %s AND clave = ANY(%s)", (usuario, list(claves)),
-                   conn=conn)
+                   "WHERE clave = ANY(%s)", (list(claves),), conn=conn)
         for f in filas:
             db.execute("INSERT INTO scintela.pedidos_producir_borrador "
                        "(usuario, clave, rollos, rib_kg, cuellos, punos) "
@@ -65,12 +77,12 @@ def guardar(usuario: str, claves: list[str], valores: dict) -> int:
     return len(filas)
 
 
-def borrar(usuario: str, claves: list[str]) -> None:
+def borrar(claves: list[str]) -> None:
     """Saca del borrador los colores que ya se mandaron. Fail-soft."""
-    if not usuario or not claves:
+    if not claves:
         return
     try:
         db.execute("DELETE FROM scintela.pedidos_producir_borrador "
-                   "WHERE usuario = %s AND clave = ANY(%s)", (usuario, list(claves)))
+                   "WHERE clave = ANY(%s)", (list(claves),))
     except Exception as e:  # noqa: BLE001
         _log.warning("borrador de Producir: no se pudo borrar (%s)", e)

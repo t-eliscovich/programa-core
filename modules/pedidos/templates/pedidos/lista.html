@@ -1035,7 +1035,7 @@
     // Lo guardado vuelve a la pantalla con la carga abierta.
     if (guardado && ins().some(function (i) { return +i.value > 0; })) {
       modo(true); contar();
-      document.getElementById('hguard').textContent = 'Lo que guardaste';
+      document.getElementById('hguard').textContent = {{ ('Guardado por ' ~ borrador_quien[0] ~ ' · ' ~ borrador_quien[1])|tojson if borrador_quien[0] else "'Lo guardado'"|safe }};
     }
     pd.addEventListener('input', function (e) { if (e.target.classList.contains('inhacer')) contar(); });
     pd.addEventListener('keydown', function (e) {

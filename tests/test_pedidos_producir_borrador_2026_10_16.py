@@ -16,6 +16,11 @@ class _DB:
             raise RuntimeError("no existe la tabla")
         return self.filas
 
+    def fetch_one(self, sql, params=None, conn=None):
+        if self.falla:
+            raise RuntimeError("no existe la tabla")
+        return {"usuario": "irene", "cuando": "16/10 17:05"}
+
     def execute(self, sql, params=None, conn=None):
         if self.falla:
             raise RuntimeError("no existe la tabla")
@@ -30,10 +35,11 @@ class _DB:
 def test_leer_devuelve_lo_guardado_y_sin_tabla_queda_vacio():
     d = _DB([{"clave": "FE96CAF_ABI", "rollos": 7, "rib_kg": 20}])
     with patch.object(borrador, "db", d):
-        assert borrador.leer("tamara") == {"FE96CAF_ABI": (7.0, 20.0, 0.0, 0.0)}
-        assert borrador.leer("") == {}
+        assert borrador.leer() == {"FE96CAF_ABI": (7.0, 20.0, 0.0, 0.0)}
+        assert borrador.quien() == ("irene", "16/10 17:05")
     with patch.object(borrador, "db", _DB(falla=True)):
-        assert borrador.leer("tamara") == {}
+        assert borrador.leer() == {}
+        assert borrador.quien() == ("", "")
 
 
 def test_guardar_reemplaza_solo_los_colores_de_la_pantalla():
@@ -44,7 +50,8 @@ def test_guardar_reemplaza_solo_los_colores_de_la_pantalla():
         assert borrador.guardar("tamara", [], {}) == 0
     assert n == 2
     (borra, p0), *ins = d.hechos
-    assert borra.startswith("DELETE") and p0 == ("tamara", ["A_TUB", "B_ABI", "C_TUB"])
+    # Es de la oficina: borra lo de esos colores lo haya guardado quien sea.
+    assert borra.startswith("DELETE") and "usuario" not in borra and p0 == (["A_TUB", "B_ABI", "C_TUB"],)
     assert [p for _, p in ins] == [("tamara", "A_TUB", 6.0, 0.0, 0.0, 0.0),
                                    ("tamara", "B_ABI", 0.0, 15.5, 0.0, 40.0)]
 
@@ -52,12 +59,12 @@ def test_guardar_reemplaza_solo_los_colores_de_la_pantalla():
 def test_borrar_saca_lo_mandado_y_no_rompe_sin_tabla():
     d = _DB()
     with patch.object(borrador, "db", d):
-        borrador.borrar("tamara", ["A_TUB"])
-        borrador.borrar("tamara", [])
-    assert d.hechos == [("DELETE FROM scintela.pedidos_producir_borrador WHERE usuario = %s "
-                         "AND clave = ANY(%s)", ("tamara", ["A_TUB"]))]
+        borrador.borrar(["A_TUB"])
+        borrador.borrar([])
+    assert d.hechos == [("DELETE FROM scintela.pedidos_producir_borrador WHERE clave = ANY(%s)",
+                         (["A_TUB"],))]
     with patch.object(borrador, "db", _DB(falla=True)):
-        borrador.borrar("tamara", ["A_TUB"])
+        borrador.borrar(["A_TUB"])
 
 
 def test_el_boton_guardar_guarda_por_usuario(app, fake_db):
@@ -82,9 +89,11 @@ def test_lo_guardado_vuelve_a_los_cuadritos_y_al_mandar_sale(app, fake_db):
          patch.object(views.formulas_fabricar, "envios", return_value=([], True)), \
          patch.object(views.formulas_fabricar, "disponible", return_value=True), \
          patch.object(views, "_punto_reposicion", return_value={}), \
-         patch.object(views.borrador, "leer", return_value={clave: (7.0, 20.0, 0.0, 0.0)}):
+         patch.object(views.borrador, "leer", return_value={clave: (7.0, 20.0, 0.0, 0.0)}), \
+         patch.object(views.borrador, "quien", return_value=("irene", "16/10 17:05")):
         html = c.get("/pedidos?corte=tela&cat=Fleece").get_data(as_text=True)
     assert 'value="7"' in html and 'value="20"' in html and "var guardado = true" in html
+    assert "Guardado por irene" in html and "16/10 17:05" in html
 
     with patch.object(service.metabase_client, "fetch_dataset_estado",
                       side_effect=_fake_asinfo([_ped("PDCL-1")])), \
@@ -95,7 +104,7 @@ def test_lo_guardado_vuelve_a_los_cuadritos_y_al_mandar_sale(app, fake_db):
          patch.object(views.formulas_fabricar, "mandar", return_value=(True, "enviado", "AF-x")), \
          patch.object(views.borrador, "borrar") as b:
         c.post("/pedidos/mandar-a-hacer", data={"cat": "Fleece", f"c_{clave}": "7"})
-    b.assert_called_once_with("test", [clave])
+    b.assert_called_once_with([clave])
 
 
 # ── Pique: cuellos y puños (Tamara 16/10/2026) ───────────────────────────
