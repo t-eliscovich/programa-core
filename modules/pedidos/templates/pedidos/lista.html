@@ -300,6 +300,13 @@
     .pd .imp th,.pd .imp td{border:0.8pt solid #666 !important;padding:4pt 5pt !important;font-size:12pt !important;font-family:Arial,Helvetica,sans-serif !important;color:#000 !important;background:#fff !important;text-align:left;vertical-align:middle;line-height:1.25}
     .pd .imp thead th{font-size:9.5pt !important;text-transform:none !important;letter-spacing:0 !important;white-space:normal !important;line-height:1.15 !important;font-weight:700 !important;background:#e5e5e5 !important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
     .pd .imp thead{display:table-header-group}
+    /* La hoja impresa NUNCA se sale del papel (Tamara 16/10/2026: "no quiero
+       scrollear para los costados… en la impresión"). Al ancho de una A4 la
+       regla del celular de base.html vuelve las tablas un bloque con scroll,
+       y en papel eso CORTA las columnas de la derecha: acá la tabla vuelve a
+       ser tabla, ocupa el ancho de la hoja y reparte con las <col>. */
+    .pd .imp table{display:table !important;width:99.5% !important;max-width:99.5% !important;table-layout:fixed !important;overflow:visible !important}
+    .pd .imp th,.pd .imp td{overflow-wrap:anywhere;white-space:normal !important}
     .pd .imp td.n,.pd .imp th.n{text-align:right}
     .pd .imp .cd{font-size:9pt;color:#444 !important}
     .pd .imp .fam-imp{font-weight:400}
