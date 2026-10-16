@@ -151,7 +151,7 @@ def test_el_historial_se_dibuja_y_sin_bridge_avisa(app, fake_db):
     with patch.object(views.formulas_fabricar, "envios",
                       return_value=([_af("PDCL-1", "en_proceso")], True)):
         body = c.get("/pedidos/mandados").get_data(as_text=True)
-    assert "EN PROCESO" in body and "PDCL-1" in body
+    assert "EN PROCESO" in body and "PDCL-1" not in body   # sin «Pedidos que cubre» (16/10)
     with patch.object(views.formulas_fabricar, "envios", return_value=([], False)):
         body = c.get("/pedidos/mandados").get_data(as_text=True)
     assert "No pude hablar con formulas_app" in body
