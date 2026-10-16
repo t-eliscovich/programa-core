@@ -28,6 +28,7 @@ from flask import (
     Blueprint,
     Response,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -37,7 +38,7 @@ from flask import (
 from auth import requiere_login, requiere_permiso, tiene_permiso
 from modules._lib import formulas_fabricar, formulas_memos
 
-from . import service
+from . import borrador, service
 
 pedidos_bp = Blueprint("pedidos", __name__, template_folder="templates")
 
@@ -81,7 +82,7 @@ def lista():
         imp_hojas=[], imprimir_todas=False, nombres_color={},
         hacer_cat={}, hacer_total=0, hacer_colores=0,
         enviados={}, mandados={}, mandar_a_hacer_activo=False,
-        minimo_rollos=service.MINIMO_ROLLOS,
+        minimo_rollos=service.MINIMO_ROLLOS, borrador={},
     )
 
     if not disponible or not categorias:
@@ -186,6 +187,7 @@ def lista():
             enviados=enviados,
             mandados=formulas_fabricar.vivos_por_clave(af_filas, service.clave_renglon),
             mandar_a_hacer_activo=producir,
+            borrador=_borrador_del_usuario() if producir else {},
             minimo_rollos=service.MINIMO_ROLLOS,
             hacer_total=sum(t["hacer_d"] for t in telas),
             hacer_colores=sum(1 for t in telas for f in t["filas"] if f["hacer_d"] > 0),
@@ -442,6 +444,36 @@ def cancelar_memo():
 
 # ── Mandar a hacer → formulas_app «Fabricación» (Tamara 15/10/2026) ───────────
 
+
+
+def _borrador_del_usuario() -> dict:
+    from flask import g
+    u = getattr(g, "user", None)
+    return borrador.leer(u["username"]) if u else {}
+
+@pedidos_bp.route("/pedidos/producir/borrador", methods=["POST"])
+@requiere_login
+@requiere_permiso("pedidos.enviar_memo")
+def guardar_borrador():
+    """«💾 Guardar» de Producir (Tamara 16/10/2026): lo cargado queda guardado
+    hasta que se manda. `claves` = los colores de la pantalla (JSON),
+    `valores` = {clave: [rollos, rib]} de los que tienen algo (JSON)."""
+    import json as _json
+
+    from flask import g
+    try:
+        claves = [str(c) for c in _json.loads(request.form.get("claves") or "[]")][:2000]
+        valores = _json.loads(request.form.get("valores") or "{}")
+        if not isinstance(valores, dict):
+            raise ValueError
+    except ValueError:
+        return jsonify({"ok": False, "motivo": "datos"}), 400
+    try:
+        n = borrador.guardar(g.user["username"], claves, valores)
+    except Exception:  # noqa: BLE001 — se avisa en la barra, la carga sigue en pantalla
+        return jsonify({"ok": False, "motivo": "base"}), 500
+    return jsonify({"ok": True, "n": n})
+
 @pedidos_bp.route("/pedidos/mandar-a-hacer", methods=["POST"])
 @requiere_login
 @requiere_permiso("pedidos.enviar_memo")
@@ -515,6 +547,8 @@ def mandar_a_hacer():
     usuario = g.user["username"] if getattr(g, "user", None) else ""
     ok, motivo, _envio = formulas_fabricar.mandar(lineas, usuario)
     if ok:
+        # Lo mandado sale del borrador; lo que quedó sin mandar sigue guardado.
+        borrador.borrar(usuario, [c for c in pedidas if c in por_clave])
         total = sum(ln["cantidad"] for ln in lineas)
         rib = sum(ln["rib_kg"] for ln in lineas)
         partes = []

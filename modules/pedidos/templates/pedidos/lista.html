@@ -187,7 +187,9 @@
   .pd table.tt tr.crow .color{font-size:15px;font-weight:700}
   .pd table.tt tr.crow .prod{display:none}
   .pd table.tt .aca{display:none}
-  .pd table.tt td.viejo{color:var(--ink);font-weight:600}
+  /* Las fechas, todas en negro (Tamara 16/10: "¿por qué unas grises y
+     otras negras? todas negras"). */
+  .pd td.fecha{color:var(--ink) !important;font-weight:500}
   main .pd table.tt tbody tr.det>td{font-size:13px !important;padding-top:4px !important;padding-bottom:4px !important;white-space:nowrap}
   /* La primera columna (color / cliente) no parte el renglón: lo que no entra
      se corta con "…" (Tamara 16/10: "rows simples, no tanta cosa"). */
@@ -294,7 +296,8 @@
   .pd .inhacer.pocos{border-color:#f59e0b;background:#fffbeb}
   .pd .hbar{position:sticky;bottom:0;z-index:5;display:flex;align-items:center;gap:10px;margin-top:16px;padding:14px 18px;background:var(--ink);color:#fff;border-radius:12px;box-shadow:0 -4px 16px rgba(15,23,42,.18)}
   .pd .hbar[hidden]{display:none}
-  .pd .hbar .hres{font-size:16px;margin-right:auto}.pd .hbar b{font-size:20px}
+  .pd .hbar .hres{font-size:16px;margin-right:auto}
+  .pd .hbar .hguard{font-size:13px;color:#cbd5e1}.pd .hbar b{font-size:20px}
   .pd .hbar .btn{font-size:15px;padding:9px 16px}
   .pd .hbar .btn.pri{background:var(--rojo);border-color:var(--rojo)}
   .pd .hbar .btn.pri[disabled]{opacity:.45;cursor:not-allowed}
@@ -433,7 +436,7 @@
               <span class="ccode">{{ g.codigo }}</span>{% if g.nombre %}<span class="cname">{{ g.nombre }}</span>{% endif %}
               <span class="muted"> · {{ g.variants|length }} var</span>
             </td>
-            <td class="{{ 'viejo' if g.dias_espera > 10 else 'muted' }}" data-sort-value="{{ g.mas_viejo }}">{{ g.mas_viejo_es }}</td>
+            <td class="fecha" data-sort-value="{{ g.mas_viejo }}">{{ g.mas_viejo_es }}</td>
             <td data-sort-value="{{ g.pedido_kg }}">{{ celda(g.pedido_roll, g.pedido_un, '—') }}</td>
             <td data-sort-value="{{ g.stock_kg }}">{{ celda(g.stock_roll, g.stock_un, '—') }}</td>
             <td data-sort-value="{{ g.prod_kg_orden }}">{{ celda(g.prod_roll, g.prod_un, '—') }}</td>
@@ -454,7 +457,7 @@
                   <span class="telaname">{{ f.tela }}</span> <span class="prod cod">{{ f.codigo }}</span>
                 {% endif %}
               </td>
-              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ f.mas_viejo_es }}</td>
+              <td class="fecha" data-sort-value="{{ f.mas_viejo }}">{{ f.mas_viejo_es }}</td>
               <td>{{ f.pedido_d|num_es(0) }} <span class="u">{{ f.u }}</span></td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(0) }} <span class="u">{{ f.u }}</span>{% else %}—{% endif %}</td>
@@ -463,7 +466,7 @@
             {% for p in peds %}
               <tr class="vr det colv-{{ gi }}" data-grupo="d-{{ f.clave }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}" style="margin-left:40px">{{ p.codigo_cliente or p.cliente }}</span></td>
-                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
+                <td class="fecha" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(0) }} <span class="u">{{ 'un' if p.es_unidad else ('roll' if p.es_rollo else 'kg') }}</span></td>
                 <td colspan="2" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
                 <td class="npd">{{ p.numero }}</td>
@@ -552,22 +555,22 @@
                   <span class="prod">{{ f.codigo }}</span>
                 </button>
               </td>
-              <td class="{{ 'viejo' if f.dias_espera > 10 else 'muted' }}" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
+              <td class="fecha" data-sort-value="{{ f.mas_viejo }}">{{ dm(f.mas_viejo) }}</td>
               <td>{{ f.pedido_d|num_es(f.decimales) }}</td>
               <td class="cmemo">{% if f.conmemo_d %}{{ f.conmemo_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.inventario_kg %}{{ f.inventario_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
               <td>{% if f.produccion_kg %}{% if f.prod_repartida %}<span class="u" title="La orden de tintura no dice si es abierto o tubular: se repartió entre los dos según lo que falta">≈</span> {% endif %}{{ f.produccion_d|num_es(f.decimales) }}{% else %}—{% endif %}</td>
                             <td class="{{ 'falta' if f.hacer_d > 0 else 'okc' }}">{% if f.hacer_d > 0 %}{{ f.hacer_d|num_es(f.decimales) }}{% else %}ok{% endif %}</td>
-              {% set md = mandados.get(f.clave) %}
-              <td class="hacer">{% if md and md.cantidad %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rollos {{ f.color }} {{ f.acabado }}"{% if f.sugerido_d and not (md and md.cantidad) %} placeholder="{{ f.sugerido_d }}" title="{{ f.sinmemo_d }} pedidos sin memo{% if f.reponer_d %} + {{ f.reponer_d }} venta de 2 semanas{% endif %}{% if f.inventario_d + f.produccion_d %} − {{ f.inventario_d + f.produccion_d }} stock y en producción{% endif %}{% if f.sugerido_d > f.sinmemo_d + f.reponer_d - f.inventario_d - f.produccion_d %} · mínimo {{ minimo_rollos }} por color (TUB + ABI){% endif %}"{% endif %}
+              {% set md = mandados.get(f.clave) %}{% set bz = borrador.get(f.clave) or (0, 0) %}
+              <td class="hacer">{% if md and md.cantidad %}<span class="mand" title="Mandado a producción el {{ md.hora_fmt }}{% if md.enviado_por %} por {{ md.enviado_por }}{% endif %} — {{ 'en proceso' if md.estado == 'en_proceso' else 'pendiente' }} en la fábrica">Mandado {{ md.fecha_fmt }} · {{ md.cantidad|num_es(0) }}</span>{% endif %}<input class="inhacer" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rollos {{ f.color }} {{ f.acabado }}"{% if bz[0] %} value="{{ '%g'|format(bz[0]) }}"{% endif %}{% if f.sugerido_d and not (md and md.cantidad) %} placeholder="{{ f.sugerido_d }}" title="{{ f.sinmemo_d }} pedidos sin memo{% if f.reponer_d %} + {{ f.reponer_d }} venta de 2 semanas{% endif %}{% if f.inventario_d + f.produccion_d %} − {{ f.inventario_d + f.produccion_d }} stock y en producción{% endif %}{% if f.sugerido_d > f.sinmemo_d + f.reponer_d - f.inventario_d - f.produccion_d %} · mínimo {{ minimo_rollos }} por color (TUB + ABI){% endif %}"{% endif %}
                   data-clave="{{ f.clave }}" data-tela="{{ t.tela }}" data-color="{{ f.color }}" data-cod="{{ f.codigo }}" data-aca="{{ f.acabado }}" data-u="{{ f.u }}"
                   data-peds="{% for p in peds if not memo_lineas.get(p.numero) and not enviados.get(p.numero) %}{{ p.codigo_cliente or p.cliente }} {{ p.numero }}{{ '|' if not loop.last }}{% endfor %}"></td>
-              <td class="hacer">{% if md and md.rib_kg %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.rib_kg|num_es(0) }}</span>{% endif %}<input class="inhacer inrib" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rib en kilos {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"></td>
+              <td class="hacer">{% if md and md.rib_kg %}<span class="mand">Mandado {{ md.fecha_fmt }} · {{ md.rib_kg|num_es(0) }}</span>{% endif %}<input class="inhacer inrib" type="number" min="0" step="1" inputmode="numeric" aria-label="Producir rib en kilos {{ f.color }} {{ f.acabado }}" data-clave="{{ f.clave }}"{% if bz[1] %} value="{{ '%g'|format(bz[1]) }}"{% endif %}></td>
             </tr>
             {% for p in peds %}
               <tr class="det" data-grupo="d-{{ f.clave }}" data-memo="{{ 1 if (memo_lineas.get(p.numero) or enviados.get(p.numero)) else 0 }}" data-fila-hija>
                 <td class="cod"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
-                <td class="{{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
+                <td class="fecha" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
                 <td>{{ p.cantidad|num_es(f.decimales) }} <span class="muted">{{ f.u }}</span></td>
                 <td colspan="3" class="izq">{{ memo_chip(p.numero, f.codigo) }}</td>
                 <td class="npd">{{ p.numero }}</td><td class="hacer"></td><td class="hacer"></td>
@@ -642,7 +645,9 @@
     </div>
     <div class="hbar no-print" id="hbar" hidden>
       <div class="hres"><b id="hn">0</b> colores · <b id="hr">0</b> rollos · <b id="hk">0</b> kg de rib para producir</div>
+      <span class="hguard" id="hguard"></span>
       <button type="button" class="btn" id="hcancel">Cancelar</button>
+      <button type="button" class="btn" id="hsave" title="Queda guardado hasta que lo mandes, aunque cierres la pantalla">💾 Guardar</button>
       <button type="button" class="btn pri" id="hrev" disabled>Revisar y mandar →</button>
     </div>
     <div class="hmodal no-print" id="hmodal" hidden role="dialog" aria-modal="true" aria-labelledby="hmt">
@@ -724,7 +729,7 @@
                 <span class="chev" aria-hidden="true"></span><span class="npd">{{ p.numero }}</span>
               </button>
             </td>
-            <td class="izq {{ 'viejo' if p.dias > 10 else 'muted' }}" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
+            <td class="izq fecha" data-sort-value="{{ p.fecha }}">{{ p.fecha_es }}</td>
             <td class="izq"><span class="cli" title="{{ p.cliente }}">{{ p.codigo_cliente or p.cliente }}</span></td>
             <td class="izq">
               {% if p.dueno.codigo %}<span class="vend">{{ p.dueno.codigo }}</span> <span class="vendname">{{ p.dueno.nombre }}</span>
@@ -907,9 +912,44 @@
       });
     });
     bt.addEventListener('click', function () { modo(!pd.classList.contains('editando')); });
+    // 💾 Guardar (Tamara 16/10/2026): "hice la mitad y quiero seguir más
+    // tarde". Queda en el servidor, por usuario, hasta que se manda.
+    var guardado = {{ 'true' if borrador else 'false' }};
+    function guardar(vacio, luego) {
+      var claves = [], valores = {};
+      ins().forEach(function (i) {
+        if (i.classList.contains('inrib')) return;
+        var c = i.dataset.clave; claves.push(c);
+        if (!vacio && ((+i.value || 0) > 0 || rib(i) > 0)) valores[c] = [+i.value || 0, rib(i)];
+      });
+      var fd = new FormData();
+      fd.append('csrf_token', '{{ csrf_token() }}');
+      fd.append('claves', JSON.stringify(claves));
+      fd.append('valores', JSON.stringify(valores));
+      var st = document.getElementById('hguard');
+      st.textContent = 'Guardando…';
+      fetch('{{ url_for("pedidos.guardar_borrador") }}', {method: 'POST', body: fd, credentials: 'same-origin'})
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (!d.ok) throw 0;
+          guardado = !vacio && d.n > 0;
+          var h = new Date();
+          st.textContent = vacio ? '' : 'Guardado ' + ('0' + h.getHours()).slice(-2) + ':' + ('0' + h.getMinutes()).slice(-2);
+          if (luego) luego();
+        })
+        .catch(function () { st.textContent = 'No se pudo guardar'; });
+    }
+    document.getElementById('hsave').addEventListener('click', function () { guardar(false); });
     document.getElementById('hcancel').addEventListener('click', function () {
+      if (guardado && !confirm('Borrar lo que tenías guardado de esta pantalla?')) return;
       ins().forEach(function (i) { i.value = ''; }); contar(); modo(false);
+      if (guardado) guardar(true);
     });
+    // Lo guardado vuelve a la pantalla con la carga abierta.
+    if (guardado && ins().some(function (i) { return +i.value > 0; })) {
+      modo(true); contar();
+      document.getElementById('hguard').textContent = 'Lo que guardaste';
+    }
     pd.addEventListener('input', function (e) { if (e.target.classList.contains('inhacer')) contar(); });
     pd.addEventListener('keydown', function (e) {
       if (e.key === 'Enter' && e.target.classList.contains('inhacer')) {
