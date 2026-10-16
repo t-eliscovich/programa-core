@@ -476,7 +476,8 @@ def mandar_a_hacer():
             continue
         peds = [{"numero": p["numero"], "cliente": p["codigo_cliente"] or p["cliente"],
                  "cantidad": p["cantidad"]}
-                for p in pedidos_por_color.get(clave, []) if p["numero"] not in ya]
+                for p in pedidos_por_color.get(clave, [])
+                if p["numero"] not in ya and (p.get("cantidad") or 0) > 0]
         lineas.append({
             "categoria": f["categoria"], "tela": f["tela"],
             "acabado": f.get("acabado") or "", "color": f["color"],

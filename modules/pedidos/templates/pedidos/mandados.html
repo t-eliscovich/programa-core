@@ -70,7 +70,8 @@
           <td><span class="est {{ f.estado }}">{{ {'pendiente': 'PENDIENTE', 'en_proceso': 'EN PROCESO', 'terminado': 'HECHO', 'cancelado': 'CANCELADO'}.get(f.estado, f.estado|upper) }}</span>
             {% if f.estado == 'terminado' and f.terminado_fmt %}<span class="sub">{{ f.terminado_fmt }}{% if f.terminado_por %} · {{ f.terminado_por }}{% endif %}</span>
             {% elif f.estado == 'en_proceso' and f.en_proceso_fmt %}<span class="sub">desde {{ f.en_proceso_fmt }}</span>
-            {% elif f.estado == 'cancelado' and f.cancelado_fmt %}<span class="sub">{{ f.cancelado_fmt }}{% if f.cancelado_por %} · {{ f.cancelado_por }}{% endif %}</span>{% endif %}</td>
+            {% elif f.estado == 'cancelado' and f.cancelado_fmt %}<span class="sub">{{ f.cancelado_fmt }}{% if f.cancelado_por %} · {{ f.cancelado_por }}{% endif %}</span>{% endif %}
+            {% if f.ordenes %}<span class="sub">orden {{ f.ordenes|join(', ') }}</span>{% endif %}</td>
           <td style="text-align:right">{% if puede_cancelar and f.estado == 'pendiente' %}
             <form method="post" action="{{ url_for('pedidos.cancelar_mandado') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

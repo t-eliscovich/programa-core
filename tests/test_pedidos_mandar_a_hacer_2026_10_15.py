@@ -220,3 +220,88 @@ def test_el_nombre_del_color_va_al_lado_del_codigo(app, fake_db):
          patch.object(views.service, "nombres_color", return_value={"CAF": "CAFE OSCURO"}):
         body = c.get("/pedidos?corte=tela").get_data(as_text=True)
     assert body.count("CAFE OSCURO") >= 2          # tabla de pantalla + hoja impresa
+
+
+# ── 16/10/2026: orden de tintura en el historial, pedidos en cero afuera ───
+
+class _Cur:
+    def __init__(self, filas=None, falla=None):
+        self.filas, self.falla, self.sql = filas or [], falla, ""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def execute(self, sql, params=None):
+        if self.falla:
+            raise self.falla
+        self.sql = sql
+
+    def fetchall(self):
+        return self.filas
+
+
+class _Conn:
+    def __init__(self, cur):
+        self.cur = cur
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *a):
+        return False
+
+    def cursor(self):
+        return self.cur
+
+
+def test_cada_renglon_trae_la_orden_de_tintura_que_salio_de_el():
+    filas = [{"id": 1}, {"id": 2}]
+    cur = _Cur([(1, "T-4381"), (1, "T-4390")])
+    with patch.object(formulas_fabricar.formulas_memos, "_conn", return_value=_Conn(cur)):
+        formulas_fabricar._con_ordenes(filas)
+    assert filas[0]["ordenes"] == ["T-4381", "T-4390"]
+    assert filas[1]["ordenes"] == []
+    assert "orden_fabricar" in cur.sql
+
+
+def test_sin_permiso_para_las_ordenes_el_historial_sigue():
+    filas = [{"id": 1}]
+    cur = _Cur(falla=RuntimeError("permission denied for table orden_fabricar"))
+    with patch.object(formulas_fabricar.formulas_memos, "_conn", return_value=_Conn(cur)):
+        formulas_fabricar._con_ordenes(filas)
+    assert filas[0]["ordenes"] == []
+    vacias = []
+    formulas_fabricar._con_ordenes(vacias)
+    assert vacias == []
+
+
+def test_la_orden_se_ve_en_el_historial(app, fake_db):
+    c = _login(app, fake_db)
+    f = _af("PDCL-1", estado="en_proceso")
+    f["ordenes"] = ["T-4381"]
+    with patch.object(views.formulas_fabricar, "envios", return_value=([f], True)):
+        r = c.get("/pedidos/mandados")
+    assert "orden T-4381" in r.get_data(as_text=True)
+
+
+def test_un_pedido_sin_nada_pendiente_no_se_manda(app, fake_db):
+    c = _login(app, fake_db)
+    mandado = {}
+
+    def fake_mandar(lineas, usuario):
+        mandado["lineas"] = lineas
+        return True, "enviado", "AF-x"
+
+    clave = service.clave_renglon("FE96CAF", "")
+    with patch.object(service.metabase_client, "fetch_dataset_estado",
+                      side_effect=_fake_asinfo([_ped("PDCL-1"), _ped("PDCL-0", cantidad=0)])), \
+         patch.object(views.formulas_memos, "estados", return_value={}), \
+         patch.object(views.service, "por_pedido", return_value=([], False)), \
+         patch.object(views.formulas_fabricar, "envios", return_value=([], True)), \
+         patch.object(views.formulas_fabricar, "mandar", side_effect=fake_mandar):
+        c.post("/pedidos/mandar-a-hacer", data={"cat": "Fleece", f"c_{clave}": "2"})
+    (ln,) = mandado["lineas"]
+    assert [p["numero"] for p in ln["pedidos"]] == ["PDCL-1"]

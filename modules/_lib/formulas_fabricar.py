@@ -138,6 +138,33 @@ def cancelar(usuario: str, envio: str = "", id_: int | None = None) -> tuple[int
         return 0, "sin_bridge"
 
 
+def _con_ordenes(filas: list[dict]) -> None:
+    """`f["ordenes"]` = números de las órdenes de tintura que salieron de cada
+    renglón (Jonathan las ata al crear la orden en /tintura). Fail-soft: sin
+    el permiso o sin la tabla, la lista queda vacía y el historial sigue."""
+    for f in filas:
+        f["ordenes"] = []
+    ids = [f["id"] for f in filas if f.get("id") is not None]
+    if not ids:
+        return
+    try:
+        with formulas_memos._conn() as c, c.cursor() as cur:
+            cur.execute(
+                "SELECT ofa.af_id, o.numero FROM orden_fabricar ofa "
+                "JOIN ordenes o ON o.id = ofa.orden_id "
+                "WHERE ofa.af_id = ANY(%s) ORDER BY o.id",
+                (ids,),
+            )
+            por_id: dict = {}
+            for af_id, numero in cur.fetchall():
+                por_id.setdefault(af_id, []).append(numero)
+    except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
+        _log.info("formulas_fabricar: sin órdenes (%s)", e)
+        return
+    for f in filas:
+        f["ordenes"] = por_id.get(f.get("id"), [])
+
+
 def envios(dias: int = 90) -> tuple[list[dict], bool]:
     """Los renglones mandados en los últimos `dias` días (más los que siguen
     vivos aunque sean viejos), más nuevo arriba. `(filas, ok)`."""
@@ -173,6 +200,7 @@ def envios(dias: int = 90) -> tuple[list[dict], bool]:
             f["en_proceso_fmt"] = _dm(f.get("en_proceso_en"))
             f["terminado_fmt"] = _dm(f.get("terminado_en"))
             f["cancelado_fmt"] = _dm(f.get("cancelado_en"))
+        _con_ordenes(filas)
         return filas, True
     except Exception as e:  # noqa: BLE001 — fail-soft por contrato del bridge
         _log.warning("formulas_fabricar.envios falló: %s", e)
