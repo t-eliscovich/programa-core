@@ -654,7 +654,11 @@ def mandados():
             envios.append(e)
         e["filas"].append(f)
     for e in envios:
-        e["filas"].sort(key=service.orden_tipo_de_tela)
+        # Por TIPO DE TELA (Tamara 17/10/2026: "en historial tiene que estar
+        # por tipo de tela"): tela A-Z y, adentro, el orden de la pantalla
+        # (TUB, ABI, color A-Z). Formulas lo sigue mostrando por color.
+        e["filas"].sort(key=lambda f: ((f.get("tela") or "").lower(),
+                                       service.orden_tipo_de_tela(f)))
         e["total"] = sum(f["cantidad"] for f in e["filas"])
         e["total_rib"] = sum(f.get("rib_kg") or 0 for f in e["filas"])
         est = {f["estado"] for f in e["filas"]} - {"cancelado"}
